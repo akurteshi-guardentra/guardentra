@@ -8,3 +8,8 @@
 ## Branch architecture
 
 - Establish an isolated branch architecture: `dev` for sandboxing, `test` for staging builds, and `main` for production deployments feeding guardentra.com.
+
+## Firebase environments
+
+- Demo project `guardentra-7f582` is not production. Prefer separate projects: `guardentra-dev`, `guardentra-staging`, `guardentra-prod` (see `docs/ENVIRONMENTS.md` and `.firebaserc`).
+- Client may use `VITE_FIREBASE_*` env vars; otherwise falls back to committed demo `firebase-applet-config.json`.

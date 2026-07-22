@@ -36,6 +36,7 @@ import {
   parseVendorCsv,
   type ParsedBulkVendor,
 } from '../lib/vendor/csvBulk';
+import { downloadVendorRegisterReport } from '../lib/vendor/reportExport';
 
 function formatDate(iso?: string) {
   if (!iso) return '—';
@@ -331,7 +332,13 @@ export function VendorsDirectory() {
                 <Filter className="mr-2 h-4 w-4" />
                 More Filters
               </Button>
-              <Button variant="outline" className="border-white/10 text-slate-400" disabled>
+              <Button
+                type="button"
+                variant="outline"
+                className="border-white/10 text-slate-300"
+                disabled={filtered.length === 0}
+                onClick={() => downloadVendorRegisterReport(filtered)}
+              >
                 <Download className="mr-2 h-4 w-4" />
                 Export
               </Button>

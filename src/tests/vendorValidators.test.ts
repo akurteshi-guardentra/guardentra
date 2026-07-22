@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { riskLevelFromScore } from '../lib/vendor/risk';
+import { buildVendorRegisterMarkdown } from '../lib/vendor/reportExport';
 import {
   validateAssessmentWizard,
   validateEvidenceFile,
@@ -44,5 +45,27 @@ describe('risk bands', () => {
     expect(riskLevelFromScore(81)).toBe('High');
     expect(riskLevelFromScore(55)).toBe('Medium');
     expect(riskLevelFromScore(41)).toBe('Low');
+  });
+});
+
+describe('vendor register markdown export', () => {
+  it('includes vendor rows and headers', () => {
+    const md = buildVendorRegisterMarkdown([
+      {
+        id: 'v1',
+        name: 'Acme Cloud',
+        category: 'SaaS',
+        criticality: 'High',
+        status: 'Active',
+        riskScore: 72,
+        organizationId: 'org1',
+        createdAt: '2026-01-01',
+        primaryContactEmail: 'v@acme.test',
+        assessmentStatus: 'In Progress',
+      },
+    ]);
+    expect(md).toMatch(/Third-Party Risk Register/);
+    expect(md).toMatch(/Acme Cloud/);
+    expect(md).toMatch(/High/);
   });
 });
