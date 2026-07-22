@@ -221,8 +221,8 @@ export function VendorPortal() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center">
-        <Loader2 className="h-8 w-8 text-blue-600 animate-spin mb-3" />
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center">
+        <Loader2 className="h-8 w-8 text-primary animate-spin mb-3" />
         <p className="text-sm text-slate-500">Loading secure questionnaire…</p>
       </div>
     );
@@ -230,26 +230,26 @@ export function VendorPortal() {
 
   if (!assessment || isSuccess) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-        <div className="max-w-lg w-full rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
+        <div className="max-w-lg w-full rounded-2xl border border-white/10 bg-slate-900/50 p-8 text-center">
           {isSuccess ? (
             <>
-              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50">
-                <CheckCircle2 className="h-7 w-7 text-emerald-600" />
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10">
+                <CheckCircle2 className="h-7 w-7 text-emerald-400" />
               </div>
-              <h1 className="text-2xl font-semibold text-slate-900">Submission received</h1>
-              <p className="mt-2 text-sm text-slate-500">
+              <h1 className="text-2xl font-semibold text-white">Submission received</h1>
+              <p className="mt-2 text-sm text-slate-400">
                 Thank you. Your security assessment was submitted for review.
               </p>
               <p className="mt-4 font-mono text-xs text-slate-400">Ref: {assessmentId}</p>
             </>
           ) : (
             <>
-              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-rose-50">
-                <AlertTriangle className="h-7 w-7 text-rose-600" />
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-rose-500/10">
+                <AlertTriangle className="h-7 w-7 text-rose-400" />
               </div>
-              <h1 className="text-2xl font-semibold text-slate-900">Portal link invalid</h1>
-              <p className="mt-2 text-sm text-slate-500">
+              <h1 className="text-2xl font-semibold text-white">Portal link invalid</h1>
+              <p className="mt-2 text-sm text-slate-400">
                 This assessment could not be found or the link has expired.
               </p>
             </>
@@ -262,35 +262,35 @@ export function VendorPortal() {
   if (!started) {
     const due = assessment.dueAt || assessment.dueDate;
     return (
-      <div className="min-h-screen bg-slate-50 text-slate-900">
-        <header className="border-b border-slate-200 bg-white px-6 py-4">
+      <div className="min-h-screen bg-slate-950 text-slate-100">
+        <header className="border-b border-white/5 bg-black/40 backdrop-blur-xl px-6 py-4">
           <div className="mx-auto flex max-w-5xl items-center gap-3">
-            <div className="rounded-lg bg-blue-50 p-2">
-              <Shield className="h-5 w-5 text-blue-600" />
+            <div className="rounded-lg bg-primary/20 border border-primary/40 p-2">
+              <Shield className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <p className="font-semibold">GuardEntra Vendor Portal</p>
+              <p className="font-semibold text-white">GuardEntra Vendor Portal</p>
               <p className="text-xs text-slate-500">Encrypted questionnaire</p>
             </div>
           </div>
         </header>
         <main className="mx-auto max-w-5xl p-6 lg:p-10">
-          <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+          <div className="rounded-2xl border border-white/10 bg-slate-900/50 p-8">
             <p className="text-sm text-slate-500">Security & Compliance Assessment</p>
-            <h1 className="mt-2 text-3xl font-semibold">{assessment.vendorName || 'Vendor'} questionnaire</h1>
-            <p className="mt-2 text-sm text-slate-500">
+            <h1 className="mt-2 text-3xl font-bold text-white font-display text-glow text-white">{assessment.vendorName || 'Vendor'} questionnaire</h1>
+            <p className="mt-2 text-sm text-slate-400">
               Requested for your organization · {questions.length} unique questions
               {assessment.sourceQuestionCount
                 ? ` (deduplicated from ${assessment.sourceQuestionCount} source questions)`
                 : ''}
             </p>
-            <div className="mt-6 flex flex-wrap gap-6 text-sm text-slate-600">
+            <div className="mt-6 flex flex-wrap gap-6 text-sm text-slate-400">
               <span>Due: {due ? new Date(due).toLocaleDateString() : '—'}</span>
               <span>Est. 25–35 minutes</span>
               <span className="inline-flex items-center gap-1"><Lock className="h-3.5 w-3.5" /> Responses encrypted in transit</span>
             </div>
             <div className="mt-8 flex flex-wrap gap-3">
-              <Button className="bg-blue-600 text-white hover:bg-blue-700" onClick={() => setStarted(true)}>
+              <Button className="bg-primary hover:bg-primary/90 text-white" onClick={() => setStarted(true)}>
                 Start Questionnaire
               </Button>
               <p className="self-center text-xs text-slate-500">Save and return anytime · Upload supporting evidence · Invite a colleague (soon)</p>
@@ -304,13 +304,13 @@ export function VendorPortal() {
   const globalIndex = questions.findIndex((q) => q.id === currentQuestion?.id);
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
+    <div className="min-h-screen bg-slate-950 text-slate-100">
+      <header className="sticky top-0 z-40 border-b border-white/5 bg-black/40 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
           <div className="flex items-center gap-3">
-            <Shield className="h-5 w-5 text-blue-600" />
+            <Shield className="h-5 w-5 text-primary" />
             <div>
-              <p className="text-sm font-semibold">{assessment.vendorName || 'Vendor'} assessment</p>
+              <p className="text-sm font-semibold text-white">{assessment.vendorName || 'Vendor'} assessment</p>
               <p className="text-xs text-slate-500">
                 Question {Math.max(1, globalIndex + 1)} of {questions.length}
               </p>
@@ -318,12 +318,12 @@ export function VendorPortal() {
           </div>
           <div className="flex items-center gap-4">
             <div className="hidden sm:block w-40">
-              <div className="mb-1 flex justify-between text-[10px] font-medium uppercase tracking-wide text-slate-500">
+              <div className="mb-1 flex justify-between text-[10px] font-bold uppercase tracking-widest text-slate-500">
                 <span>Progress</span>
                 <span>{progress}%</span>
               </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
-                <div className="h-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} />
+              <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+                <div className="h-full bg-primary transition-all" style={{ width: `${progress}%` }} />
               </div>
             </div>
             <span className="text-xs text-slate-500">
@@ -337,7 +337,7 @@ export function VendorPortal() {
       </header>
 
       <div className="mx-auto grid max-w-6xl gap-6 p-4 lg:grid-cols-[240px_1fr] lg:p-6">
-        <aside className="space-y-1 rounded-xl border border-slate-200 bg-white p-3 h-fit">
+        <aside className="space-y-1 rounded-xl border border-white/5 bg-slate-900/50 p-3 h-fit">
           {QUESTION_CATEGORIES.map((cat) => {
             const stats = catStats[cat];
             if (!stats.total) return null;
@@ -353,7 +353,7 @@ export function VendorPortal() {
                 }}
                 className={cn(
                   'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm',
-                  activeCategory === cat ? 'bg-blue-50 text-blue-800' : 'hover:bg-slate-50 text-slate-700'
+                  activeCategory === cat ? 'bg-primary/15 text-white border border-primary/30' : 'hover:bg-white/5 text-slate-300'
                 )}
               >
                 <span>{cat}</span>
@@ -367,9 +367,9 @@ export function VendorPortal() {
 
         <main className="space-y-4">
           {currentQuestion && (
-            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="rounded-xl border border-white/5 bg-slate-900/50 p-6">
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{currentQuestion.category}</p>
-              <h2 className="mt-2 text-xl font-semibold leading-snug">{currentQuestion.question}</h2>
+              <h2 className="mt-2 text-xl font-semibold text-white leading-snug">{currentQuestion.question}</h2>
 
               <div className="mt-6 grid gap-2 sm:grid-cols-2">
                 {currentQuestion.options.map((option) => {
@@ -384,9 +384,9 @@ export function VendorPortal() {
                         'rounded-xl border px-4 py-3 text-left text-sm font-medium transition',
                         selected
                           ? isNo
-                            ? 'border-rose-300 bg-rose-50 text-rose-800'
-                            : 'border-blue-500 bg-blue-50 text-blue-900'
-                          : 'border-slate-200 hover:bg-slate-50'
+                            ? 'border-rose-300 bg-rose-500/10 text-rose-800'
+                            : 'border-primary bg-primary/20 text-white'
+                          : 'border-white/10 hover:bg-white/5 text-slate-300'
                       )}
                     >
                       {option}
@@ -398,7 +398,7 @@ export function VendorPortal() {
               <div className="mt-6">
                 <label className="text-xs font-medium text-slate-600">Add context for your response (optional)</label>
                 <textarea
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-200"
+                  className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:ring-1 focus:ring-primary"
                   rows={3}
                   value={comments[currentQuestion.id] || ''}
                   onChange={(e) => setComment(currentQuestion.id, e.target.value)}
@@ -424,22 +424,22 @@ export function VendorPortal() {
                   type="button"
                   disabled={uploading}
                   onClick={() => fileInputRef.current?.click()}
-                  className="mt-2 flex w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 px-4 py-8 text-sm text-slate-600 hover:bg-slate-50"
+                  className="mt-2 flex w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 px-4 py-8 text-sm text-slate-400 hover:bg-white/5"
                 >
                   {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Upload className="h-5 w-5" />}
                   {uploading ? 'Uploading…' : 'Click to upload or drag and drop'}
                 </button>
                 {(evidence[currentQuestion.id] || []).map((f) => (
-                  <div key={f.storagePath} className="mt-2 flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-xs">
+                  <div key={f.storagePath} className="mt-2 flex items-center justify-between rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300">
                     <span className="inline-flex items-center gap-2 truncate">
-                      <FileText className="h-3.5 w-3.5 text-blue-600" />
-                      <a href={f.downloadUrl} target="_blank" rel="noreferrer" className="truncate text-blue-700 hover:underline">
+                      <FileText className="h-3.5 w-3.5 text-primary" />
+                      <a href={f.downloadUrl} target="_blank" rel="noreferrer" className="truncate text-primary hover:underline">
                         {f.fileName}
                       </a>
                     </span>
                     <button
                       type="button"
-                      className="text-slate-400 hover:text-rose-600"
+                      className="text-slate-400 hover:text-rose-400"
                       onClick={() => {
                         const list = (evidence[currentQuestion.id] || []).filter((x) => x.storagePath !== f.storagePath);
                         const next = { ...evidence, [currentQuestion.id]: list };
@@ -451,13 +451,13 @@ export function VendorPortal() {
                     </button>
                   </div>
                 ))}
-                {uploadError && <p className="mt-2 text-sm text-rose-600">{uploadError}</p>}
+                {uploadError && <p className="mt-2 text-sm text-rose-400">{uploadError}</p>}
               </div>
 
-              <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
+              <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-white/5 pt-4">
                 <Button
                   variant="outline"
-                  className="border-slate-200"
+                  className="border-white/10 text-slate-300"
                   disabled={questionIndex === 0 && QUESTION_CATEGORIES.indexOf(activeCategory as any) <= 0}
                   onClick={() => {
                     if (questionIndex > 0) setQuestionIndex(questionIndex - 1);
@@ -479,18 +479,18 @@ export function VendorPortal() {
                 <div className="flex gap-2">
                   <Button
                     variant="outline"
-                    className="border-slate-200"
+                    className="border-white/10 text-slate-300"
                     onClick={() => void persistDraft(answers, comments, evidence)}
                   >
                     Save Draft
                   </Button>
                   {globalIndex >= questions.length - 1 ? (
-                    <Button className="bg-emerald-600 text-white hover:bg-emerald-700" disabled={isSubmitting} onClick={() => void handleSubmit()}>
+                    <Button className="bg-emerald-600 hover:bg-emerald-500 text-white" disabled={isSubmitting} onClick={() => void handleSubmit()}>
                       {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
                       Submit
                     </Button>
                   ) : (
-                    <Button className="bg-blue-600 text-white hover:bg-blue-700" onClick={goNext}>
+                    <Button className="bg-primary hover:bg-primary/90 text-white" onClick={goNext}>
                       Next Question
                     </Button>
                   )}

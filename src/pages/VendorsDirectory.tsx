@@ -240,27 +240,27 @@ export function VendorsDirectory() {
   };
 
   return (
-    <div className="min-h-full bg-slate-50 text-slate-900 -m-6 p-6 lg:p-8">
+    <div className="space-y-8 animate-in fade-in duration-700">
       <div className="flex flex-col gap-6 lg:flex-row">
         <div className="min-w-0 flex-1 space-y-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Vendors</h1>
-              <p className="mt-1 text-sm text-slate-500">
+              <h1 className="text-3xl font-bold tracking-tight text-white font-display text-glow">Vendors</h1>
+              <p className="mt-1 text-sm text-slate-400">
                 Manage, assess, and monitor every third party in one place.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button
                 variant="outline"
-                className="bg-white border-slate-200 text-slate-700"
+                className="border-white/10 text-slate-300 hover:bg-white/5"
                 onClick={() => setShowBulk(true)}
               >
                 <Upload className="mr-2 h-4 w-4" />
                 Bulk Upload
               </Button>
               <Button
-                className="bg-blue-600 hover:bg-blue-700 text-white"
+                className="bg-primary hover:bg-primary/90 text-white"
                 onClick={() => setShowAdd(true)}
               >
                 <Plus className="mr-2 h-4 w-4" />
@@ -271,36 +271,36 @@ export function VendorsDirectory() {
 
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {[
-              { label: 'Total Vendors', value: kpis.total, icon: Building2, tone: 'text-slate-700' },
-              { label: 'Critical / High Risk', value: kpis.criticalHigh, icon: ShieldAlert, tone: 'text-rose-600' },
-              { label: 'Assessments Due', value: kpis.due, icon: CalendarClock, tone: 'text-orange-600' },
-              { label: 'Needs Attention', value: kpis.needsAttention, icon: AlertTriangle, tone: 'text-amber-600' },
+              { label: 'Total Vendors', value: kpis.total, icon: Building2, tone: 'text-white' },
+              { label: 'Critical / High Risk', value: kpis.criticalHigh, icon: ShieldAlert, tone: 'text-rose-400' },
+              { label: 'Assessments Due', value: kpis.due, icon: CalendarClock, tone: 'text-orange-400' },
+              { label: 'Needs Attention', value: kpis.needsAttention, icon: AlertTriangle, tone: 'text-amber-400' },
             ].map((card) => (
-              <div key={card.label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div key={card.label} className="rounded-xl border border-white/5 bg-slate-900/50 p-4">
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{card.label}</p>
                   <card.icon className={cn('h-4 w-4', card.tone)} />
                 </div>
-                <p className={cn('mt-2 text-2xl font-semibold', card.tone)}>{loading ? '—' : card.value}</p>
+                <p className={cn('mt-2 text-3xl font-bold text-white font-display text-glow', card.tone)}>{loading ? '—' : card.value}</p>
               </div>
             ))}
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
-            <div className="flex flex-col gap-3 border-b border-slate-100 p-4 lg:flex-row lg:items-center">
+          <div className="rounded-xl border border-white/5 bg-slate-900/50">
+            <div className="flex flex-col gap-3 border-b border-white/5 p-4 lg:flex-row lg:items-center">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <Input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search vendors..."
-                  className="pl-9 bg-white border-slate-200"
+                  className="pl-9 bg-black/20 border-white/10 text-white"
                 />
               </div>
               <select
                 value={riskFilter}
                 onChange={(e) => setRiskFilter(e.target.value)}
-                className="h-9 rounded-md border border-slate-200 bg-white px-3 text-sm"
+                className="h-9 rounded-md border border-white/10 bg-black/20 px-3 text-sm text-white"
               >
                 <option value="all">Risk Level</option>
                 {RISK_LEVELS.map((r) => (
@@ -310,7 +310,7 @@ export function VendorsDirectory() {
               <select
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value)}
-                className="h-9 rounded-md border border-slate-200 bg-white px-3 text-sm"
+                className="h-9 rounded-md border border-white/10 bg-black/20 px-3 text-sm text-white"
               >
                 <option value="all">Category</option>
                 {VENDOR_CATEGORIES.map((c) => (
@@ -320,18 +320,18 @@ export function VendorsDirectory() {
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="h-9 rounded-md border border-slate-200 bg-white px-3 text-sm"
+                className="h-9 rounded-md border border-white/10 bg-black/20 px-3 text-sm text-white"
               >
                 <option value="all">Status</option>
                 {['Not Started', 'In Progress', 'Due Soon', 'Overdue', 'Completed'].map((s) => (
                   <option key={s} value={s}>{s}</option>
                 ))}
               </select>
-              <Button variant="outline" className="border-slate-200 text-slate-600" disabled>
+              <Button variant="outline" className="border-white/10 text-slate-400" disabled>
                 <Filter className="mr-2 h-4 w-4" />
                 More Filters
               </Button>
-              <Button variant="outline" className="border-slate-200 text-slate-600" disabled>
+              <Button variant="outline" className="border-white/10 text-slate-400" disabled>
                 <Download className="mr-2 h-4 w-4" />
                 Export
               </Button>
@@ -339,7 +339,7 @@ export function VendorsDirectory() {
 
             <div className="overflow-x-auto">
               <table className="w-full min-w-[900px] text-left text-sm">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <thead className="bg-white/[0.03] text-xs uppercase tracking-wide text-slate-500">
                   <tr>
                     <th className="px-4 py-3 font-medium">Vendor</th>
                     <th className="px-4 py-3 font-medium">Category</th>
@@ -368,23 +368,23 @@ export function VendorsDirectory() {
                     const level = effectiveRiskLevel(v);
                     const aStatus = deriveAssessmentStatus(v);
                     return (
-                      <tr key={v.id} className="border-t border-slate-100 hover:bg-slate-50/80">
+                      <tr key={v.id} className="border-t border-white/5 hover:bg-white/[0.03]">
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-3">
-                            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-xs font-semibold text-slate-600">
+                            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 text-xs font-semibold text-slate-300">
                               {v.name.slice(0, 2).toUpperCase()}
                             </div>
                             <button
                               type="button"
-                              className="font-medium text-slate-900 hover:text-blue-600"
+                              className="font-medium text-white hover:text-primary"
                               onClick={() => navigate(`/vendors/legacy?focus=${v.id}`)}
                             >
                               {v.name}
                             </button>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-slate-600">{v.category || '—'}</td>
-                        <td className="px-4 py-3 text-slate-600">{v.primaryContactName || '—'}</td>
+                        <td className="px-4 py-3 text-slate-400">{v.category || '—'}</td>
+                        <td className="px-4 py-3 text-slate-400">{v.primaryContactName || '—'}</td>
                         <td className="px-4 py-3">
                           <span className={cn('inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium', riskBandClasses(level))}>
                             {level}
@@ -396,16 +396,16 @@ export function VendorsDirectory() {
                             {aStatus}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-slate-600">{v.ownerName || '—'}</td>
-                        <td className="px-4 py-3 text-slate-600">{formatDate(v.nextReviewAt)}</td>
+                        <td className="px-4 py-3 text-slate-400">{v.ownerName || '—'}</td>
+                        <td className="px-4 py-3 text-slate-400">{formatDate(v.nextReviewAt)}</td>
                         <td className="px-4 py-3 text-right">
                           <Link
                             to={`/assessments/new?vendorId=${v.id}`}
-                            className="mr-2 text-xs font-medium text-blue-600 hover:underline"
+                            className="mr-2 text-xs font-medium text-primary hover:underline"
                           >
                             Assess
                           </Link>
-                          <button type="button" className="text-slate-400 hover:text-slate-700" aria-label="More">
+                          <button type="button" className="text-slate-400 hover:text-white" aria-label="More">
                             <MoreVertical className="h-4 w-4" />
                           </button>
                         </td>
@@ -416,7 +416,7 @@ export function VendorsDirectory() {
               </table>
             </div>
 
-            <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3 text-sm text-slate-500">
+            <div className="flex items-center justify-between border-t border-white/5 px-4 py-3 text-sm text-slate-400">
               <span>
                 {filtered.length === 0
                   ? '0 vendors'
@@ -426,7 +426,7 @@ export function VendorsDirectory() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="border-slate-200"
+                  className="border-white/10"
                   disabled={page <= 1}
                   onClick={() => setPage((p) => p - 1)}
                 >
@@ -435,7 +435,7 @@ export function VendorsDirectory() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="border-slate-200"
+                  className="border-white/10"
                   disabled={page >= totalPages}
                   onClick={() => setPage((p) => p + 1)}
                 >
@@ -447,104 +447,104 @@ export function VendorsDirectory() {
         </div>
 
         <aside className="w-full shrink-0 space-y-4 lg:w-72">
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <h2 className="text-sm font-semibold text-slate-900">Quick Actions</h2>
+          <div className="rounded-xl border border-white/5 bg-slate-900/50 p-4">
+            <h2 className="text-sm font-semibold text-white">Quick Actions</h2>
             <div className="mt-3 space-y-2">
               <button
                 type="button"
                 onClick={() => setShowAdd(true)}
-                className="flex w-full items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-left text-sm hover:bg-slate-50"
+                className="flex w-full items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-left text-sm hover:bg-white/5"
               >
-                <Plus className="h-4 w-4 text-blue-600" />
+                <Plus className="h-4 w-4 text-primary" />
                 Add One Vendor
               </button>
               <button
                 type="button"
                 onClick={() => setShowBulk(true)}
-                className="flex w-full items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-left text-sm hover:bg-slate-50"
+                className="flex w-full items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-left text-sm hover:bg-white/5"
               >
-                <Upload className="h-4 w-4 text-blue-600" />
+                <Upload className="h-4 w-4 text-primary" />
                 Bulk Upload Vendors
               </button>
               <button
                 type="button"
                 onClick={() => navigate('/assessments/new')}
-                className="flex w-full items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-left text-sm hover:bg-slate-50"
+                className="flex w-full items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-left text-sm hover:bg-white/5"
               >
-                <UserPlus className="h-4 w-4 text-blue-600" />
+                <UserPlus className="h-4 w-4 text-primary" />
                 Invite Vendor
               </button>
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <h2 className="text-sm font-semibold text-slate-900">Bulk Upload in 3 Steps</h2>
-            <ol className="mt-3 space-y-2 text-sm text-slate-600">
+          <div className="rounded-xl border border-white/5 bg-slate-900/50 p-4">
+            <h2 className="text-sm font-semibold text-white">Bulk Upload in 3 Steps</h2>
+            <ol className="mt-3 space-y-2 text-sm text-slate-400">
               <li><span className="font-medium text-slate-800">1.</span> Download Template</li>
               <li><span className="font-medium text-slate-800">2.</span> Upload Excel/CSV</li>
               <li><span className="font-medium text-slate-800">3.</span> Review & Import</li>
             </ol>
             <Button
               variant="outline"
-              className="mt-3 w-full border-slate-200 text-slate-700"
+              className="mt-3 w-full border-white/10 text-white"
               onClick={() => downloadVendorCsvTemplate()}
             >
               <Download className="mr-2 h-4 w-4" />
               Download CSV template
             </Button>
-            <p className="mt-4 flex gap-2 rounded-lg bg-blue-50 p-3 text-xs text-blue-800">
+            <p className="mt-4 flex gap-2 rounded-lg bg-primary/10 p-3 text-xs text-primary">
               <Sparkles className="h-4 w-4 shrink-0" />
               Import flags duplicate names in-file and against your existing register.
             </p>
           </div>
 
-          <Link to="/vendors/legacy" className="block text-center text-xs text-slate-400 hover:text-slate-600">
+          <Link to="/vendors/legacy" className="block text-center text-xs text-slate-400 hover:text-slate-400">
             Open classic vendor workspace
           </Link>
         </aside>
       </div>
 
       {showAdd && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
           <form
             onSubmit={handleAddVendor}
-            className="w-full max-w-md space-y-4 rounded-xl bg-white p-6 shadow-xl"
+            className="w-full max-w-md space-y-4 rounded-xl bg-slate-900 border border-white/10 p-6 shadow-xl"
           >
-            <h3 className="text-lg font-semibold">Add Vendor</h3>
-            {formError && <p className="text-sm text-rose-600">{formError}</p>}
+            <h3 className="text-lg font-semibold text-white">Add Vendor</h3>
+            {formError && <p className="text-sm text-rose-400">{formError}</p>}
             <div>
-              <label className="text-xs font-medium text-slate-600">Name</label>
-              <Input name="name" className="mt-1 border-slate-200" required />
+              <label className="text-xs font-medium text-slate-400">Name</label>
+              <Input name="name" className="mt-1 border-white/10" required />
             </div>
             <div>
-              <label className="text-xs font-medium text-slate-600">Category</label>
-              <select name="category" className="mt-1 h-9 w-full rounded-md border border-slate-200 px-3 text-sm" required>
+              <label className="text-xs font-medium text-slate-400">Category</label>
+              <select name="category" className="mt-1 h-9 w-full rounded-md border border-white/10 px-3 text-sm" required>
                 {VENDOR_CATEGORIES.map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="text-xs font-medium text-slate-600">Criticality</label>
-              <select name="criticality" className="mt-1 h-9 w-full rounded-md border border-slate-200 px-3 text-sm" defaultValue="Medium">
+              <label className="text-xs font-medium text-slate-400">Criticality</label>
+              <select name="criticality" className="mt-1 h-9 w-full rounded-md border border-white/10 px-3 text-sm" defaultValue="Medium">
                 {RISK_LEVELS.map((r) => (
                   <option key={r} value={r}>{r}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="text-xs font-medium text-slate-600">Primary contact</label>
-              <Input name="primaryContactName" className="mt-1 border-slate-200" placeholder="Name" />
+              <label className="text-xs font-medium text-slate-400">Primary contact</label>
+              <Input name="primaryContactName" className="mt-1 border-white/10" placeholder="Name" />
             </div>
             <div>
-              <label className="text-xs font-medium text-slate-600">Contact email</label>
-              <Input name="primaryContactEmail" type="email" className="mt-1 border-slate-200" placeholder="email@vendor.com" />
+              <label className="text-xs font-medium text-slate-400">Contact email</label>
+              <Input name="primaryContactEmail" type="email" className="mt-1 border-white/10" placeholder="email@vendor.com" />
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="outline" className="border-slate-200" onClick={() => setShowAdd(false)}>
+              <Button type="button" variant="outline" className="border-white/10" onClick={() => setShowAdd(false)}>
                 Cancel
               </Button>
-              <Button type="submit" className="bg-blue-600 text-white hover:bg-blue-700" disabled={saving}>
+              <Button type="submit" className="bg-primary hover:bg-primary/90 text-white" disabled={saving}>
                 {saving ? 'Saving…' : 'Create'}
               </Button>
             </div>
@@ -553,15 +553,15 @@ export function VendorsDirectory() {
       )}
 
       {showBulk && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
-          <div className="w-full max-w-lg space-y-4 rounded-xl bg-white p-6 shadow-xl">
-            <h3 className="text-lg font-semibold">Bulk upload vendors</h3>
-            <p className="text-sm text-slate-500">CSV with columns: name, category, criticality, primaryContactName, primaryContactEmail</p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="w-full max-w-lg space-y-4 rounded-xl bg-slate-900 border border-white/10 p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-white">Bulk upload vendors</h3>
+            <p className="text-sm text-slate-400">CSV with columns: name, category, criticality, primaryContactName, primaryContactEmail</p>
             <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" className="border-slate-200" onClick={() => downloadVendorCsvTemplate()}>
+              <Button type="button" variant="outline" className="border-white/10" onClick={() => downloadVendorCsvTemplate()}>
                 <Download className="mr-2 h-4 w-4" /> Template
               </Button>
-              <Button type="button" className="bg-blue-600 text-white hover:bg-blue-700" onClick={() => bulkFileRef.current?.click()}>
+              <Button type="button" className="bg-primary hover:bg-primary/90 text-white" onClick={() => bulkFileRef.current?.click()}>
                 <Upload className="mr-2 h-4 w-4" /> Choose CSV
               </Button>
               <input
@@ -577,28 +577,28 @@ export function VendorsDirectory() {
               />
             </div>
             {bulkErrors.length > 0 && (
-              <div className="max-h-28 overflow-y-auto rounded-lg bg-rose-50 p-3 text-xs text-rose-700">
+              <div className="max-h-28 overflow-y-auto rounded-lg bg-rose-500/10 p-3 text-xs text-rose-400">
                 {bulkErrors.map((e) => <div key={e}>{e}</div>)}
               </div>
             )}
             {(bulkDupes.length > 0 || bulkExisting.length > 0) && (
-              <div className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800">
+              <div className="rounded-lg bg-amber-500/10 p-3 text-xs text-amber-400">
                 {bulkDupes.length > 0 && <p>Duplicates in file: {bulkDupes.join(', ')}</p>}
                 {bulkExisting.length > 0 && <p>Already in register: {bulkExisting.join(', ')}</p>}
               </div>
             )}
             {bulkRows.length > 0 && (
-              <p className="text-sm text-slate-600">{bulkRows.length} valid row(s) ready to import.</p>
+              <p className="text-sm text-slate-400">{bulkRows.length} valid row(s) ready to import.</p>
             )}
-            {bulkMessage && <p className="text-sm text-slate-700">{bulkMessage}</p>}
+            {bulkMessage && <p className="text-sm text-white">{bulkMessage}</p>}
             <div className="flex flex-wrap justify-end gap-2 pt-2">
-              <Button type="button" variant="outline" className="border-slate-200" onClick={() => setShowBulk(false)}>
+              <Button type="button" variant="outline" className="border-white/10" onClick={() => setShowBulk(false)}>
                 Close
               </Button>
               <Button
                 type="button"
                 variant="outline"
-                className="border-slate-200"
+                className="border-white/10"
                 disabled={!bulkRows.length || bulkImporting}
                 onClick={() => void importBulkRows(true)}
               >
@@ -606,7 +606,7 @@ export function VendorsDirectory() {
               </Button>
               <Button
                 type="button"
-                className="bg-blue-600 text-white hover:bg-blue-700"
+                className="bg-primary hover:bg-primary/90 text-white"
                 disabled={!bulkRows.length || bulkImporting}
                 onClick={() => void importBulkRows(false)}
               >
