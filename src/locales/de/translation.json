@@ -1,0 +1,31 @@
+{
+  "nav": {
+    "dashboard": "Übersicht",
+    "risks": "Risikomanagement",
+    "incidents": "Vorfälle",
+    "compliance": "Compliance",
+    "pricing": "Preise & Pläne"
+  },
+  "dashboard": {
+    "title": "Kontrollzentrum",
+    "subtitle": "Echtzeit-Governance, Risiko- und Compliance-Status.",
+    "ai_briefing": "KI-Zusammenfassung",
+    "var": "Value at Risk (VaR)",
+    "compliance_score": "Compliance-Bewertung",
+    "active_threats": "Aktive Bedrohungen",
+    "automated_controls": "Automatisierte Kontrollen"
+  },
+  "pricing": {
+    "title": "Pläne & Preise",
+    "subtitle": "Wählen Sie den passenden Plan für die Compliance-Anforderungen Ihrer Organisation.",
+    "monthly": "Monatlich",
+    "annually": "Jährlich",
+    "subscribe": "Jetzt abonnieren",
+    "current_plan": "Aktueller Plan"
+  },
+  "common": {
+    "loading": "Wird geladen...",
+    "save": "Speichern",
+    "cancel": "Abbrechen"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "Guardentra",
+  "description": "Enterprise-grade GRC platform with autonomous risk assessment, automated compliance workflows, and policy lifecycle management under guardentra.com.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

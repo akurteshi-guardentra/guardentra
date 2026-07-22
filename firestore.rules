@@ -1,0 +1,194 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAtIdhee() {
+      return isAuthenticated() && request.auth.token.email == "atdhee.kurteshi@gmail.com";
+    }
+
+    function isOrgMember(orgId) {
+      return isAuthenticated() && (
+        isAtIdhee() || 
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId == orgId)
+      );
+    }
+
+    function isDocOrgMember() {
+      return isAuthenticated() && (
+        isAtIdhee() || 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId == resource.data.organizationId
+      );
+    }
+
+    function isCreatingForOwnOrg() {
+      return isAuthenticated() && (
+        isAtIdhee() ||
+        request.resource.data.organizationId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId
+      );
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (isAtIdhee() || 
+         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    // Allow everything to atdhee
+    match /{document=**} {
+      allow read, write: if isAtIdhee();
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isOrgMember(resource.data.organizationId));
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      allow update: if isAuthenticated() && request.auth.uid == userId && 
+                    (request.resource.data.role == resource.data.role || isAdmin()) &&
+                    (request.resource.data.organizationId == resource.data.organizationId || isAdmin());
+    }
+
+    // Organizations Collection
+    match /organizations/{orgId} {
+      allow read: if isAuthenticated() && isOrgMember(orgId);
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && isOrgMember(orgId);
+    }
+
+    // Risks Collection
+    match /risks/{riskId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg();
+      allow update: if isDocOrgMember();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // Incidents Collection
+    match /incidents/{incidentId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg();
+      allow update: if isDocOrgMember();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // Compliance Collection
+    match /compliance/{complianceId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg();
+      allow update: if isDocOrgMember();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // Connectors Collection
+    match /connectors/{connectorId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg();
+      allow update: if isDocOrgMember();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // Policies Collection
+    match /policies/{policyId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg();
+      allow update: if isDocOrgMember();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // Vendors Collection
+    match /vendors/{vendorId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg();
+      allow update: if isDocOrgMember();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // Vendor Assessments Collections (handle both names)
+    match /vendor_assessments/{assessmentId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg();
+      allow update: if isDocOrgMember();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    match /assessments/{assessmentId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg();
+      allow update: if isDocOrgMember();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // Audit Readiness Collection
+    match /audit_readiness/{auditId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg();
+      allow update: if isDocOrgMember();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // Executive Reports Collection
+    match /executive_reports/{reportId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg();
+      allow update: if isDocOrgMember();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // Calendar Events Collection
+    match /calendar_events/{eventId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg();
+      allow update: if isDocOrgMember();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // Identities Collection
+    match /identities/{identityId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg();
+      allow update: if isDocOrgMember();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // Contract Audits
+    match /contract_audits/{auditId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // Evidence Reviews
+    match /evidence_reviews/{reviewId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg();
+      allow update: if isDocOrgMember();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // Remediations Collection
+    match /remediations/{remediationId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg();
+      allow update: if isDocOrgMember();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // System Collection (for connectivity tests)
+    match /system/{docId} {
+      allow read: if true;
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "risks": "Risk Management",
+    "incidents": "Incidents",
+    "compliance": "Compliance",
+    "pricing": "Pricing & Plans"
+  },
+  "dashboard": {
+    "title": "Command Center",
+    "subtitle": "Real-time governance, risk, and compliance posture.",
+    "ai_briefing": "AI Executive Briefing",
+    "var": "Value at Risk (VaR)",
+    "compliance_score": "Compliance Score",
+    "active_threats": "Active Threats",
+    "automated_controls": "Automated Controls"
+  },
+  "pricing": {
+    "title": "Plans & Pricing",
+    "subtitle": "Choose the right plan for your organization's compliance needs.",
+    "monthly": "Monthly",
+    "annually": "Annually",
+    "subscribe": "Subscribe Now",
+    "current_plan": "Current Plan"
+  },
+  "common": {
+    "loading": "Loading...",
+    "save": "Save",
+    "cancel": "Cancel"
+  }
+}

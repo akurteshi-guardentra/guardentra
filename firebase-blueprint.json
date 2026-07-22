@@ -1,0 +1,308 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the NexusGRC platform.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "analyst", "viewer"] },
+        "organizationId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "role", "organizationId"]
+    },
+    "Organization": {
+      "title": "Organization",
+      "description": "A tenant in the multi-tenant system.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name"]
+    },
+    "Risk": {
+      "title": "Risk",
+      "description": "A tracked risk in the risk register.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "category": { "type": "string" },
+        "severity": { "type": "string", "enum": ["Critical", "High", "Medium", "Low"] },
+        "status": { "type": "string", "enum": ["Open", "In Progress", "Mitigated", "Closed"] },
+        "owner": { "type": "string" },
+        "mitigation": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "category", "severity", "status", "organizationId"]
+    },
+    "Compliance": {
+      "title": "Compliance",
+      "description": "A compliance framework status.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "progress": { "type": "number" },
+        "status": { "type": "string" },
+        "nextAudit": { "type": "string" },
+        "organizationId": { "type": "string" }
+      },
+      "required": ["name", "status", "organizationId"]
+    },
+    "Incident": {
+      "title": "Incident",
+      "description": "A security incident.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "severity": { "type": "string", "enum": ["Critical", "High", "Medium", "Low"] },
+        "status": { "type": "string", "enum": ["Open", "Investigating", "Mitigated", "Resolved"] },
+        "date": { "type": "string" },
+        "reporter": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "severity", "status", "date", "organizationId"]
+    },
+    "Connector": {
+      "title": "Connector",
+      "description": "A cloud infrastructure connector.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["AWS", "GitHub", "Azure", "GCP", "Okta"] },
+        "status": { "type": "string", "enum": ["Connected", "Disconnected", "Error"] },
+        "lastScan": { "type": "string" },
+        "findings": { "type": "number" },
+        "health": { "type": "number" },
+        "organizationId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "type", "status", "organizationId"]
+    },
+    "Policy": {
+      "title": "Policy",
+      "description": "An enterprise security policy.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "category": { "type": "string" },
+        "status": { "type": "string", "enum": ["Draft", "Active", "Archived"] },
+        "version": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "content", "category", "status", "organizationId"]
+    },
+    "Vendor": {
+      "title": "Vendor",
+      "description": "A third-party vendor.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "criticality": { "type": "string", "enum": ["Critical", "High", "Medium", "Low"] },
+        "status": { "type": "string", "enum": ["Active", "Pending", "Terminated"] },
+        "riskScore": { "type": "number" },
+        "organizationId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "criticality", "status", "organizationId"]
+    },
+    "VendorAssessment": {
+      "title": "VendorAssessment",
+      "description": "A security assessment for a vendor.",
+      "type": "object",
+      "properties": {
+        "vendorId": { "type": "string" },
+        "type": { "type": "string", "enum": ["SOC2", "Questionnaire", "Self-Assessment"] },
+        "summary": { "type": "string" },
+        "findings": { "type": "array", "items": { "type": "string" } },
+        "score": { "type": "number" },
+        "organizationId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["vendorId", "type", "summary", "organizationId"]
+    },
+    "AuditReadiness": {
+      "title": "AuditReadiness",
+      "description": "An AI-generated audit readiness assessment.",
+      "type": "object",
+      "properties": {
+        "framework": { "type": "string" },
+        "readinessScore": { "type": "number" },
+        "status": { "type": "string", "enum": ["Ready", "Near Ready", "Not Ready"] },
+        "redFlags": { "type": "array", "items": { "type": "string" } },
+        "recommendations": { "type": "array", "items": { "type": "string" } },
+        "auditorOpinion": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["framework", "readinessScore", "status", "organizationId"]
+    },
+    "ExecutiveReport": {
+      "title": "ExecutiveReport",
+      "description": "A high-level executive report for management/board overview.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "summary": { "type": "string" },
+        "keyMetrics": { 
+          "type": "object",
+          "properties": {
+            "riskCoverage": { "type": "number" },
+            "complianceHealth": { "type": "number" },
+            "incidentResolutionRate": { "type": "number" },
+            "vendorRiskLevel": { "type": "string" }
+          }
+        },
+        "strategicOutlook": { "type": "string" },
+        "actionItems": { "type": "array", "items": { "type": "string" } },
+        "organizationId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "summary", "organizationId"]
+    },
+    "CalendarEvent": {
+      "title": "CalendarEvent",
+      "description": "An audit or GRC-related event in the calendar.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "startDate": { "type": "string", "format": "date-time" },
+        "endDate": { "type": "string", "format": "date-time" },
+        "type": { "type": "string", "enum": ["External Audit", "Internal Review", "Policy Deadline", "Training"] },
+        "frameworkId": { "type": "string" },
+        "owner": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "startDate", "type", "organizationId"]
+    },
+    "Identity": {
+      "title": "Identity",
+      "description": "An employee identity and their device posture.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "device": { "type": "string" },
+        "accessLevel": { "type": "string" },
+        "dataSensitivity": { "type": "string" },
+        "deviceHealth": { "type": "number" },
+        "riskScore": { "type": "number" },
+        "lastAudit": { "type": "string" },
+        "organizationId": { "type": "string" }
+      },
+      "required": ["name", "email", "organizationId"]
+    },
+    "EvidenceReview": {
+      "title": "EvidenceReview",
+      "description": "An AI review of a vendor compliance evidence document.",
+      "type": "object",
+      "properties": {
+        "vendorId": { "type": "string" },
+        "documentType": { "type": "string" },
+        "fileName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "result": { "type": "object" },
+        "organizationId": { "type": "string" }
+      },
+      "required": ["vendorId", "documentType", "fileName", "result", "organizationId"]
+    },
+    "Remediation": {
+      "title": "Remediation",
+      "description": "A remediation ticket for mitigating vendor risk.",
+      "type": "object",
+      "properties": {
+        "vendorId": { "type": "string" },
+        "vendorName": { "type": "string" },
+        "finding": { "type": "string" },
+        "severity": { "type": "string" },
+        "priority": { "type": "string" },
+        "problem": { "type": "string" },
+        "technicalFix": { "type": "string" },
+        "requiredEvidence": { "type": "string" },
+        "dueDate": { "type": "string" },
+        "ownerSuggestion": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "organizationId": { "type": "string" }
+      },
+      "required": ["vendorId", "vendorName", "finding", "status", "organizationId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles."
+    },
+    "/organizations/{orgId}": {
+      "schema": { "$ref": "#/entities/Organization" },
+      "description": "Tenant organizations."
+    },
+    "/risks/{riskId}": {
+      "schema": { "$ref": "#/entities/Risk" },
+      "description": "Risks belonging to organizations."
+    },
+    "/incidents/{incidentId}": {
+      "schema": { "$ref": "#/entities/Incident" },
+      "description": "Incidents belonging to organizations."
+    },
+    "/connectors/{connectorId}": {
+      "schema": { "$ref": "#/entities/Connector" },
+      "description": "Automated cloud connectors."
+    },
+    "/policies/{policyId}": {
+      "schema": { "$ref": "#/entities/Policy" },
+      "description": "Enterprise security policies."
+    },
+    "/vendors/{vendorId}": {
+      "schema": { "$ref": "#/entities/Vendor" },
+      "description": "Third-party vendors."
+    },
+    "/vendor_assessments/{assessmentId}": {
+      "schema": { "$ref": "#/entities/VendorAssessment" },
+      "description": "Vendor security assessments."
+    },
+    "/audit_readiness/{auditId}": {
+      "schema": { "$ref": "#/entities/AuditReadiness" },
+      "description": "AI-generated audit readiness assessments."
+    },
+    "/executive_reports/{reportId}": {
+      "schema": { "$ref": "#/entities/ExecutiveReport" },
+      "description": "Executive/Board reports."
+    },
+    "/calendar_events/{eventId}": {
+      "schema": { "$ref": "#/entities/CalendarEvent" },
+      "description": "GRC calendar events."
+    },
+    "/compliance/{complianceId}": {
+      "schema": { "$ref": "#/entities/Compliance" },
+      "description": "Compliance framework statuses."
+    },
+    "/identities/{identityId}": {
+      "schema": { "$ref": "#/entities/Identity" },
+      "description": "User identity risk surfaces."
+    },
+    "/contract_audits/{auditId}": {
+      "schema": { "$ref": "#/entities/ExecutiveReport" },
+      "description": "History of AI contract audits."
+    },
+    "/evidence_reviews/{reviewId}": {
+      "schema": { "$ref": "#/entities/EvidenceReview" },
+      "description": "AI-generated vendor evidence reviews."
+    },
+    "/remediations/{remediationId}": {
+      "schema": { "$ref": "#/entities/Remediation" },
+      "description": "Risk mitigation action plans."
+    }
+  }
+}
