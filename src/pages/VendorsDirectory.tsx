@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   collection,
@@ -30,6 +30,12 @@ import type { AssessmentStatus, RiskLevel, Vendor } from '../lib/vendor/types';
 import { VENDOR_CATEGORIES, RISK_LEVELS } from '../lib/vendor/constants';
 import { assessmentStatusClasses, effectiveRiskLevel, riskBandClasses } from '../lib/vendor/risk';
 import { validateVendorForm } from '../lib/vendor/validators';
+import {
+  downloadVendorCsvTemplate,
+  findExistingDuplicates,
+  parseVendorCsv,
+  type ParsedBulkVendor,
+} from '../lib/vendor/csvBulk';
 
 function formatDate(iso?: string) {
   if (!iso) return '—';
@@ -62,6 +68,14 @@ export function VendorsDirectory() {
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [showAdd, setShowAdd] = useState(false);
+  const [showBulk, setShowBulk] = useState(false);
+  const [bulkRows, setBulkRows] = useState<ParsedBulkVendor[]>([]);
+  const [bulkErrors, setBulkErrors] = useState<string[]>([]);
+  const [bulkDupes, setBulkDupes] = useState<string[]>([]);
+  const [bulkExisting, setBulkExisting] = useState<string[]>([]);
+  const [bulkImporting, setBulkImporting] = useState(false);
+  const [bulkMessage, setBulkMessage] = useState('');
+  const bulkFileRef = useRef<HTMLInputElement>(null);
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
   const [page, setPage] = useState(1);
@@ -169,6 +183,62 @@ export function VendorsDirectory() {
     }
   };
 
+  const onBulkFile = async (file: File) => {
+    const text = await file.text();
+    const parsed = parseVendorCsv(text);
+    setBulkErrors(parsed.errors);
+    setBulkDupes(parsed.duplicatesInFile);
+    setBulkRows(parsed.rows);
+    setBulkExisting(findExistingDuplicates(parsed.rows, vendors.map((v) => v.name)));
+    setBulkMessage('');
+  };
+
+  const importBulkRows = async (skipExisting: boolean) => {
+    if (!orgId || !bulkRows.length) return;
+    setBulkImporting(true);
+    setBulkMessage('');
+    const existing = new Set(vendors.map((v) => v.name.trim().toLowerCase()));
+    let imported = 0;
+    let skipped = 0;
+    try {
+      for (const row of bulkRows) {
+        const name = row.name!.trim();
+        if (skipExisting && existing.has(name.toLowerCase())) {
+          skipped += 1;
+          continue;
+        }
+        const criticality = (['Critical', 'High', 'Medium', 'Low'].includes(String(row.criticality))
+          ? row.criticality
+          : 'Medium') as RiskLevel;
+        await addDoc(collection(db, 'vendors'), {
+          name,
+          category: row.category!.trim(),
+          criticality,
+          status: 'Active',
+          riskScore: 0,
+          organizationId: orgId,
+          createdAt: new Date().toISOString(),
+          primaryContactName: row.primaryContactName?.trim() || undefined,
+          primaryContactEmail: row.primaryContactEmail?.trim() || undefined,
+          ownerName: profile?.displayName || profile?.email || 'Unassigned',
+          assessmentStatus: 'Not Started',
+        });
+        existing.add(name.toLowerCase());
+        imported += 1;
+      }
+      setBulkMessage(`Imported ${imported} vendor(s)${skipped ? `, skipped ${skipped} existing` : ''}.`);
+      if (imported > 0) {
+        setBulkRows([]);
+        setBulkDupes([]);
+        setBulkExisting([]);
+      }
+    } catch (ex: any) {
+      setBulkMessage(ex?.message || 'Import failed.');
+    } finally {
+      setBulkImporting(false);
+    }
+  };
+
   return (
     <div className="min-h-full bg-slate-50 text-slate-900 -m-6 p-6 lg:p-8">
       <div className="flex flex-col gap-6 lg:flex-row">
@@ -184,7 +254,7 @@ export function VendorsDirectory() {
               <Button
                 variant="outline"
                 className="bg-white border-slate-200 text-slate-700"
-                onClick={() => setShowAdd(true)}
+                onClick={() => setShowBulk(true)}
               >
                 <Upload className="mr-2 h-4 w-4" />
                 Bulk Upload
@@ -390,7 +460,7 @@ export function VendorsDirectory() {
               </button>
               <button
                 type="button"
-                onClick={() => setShowAdd(true)}
+                onClick={() => setShowBulk(true)}
                 className="flex w-full items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-left text-sm hover:bg-slate-50"
               >
                 <Upload className="h-4 w-4 text-blue-600" />
@@ -414,9 +484,17 @@ export function VendorsDirectory() {
               <li><span className="font-medium text-slate-800">2.</span> Upload Excel/CSV</li>
               <li><span className="font-medium text-slate-800">3.</span> Review & Import</li>
             </ol>
+            <Button
+              variant="outline"
+              className="mt-3 w-full border-slate-200 text-slate-700"
+              onClick={() => downloadVendorCsvTemplate()}
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Download CSV template
+            </Button>
             <p className="mt-4 flex gap-2 rounded-lg bg-blue-50 p-3 text-xs text-blue-800">
               <Sparkles className="h-4 w-4 shrink-0" />
-              AI identifies duplicate vendors and suggests categories after import.
+              Import flags duplicate names in-file and against your existing register.
             </p>
           </div>
 
@@ -471,6 +549,71 @@ export function VendorsDirectory() {
               </Button>
             </div>
           </form>
+        </div>
+      )}
+
+      {showBulk && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="w-full max-w-lg space-y-4 rounded-xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold">Bulk upload vendors</h3>
+            <p className="text-sm text-slate-500">CSV with columns: name, category, criticality, primaryContactName, primaryContactEmail</p>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="outline" className="border-slate-200" onClick={() => downloadVendorCsvTemplate()}>
+                <Download className="mr-2 h-4 w-4" /> Template
+              </Button>
+              <Button type="button" className="bg-blue-600 text-white hover:bg-blue-700" onClick={() => bulkFileRef.current?.click()}>
+                <Upload className="mr-2 h-4 w-4" /> Choose CSV
+              </Button>
+              <input
+                ref={bulkFileRef}
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void onBulkFile(f);
+                  e.target.value = '';
+                }}
+              />
+            </div>
+            {bulkErrors.length > 0 && (
+              <div className="max-h-28 overflow-y-auto rounded-lg bg-rose-50 p-3 text-xs text-rose-700">
+                {bulkErrors.map((e) => <div key={e}>{e}</div>)}
+              </div>
+            )}
+            {(bulkDupes.length > 0 || bulkExisting.length > 0) && (
+              <div className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800">
+                {bulkDupes.length > 0 && <p>Duplicates in file: {bulkDupes.join(', ')}</p>}
+                {bulkExisting.length > 0 && <p>Already in register: {bulkExisting.join(', ')}</p>}
+              </div>
+            )}
+            {bulkRows.length > 0 && (
+              <p className="text-sm text-slate-600">{bulkRows.length} valid row(s) ready to import.</p>
+            )}
+            {bulkMessage && <p className="text-sm text-slate-700">{bulkMessage}</p>}
+            <div className="flex flex-wrap justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" className="border-slate-200" onClick={() => setShowBulk(false)}>
+                Close
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="border-slate-200"
+                disabled={!bulkRows.length || bulkImporting}
+                onClick={() => void importBulkRows(true)}
+              >
+                Import (skip existing)
+              </Button>
+              <Button
+                type="button"
+                className="bg-blue-600 text-white hover:bg-blue-700"
+                disabled={!bulkRows.length || bulkImporting}
+                onClick={() => void importBulkRows(false)}
+              >
+                {bulkImporting ? 'Importing…' : 'Import all valid'}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>
