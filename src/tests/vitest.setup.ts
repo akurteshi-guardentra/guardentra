@@ -3,7 +3,8 @@ import { vi } from 'vitest';
 
 // Mock Firebase
 vi.mock('firebase/app', () => ({
-  initializeApp: vi.fn(),
+  initializeApp: vi.fn(() => ({ name: '[DEFAULT]' })),
+  getApp: vi.fn(() => ({ name: '[DEFAULT]' })),
 }));
 
 vi.mock('firebase/auth', () => ({
@@ -49,9 +50,18 @@ vi.mock('firebase/firestore', () => ({
   doc: vi.fn((db, coll, id) => ({ id, collection: coll, path: `${coll}/${id}` })),
   getDocs: vi.fn(() => Promise.resolve({ docs: [], size: 0, empty: true })),
   getDoc: vi.fn(() => Promise.resolve({ exists: () => true, data: () => ({}) })),
+  getDocFromServer: vi.fn(() => Promise.resolve({ exists: () => false, data: () => ({}) })),
+  getDocFromCache: vi.fn(() => Promise.resolve({ exists: () => false, data: () => ({}) })),
   deleteDoc: vi.fn(),
   orderBy: vi.fn(),
   limit: vi.fn(),
+}));
+
+vi.mock('firebase/storage', () => ({
+  getStorage: vi.fn(() => ({})),
+  ref: vi.fn(),
+  uploadBytes: vi.fn(),
+  getDownloadURL: vi.fn(() => Promise.resolve('https://example.com/file.pdf')),
 }));
 
 // Mock Google Generative AI

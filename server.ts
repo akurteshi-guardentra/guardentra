@@ -1,4 +1,5 @@
 // NexusGRC Main Server - Deployment Revision 2026-04-29-1952-v3
+import "dotenv/config";
 import express from "express";
 import path from "path";
 import cors from "cors";
@@ -8,14 +9,17 @@ import stripeRoutes from "./server/routes/stripe.ts";
 
 async function startServer() {
   const app = express();
+  const appEnv = process.env.APP_ENV || process.env.NODE_ENV || "development";
   
   // Support Cloud Run / production PORT environment variable with fallback to 3000 for dev environment
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
   console.log(`[BOOT] Starting server...`);
+  console.log(`[BOOT] APP_ENV: ${appEnv}`);
   console.log(`[BOOT] NODE_ENV: ${process.env.NODE_ENV}`);
   console.log(`[BOOT] process.env.PORT: ${process.env.PORT}`);
   console.log(`[BOOT] Resolved PORT to listen: ${PORT}`);
+  console.log(`[BOOT] GEMINI_API_KEY set: ${Boolean(process.env.GEMINI_API_KEY)}`);
 
   app.use(cors());
   

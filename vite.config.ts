@@ -16,9 +16,11 @@ export default defineConfig(({ mode }) => {
         include: ['src/tests/**/*.test.{ts,tsx}'],
       },
       plugins: [tailwindcss()],
+      // Inject keys from .env / .env.local for local/dev. Prefer server-side AI in production.
       define: {
-        'process.env.API_KEY': JSON.stringify(''),
-        'process.env.GEMINI_API_KEY': JSON.stringify('')
+        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY || env.API_KEY || ''),
+        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY || env.API_KEY || ''),
+        'process.env.APP_ENV': JSON.stringify(env.APP_ENV || mode),
       },
       resolve: {
         alias: {

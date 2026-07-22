@@ -8,6 +8,8 @@ import { Incidents } from './pages/Incidents';
 import { Connectors } from './pages/Connectors';
 import { Policies } from './pages/Policies';
 import { VendorRisk } from './pages/VendorRisk';
+import { VendorsDirectory } from './pages/VendorsDirectory';
+import { AssessmentWizard } from './pages/AssessmentWizard';
 import { Assessments } from './pages/Assessments';
 import { VendorPortal } from './pages/VendorPortal';
 import { AuditReadiness } from './pages/AuditReadiness';
@@ -314,8 +316,10 @@ function App() {
                         <Route path="/gmail-audit" element={<GmailAudit />} />
                         <Route path="/policies" element={<Policies />} />
                         <Route path="/policies/draftsman" element={<PolicyDraftsman />} />
-                        <Route path="/vendors" element={<VendorRisk />} />
+                        <Route path="/vendors" element={<VendorsDirectory />} />
+                        <Route path="/vendors/legacy" element={<VendorRisk />} />
                         <Route path="/assessments" element={<Assessments />} />
+                        <Route path="/assessments/new" element={<AssessmentWizard />} />
                         <Route path="/audit-readiness" element={<AuditReadiness />} />
                         <Route path="/calendar" element={<AuditCalendar />} />
                         <Route path="/executive-reports" element={<ExecutiveReports />} />
