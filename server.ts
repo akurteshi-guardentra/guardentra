@@ -3,33 +3,34 @@ import "dotenv/config";
 import express from "express";
 import path from "path";
 import cors from "cors";
+import type { Server } from "http";
 
 import aiRoutes from "./server/routes/ai.ts";
 import stripeRoutes from "./server/routes/stripe.ts";
 
-async function startServer() {
+/** Cloud Run / Firebase App Hosting: always prefer process.env.PORT, fallback 8080. */
+export function resolvePort(): number {
+  return parseInt(String(process.env.PORT || 8080), 10);
+}
+
+export async function createApp() {
   const app = express();
   const appEnv = process.env.APP_ENV || process.env.NODE_ENV || "development";
-  
-  // Support Cloud Run / production PORT environment variable with fallback to 3000 for dev environment
-  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
-  console.log(`[BOOT] Starting server...`);
+  console.log(`[BOOT] Creating app...`);
   console.log(`[BOOT] APP_ENV: ${appEnv}`);
   console.log(`[BOOT] NODE_ENV: ${process.env.NODE_ENV}`);
-  console.log(`[BOOT] process.env.PORT: ${process.env.PORT}`);
-  console.log(`[BOOT] Resolved PORT to listen: ${PORT}`);
   console.log(`[BOOT] GEMINI_API_KEY set: ${Boolean(process.env.GEMINI_API_KEY)}`);
 
   app.use(cors());
-  
+
   // Stripe webhook requires raw body for signature verification
-  app.use("/api/stripe/webhook", express.raw({ type: 'application/json' }));
-  
+  app.use("/api/stripe/webhook", express.raw({ type: "application/json" }));
+
   app.use(express.json());
 
   // API routes FIRST
-  app.get("/api/health", (req, res) => {
+  app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", message: "NexusGRC API is online." });
   });
 
@@ -45,22 +46,40 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
+    const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
-    app.get('/', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+    app.get("/", (_req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
     });
-    app.get('*all', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+    app.get("*all", (_req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  return app;
+}
+
+export async function startServer(): Promise<Server> {
+  const app = await createApp();
+  const PORT = resolvePort();
+
+  console.log(`[BOOT] process.env.PORT: ${process.env.PORT}`);
+  console.log(`[BOOT] Resolved PORT to listen: ${PORT}`);
+  console.log(`[BOOT] Binding host: 0.0.0.0`);
+
+  return await new Promise<Server>((resolve, reject) => {
+    const server = app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://0.0.0.0:${PORT}`);
+      resolve(server);
+    });
+    server.on("error", reject);
   });
 }
 
-startServer().catch((err) => {
-  console.error("[FATAL STARTUP ERROR] server failed to start:", err);
-  process.exit(1);
-});
+// Allow tests to import createApp/startServer without auto-listen
+if (process.env.SKIP_LISTEN !== "1") {
+  startServer().catch((err) => {
+    console.error("[FATAL STARTUP ERROR] server failed to start:", err);
+    process.exit(1);
+  });
+}

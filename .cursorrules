@@ -1,0 +1,10 @@
+# Guardentra — master project architecture rules
+
+## Backend / Cloud Run / Firebase App Hosting
+
+- Backend configurations must always read the dynamic environment port variable via `process.env.PORT || 8080` and explicitly bind to network host `0.0.0.0`.
+- Never hardcode ports 3000 or 5000, as this triggers Firebase App Hosting container startup timeouts.
+
+## Branch architecture
+
+- Establish an isolated branch architecture: `dev` for sandboxing, `test` for staging builds, and `main` for production deployments feeding guardentra.com.
