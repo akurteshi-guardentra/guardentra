@@ -125,8 +125,23 @@ service cloud.firestore {
     }
 
     match /assessments/{assessmentId} {
-      allow read: if isDocOrgMember();
+      allow read: if isDocOrgMember() || resource.data.portalOpen == true;
       allow create: if isCreatingForOwnOrg();
+      // Org members can update fully; vendor portal may update response fields when portalOpen
+      allow update: if isDocOrgMember() || resource.data.portalOpen == true;
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    match /assessment_responses/{responseId} {
+      allow read: if isDocOrgMember() || resource.data.portalOpen == true;
+      allow create: if request.resource.data.organizationId is string;
+      allow update: if isDocOrgMember() || resource.data.portalOpen == true;
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    match /evidence/{evidenceId} {
+      allow read: if isDocOrgMember();
+      allow create: if request.resource.data.organizationId is string;
       allow update: if isDocOrgMember();
       allow delete: if isDocOrgMember() && isAdmin();
     }

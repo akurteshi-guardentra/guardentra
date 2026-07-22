@@ -165,8 +165,10 @@ export function Assessments() {
         frameworkName: framework.name,
         status: 'Sent',
         progress: 0,
+        progressPct: 0,
         dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         questions,
+        portalOpen: true,
         organizationId: profile.organizationId,
         createdAt: new Date().toISOString()
       });

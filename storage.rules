@@ -1,0 +1,22 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Portal evidence uploads (anonymous or signed-in)
+    match /portal/{assessmentId}/{fileName} {
+      allow read: if true;
+      allow write: if isSignedIn()
+        && request.resource.size < 25 * 1024 * 1024
+        && request.resource.contentType.matches('application/pdf|application/msword|application/vnd\\..*|image/png|image/jpeg');
+    }
+
+    match /orgs/{orgId}/vendors/{vendorId}/evidence/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn()
+        && request.resource.size < 25 * 1024 * 1024;
+    }
+  }
+}

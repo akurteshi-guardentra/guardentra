@@ -11,6 +11,7 @@ import { FRAMEWORK_CATALOG } from '../lib/vendor/constants';
 import type { FrameworkId, Vendor } from '../lib/vendor/types';
 import { effectiveRiskLevel, riskBandClasses } from '../lib/vendor/risk';
 import { validateAssessmentWizard } from '../lib/vendor/validators';
+import { buildQuestionsForFrameworks } from '../lib/vendor/questionBank';
 
 export function AssessmentWizard() {
   const { profile } = useAuth();
@@ -73,16 +74,20 @@ export function AssessmentWizard() {
     try {
       const due = new Date();
       due.setDate(due.getDate() + 14);
+      const questions = buildQuestionsForFrameworks(frameworks);
       const ref = await addDoc(collection(db, 'assessments'), {
         vendorId,
         vendorName: selected.name,
         organizationId: orgId,
         frameworks,
-        status: 'Not Started',
+        status: 'Sent',
         dueAt: due.toISOString(),
         progressPct: 0,
-        questionCount: uniqueQuestions,
+        progress: 0,
+        questionCount: questions.length,
         sourceQuestionCount: sourceQuestions,
+        questions,
+        portalOpen: true,
         createdAt: new Date().toISOString(),
       });
       // Also write legacy collection for existing VendorRisk readers
@@ -96,7 +101,7 @@ export function AssessmentWizard() {
         createdAt: new Date().toISOString(),
         assessmentId: ref.id,
       });
-      navigate(`/assessments?created=${ref.id}`);
+      navigate(`/portal/${ref.id}`);
     } catch (ex: any) {
       setError(ex?.message || 'Failed to create assessment.');
     } finally {

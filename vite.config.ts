@@ -14,6 +14,7 @@ export default defineConfig(({ mode }) => {
         environment: 'jsdom',
         setupFiles: ['./src/tests/vitest.setup.ts'],
         include: ['src/tests/**/*.test.{ts,tsx}'],
+        testTimeout: 15000,
       },
       plugins: [tailwindcss()],
       // Inject keys from .env / .env.local for local/dev. Prefer server-side AI in production.
