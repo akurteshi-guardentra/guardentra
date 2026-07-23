@@ -141,6 +141,30 @@
         "redFlags": { "type": "array", "items": { "type": "string" } },
         "recommendations": { "type": "array", "items": { "type": "string" } },
         "auditorOpinion": { "type": "string" },
+        "coveragePercent": { "type": "number" },
+        "controlCoverage": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "status": { "type": "string", "enum": ["Met", "Partial", "Gap"] },
+              "evidenceHint": { "type": "string" }
+            }
+          }
+        },
+        "evidenceGaps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "evidenceName": { "type": "string" },
+              "reason": { "type": "string" },
+              "priority": { "type": "string", "enum": ["High", "Medium", "Low"] }
+            }
+          }
+        },
         "organizationId": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" }
       },

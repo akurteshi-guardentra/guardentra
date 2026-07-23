@@ -21,8 +21,12 @@ export function riskBandClasses(level: RiskLevel): string {
   }
 }
 
-export function effectiveRiskLevel(vendor: Pick<Vendor, 'criticality' | 'riskScore'>): RiskLevel {
+export function effectiveRiskLevel(
+  vendor: Pick<Vendor, 'criticality' | 'riskScore'> & { finalRating?: RiskLevel; impactLevel?: RiskLevel }
+): RiskLevel {
+  if (vendor.finalRating) return vendor.finalRating;
   if (vendor.riskScore > 0) return riskLevelFromScore(vendor.riskScore);
+  if (vendor.impactLevel) return vendor.impactLevel;
   return vendor.criticality;
 }
 

@@ -10,6 +10,7 @@ import { Policies } from './pages/Policies';
 import { VendorRisk } from './pages/VendorRisk';
 import { VendorsDirectory } from './pages/VendorsDirectory';
 import { AssessmentWizard } from './pages/AssessmentWizard';
+import { ImpactAssessment } from './pages/ImpactAssessment';
 import { Assessments } from './pages/Assessments';
 import { VendorPortal } from './pages/VendorPortal';
 import { AuditReadiness } from './pages/AuditReadiness';
@@ -318,6 +319,7 @@ function App() {
                         <Route path="/policies/draftsman" element={<PolicyDraftsman />} />
                         <Route path="/vendors" element={<VendorsDirectory />} />
                         <Route path="/vendors/legacy" element={<VendorRisk />} />
+                        <Route path="/vendors/:vendorId/impact" element={<ImpactAssessment />} />
                         <Route path="/assessments" element={<Assessments />} />
                         <Route path="/assessments/new" element={<AssessmentWizard />} />
                         <Route path="/audit-readiness" element={<AuditReadiness />} />

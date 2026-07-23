@@ -57,11 +57,12 @@ Separate top-level **Assessments** for client security programs (distinct from v
 
 ## Recommended polish (from this walkthrough)
 
-1. **Impact assessment step** (or criticality questionnaire) separate from security questionnaire → combined vendor rating.
-2. **Questionnaire Preview** for analysts before invite/send.
-3. **Vendor-level attachments** alongside per-question evidence.
+1. ~~**Impact assessment step**~~ — shipped: `/vendors/:id/impact` + `finalRating`.
+2. ~~**Questionnaire Preview**~~ — shipped: Assessment wizard step 3.
+3. ~~**Vendor-level attachments**~~ — shipped on Impact page (20MB, Storage).
 4. Keep Guardentra **dark theme**; do not copy Cynomi light UI chrome.
-5. Already shipped from earlier gap pass: directory **Export** → markdown TPRM register.
+5. Already shipped: directory **Export** → markdown TPRM register.
+6. **Audit Readiness** — framework picker, control coverage, evidence gaps, Compliance progress sync.
 
 ## Public docs (still valid)
 

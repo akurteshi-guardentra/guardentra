@@ -407,6 +407,12 @@ export function VendorsDirectory() {
                         <td className="px-4 py-3 text-slate-400">{formatDate(v.nextReviewAt)}</td>
                         <td className="px-4 py-3 text-right">
                           <Link
+                            to={`/vendors/${v.id}/impact`}
+                            className="mr-2 text-xs font-medium text-slate-300 hover:text-white hover:underline"
+                          >
+                            Impact
+                          </Link>
+                          <Link
                             to={`/assessments/new?vendorId=${v.id}`}
                             className="mr-2 text-xs font-medium text-primary hover:underline"
                           >

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { riskLevelFromScore } from '../lib/vendor/risk';
 import { buildVendorRegisterMarkdown } from '../lib/vendor/reportExport';
+import { combineImpactAndSecurity, vendorRatingLabel } from '../lib/vendor/vendorRating';
 import {
   validateAssessmentWizard,
   validateEvidenceFile,
@@ -67,5 +68,16 @@ describe('vendor register markdown export', () => {
     expect(md).toMatch(/Third-Party Risk Register/);
     expect(md).toMatch(/Acme Cloud/);
     expect(md).toMatch(/High/);
+  });
+});
+
+describe('vendor rating (impact + security)', () => {
+  it('combines impact and security by taking the higher band', () => {
+    expect(combineImpactAndSecurity('Low', 'High')).toBe('High');
+    expect(combineImpactAndSecurity('Critical', 'Medium')).toBe('Critical');
+    expect(combineImpactAndSecurity('Medium', undefined)).toBeNull();
+    expect(vendorRatingLabel('Medium', undefined).ready).toBe(false);
+    expect(vendorRatingLabel('Medium', 72).ready).toBe(true);
+    expect(vendorRatingLabel('Medium', 72).rating).toBe('High');
   });
 });

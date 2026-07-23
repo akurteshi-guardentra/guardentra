@@ -46,6 +46,23 @@ export interface Vendor {
   trustScore?: number;
   complianceStatus?: string;
   briefing?: string;
+  /** Business-impact track (Cynomi-style dual assessment). */
+  impactLevel?: RiskLevel;
+  impactCompletedAt?: string;
+  impactCompletedBy?: string;
+  impactNotes?: string;
+  /** Final rating once impact + security residual are both present. */
+  finalRating?: RiskLevel;
+  /** Vendor-level general attachments (contracts, SOC reports, etc.). */
+  attachments?: {
+    fileName: string;
+    contentType: string;
+    sizeBytes: number;
+    storagePath: string;
+    downloadUrl?: string;
+    uploadedAt: string;
+    uploadedBy?: string;
+  }[];
 }
 
 /** Firestore: assessments/{assessmentId} (also legacy vendor_assessments) */
