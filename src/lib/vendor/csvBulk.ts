@@ -21,7 +21,7 @@ export interface BulkParseResult {
 }
 
 /** Minimal CSV line splitter supporting quoted fields. */
-export function splitCsvLine(line: string): string[] {
+export function splitCsvLine(line: string, delimiter: ',' | ';' = ','): string[] {
   const out: string[] = [];
   let cur = '';
   let inQuotes = false;
@@ -36,7 +36,7 @@ export function splitCsvLine(line: string): string[] {
       }
       continue;
     }
-    if (ch === ',' && !inQuotes) {
+    if (ch === delimiter && !inQuotes) {
       out.push(cur.trim());
       cur = '';
       continue;
@@ -45,6 +45,33 @@ export function splitCsvLine(line: string): string[] {
   }
   out.push(cur.trim());
   return out;
+}
+
+/** Excel in some locales exports `;` — pick the denser delimiter on the header row. */
+export function detectCsvDelimiter(headerLine: string): ',' | ';' {
+  let commas = 0;
+  let semis = 0;
+  let inQuotes = false;
+  for (let i = 0; i < headerLine.length; i++) {
+    const ch = headerLine[i];
+    if (ch === '"') {
+      inQuotes = !inQuotes;
+      continue;
+    }
+    if (inQuotes) continue;
+    if (ch === ',') commas += 1;
+    if (ch === ';') semis += 1;
+  }
+  return semis > commas ? ';' : ',';
+}
+
+export function normalizeCriticality(value?: string): string {
+  const raw = (value || '').trim();
+  if (!raw) return 'Medium';
+  const hit = (['Critical', 'High', 'Medium', 'Low'] as const).find(
+    (level) => level.toLowerCase() === raw.toLowerCase()
+  );
+  return hit || raw;
 }
 
 function normalizeHeader(h: string): string {
@@ -78,7 +105,8 @@ export function parseVendorCsv(text: string): BulkParseResult {
     return { rows: [], errors: ['CSV must include a header row and at least one data row.'], duplicatesInFile: [] };
   }
 
-  const headers = splitCsvLine(lines[0]).map(normalizeHeader);
+  const delimiter = detectCsvDelimiter(lines[0]);
+  const headers = splitCsvLine(lines[0], delimiter).map(normalizeHeader);
   const indexMap: Partial<Record<keyof ParsedBulkVendor, number>> = {};
   headers.forEach((h, i) => {
     const key = HEADER_ALIASES[h];
@@ -88,7 +116,9 @@ export function parseVendorCsv(text: string): BulkParseResult {
   if (indexMap.name == null || indexMap.category == null) {
     return {
       rows: [],
-      errors: ['CSV header must include at least name and category columns.'],
+      errors: [
+        'CSV header must include at least name and category columns (comma or semicolon separated).',
+      ],
       duplicatesInFile: [],
     };
   }
@@ -99,11 +129,13 @@ export function parseVendorCsv(text: string): BulkParseResult {
   const duplicatesInFile: string[] = [];
 
   for (let i = 1; i < lines.length; i++) {
-    const cols = splitCsvLine(lines[i]);
+    const cols = splitCsvLine(lines[i], delimiter);
     const row: ParsedBulkVendor = {
       name: cols[indexMap.name!] || '',
       category: cols[indexMap.category!] || '',
-      criticality: indexMap.criticality != null ? cols[indexMap.criticality] || 'Medium' : 'Medium',
+      criticality: normalizeCriticality(
+        indexMap.criticality != null ? cols[indexMap.criticality] || 'Medium' : 'Medium'
+      ),
       primaryContactName: indexMap.primaryContactName != null ? cols[indexMap.primaryContactName] || '' : '',
       primaryContactEmail: indexMap.primaryContactEmail != null ? cols[indexMap.primaryContactEmail] || '' : '',
     };
@@ -121,7 +153,6 @@ export function parseVendorCsv(text: string): BulkParseResult {
       seen.set(key, i);
     }
 
-    if (!row.criticality) row.criticality = 'Medium';
     rows.push(row);
   }
 
@@ -143,8 +174,12 @@ export function downloadVendorCsvTemplate() {
   const a = document.createElement('a');
   a.href = url;
   a.download = 'guardentra-vendors-template.csv';
+  a.rel = 'noopener';
+  a.style.display = 'none';
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+  window.setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
 /** Exact-name duplicates against existing register (case-insensitive). */

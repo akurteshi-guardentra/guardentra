@@ -20,6 +20,7 @@ import {
   Building2,
   UserPlus,
   Sparkles,
+  X,
 } from 'lucide-react';
 import { db } from '../firebase';
 import { useAuth } from '../lib/AuthContext';
@@ -37,6 +38,14 @@ import {
   type ParsedBulkVendor,
 } from '../lib/vendor/csvBulk';
 import { downloadVendorRegisterReport } from '../lib/vendor/reportExport';
+import {
+  createLocalVendor,
+  isFirestoreUnavailableError,
+  listLocalVendors,
+} from '../lib/vendor/localVendorStore';
+
+const SELECT_CLASS =
+  'h-9 rounded-md border border-white/10 bg-slate-950 px-3 text-sm text-white [&>option]:bg-slate-950 [&>option]:text-white';
 
 function formatDate(iso?: string) {
   if (!iso) return '—';
@@ -57,6 +66,32 @@ function deriveAssessmentStatus(vendor: Vendor): AssessmentStatus {
   return 'Not Started';
 }
 
+function vendorPayload(
+  orgId: string,
+  input: {
+    name: string;
+    category: string;
+    criticality: RiskLevel;
+    primaryContactName?: string;
+    primaryContactEmail?: string;
+    ownerName?: string;
+  }
+) {
+  return {
+    name: input.name.trim(),
+    category: input.category,
+    criticality: input.criticality,
+    status: 'Active' as const,
+    riskScore: 0,
+    organizationId: orgId,
+    createdAt: new Date().toISOString(),
+    primaryContactName: input.primaryContactName?.trim() || undefined,
+    primaryContactEmail: input.primaryContactEmail?.trim() || undefined,
+    ownerName: input.ownerName || 'Unassigned',
+    assessmentStatus: 'Not Started' as const,
+  };
+}
+
 export function VendorsDirectory() {
   const { profile } = useAuth();
   const navigate = useNavigate();
@@ -64,10 +99,15 @@ export function VendorsDirectory() {
 
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dataMode, setDataMode] = useState<'firestore' | 'local'>('firestore');
+  const dataModeRef = useRef<'firestore' | 'local'>('firestore');
+  const [dataError, setDataError] = useState('');
   const [search, setSearch] = useState('');
   const [riskFilter, setRiskFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [ownerFilter, setOwnerFilter] = useState('all');
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
   const [bulkRows, setBulkRows] = useState<ParsedBulkVendor[]>([]);
@@ -76,52 +116,112 @@ export function VendorsDirectory() {
   const [bulkExisting, setBulkExisting] = useState<string[]>([]);
   const [bulkImporting, setBulkImporting] = useState(false);
   const [bulkMessage, setBulkMessage] = useState('');
+  const [bulkFileName, setBulkFileName] = useState('');
+  const [bulkSuccess, setBulkSuccess] = useState(false);
+  const [bulkDragOver, setBulkDragOver] = useState(false);
   const bulkFileRef = useRef<HTMLInputElement>(null);
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
   const [page, setPage] = useState(1);
   const pageSize = 10;
 
+  const refreshLocal = (id: string) => {
+    setVendors(listLocalVendors(id));
+    dataModeRef.current = 'local';
+    setDataMode('local');
+    setLoading(false);
+  };
+
   useEffect(() => {
     if (!orgId) {
       setLoading(false);
+      setDataError('Your profile has no organization yet. Sign out/in or complete onboarding.');
       return;
     }
-    const q = query(
-      collection(db, 'vendors'),
-      where('organizationId', '==', orgId)
-    );
-    const unsub = onSnapshot(
+
+    setLoading(true);
+    setDataError('');
+    let settled = false;
+    let unsub: (() => void) | null = null;
+
+    const fallBackLocal = (message: string) => {
+      if (settled && dataModeRef.current === 'local') return;
+      settled = true;
+      if (unsub) {
+        unsub();
+        unsub = null;
+      }
+      setDataError(message);
+      refreshLocal(orgId);
+    };
+
+    // Firestore can hang without calling error when the (default) DB is missing.
+    const failSafe = window.setTimeout(() => {
+      fallBackLocal(
+        'Cloud database timed out — using local browser storage so you can still add, search, filter, and bulk-import vendors.'
+      );
+    }, 3500);
+
+    const q = query(collection(db, 'vendors'), where('organizationId', '==', orgId));
+    unsub = onSnapshot(
       q,
       (snap) => {
+        if (settled && dataModeRef.current === 'local') return;
+        settled = true;
+        window.clearTimeout(failSafe);
         const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Vendor));
         rows.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
         setVendors(rows);
+        dataModeRef.current = 'firestore';
+        setDataMode('firestore');
+        setDataError('');
         setLoading(false);
       },
-      () => setLoading(false)
+      (err) => {
+        console.error('Vendors listener failed:', err);
+        window.clearTimeout(failSafe);
+        if (isFirestoreUnavailableError(err)) {
+          fallBackLocal(
+            'Cloud Firestore is unavailable (database may not exist). Using local browser storage so you can still add, search, filter, and bulk-import vendors.'
+          );
+        } else {
+          fallBackLocal(err.message || 'Failed to load vendors from Firestore. Using local storage.');
+        }
+      }
     );
-    return () => unsub();
+    return () => {
+      window.clearTimeout(failSafe);
+      if (unsub) unsub();
+    };
   }, [orgId]);
+
+  const owners = useMemo(() => {
+    const set = new Set<string>();
+    vendors.forEach((v) => {
+      if (v.ownerName?.trim()) set.add(v.ownerName.trim());
+    });
+    return [...set].sort();
+  }, [vendors]);
 
   const filtered = useMemo(() => {
     return vendors.filter((v) => {
-      const hay = `${v.name} ${v.category} ${v.primaryContactName || ''}`.toLowerCase();
+      const hay = `${v.name} ${v.category} ${v.primaryContactName || ''} ${v.primaryContactEmail || ''} ${v.ownerName || ''}`.toLowerCase();
       if (search && !hay.includes(search.toLowerCase())) return false;
       const level = effectiveRiskLevel(v);
       if (riskFilter !== 'all' && level !== riskFilter) return false;
       if (categoryFilter !== 'all' && v.category !== categoryFilter) return false;
       if (statusFilter !== 'all' && deriveAssessmentStatus(v) !== statusFilter) return false;
+      if (ownerFilter !== 'all' && (v.ownerName || 'Unassigned') !== ownerFilter) return false;
       return true;
     });
-  }, [vendors, search, riskFilter, categoryFilter, statusFilter]);
+  }, [vendors, search, riskFilter, categoryFilter, statusFilter, ownerFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pageRows = filtered.slice((page - 1) * pageSize, page * pageSize);
 
   useEffect(() => {
     setPage(1);
-  }, [search, riskFilter, categoryFilter, statusFilter]);
+  }, [search, riskFilter, categoryFilter, statusFilter, ownerFilter]);
 
   const kpis = useMemo(() => {
     const criticalHigh = vendors.filter((v) => {
@@ -136,17 +236,62 @@ export function VendorsDirectory() {
       const s = deriveAssessmentStatus(v);
       return s === 'Overdue' || s === 'Due Soon' || effectiveRiskLevel(v) === 'Critical';
     }).length;
-    return {
-      total: vendors.length,
-      criticalHigh,
-      due,
-      needsAttention,
-    };
+    return { total: vendors.length, criticalHigh, due, needsAttention };
   }, [vendors]);
+
+  const clearFilters = () => {
+    setSearch('');
+    setRiskFilter('all');
+    setCategoryFilter('all');
+    setStatusFilter('all');
+    setOwnerFilter('all');
+  };
+
+  const createVendor = async (input: {
+    name: string;
+    category: string;
+    criticality: RiskLevel;
+    primaryContactName?: string;
+    primaryContactEmail?: string;
+  }) => {
+    if (!orgId) throw new Error('No organization on your profile — cannot save vendors.');
+    const ownerName = profile?.displayName || profile?.email || 'Unassigned';
+    const payload = vendorPayload(orgId, { ...input, ownerName });
+
+    const saveLocal = () => {
+      createLocalVendor(orgId, { ...input, ownerName });
+      refreshLocal(orgId);
+    };
+
+    // Once local mode is active, never block the UI on a hanging Firestore write.
+    if (dataModeRef.current === 'local') {
+      saveLocal();
+      return;
+    }
+
+    try {
+      const writeTimeout = new Promise<never>((_, reject) => {
+        window.setTimeout(() => {
+          const err = new Error('Cloud write timed out');
+          (err as { code?: string }).code = 'unavailable';
+          reject(err);
+        }, 4000);
+      });
+      await Promise.race([addDoc(collection(db, 'vendors'), payload), writeTimeout]);
+    } catch (ex) {
+      if (isFirestoreUnavailableError(ex)) {
+        setDataError(
+          'Cloud Firestore write failed. Switched to local browser storage for this session.'
+        );
+        saveLocal();
+        return;
+      }
+      throw ex;
+    }
+  };
 
   const handleAddVendor = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!orgId) return;
     const fd = new FormData(e.currentTarget);
     const input = {
       name: String(fd.get('name') || ''),
@@ -163,19 +308,7 @@ export function VendorsDirectory() {
     setSaving(true);
     setFormError('');
     try {
-      await addDoc(collection(db, 'vendors'), {
-        name: input.name.trim(),
-        category: input.category,
-        criticality: input.criticality,
-        status: 'Active',
-        riskScore: 0,
-        organizationId: orgId,
-        createdAt: new Date().toISOString(),
-        primaryContactName: input.primaryContactName.trim() || undefined,
-        primaryContactEmail: input.primaryContactEmail.trim() || undefined,
-        ownerName: profile?.displayName || profile?.email || 'Unassigned',
-        assessmentStatus: 'Not Started',
-      });
+      await createVendor(input);
       setShowAdd(false);
     } catch (ex: any) {
       setFormError(ex?.message || 'Failed to create vendor.');
@@ -184,57 +317,112 @@ export function VendorsDirectory() {
     }
   };
 
+  const resetBulkState = () => {
+    setBulkRows([]);
+    setBulkErrors([]);
+    setBulkDupes([]);
+    setBulkExisting([]);
+    setBulkImporting(false);
+    setBulkMessage('');
+    setBulkFileName('');
+    setBulkSuccess(false);
+    setBulkDragOver(false);
+    if (bulkFileRef.current) bulkFileRef.current.value = '';
+  };
+
+  const openBulkModal = () => {
+    resetBulkState();
+    setShowBulk(true);
+  };
+
+  const closeBulkModal = () => {
+    setShowBulk(false);
+    resetBulkState();
+  };
+
   const onBulkFile = async (file: File) => {
+    const looksCsv =
+      /\.csv$/i.test(file.name) ||
+      !file.type ||
+      /csv|text\/plain|excel|spreadsheetml/i.test(file.type);
+    if (!looksCsv) {
+      setBulkSuccess(false);
+      setBulkFileName(file.name);
+      setBulkErrors(['Please upload a .csv file (Excel: File → Save As → CSV UTF-8).']);
+      setBulkRows([]);
+      setBulkDupes([]);
+      setBulkExisting([]);
+      setBulkMessage('');
+      return;
+    }
     const text = await file.text();
     const parsed = parseVendorCsv(text);
+    setBulkFileName(file.name);
+    setBulkSuccess(false);
     setBulkErrors(parsed.errors);
     setBulkDupes(parsed.duplicatesInFile);
     setBulkRows(parsed.rows);
     setBulkExisting(findExistingDuplicates(parsed.rows, vendors.map((v) => v.name)));
-    setBulkMessage('');
+    setBulkMessage(
+      parsed.rows.length
+        ? ''
+        : parsed.errors.length
+          ? ''
+          : 'No valid rows found in this CSV.'
+    );
   };
 
   const importBulkRows = async (skipExisting: boolean) => {
-    if (!orgId || !bulkRows.length) return;
+    if (!orgId) {
+      setBulkMessage('No organization on your profile — cannot import.');
+      return;
+    }
+    if (!bulkRows.length || bulkImporting) return;
     setBulkImporting(true);
     setBulkMessage('');
     const existing = new Set(vendors.map((v) => v.name.trim().toLowerCase()));
     let imported = 0;
     let skipped = 0;
+    const failures: string[] = [];
+    const pending = [...bulkRows];
     try {
-      for (const row of bulkRows) {
+      for (const row of pending) {
         const name = row.name!.trim();
         if (skipExisting && existing.has(name.toLowerCase())) {
           skipped += 1;
           continue;
         }
-        const criticality = (['Critical', 'High', 'Medium', 'Low'].includes(String(row.criticality))
-          ? row.criticality
-          : 'Medium') as RiskLevel;
-        await addDoc(collection(db, 'vendors'), {
-          name,
-          category: row.category!.trim(),
-          criticality,
-          status: 'Active',
-          riskScore: 0,
-          organizationId: orgId,
-          createdAt: new Date().toISOString(),
-          primaryContactName: row.primaryContactName?.trim() || undefined,
-          primaryContactEmail: row.primaryContactEmail?.trim() || undefined,
-          ownerName: profile?.displayName || profile?.email || 'Unassigned',
-          assessmentStatus: 'Not Started',
-        });
-        existing.add(name.toLowerCase());
-        imported += 1;
+        const critRaw = String(row.criticality || 'Medium');
+        const criticality = (
+          RISK_LEVELS.find((level) => level.toLowerCase() === critRaw.toLowerCase()) || 'Medium'
+        ) as RiskLevel;
+        try {
+          await createVendor({
+            name,
+            category: row.category!.trim(),
+            criticality,
+            primaryContactName: row.primaryContactName?.trim() || '',
+            primaryContactEmail: row.primaryContactEmail?.trim() || '',
+          });
+          existing.add(name.toLowerCase());
+          imported += 1;
+        } catch (rowErr: any) {
+          failures.push(`${name}: ${rowErr?.message || 'failed'}`);
+        }
       }
-      setBulkMessage(`Imported ${imported} vendor(s)${skipped ? `, skipped ${skipped} existing` : ''}.`);
-      if (imported > 0) {
+      const failNote = failures.length ? ` ${failures.length} failed.` : '';
+      const summary = `Imported ${imported} vendor(s)${skipped ? `, skipped ${skipped} existing` : ''}.${failNote}`;
+      setBulkMessage(summary);
+      setBulkErrors(failures);
+      if (imported > 0 || (skipExisting && skipped > 0 && failures.length === 0)) {
+        setBulkSuccess(true);
         setBulkRows([]);
         setBulkDupes([]);
         setBulkExisting([]);
       }
     } catch (ex: any) {
       setBulkMessage(ex?.message || 'Import failed.');
+      setBulkSuccess(false);
     } finally {
       setBulkImporting(false);
     }
@@ -242,27 +430,46 @@ export function VendorsDirectory() {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
+      {dataError && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+          <p className="font-medium text-amber-200">
+            {dataMode === 'local' ? 'Local vendor mode' : 'Vendors data warning'}
+          </p>
+          <p className="mt-1 text-amber-100/80">{dataError}</p>
+        </div>
+      )}
+
       <div className="flex flex-col gap-6 lg:flex-row">
         <div className="min-w-0 flex-1 space-y-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <h1 className="text-3xl font-bold tracking-tight text-white font-display text-glow">Vendors</h1>
+              <h1 className="font-display text-3xl font-bold tracking-tight text-white text-glow">
+                Vendors
+              </h1>
               <p className="mt-1 text-sm text-slate-400">
                 Manage, assess, and monitor every third party in one place.
+                {dataMode === 'local' && (
+                  <span className="ml-2 rounded-full border border-amber-500/30 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300">
+                    Local store
+                  </span>
+                )}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button
                 variant="outline"
                 className="border-white/10 text-slate-300 hover:bg-white/5"
-                onClick={() => setShowBulk(true)}
+                onClick={openBulkModal}
               >
                 <Upload className="mr-2 h-4 w-4" />
                 Bulk Upload
               </Button>
               <Button
-                className="bg-primary hover:bg-primary/90 text-white"
-                onClick={() => setShowAdd(true)}
+                className="bg-primary text-white hover:bg-primary/90"
+                onClick={() => {
+                  setFormError('');
+                  setShowAdd(true);
+                }}
               >
                 <Plus className="mr-2 h-4 w-4" />
                 Add Vendor
@@ -273,16 +480,35 @@ export function VendorsDirectory() {
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {[
               { label: 'Total Vendors', value: kpis.total, icon: Building2, tone: 'text-white' },
-              { label: 'Critical / High Risk', value: kpis.criticalHigh, icon: ShieldAlert, tone: 'text-rose-400' },
+              {
+                label: 'Critical / High Risk',
+                value: kpis.criticalHigh,
+                icon: ShieldAlert,
+                tone: 'text-rose-400',
+              },
               { label: 'Assessments Due', value: kpis.due, icon: CalendarClock, tone: 'text-orange-400' },
-              { label: 'Needs Attention', value: kpis.needsAttention, icon: AlertTriangle, tone: 'text-amber-400' },
+              {
+                label: 'Needs Attention',
+                value: kpis.needsAttention,
+                icon: AlertTriangle,
+                tone: 'text-amber-400',
+              },
             ].map((card) => (
               <div key={card.label} className="rounded-xl border border-white/5 bg-slate-900/50 p-4">
                 <div className="flex items-center justify-between">
-                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{card.label}</p>
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                    {card.label}
+                  </p>
                   <card.icon className={cn('h-4 w-4', card.tone)} />
                 </div>
-                <p className={cn('mt-2 text-3xl font-bold text-white font-display text-glow', card.tone)}>{loading ? '—' : card.value}</p>
+                <p
+                  className={cn(
+                    'mt-2 font-display text-3xl font-bold text-white text-glow',
+                    card.tone
+                  )}
+                >
+                  {loading ? '—' : card.value}
+                </p>
               </div>
             ))}
           </div>
@@ -295,40 +521,57 @@ export function VendorsDirectory() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search vendors..."
-                  className="pl-9 bg-black/20 border-white/10 text-white"
+                  className="border-white/10 bg-black/20 pl-9 text-white"
                 />
               </div>
               <select
                 value={riskFilter}
                 onChange={(e) => setRiskFilter(e.target.value)}
-                className="h-9 rounded-md border border-white/10 bg-black/20 px-3 text-sm text-white"
+                className={SELECT_CLASS}
+                aria-label="Risk Level"
               >
                 <option value="all">Risk Level</option>
                 {RISK_LEVELS.map((r) => (
-                  <option key={r} value={r}>{r}</option>
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
                 ))}
               </select>
               <select
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value)}
-                className="h-9 rounded-md border border-white/10 bg-black/20 px-3 text-sm text-white"
+                className={SELECT_CLASS}
+                aria-label="Category"
               >
                 <option value="all">Category</option>
                 {VENDOR_CATEGORIES.map((c) => (
-                  <option key={c} value={c}>{c}</option>
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
                 ))}
               </select>
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="h-9 rounded-md border border-white/10 bg-black/20 px-3 text-sm text-white"
+                className={SELECT_CLASS}
+                aria-label="Status"
               >
                 <option value="all">Status</option>
                 {['Not Started', 'In Progress', 'Due Soon', 'Overdue', 'Completed'].map((s) => (
-                  <option key={s} value={s}>{s}</option>
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
                 ))}
               </select>
-              <Button variant="outline" className="border-white/10 text-slate-400" disabled>
+              <Button
+                type="button"
+                variant="outline"
+                className={cn(
+                  'border-white/10 text-slate-300',
+                  showMoreFilters && 'border-primary/40 bg-primary/10 text-primary'
+                )}
+                onClick={() => setShowMoreFilters((v) => !v)}
+              >
                 <Filter className="mr-2 h-4 w-4" />
                 More Filters
               </Button>
@@ -336,13 +579,43 @@ export function VendorsDirectory() {
                 type="button"
                 variant="outline"
                 className="border-white/10 text-slate-300"
-                disabled={filtered.length === 0}
                 onClick={() => downloadVendorRegisterReport(filtered)}
               >
                 <Download className="mr-2 h-4 w-4" />
                 Export
               </Button>
             </div>
+
+            {showMoreFilters && (
+              <div className="flex flex-wrap items-center gap-3 border-b border-white/5 px-4 py-3">
+                <select
+                  value={ownerFilter}
+                  onChange={(e) => setOwnerFilter(e.target.value)}
+                  className={SELECT_CLASS}
+                  aria-label="Owner"
+                >
+                  <option value="all">Owner</option>
+                  {owners.map((o) => (
+                    <option key={o} value={o}>
+                      {o}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="border-white/10"
+                  onClick={clearFilters}
+                >
+                  <X className="mr-1 h-3.5 w-3.5" />
+                  Clear filters
+                </Button>
+                <span className="text-xs text-slate-500">
+                  Showing {filtered.length} of {vendors.length}
+                </span>
+              </div>
+            )}
 
             <div className="overflow-x-auto">
               <table className="w-full min-w-[900px] text-left text-sm">
@@ -361,13 +634,17 @@ export function VendorsDirectory() {
                 <tbody>
                   {loading && (
                     <tr>
-                      <td colSpan={8} className="px-4 py-10 text-center text-slate-500">Loading vendors…</td>
+                      <td colSpan={8} className="px-4 py-10 text-center text-slate-500">
+                        Loading vendors…
+                      </td>
                     </tr>
                   )}
                   {!loading && pageRows.length === 0 && (
                     <tr>
                       <td colSpan={8} className="px-4 py-10 text-center text-slate-500">
-                        No vendors yet. Add one to start your third-party register.
+                        {vendors.length === 0
+                          ? 'No vendors yet. Add one or bulk-upload a CSV to start your register.'
+                          : 'No vendors match the current filters.'}
                       </td>
                     </tr>
                   )}
@@ -384,22 +661,34 @@ export function VendorsDirectory() {
                             <button
                               type="button"
                               className="font-medium text-white hover:text-primary"
-                              onClick={() => navigate(`/vendors/legacy?focus=${v.id}`)}
+                              onClick={() => navigate(`/vendors/${v.id}/impact`)}
                             >
                               {v.name}
                             </button>
                           </div>
                         </td>
                         <td className="px-4 py-3 text-slate-400">{v.category || '—'}</td>
-                        <td className="px-4 py-3 text-slate-400">{v.primaryContactName || '—'}</td>
+                        <td className="px-4 py-3 text-slate-400">
+                          {v.primaryContactName || v.primaryContactEmail || '—'}
+                        </td>
                         <td className="px-4 py-3">
-                          <span className={cn('inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium', riskBandClasses(level))}>
+                          <span
+                            className={cn(
+                              'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium',
+                              riskBandClasses(level)
+                            )}
+                          >
                             {level}
                             {v.riskScore > 0 ? ` ${v.riskScore}` : ''}
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          <span className={cn('inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium', assessmentStatusClasses(aStatus))}>
+                          <span
+                            className={cn(
+                              'inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium',
+                              assessmentStatusClasses(aStatus)
+                            )}
+                          >
                             {aStatus}
                           </span>
                         </td>
@@ -465,7 +754,10 @@ export function VendorsDirectory() {
             <div className="mt-3 space-y-2">
               <button
                 type="button"
-                onClick={() => setShowAdd(true)}
+                onClick={() => {
+                  setFormError('');
+                  setShowAdd(true);
+                }}
                 className="flex w-full items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-left text-sm hover:bg-white/5"
               >
                 <Plus className="h-4 w-4 text-primary" />
@@ -473,7 +765,7 @@ export function VendorsDirectory() {
               </button>
               <button
                 type="button"
-                onClick={() => setShowBulk(true)}
+                onClick={openBulkModal}
                 className="flex w-full items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-left text-sm hover:bg-white/5"
               >
                 <Upload className="h-4 w-4 text-primary" />
@@ -493,9 +785,15 @@ export function VendorsDirectory() {
           <div className="rounded-xl border border-white/5 bg-slate-900/50 p-4">
             <h2 className="text-sm font-semibold text-white">Bulk Upload in 3 Steps</h2>
             <ol className="mt-3 space-y-2 text-sm text-slate-400">
-              <li><span className="font-medium text-slate-800">1.</span> Download Template</li>
-              <li><span className="font-medium text-slate-800">2.</span> Upload Excel/CSV</li>
-              <li><span className="font-medium text-slate-800">3.</span> Review & Import</li>
+              <li>
+                <span className="font-medium text-slate-200">1.</span> Download Template
+              </li>
+              <li>
+                <span className="font-medium text-slate-200">2.</span> Upload CSV (not .xlsx)
+              </li>
+              <li>
+                <span className="font-medium text-slate-200">3.</span> Review & Import
+              </li>
             </ol>
             <Button
               variant="outline"
@@ -511,7 +809,10 @@ export function VendorsDirectory() {
             </p>
           </div>
 
-          <Link to="/vendors/legacy" className="block text-center text-xs text-slate-400 hover:text-slate-400">
+          <Link
+            to="/vendors/legacy"
+            className="block text-center text-xs text-slate-400 hover:text-slate-300"
+          >
             Open classic vendor workspace
           </Link>
         </aside>
@@ -521,43 +822,69 @@ export function VendorsDirectory() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
           <form
             onSubmit={handleAddVendor}
-            className="w-full max-w-md space-y-4 rounded-xl bg-slate-900 border border-white/10 p-6 shadow-xl"
+            className="w-full max-w-md space-y-4 rounded-xl border border-white/10 bg-slate-900 p-6 shadow-xl"
           >
             <h3 className="text-lg font-semibold text-white">Add Vendor</h3>
             {formError && <p className="text-sm text-rose-400">{formError}</p>}
             <div>
               <label className="text-xs font-medium text-slate-400">Name</label>
-              <Input name="name" className="mt-1 border-white/10" required />
+              <Input name="name" className="mt-1 border-white/10 bg-black/20 text-white" required />
             </div>
             <div>
               <label className="text-xs font-medium text-slate-400">Category</label>
-              <select name="category" className="mt-1 h-9 w-full rounded-md border border-white/10 px-3 text-sm" required>
+              <select name="category" className={cn(SELECT_CLASS, 'mt-1 w-full')} required>
                 {VENDOR_CATEGORIES.map((c) => (
-                  <option key={c} value={c}>{c}</option>
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
                 ))}
               </select>
             </div>
             <div>
               <label className="text-xs font-medium text-slate-400">Criticality</label>
-              <select name="criticality" className="mt-1 h-9 w-full rounded-md border border-white/10 px-3 text-sm" defaultValue="Medium">
+              <select
+                name="criticality"
+                className={cn(SELECT_CLASS, 'mt-1 w-full')}
+                defaultValue="Medium"
+              >
                 {RISK_LEVELS.map((r) => (
-                  <option key={r} value={r}>{r}</option>
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
                 ))}
               </select>
             </div>
             <div>
               <label className="text-xs font-medium text-slate-400">Primary contact</label>
-              <Input name="primaryContactName" className="mt-1 border-white/10" placeholder="Name" />
+              <Input
+                name="primaryContactName"
+                className="mt-1 border-white/10 bg-black/20 text-white"
+                placeholder="Name"
+              />
             </div>
             <div>
               <label className="text-xs font-medium text-slate-400">Contact email</label>
-              <Input name="primaryContactEmail" type="email" className="mt-1 border-white/10" placeholder="email@vendor.com" />
+              <Input
+                name="primaryContactEmail"
+                type="email"
+                className="mt-1 border-white/10 bg-black/20 text-white"
+                placeholder="email@vendor.com"
+              />
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="outline" className="border-white/10" onClick={() => setShowAdd(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                className="border-white/10"
+                onClick={() => setShowAdd(false)}
+              >
                 Cancel
               </Button>
-              <Button type="submit" className="bg-primary hover:bg-primary/90 text-white" disabled={saving}>
+              <Button
+                type="submit"
+                className="bg-primary text-white hover:bg-primary/90"
+                disabled={saving}
+              >
                 {saving ? 'Saving…' : 'Create'}
               </Button>
             </div>
@@ -566,21 +893,53 @@ export function VendorsDirectory() {
       )}
 
       {showBulk && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="w-full max-w-lg space-y-4 rounded-xl bg-slate-900 border border-white/10 p-6 shadow-xl">
-            <h3 className="text-lg font-semibold text-white">Bulk upload vendors</h3>
-            <p className="text-sm text-slate-400">CSV with columns: name, category, criticality, primaryContactName, primaryContactEmail</p>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !bulkImporting) closeBulkModal();
+          }}
+        >
+          <div className="w-full max-w-xl space-y-4 rounded-xl border border-white/10 bg-slate-900 p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold text-white">Bulk upload vendors</h3>
+                <p className="mt-1 text-sm text-slate-400">
+                  1) Download template → 2) Fill &amp; save as CSV → 3) Choose file → 4) Import
+                </p>
+              </div>
+              <button
+                type="button"
+                className="rounded-md p-1 text-slate-400 hover:bg-white/5 hover:text-white"
+                aria-label="Close bulk upload"
+                disabled={bulkImporting}
+                onClick={closeBulkModal}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
             <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" className="border-white/10" onClick={() => downloadVendorCsvTemplate()}>
-                <Download className="mr-2 h-4 w-4" /> Template
+              <Button
+                type="button"
+                variant="outline"
+                className="border-white/10"
+                disabled={bulkImporting}
+                onClick={() => downloadVendorCsvTemplate()}
+              >
+                <Download className="mr-2 h-4 w-4" /> Download template
               </Button>
-              <Button type="button" className="bg-primary hover:bg-primary/90 text-white" onClick={() => bulkFileRef.current?.click()}>
+              <Button
+                type="button"
+                className="bg-primary text-white hover:bg-primary/90"
+                disabled={bulkImporting}
+                onClick={() => bulkFileRef.current?.click()}
+              >
                 <Upload className="mr-2 h-4 w-4" /> Choose CSV
               </Button>
               <input
                 ref={bulkFileRef}
                 type="file"
-                accept=".csv,text/csv"
+                accept=".csv,text/csv,text/plain,.txt"
                 className="hidden"
                 onChange={(e) => {
                   const f = e.target.files?.[0];
@@ -589,42 +948,167 @@ export function VendorsDirectory() {
                 }}
               />
             </div>
+
+            <div
+              className={cn(
+                'rounded-lg border border-dashed px-4 py-6 text-center transition-colors',
+                bulkDragOver ? 'border-primary bg-primary/10' : 'border-white/15 bg-white/[0.02]',
+                bulkImporting && 'pointer-events-none opacity-60'
+              )}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setBulkDragOver(true);
+              }}
+              onDragLeave={() => setBulkDragOver(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setBulkDragOver(false);
+                const f = e.dataTransfer.files?.[0];
+                if (f) void onBulkFile(f);
+              }}
+            >
+              <p className="text-sm text-slate-300">
+                {bulkFileName ? (
+                  <>
+                    Selected: <span className="font-medium text-white">{bulkFileName}</span>
+                  </>
+                ) : (
+                  'Drop a .csv file here, or use Choose CSV'
+                )}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Columns: name, category, criticality, primaryContactName, primaryContactEmail
+              </p>
+            </div>
+
             {bulkErrors.length > 0 && (
-              <div className="max-h-28 overflow-y-auto rounded-lg bg-rose-500/10 p-3 text-xs text-rose-400">
-                {bulkErrors.map((e) => <div key={e}>{e}</div>)}
+              <div className="max-h-28 overflow-y-auto rounded-lg bg-rose-500/10 p-3 text-xs text-rose-300">
+                {bulkErrors.map((e) => (
+                  <div key={e}>{e}</div>
+                ))}
               </div>
             )}
-            {(bulkDupes.length > 0 || bulkExisting.length > 0) && (
-              <div className="rounded-lg bg-amber-500/10 p-3 text-xs text-amber-400">
+            {(bulkDupes.length > 0 || bulkExisting.length > 0) && !bulkSuccess && (
+              <div className="rounded-lg bg-amber-500/10 p-3 text-xs text-amber-200">
                 {bulkDupes.length > 0 && <p>Duplicates in file: {bulkDupes.join(', ')}</p>}
-                {bulkExisting.length > 0 && <p>Already in register: {bulkExisting.join(', ')}</p>}
+                {bulkExisting.length > 0 && (
+                  <p>
+                    Already in register: {bulkExisting.join(', ')} — use{' '}
+                    <span className="font-medium">Import (skip existing)</span> to keep them out.
+                  </p>
+                )}
               </div>
             )}
-            {bulkRows.length > 0 && (
-              <p className="text-sm text-slate-400">{bulkRows.length} valid row(s) ready to import.</p>
+
+            {bulkRows.length > 0 && !bulkSuccess && (
+              <div className="space-y-2">
+                <p className="text-sm text-slate-300">
+                  {bulkRows.length} valid row(s) ready to import
+                  {bulkErrors.length ? ` · ${bulkErrors.length} row(s) skipped with errors` : ''}.
+                </p>
+                <div className="max-h-36 overflow-auto rounded-lg border border-white/10">
+                  <table className="w-full text-left text-xs text-slate-300">
+                    <thead className="sticky top-0 bg-slate-950 text-slate-400">
+                      <tr>
+                        <th className="px-3 py-2 font-medium">Name</th>
+                        <th className="px-3 py-2 font-medium">Category</th>
+                        <th className="px-3 py-2 font-medium">Risk</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bulkRows.slice(0, 8).map((row, idx) => (
+                        <tr key={`${row.name}-${idx}`} className="border-t border-white/5">
+                          <td className="px-3 py-1.5 text-white">{row.name}</td>
+                          <td className="px-3 py-1.5">{row.category}</td>
+                          <td className="px-3 py-1.5">{row.criticality || 'Medium'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {bulkRows.length > 8 && (
+                    <p className="border-t border-white/5 px-3 py-1.5 text-[11px] text-slate-500">
+                      +{bulkRows.length - 8} more row(s)
+                    </p>
+                  )}
+                </div>
+              </div>
             )}
-            {bulkMessage && <p className="text-sm text-white">{bulkMessage}</p>}
-            <div className="flex flex-wrap justify-end gap-2 pt-2">
-              <Button type="button" variant="outline" className="border-white/10" onClick={() => setShowBulk(false)}>
-                Close
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="border-white/10"
-                disabled={!bulkRows.length || bulkImporting}
-                onClick={() => void importBulkRows(true)}
+
+            {bulkMessage && (
+              <p
+                className={cn(
+                  'rounded-lg px-3 py-2 text-sm',
+                  bulkSuccess
+                    ? 'bg-emerald-500/10 text-emerald-200'
+                    : 'bg-white/5 text-slate-200'
+                )}
               >
-                Import (skip existing)
-              </Button>
-              <Button
-                type="button"
-                className="bg-primary hover:bg-primary/90 text-white"
-                disabled={!bulkRows.length || bulkImporting}
-                onClick={() => void importBulkRows(false)}
-              >
-                {bulkImporting ? 'Importing…' : 'Import all valid'}
-              </Button>
+                {bulkMessage}
+              </p>
+            )}
+
+            <div className="flex flex-wrap justify-end gap-2 pt-1">
+              {bulkSuccess ? (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="border-white/10"
+                    onClick={() => {
+                      resetBulkState();
+                      bulkFileRef.current?.click();
+                    }}
+                  >
+                    Upload another
+                  </Button>
+                  <Button
+                    type="button"
+                    className="bg-primary text-white hover:bg-primary/90"
+                    onClick={closeBulkModal}
+                  >
+                    Done
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="border-white/10"
+                    disabled={bulkImporting}
+                    onClick={closeBulkModal}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="border-white/10"
+                    disabled={!bulkRows.length || bulkImporting}
+                    title={
+                      !bulkRows.length
+                        ? 'Choose a CSV with at least one valid row first'
+                        : 'Import new vendors only; skip names already in the register'
+                    }
+                    onClick={() => void importBulkRows(true)}
+                  >
+                    {bulkImporting ? 'Importing…' : 'Import (skip existing)'}
+                  </Button>
+                  <Button
+                    type="button"
+                    className="bg-primary text-white hover:bg-primary/90"
+                    disabled={!bulkRows.length || bulkImporting}
+                    title={
+                      !bulkRows.length
+                        ? 'Choose a CSV with at least one valid row first'
+                        : 'Import every valid row (may create duplicate names)'
+                    }
+                    onClick={() => void importBulkRows(false)}
+                  >
+                    {bulkImporting ? 'Importing…' : 'Import all valid'}
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </div>

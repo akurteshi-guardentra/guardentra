@@ -56,7 +56,10 @@ export function validateBulkVendorRow(row: BulkVendorRow, index: number): string
   if (!row.name?.trim()) return `${label}: name is required.`;
   if (!row.category?.trim()) return `${label}: category is required.`;
   const crit = row.criticality?.trim();
-  if (crit && !['Critical', 'High', 'Medium', 'Low'].includes(crit)) {
+  if (
+    crit &&
+    !['Critical', 'High', 'Medium', 'Low'].some((level) => level.toLowerCase() === crit.toLowerCase())
+  ) {
     return `${label}: criticality must be Critical, High, Medium, or Low.`;
   }
   if (row.primaryContactEmail?.trim() && !EMAIL_RE.test(row.primaryContactEmail.trim())) {
