@@ -42,6 +42,8 @@ Replace placeholder IDs in `.firebaserc` once projects exist (`guardentra-dev`, 
 ## Before real customers
 
 1. Create separate Firebase projects for staging and prod.
-2. Deploy rules from this repo to each project (`firebase deploy --only firestore:rules,storage --project …`).
-3. Remove personal email bypasses from production rules (`isAtIdhee` / similar).
-4. Point App Hosting / Cloud Run `main` at `guardentra-prod` only.
+2. **Create Firestore `(default)`** in each project (Console → Firestore → Create database). Local stores are backup only.
+3. Deploy rules from this repo to each project (`firebase deploy --only firestore:rules,storage --project …`).
+4. Confirm production rules have **no** personal email bypass (`isAtIdhee` removed).
+5. Point App Hosting / Cloud Run `main` at `guardentra-prod` only.
+6. Keep `GEMINI_API_KEY` server-only (not in client production bundles).

@@ -7,7 +7,7 @@ service firebase.storage {
 
     // Portal evidence uploads (anonymous or signed-in)
     match /portal/{assessmentId}/{fileName} {
-      allow read: if true;
+      allow read: if isSignedIn();
       allow write: if isSignedIn()
         && request.resource.size < 25 * 1024 * 1024
         && request.resource.contentType.matches('application/pdf|application/msword|application/vnd\\..*|image/png|image/jpeg');

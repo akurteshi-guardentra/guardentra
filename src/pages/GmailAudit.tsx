@@ -27,6 +27,7 @@ import {
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { auth } from '../firebase';
+import { authHeaders } from '../lib/authHeaders';
 import { GoogleAuthProvider, signInWithPopup, onAuthStateChanged, User } from 'firebase/auth';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
@@ -266,7 +267,7 @@ export function GmailAudit() {
     try {
       const response = await fetch('/api/ai/analyze-emails', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ emails })
       });
       

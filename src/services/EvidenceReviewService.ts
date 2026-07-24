@@ -1,5 +1,6 @@
 import { db } from '../firebase';
 import { collection, addDoc, getDocs, query, where, orderBy, doc, deleteDoc } from 'firebase/firestore';
+import { authHeaders } from '../lib/authHeaders';
 
 export interface KeyFinding {
   finding: string;
@@ -57,9 +58,9 @@ export class EvidenceReviewService {
     try {
       const response = await fetch('/api/ai/evidence-review', {
         method: 'POST',
-        headers: {
+        headers: await authHeaders({
           'Content-Type': 'application/json',
-        },
+        }),
         body: JSON.stringify({
           documentType,
           fileName,

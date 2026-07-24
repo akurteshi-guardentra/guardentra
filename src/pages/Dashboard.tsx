@@ -267,7 +267,7 @@ export function Dashboard() {
           </div>
           
           <div 
-            onClick={() => navigate('/trust-intelligence')}
+            onClick={() => navigate('/vendors')}
             className="glass-panel px-6 py-3 rounded-2xl border border-white/5 flex items-center gap-4 bg-white/[0.02] shadow-xl shadow-indigo-500/5 hover:bg-white/[0.04] hover:border-indigo-500/20 cursor-pointer transition-all duration-300"
           >
              <div className="flex flex-col items-end">
@@ -668,25 +668,25 @@ export function Dashboard() {
                    <div className="p-2 w-fit rounded-lg bg-emerald-500/10 text-emerald-400 mb-4 group-hover:scale-110 transition-transform">
                       <AlertTriangle className="h-5 w-5" />
                    </div>
-                   <h3 className="font-bold text-white mb-1">Risk Register</h3>
-                   <p className="text-xs text-slate-500 mb-4">Log your first risk to calibrate the Value at Risk engine.</p>
-                   <button onClick={() => navigate('/risks')} className="text-primary font-bold text-[10px] uppercase tracking-widest hover:underline">Go to Risks →</button>
+                   <h3 className="font-bold text-white mb-1">Vendor Register</h3>
+                   <p className="text-xs text-slate-500 mb-4">Add or bulk-upload vendors to start third-party risk work.</p>
+                   <button onClick={() => navigate('/vendors')} className="text-primary font-bold text-[10px] uppercase tracking-widest hover:underline">Go to Vendors →</button>
                 </div>
                 <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/5 hover:border-primary/30 transition-all group">
                    <div className="p-2 w-fit rounded-lg bg-indigo-500/10 text-indigo-400 mb-4 group-hover:scale-110 transition-transform">
                       <Zap className="h-5 w-5" />
                    </div>
-                   <h3 className="font-bold text-white mb-1">AI Draftsman</h3>
-                   <p className="text-xs text-slate-500 mb-4">Let AI write your first ISO 27001 policy in seconds.</p>
-                   <button onClick={() => navigate('/policies/draftsman')} className="text-primary font-bold text-[10px] uppercase tracking-widest hover:underline">Draft Now →</button>
+                   <h3 className="font-bold text-white mb-1">New Assessment</h3>
+                   <p className="text-xs text-slate-500 mb-4">Pick a vendor and frameworks, then send the portal questionnaire.</p>
+                   <button onClick={() => navigate('/assessments/new')} className="text-primary font-bold text-[10px] uppercase tracking-widest hover:underline">Start Wizard →</button>
                 </div>
                 <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/5 hover:border-primary/30 transition-all group">
                    <div className="p-2 w-fit rounded-lg bg-amber-500/10 text-amber-400 mb-4 group-hover:scale-110 transition-transform">
                       <Activity className="h-5 w-5" />
                    </div>
-                   <h3 className="font-bold text-white mb-1">System Audit</h3>
-                   <p className="text-xs text-slate-500 mb-4">Verify the core infrastructure and security rules.</p>
-                   <button onClick={() => navigate('/health')} className="text-primary font-bold text-[10px] uppercase tracking-widest hover:underline">Run QA Test →</button>
+                   <h3 className="font-bold text-white mb-1">Audit Lab</h3>
+                   <p className="text-xs text-slate-500 mb-4">Check framework coverage and evidence gaps.</p>
+                   <button onClick={() => navigate('/audit-readiness')} className="text-primary font-bold text-[10px] uppercase tracking-widest hover:underline">Open Audit Lab →</button>
                 </div>
              </div>
           </div>

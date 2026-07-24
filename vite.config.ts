@@ -17,10 +17,15 @@ export default defineConfig(({ mode }) => {
         testTimeout: 15000,
       },
       plugins: [tailwindcss()],
-      // Inject keys from .env / .env.local for local/dev. Prefer server-side AI in production.
+      // Never ship Gemini keys in client production bundles — use /api/ai (server-only).
+      // Local/dev may still inject for frozen client-side AI pages during sandbox work.
       define: {
-        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY || env.API_KEY || ''),
-        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY || env.API_KEY || ''),
+        'process.env.API_KEY': JSON.stringify(
+          mode === 'production' ? '' : env.GEMINI_API_KEY || env.API_KEY || ''
+        ),
+        'process.env.GEMINI_API_KEY': JSON.stringify(
+          mode === 'production' ? '' : env.GEMINI_API_KEY || env.API_KEY || ''
+        ),
         'process.env.APP_ENV': JSON.stringify(env.APP_ENV || mode),
       },
       resolve: {

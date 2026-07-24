@@ -130,6 +130,28 @@
       },
       "required": ["vendorId", "type", "summary", "organizationId"]
     },
+    "Assessment": {
+      "title": "Assessment",
+      "description": "Framework questionnaire assessment sent via vendor portal.",
+      "type": "object",
+      "properties": {
+        "vendorId": { "type": "string" },
+        "vendorName": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "frameworks": { "type": "array", "items": { "type": "string" } },
+        "frameworkName": { "type": "string" },
+        "status": { "type": "string" },
+        "dueAt": { "type": "string", "format": "date-time" },
+        "dueDate": { "type": "string" },
+        "progressPct": { "type": "number" },
+        "questionCount": { "type": "number" },
+        "sourceQuestionCount": { "type": "number" },
+        "portalOpen": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["vendorId", "organizationId", "status"]
+    },
     "AuditReadiness": {
       "title": "AuditReadiness",
       "description": "An AI-generated audit readiness assessment.",
@@ -295,6 +317,10 @@
     "/vendor_assessments/{assessmentId}": {
       "schema": { "$ref": "#/entities/VendorAssessment" },
       "description": "Vendor security assessments."
+    },
+    "/assessments/{assessmentId}": {
+      "schema": { "$ref": "#/entities/Assessment" },
+      "description": "Portal questionnaire assessments (framework multi-select + responses)."
     },
     "/audit_readiness/{auditId}": {
       "schema": { "$ref": "#/entities/AuditReadiness" },

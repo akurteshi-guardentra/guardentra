@@ -7,6 +7,7 @@ import type { Server } from "http";
 
 import aiRoutes from "./server/routes/ai.ts";
 import stripeRoutes from "./server/routes/stripe.ts";
+import { requireFirebaseAuth } from "./server/middleware/requireFirebaseAuth.ts";
 
 /** Cloud Run / Firebase App Hosting: always prefer process.env.PORT, fallback 8080. */
 export function resolvePort(): number {
@@ -34,7 +35,7 @@ export async function createApp() {
     res.json({ status: "ok", message: "NexusGRC API is online." });
   });
 
-  app.use("/api/ai", aiRoutes);
+  app.use("/api/ai", requireFirebaseAuth, aiRoutes);
   app.use("/api/stripe", stripeRoutes);
 
   // Vite middleware for development

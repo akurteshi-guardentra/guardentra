@@ -1,5 +1,6 @@
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
+import { authHeaders } from './authHeaders';
 
 export interface TrustScoreDetails {
   overallScore: number;
@@ -220,7 +221,7 @@ export async function calculateTrustScore(organizationId: string): Promise<Trust
     try {
       const response = await fetch('/api/ai/trust-explain', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ scoreDetails })
       });
       if (response.ok) {

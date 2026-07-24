@@ -30,6 +30,23 @@ export function effectiveRiskLevel(
   return vendor.criticality;
 }
 
+/** Display score: prefer stored riskScore; otherwise a band midpoint for mockup-style chips. */
+export function displayRiskScore(
+  vendor: Pick<Vendor, 'criticality' | 'riskScore'> & { finalRating?: RiskLevel; impactLevel?: RiskLevel }
+): number {
+  if (vendor.riskScore > 0) return Math.round(vendor.riskScore);
+  switch (effectiveRiskLevel(vendor)) {
+    case 'Critical':
+      return 92;
+    case 'High':
+      return 78;
+    case 'Medium':
+      return 55;
+    case 'Low':
+      return 35;
+  }
+}
+
 export function assessmentStatusClasses(status: string): string {
   const s = status.toLowerCase();
   if (s.includes('complete')) return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';

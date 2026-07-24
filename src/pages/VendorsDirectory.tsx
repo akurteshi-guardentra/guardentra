@@ -21,6 +21,10 @@ import {
   UserPlus,
   Sparkles,
   X,
+  CheckCircle2,
+  Clock,
+  Circle,
+  Loader2,
 } from 'lucide-react';
 import { db } from '../firebase';
 import { useAuth } from '../lib/AuthContext';
@@ -29,7 +33,7 @@ import { Input } from '../components/ui/input';
 import { cn } from '../lib/utils';
 import type { AssessmentStatus, RiskLevel, Vendor } from '../lib/vendor/types';
 import { VENDOR_CATEGORIES, RISK_LEVELS } from '../lib/vendor/constants';
-import { assessmentStatusClasses, effectiveRiskLevel, riskBandClasses } from '../lib/vendor/risk';
+import { assessmentStatusClasses, displayRiskScore, effectiveRiskLevel, riskBandClasses } from '../lib/vendor/risk';
 import { validateVendorForm } from '../lib/vendor/validators';
 import {
   downloadVendorCsvTemplate,
@@ -49,6 +53,14 @@ import { deriveStatusFromAssessments } from '../lib/vendor/localAssessmentStore'
 const SELECT_CLASS =
   'h-9 rounded-md border border-white/10 bg-slate-950 px-3 text-sm text-white [&>option]:bg-slate-950 [&>option]:text-white';
 
+function assessmentStatusIcon(status: AssessmentStatus) {
+  if (status === 'Completed') return <CheckCircle2 className="h-3.5 w-3.5" />;
+  if (status === 'In Progress' || status === 'Sent') return <Loader2 className="h-3.5 w-3.5" />;
+  if (status === 'Overdue') return <Clock className="h-3.5 w-3.5 text-rose-400" />;
+  if (status === 'Due Soon') return <Clock className="h-3.5 w-3.5" />;
+  return <Circle className="h-3.5 w-3.5" />;
+}
+
 function formatDate(iso?: string) {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -61,7 +73,9 @@ function deriveAssessmentStatus(
   linkedAssessments?: { status?: string; dueAt?: string; dueDate?: string; progressPct?: number; progress?: number }[]
 ): AssessmentStatus {
   if (linkedAssessments?.length) {
-    const fromAsm = deriveStatusFromAssessments(linkedAssessments);
+    const fromAsm = deriveStatusFromAssessments(
+      linkedAssessments as Parameters<typeof deriveStatusFromAssessments>[0]
+    );
     if (fromAsm) return fromAsm;
   }
   if (vendor.assessmentStatus) return vendor.assessmentStatus;
@@ -701,15 +715,16 @@ export function VendorsDirectory() {
                               riskBandClasses(level)
                             )}
                           >
+                            <span className="tabular-nums">{displayRiskScore(v)}</span>
+                            <span className="opacity-80">·</span>
                             {level}
-                            {v.riskScore > 0 ? ` ${v.riskScore}` : ''}
                           </span>
                         </td>
                         <td className="px-4 py-3">
                           <Link
                             to={`/assessments?vendorId=${encodeURIComponent(v.id)}`}
                             className={cn(
-                              'inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium hover:underline',
+                              'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium hover:underline',
                               assessmentStatusClasses(aStatus)
                             )}
                             title={
@@ -718,6 +733,7 @@ export function VendorsDirectory() {
                                 : 'No assessments yet — open tracker'
                             }
                           >
+                            {assessmentStatusIcon(aStatus)}
                             {aStatus}
                             {linked.length > 0 ? ` · ${linked.length}` : ''}
                           </Link>
@@ -804,10 +820,13 @@ export function VendorsDirectory() {
               <button
                 type="button"
                 onClick={() => navigate('/assessments/new')}
-                className="flex w-full items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-left text-sm hover:bg-white/5"
+                className="flex w-full flex-col items-start gap-0.5 rounded-lg border border-white/10 px-3 py-2 text-left text-sm hover:bg-white/5"
               >
-                <UserPlus className="h-4 w-4 text-primary" />
-                Invite Vendor
+                <span className="flex items-center gap-2">
+                  <UserPlus className="h-4 w-4 text-primary" />
+                  Invite to assessment
+                </span>
+                <span className="pl-6 text-xs text-slate-500">Opens wizard · pick vendor &amp; frameworks</span>
               </button>
             </div>
           </div>

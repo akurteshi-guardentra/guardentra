@@ -39,6 +39,12 @@ import { Shield, Loader2, Mail, Lock, User, AlertCircle } from 'lucide-react';
 import { doc, getDocFromCache, getDocFromServer } from 'firebase/firestore';
 import { db } from './firebase';
 import { cn } from './lib/utils';
+import { ComingLater } from './pages/ComingLater';
+import { isFeatureEnabled, type FeatureKey } from './lib/featureFlags';
+
+function FeatureGate({ flag, children }: { flag: FeatureKey; children: React.ReactNode }) {
+  return <>{isFeatureEnabled(flag) ? children : <ComingLater />}</>;
+}
 
 // Connectivity Test (Mandatory constraint)
 async function testConnection() {
@@ -304,32 +310,32 @@ function App() {
                   <Route path="/*" element={
                     <Layout>
                       <Routes>
-                        <Route path="/dashboard" element={<Dashboard />} />
-                        <Route path="/gov-intel" element={<GovIntelSuite />} />
-                        <Route path="/trust-intelligence" element={<TrustIntelligence />} />
-                        <Route path="/risks" element={<RiskManagement />} />
-                        <Route path="/compliance" element={<Compliance />} />
-                        <Route path="/incidents" element={<Incidents />} />
-                        <Route path="/devices" element={<IdentityAccess />} />
-                        <Route path="/trust-vault" element={<TrustVault />} />
-                        <Route path="/contract-negotiator" element={<ContractNegotiator />} />
-                        <Route path="/connectors" element={<Connectors />} />
-                        <Route path="/gmail-audit" element={<GmailAudit />} />
-                        <Route path="/policies" element={<Policies />} />
-                        <Route path="/policies/draftsman" element={<PolicyDraftsman />} />
-                        <Route path="/vendors" element={<VendorsDirectory />} />
-                        <Route path="/vendors/legacy" element={<VendorRisk />} />
-                        <Route path="/vendors/:vendorId/impact" element={<ImpactAssessment />} />
-                        <Route path="/assessments" element={<Assessments />} />
-                        <Route path="/assessments/new" element={<AssessmentWizard />} />
-                        <Route path="/audit-readiness" element={<AuditReadiness />} />
-                        <Route path="/calendar" element={<AuditCalendar />} />
-                        <Route path="/executive-reports" element={<ExecutiveReports />} />
-                        <Route path="/health" element={<SystemHealth />} />
-                        <Route path="/settings" element={<Settings />} />
-                        <Route path="/pricing" element={<Pricing />} />
-                        <Route path="/docs" element={<Documentation />} />
-                        <Route path="/ai-assistant" element={<LiveAssistant />} />
+                        <Route path="/dashboard" element={<FeatureGate flag="dashboard"><Dashboard /></FeatureGate>} />
+                        <Route path="/gov-intel" element={<FeatureGate flag="govIntel"><GovIntelSuite /></FeatureGate>} />
+                        <Route path="/trust-intelligence" element={<FeatureGate flag="trustIntelligence"><TrustIntelligence /></FeatureGate>} />
+                        <Route path="/risks" element={<FeatureGate flag="risks"><RiskManagement /></FeatureGate>} />
+                        <Route path="/compliance" element={<FeatureGate flag="compliance"><Compliance /></FeatureGate>} />
+                        <Route path="/incidents" element={<FeatureGate flag="incidents"><Incidents /></FeatureGate>} />
+                        <Route path="/devices" element={<FeatureGate flag="identitySurface"><IdentityAccess /></FeatureGate>} />
+                        <Route path="/trust-vault" element={<FeatureGate flag="trustVault"><TrustVault /></FeatureGate>} />
+                        <Route path="/contract-negotiator" element={<FeatureGate flag="contractAudit"><ContractNegotiator /></FeatureGate>} />
+                        <Route path="/connectors" element={<FeatureGate flag="connectors"><Connectors /></FeatureGate>} />
+                        <Route path="/gmail-audit" element={<FeatureGate flag="gmailAudit"><GmailAudit /></FeatureGate>} />
+                        <Route path="/policies" element={<FeatureGate flag="policies"><Policies /></FeatureGate>} />
+                        <Route path="/policies/draftsman" element={<FeatureGate flag="policies"><PolicyDraftsman /></FeatureGate>} />
+                        <Route path="/vendors" element={<FeatureGate flag="vendorSpine"><VendorsDirectory /></FeatureGate>} />
+                        <Route path="/vendors/legacy" element={<FeatureGate flag="vendorsLegacy"><VendorRisk /></FeatureGate>} />
+                        <Route path="/vendors/:vendorId/impact" element={<FeatureGate flag="vendorSpine"><ImpactAssessment /></FeatureGate>} />
+                        <Route path="/assessments" element={<FeatureGate flag="assessments"><Assessments /></FeatureGate>} />
+                        <Route path="/assessments/new" element={<FeatureGate flag="assessments"><AssessmentWizard /></FeatureGate>} />
+                        <Route path="/audit-readiness" element={<FeatureGate flag="auditReadiness"><AuditReadiness /></FeatureGate>} />
+                        <Route path="/calendar" element={<FeatureGate flag="auditCalendar"><AuditCalendar /></FeatureGate>} />
+                        <Route path="/executive-reports" element={<FeatureGate flag="executiveReports"><ExecutiveReports /></FeatureGate>} />
+                        <Route path="/health" element={<FeatureGate flag="healthLab"><SystemHealth /></FeatureGate>} />
+                        <Route path="/settings" element={<FeatureGate flag="settings"><Settings /></FeatureGate>} />
+                        <Route path="/pricing" element={<FeatureGate flag="pricing"><Pricing /></FeatureGate>} />
+                        <Route path="/docs" element={<FeatureGate flag="docs"><Documentation /></FeatureGate>} />
+                        <Route path="/ai-assistant" element={<FeatureGate flag="voiceStudio"><LiveAssistant /></FeatureGate>} />
                         <Route path="/" element={<Navigate to="/dashboard" replace />} />
                       </Routes>
                     </Layout>

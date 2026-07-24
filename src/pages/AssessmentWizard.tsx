@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { addDoc, collection } from 'firebase/firestore';
-import { ArrowRight, Check, ChevronDown, ChevronRight, Eye, Search } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Eye, Search, Sparkles } from 'lucide-react';
 import { db } from '../firebase';
 import { useAuth } from '../lib/AuthContext';
 import { Button } from '../components/ui/button';
@@ -9,7 +9,7 @@ import { Input } from '../components/ui/input';
 import { cn } from '../lib/utils';
 import { FRAMEWORK_CATALOG } from '../lib/vendor/constants';
 import type { FrameworkId } from '../lib/vendor/types';
-import { effectiveRiskLevel, riskBandClasses } from '../lib/vendor/risk';
+import { displayRiskScore, effectiveRiskLevel, riskBandClasses } from '../lib/vendor/risk';
 import { validateAssessmentWizard } from '../lib/vendor/validators';
 import {
   buildQuestionsForFrameworks,
@@ -30,10 +30,13 @@ export function AssessmentWizard() {
 
   const { vendors, mode: vendorMode, loading: vendorsLoading } = useOrgVendors(orgId);
 
-  const [step, setStep] = useState<1 | 2 | 3>(presetVendorId ? 2 : 1);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
   const [search, setSearch] = useState('');
   const [vendorId, setVendorId] = useState(presetVendorId);
   const [frameworks, setFrameworks] = useState<FrameworkId[]>(['nist_csf_2', 'soc2']);
+  const [frameworkTab, setFrameworkTab] = useState<'recommended' | 'all' | 'industry' | 'custom'>(
+    'recommended'
+  );
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -43,6 +46,21 @@ export function AssessmentWizard() {
     const s = search.toLowerCase();
     return vendors.filter((v) => !s || v.name.toLowerCase().includes(s));
   }, [vendors, search]);
+
+  const catalogByTab = useMemo(() => {
+    const recommendedIds: FrameworkId[] = ['nist_csf_2', 'soc2', 'iso27001'];
+    const industryIds: FrameworkId[] = ['hipaa', 'pci_dss_4', 'cis_controls'];
+    if (frameworkTab === 'recommended') {
+      return FRAMEWORK_CATALOG.filter((f) => recommendedIds.includes(f.id));
+    }
+    if (frameworkTab === 'industry') {
+      return FRAMEWORK_CATALOG.filter((f) => industryIds.includes(f.id));
+    }
+    if (frameworkTab === 'custom') {
+      return FRAMEWORK_CATALOG.filter((f) => f.id === 'custom');
+    }
+    return FRAMEWORK_CATALOG.filter((f) => f.id !== 'custom');
+  }, [frameworkTab]);
 
   const previewQuestions = useMemo(
     () => buildQuestionsForFrameworks(frameworks),
@@ -69,15 +87,6 @@ export function AssessmentWizard() {
 
   const toggleFramework = (id: FrameworkId) => {
     setFrameworks((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  };
-
-  const continueToFrameworks = () => {
-    if (!vendorId) {
-      setError('Select a vendor to continue.');
-      return;
-    }
-    setError('');
-    setStep(2);
   };
 
   const continueToPreview = () => {
@@ -232,18 +241,10 @@ export function AssessmentWizard() {
           <span
             className={cn(
               'rounded-full px-3 py-1 text-xs font-bold uppercase tracking-widest',
-              step === 1 ? 'bg-primary text-white' : 'bg-white/10 text-slate-300'
+              step < 3 ? 'bg-primary text-white' : 'bg-white/10 text-slate-300'
             )}
           >
-            1. Vendor
-          </span>
-          <span
-            className={cn(
-              'rounded-full px-3 py-1 text-xs font-bold uppercase tracking-widest',
-              step === 2 ? 'bg-primary text-white' : 'bg-white/10 text-slate-300'
-            )}
-          >
-            2. Frameworks
+            1. Vendor &amp; frameworks
           </span>
           <span
             className={cn(
@@ -251,135 +252,191 @@ export function AssessmentWizard() {
               step === 3 ? 'bg-primary text-white' : 'bg-white/10 text-slate-300'
             )}
           >
-            3. Preview
+            2. Preview
           </span>
         </div>
       </div>
 
       {error && <p className="mb-4 text-sm text-rose-400">{error}</p>}
 
-      {step === 1 && (
-        <div className="max-w-xl space-y-4 rounded-xl border border-white/5 bg-slate-900/50 p-5">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search vendors..."
-              className="border-white/10 bg-black/20 pl-9 text-white"
-            />
-          </div>
-          <div className="max-h-80 space-y-2 overflow-y-auto">
-            {vendorsLoading && <p className="text-sm text-slate-400">Loading vendors…</p>}
-            {!vendorsLoading &&
-              filtered.map((v) => {
-                const level = effectiveRiskLevel(v);
-                const active = v.id === vendorId;
-                return (
-                  <button
-                    key={v.id}
-                    type="button"
-                    onClick={() => setVendorId(v.id)}
-                    className={cn(
-                      'flex w-full items-start justify-between rounded-xl border p-4 text-left',
-                      active ? 'border-primary bg-primary/15' : 'border-white/10 hover:bg-white/5'
-                    )}
-                  >
+      {step < 3 && (
+        <div className="space-y-4">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,17rem)_minmax(0,1fr)]">
+            {/* Left: vendors */}
+            <aside className="flex flex-col rounded-xl border border-white/5 bg-slate-900/50">
+              <div className="border-b border-white/5 p-4">
+                <h2 className="text-sm font-semibold text-white">Vendor</h2>
+                <div className="relative mt-3">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <Input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search vendors..."
+                    className="border-white/10 bg-black/20 pl-9 text-white"
+                  />
+                </div>
+              </div>
+              <div className="max-h-[28rem] space-y-1 overflow-y-auto p-2">
+                {vendorsLoading && <p className="px-2 py-3 text-sm text-slate-400">Loading vendors…</p>}
+                {!vendorsLoading &&
+                  filtered.map((v) => {
+                    const active = v.id === vendorId;
+                    return (
+                      <button
+                        key={v.id}
+                        type="button"
+                        onClick={() => setVendorId(v.id)}
+                        className={cn(
+                          'flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm',
+                          active ? 'bg-primary/20 text-white' : 'text-slate-300 hover:bg-white/5'
+                        )}
+                      >
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/10 text-[10px] font-semibold">
+                          {v.name.slice(0, 2).toUpperCase()}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate font-medium">{v.name}</span>
+                        {active && <Check className="h-4 w-4 shrink-0 text-primary" />}
+                      </button>
+                    );
+                  })}
+                {!vendorsLoading && filtered.length === 0 && (
+                  <div className="space-y-2 px-2 py-3 text-sm text-slate-400">
+                    <p>No vendors found.</p>
+                    <Link to="/vendors" className="text-primary hover:underline">
+                      Add a vendor first →
+                    </Link>
+                  </div>
+                )}
+              </div>
+            </aside>
+
+            {/* Right: frameworks + selected card */}
+            <div className="space-y-4">
+              {selected ? (
+                <div className="rounded-xl border border-primary/30 bg-primary/10 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <div className="flex items-center gap-2">
-                        <p className="font-medium text-white">{v.name}</p>
-                        {active && <Check className="h-4 w-4 text-primary" />}
-                      </div>
-                      <p className="text-sm text-slate-400">{v.category}</p>
-                      <p className="mt-1 text-xs text-slate-500">{v.primaryContactName || 'No contact'}</p>
+                      <p className="text-xs font-bold uppercase tracking-widest text-primary">Selected vendor</p>
+                      <h2 className="mt-1 text-lg font-semibold text-white">{selected.name}</h2>
+                      <p className="text-sm text-slate-400">{selected.category || 'Uncategorized'}</p>
+                      <p className="mt-2 text-sm text-slate-300">
+                        {selected.primaryContactName || 'No contact name'}
+                        {selected.primaryContactEmail ? (
+                          <span className="text-slate-500"> · {selected.primaryContactEmail}</span>
+                        ) : null}
+                      </p>
                     </div>
                     <span
                       className={cn(
-                        'rounded-full border px-2 py-0.5 text-xs font-medium',
-                        riskBandClasses(level)
+                        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium',
+                        riskBandClasses(effectiveRiskLevel(selected))
                       )}
                     >
-                      {level}
-                      {v.riskScore > 0 ? ` ${v.riskScore}` : ''}
+                      <span className="tabular-nums">{displayRiskScore(selected)}</span>
+                      <span className="opacity-80">·</span>
+                      {effectiveRiskLevel(selected)}
                     </span>
-                  </button>
-                );
-              })}
-            {!vendorsLoading && filtered.length === 0 && (
-              <div className="space-y-2 text-sm text-slate-400">
-                <p>No vendors found.</p>
-                <Link to="/vendors" className="text-primary hover:underline">
-                  Add a vendor first →
-                </Link>
-              </div>
-            )}
-          </div>
-          <Button className="w-full bg-primary text-white hover:bg-primary/90" onClick={continueToFrameworks}>
-            Continue to Frameworks <ArrowRight className="ml-2 h-4 w-4" />
-          </Button>
-        </div>
-      )}
-
-      {step === 2 && (
-        <div className="space-y-6">
-          {selected && (
-            <div className="rounded-xl border border-primary/30 bg-primary/10 p-4 text-sm text-slate-200">
-              <span className="font-medium">{selected.name}</span>
-              <span className="text-slate-400"> · {selected.category}</span>
-              <button type="button" className="ml-3 text-primary hover:underline" onClick={() => setStep(1)}>
-                Change
-              </button>
-            </div>
-          )}
-          {!selected && presetVendorId && (
-            <p className="text-sm text-amber-300">
-              Preset vendor not in this org list — go back and pick a vendor.
-            </p>
-          )}
-          <div>
-            <h2 className="text-lg font-semibold text-white">Build the right assessment</h2>
-            <p className="text-sm text-slate-400">
-              Select one or more frameworks. GuardEntra removes duplicate questions automatically.
-            </p>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {FRAMEWORK_CATALOG.map((f) => {
-              const on = frameworks.includes(f.id);
-              return (
-                <button
-                  key={f.id}
-                  type="button"
-                  onClick={() => toggleFramework(f.id)}
-                  className={cn(
-                    'rounded-xl border p-4 text-left',
-                    on ? 'border-primary bg-primary/15' : 'border-white/10 bg-slate-900/50 hover:bg-white/5'
-                  )}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="font-medium text-white">{f.name}</p>
-                    <span
-                      className={cn(
-                        'mt-0.5 h-4 w-4 rounded border',
-                        on ? 'border-primary bg-primary' : 'border-white/20'
-                      )}
-                    />
                   </div>
-                  <p className="mt-1 text-sm text-slate-400">{f.description}</p>
-                  <p className="mt-2 text-xs text-primary">
-                    {f.questionCount ? `${f.questionCount} questions` : 'Custom'}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-white/15 bg-slate-900/40 p-4 text-sm text-slate-400">
+                  Select a vendor on the left to build their assessment.
+                  {presetVendorId && !selected && (
+                    <span className="mt-1 block text-amber-300">
+                      Preset vendor not in this org list — pick another vendor.
+                    </span>
+                  )}
+                </div>
+              )}
+
+              <div className="rounded-xl border border-white/5 bg-slate-900/50 p-4">
+                <div className="flex flex-wrap items-end justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-semibold text-white">Build the right assessment</h2>
+                    <p className="text-sm text-slate-400">
+                      Select frameworks. GuardEntra removes duplicate questions automatically.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-1 border-b border-white/5 pb-px">
+                  {(
+                    [
+                      ['recommended', 'Recommended'],
+                      ['all', 'All'],
+                      ['industry', 'Industry'],
+                      ['custom', 'Custom'],
+                    ] as const
+                  ).map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setFrameworkTab(id)}
+                      className={cn(
+                        '-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors',
+                        frameworkTab === id
+                          ? 'border-primary text-white'
+                          : 'border-transparent text-slate-400 hover:text-slate-200'
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                {frameworkTab === 'custom' && (
+                  <p className="mt-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-slate-400">
+                    Custom questionnaires are coming later — you can still select the stub below; preview uses
+                    the shared question bank when other frameworks are also selected.
                   </p>
-                </button>
-              );
-            })}
+                )}
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  {catalogByTab.map((f) => {
+                    const on = frameworks.includes(f.id);
+                    return (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => toggleFramework(f.id)}
+                        className={cn(
+                          'rounded-xl border p-4 text-left',
+                          on ? 'border-primary bg-primary/15' : 'border-white/10 bg-black/20 hover:bg-white/5'
+                        )}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="font-medium text-white">{f.name}</p>
+                          <span
+                            className={cn(
+                              'mt-0.5 h-4 w-4 shrink-0 rounded border',
+                              on ? 'border-primary bg-primary' : 'border-white/20'
+                            )}
+                          />
+                        </div>
+                        <p className="mt-1 text-sm text-slate-400">{f.description}</p>
+                        <p className="mt-2 text-xs text-primary">
+                          {f.questionCount ? `${f.questionCount} questions` : 'Custom'}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="rounded-xl border border-white/5 bg-slate-900/50 p-4 text-sm text-slate-400">
-            AI removes duplicate questions. Estimated unique set: <strong>{uniqueQuestions}</strong> (from{' '}
-            {sourceQuestions} source questions).
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" className="border-white/10" onClick={() => setStep(1)}>
-              Back
-            </Button>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-500/20 bg-sky-500/10 px-4 py-3">
+            <div className="flex items-start gap-3">
+              <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-sky-300" />
+              <div className="text-sm">
+                <p className="font-medium text-sky-100">Smart dedupe across frameworks</p>
+                <p className="text-slate-400">
+                  Estimated unique set: <strong className="text-white">{uniqueQuestions}</strong> questions
+                  (from {sourceQuestions} source questions across {frameworks.length} framework
+                  {frameworks.length === 1 ? '' : 's'}).
+                </p>
+              </div>
+            </div>
             <Button className="bg-primary text-white hover:bg-primary/90" onClick={continueToPreview}>
               <Eye className="mr-2 h-4 w-4" />
               Preview questionnaire
@@ -461,7 +518,7 @@ export function AssessmentWizard() {
           </div>
 
           <div className="flex gap-2">
-            <Button variant="outline" className="border-white/10" onClick={() => setStep(2)}>
+            <Button variant="outline" className="border-white/10" onClick={() => setStep(1)}>
               Back
             </Button>
             <Button
