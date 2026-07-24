@@ -69,6 +69,25 @@ export function replaceLocalVendors(orgId: string, vendors: Vendor[]) {
   writeStore(store);
 }
 
+export function patchLocalVendor(
+  orgId: string,
+  vendorId: string,
+  patch: Partial<Vendor>
+): Vendor | null {
+  const rows = listLocalVendors(orgId);
+  const existing = rows.find((v) => v.id === vendorId);
+  if (!existing) return null;
+  return upsertLocalVendor(orgId, { ...existing, ...patch, id: vendorId, organizationId: orgId });
+}
+
+/** Mark vendor as having an active security assessment (Cynomi-style status chip). */
+export function markLocalVendorAssessmentStarted(orgId: string, vendorId: string): Vendor | null {
+  return patchLocalVendor(orgId, vendorId, {
+    assessmentStatus: 'In Progress',
+    lastAssessmentAt: new Date().toISOString(),
+  });
+}
+
 /** Detect common Firestore/network failures that should trip local fallback. */
 export function isFirestoreUnavailableError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err || '');

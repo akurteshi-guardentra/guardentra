@@ -43,6 +43,8 @@ import {
   isFirestoreUnavailableError,
   listLocalVendors,
 } from '../lib/vendor/localVendorStore';
+import { useOrgAssessments } from '../lib/vendor/useOrgAssessments';
+import { deriveStatusFromAssessments } from '../lib/vendor/localAssessmentStore';
 
 const SELECT_CLASS =
   'h-9 rounded-md border border-white/10 bg-slate-950 px-3 text-sm text-white [&>option]:bg-slate-950 [&>option]:text-white';
@@ -54,7 +56,14 @@ function formatDate(iso?: string) {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-function deriveAssessmentStatus(vendor: Vendor): AssessmentStatus {
+function deriveAssessmentStatus(
+  vendor: Vendor,
+  linkedAssessments?: { status?: string; dueAt?: string; dueDate?: string; progressPct?: number; progress?: number }[]
+): AssessmentStatus {
+  if (linkedAssessments?.length) {
+    const fromAsm = deriveStatusFromAssessments(linkedAssessments);
+    if (fromAsm) return fromAsm;
+  }
   if (vendor.assessmentStatus) return vendor.assessmentStatus;
   if (vendor.lastAssessmentAt) return 'Completed';
   if (vendor.nextReviewAt) {
@@ -96,6 +105,17 @@ export function VendorsDirectory() {
   const { profile } = useAuth();
   const navigate = useNavigate();
   const orgId = profile?.organizationId;
+  const { assessments: orgAssessments } = useOrgAssessments(orgId);
+
+  const assessmentsByVendor = useMemo(() => {
+    const map = new Map<string, typeof orgAssessments>();
+    for (const a of orgAssessments) {
+      const list = map.get(a.vendorId) || [];
+      list.push(a);
+      map.set(a.vendorId, list);
+    }
+    return map;
+  }, [orgAssessments]);
 
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
@@ -210,11 +230,13 @@ export function VendorsDirectory() {
       const level = effectiveRiskLevel(v);
       if (riskFilter !== 'all' && level !== riskFilter) return false;
       if (categoryFilter !== 'all' && v.category !== categoryFilter) return false;
-      if (statusFilter !== 'all' && deriveAssessmentStatus(v) !== statusFilter) return false;
+      if (statusFilter !== 'all' && deriveAssessmentStatus(v, assessmentsByVendor.get(v.id)) !== statusFilter) {
+        return false;
+      }
       if (ownerFilter !== 'all' && (v.ownerName || 'Unassigned') !== ownerFilter) return false;
       return true;
     });
-  }, [vendors, search, riskFilter, categoryFilter, statusFilter, ownerFilter]);
+  }, [vendors, search, riskFilter, categoryFilter, statusFilter, ownerFilter, assessmentsByVendor]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pageRows = filtered.slice((page - 1) * pageSize, page * pageSize);
@@ -229,15 +251,15 @@ export function VendorsDirectory() {
       return l === 'Critical' || l === 'High';
     }).length;
     const due = vendors.filter((v) => {
-      const s = deriveAssessmentStatus(v);
+      const s = deriveAssessmentStatus(v, assessmentsByVendor.get(v.id));
       return s === 'Due Soon' || s === 'Overdue';
     }).length;
     const needsAttention = vendors.filter((v) => {
-      const s = deriveAssessmentStatus(v);
+      const s = deriveAssessmentStatus(v, assessmentsByVendor.get(v.id));
       return s === 'Overdue' || s === 'Due Soon' || effectiveRiskLevel(v) === 'Critical';
     }).length;
     return { total: vendors.length, criticalHigh, due, needsAttention };
-  }, [vendors]);
+  }, [vendors, assessmentsByVendor]);
 
   const clearFilters = () => {
     setSearch('');
@@ -650,7 +672,8 @@ export function VendorsDirectory() {
                   )}
                   {pageRows.map((v) => {
                     const level = effectiveRiskLevel(v);
-                    const aStatus = deriveAssessmentStatus(v);
+                    const linked = assessmentsByVendor.get(v.id) || [];
+                    const aStatus = deriveAssessmentStatus(v, linked);
                     return (
                       <tr key={v.id} className="border-t border-white/5 hover:bg-white/[0.03]">
                         <td className="px-4 py-3">
@@ -683,14 +706,21 @@ export function VendorsDirectory() {
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          <span
+                          <Link
+                            to={`/assessments?vendorId=${encodeURIComponent(v.id)}`}
                             className={cn(
-                              'inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium',
+                              'inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium hover:underline',
                               assessmentStatusClasses(aStatus)
                             )}
+                            title={
+                              linked.length
+                                ? `${linked.length} assessment(s) — view tracker`
+                                : 'No assessments yet — open tracker'
+                            }
                           >
                             {aStatus}
-                          </span>
+                            {linked.length > 0 ? ` · ${linked.length}` : ''}
+                          </Link>
                         </td>
                         <td className="px-4 py-3 text-slate-400">{v.ownerName || '—'}</td>
                         <td className="px-4 py-3 text-slate-400">{formatDate(v.nextReviewAt)}</td>
