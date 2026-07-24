@@ -12,4 +12,4 @@
 ## Firebase environments
 
 - Demo project `guardentra-7f582` is not production. Prefer separate projects: `guardentra-dev`, `guardentra-staging`, `guardentra-prod` (see `docs/ENVIRONMENTS.md` and `.firebaserc`).
-- Client may use `VITE_FIREBASE_*` env vars; otherwise falls back to committed demo `firebase-applet-config.json`.
+- Client must use `VITE_FIREBASE_API_KEY` (and optional other `VITE_FIREBASE_*`); demo `firebase-applet-config.json` holds non-secret project identifiers only — never commit live Web API keys (see `docs/SECRETS.md`).

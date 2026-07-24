@@ -5,14 +5,26 @@ import { getStorage } from 'firebase/storage';
 import demoConfig from '../firebase-applet-config.json';
 
 /**
- * Prefer VITE_FIREBASE_* (per-env) over committed demo JSON.
- * See docs/ENVIRONMENTS.md — demo project is not for production.
+ * Prefer VITE_FIREBASE_* (per-env). Committed demo JSON holds non-secret project
+ * identifiers only — apiKey must come from env (see docs/SECRETS.md).
  */
+function isUsableWebApiKey(key: unknown): key is string {
+  return typeof key === 'string' && key.startsWith('AIza') && key.length > 20;
+}
+
 function resolveFirebaseConfig(): FirebaseOptions & { firestoreDatabaseId?: string } {
   const env = import.meta.env;
+  const apiKey = env.VITE_FIREBASE_API_KEY || demoConfig.apiKey;
+  if (!isUsableWebApiKey(apiKey)) {
+    throw new Error(
+      'Missing Firebase Web API key. Copy .env.example → .env.local and set VITE_FIREBASE_API_KEY ' +
+        '(Firebase Console → Project settings → Your apps). Do not commit real keys — see docs/SECRETS.md.',
+    );
+  }
+
   const projectId = env.VITE_FIREBASE_PROJECT_ID || demoConfig.projectId;
   return {
-    apiKey: env.VITE_FIREBASE_API_KEY || demoConfig.apiKey,
+    apiKey,
     authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || demoConfig.authDomain,
     projectId,
     storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || demoConfig.storageBucket,

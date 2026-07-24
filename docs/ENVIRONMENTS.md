@@ -29,9 +29,10 @@ Replace placeholder IDs in `.firebaserc` once projects exist (`guardentra-dev`, 
 
 ## Client config
 
-- Committed demo config: [`firebase-applet-config.json`](../firebase-applet-config.json) (demo project only).
-- Preferred path: set `VITE_FIREBASE_*` in `.env.local` / App Hosting secrets; [`src/firebase.ts`](../src/firebase.ts) reads env first, then falls back to the JSON file.
-- Never commit prod service-account JSON or prod API secrets.
+- Committed demo config: [`firebase-applet-config.json`](../firebase-applet-config.json) — **demo project identifiers only** (`projectId`, `authDomain`, `appId`, …). The Web **`apiKey` is not committed** (empty in git); GitHub secret scanning flags `AIzaSy…` keys.
+- **Required:** set at least `VITE_FIREBASE_API_KEY` in `.env.local` / App Hosting build env (copy from [`.env.example`](../.env.example)). [`src/firebase.ts`](../src/firebase.ts) reads `VITE_FIREBASE_*` first, then fills other fields from the JSON; it fails loud if the API key is missing.
+- Get the key from Firebase Console → Project settings → Your apps. Restrict it in Google Cloud (HTTP referrers + API allowlist). See **[`docs/SECRETS.md`](./SECRETS.md)** (GitHub alert + rotate checklist).
+- Never commit prod service-account JSON, live Web API keys, or server API secrets.
 
 ## Server / Cloud Run
 
