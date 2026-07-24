@@ -286,6 +286,7 @@ Grounded in `docs/CYNOMI_GAP_NOTES.md` and shipped spine — **not** roadmap vap
 |------------|------|
 | `docs/PRODUCT_FOCUS.md` | Freeze + spine + Firestore Console steps |
 | `docs/ENVIRONMENTS.md` | Project aliases, secrets, before-customers checklist |
+| `docs/SECRETS.md` | Password/key policy, 1Password / App Hosting, Stripe RAK + MCP OAuth |
 | `docs/CYNOMI_GAP_NOTES.md` | Competitive walkthrough facts |
 | `src/lib/featureFlags.ts` | Spine vs frozen modules |
 | `firestore.rules` / `storage.rules` | AuthZ for spine + portal |

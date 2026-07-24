@@ -13,6 +13,17 @@ dist-ssr
 *.local
 .tools/
 
+# Secrets & credentials (never commit real values — see docs/SECRETS.md)
+.env
+.env.*
+!.env.example
+*.pem
+*credentials*.json
+*serviceAccount*.json
+service-account*.json
+google-services.json
+GoogleService-Info.plist
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

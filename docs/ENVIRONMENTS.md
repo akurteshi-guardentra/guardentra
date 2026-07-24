@@ -39,6 +39,15 @@ Replace placeholder IDs in `.firebaserc` once projects exist (`guardentra-dev`, 
 - Per-env secrets: `GEMINI_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`.
 - Staging Stripe = test mode; prod Stripe = live mode.
 
+## Secrets & identity
+
+See **[`docs/SECRETS.md`](./SECRETS.md)** for the full policy:
+
+- Never paste Stripe Dashboard passwords into chat; **rotate** any password that was exposed.
+- Store API secrets in **1Password** (local mounts) or App Hosting / Cloud Run secret env — not in git.
+- Stripe: restricted API keys + Cursor Stripe MCP **OAuth** (not admin password).
+- App users: Firebase Auth; enterprise SSO later.
+
 ## Before real customers
 
 1. Create separate Firebase projects for staging and prod.
