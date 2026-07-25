@@ -1,7 +1,13 @@
 import { Router } from 'express';
 import { GoogleGenAI, Type } from '@google/genai';
+import { createRateLimiter } from '../middleware/rateLimit';
 
 const router = Router();
+
+// Every route in this file is an LLM call — cap frequency per user so one account
+// can't drive unbounded Gemini spend or hammer the endpoint. 20/min is generous for
+// interactive use (Copilot chat, wizard previews) but bounds scripted abuse.
+router.use(createRateLimiter({ windowMs: 60_000, max: 20 }));
 
 const isPlaceholderKey = (key?: string) => {
   if (!key) return true;
@@ -174,10 +180,15 @@ router.post('/analyze', async (req, res) => {
 // browser (exposing GEMINI_API_KEY client-side) keep their existing prompt/parsing logic while
 // moving the actual model call server-side. Callers should keep their existing try/catch fallback:
 // a non-2xx response here means "no key configured / call failed", same as a thrown client SDK error before.
+const MAX_PROMPT_LENGTH = 20_000; // generous for any legitimate wizard/copilot prompt
+
 router.post('/generate', async (req, res) => {
   const { prompt, responseMimeType, responseSchema, model } = req.body || {};
   if (typeof prompt !== 'string' || !prompt.trim()) {
     return res.status(400).json({ error: 'prompt is required' });
+  }
+  if (prompt.length > MAX_PROMPT_LENGTH) {
+    return res.status(413).json({ error: `prompt exceeds ${MAX_PROMPT_LENGTH} characters` });
   }
   try {
     if (!hasAIApi) {

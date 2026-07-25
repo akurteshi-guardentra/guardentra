@@ -127,15 +127,18 @@ Each sprint ≈ 1–2 weeks. Renumbered from the original plan: the stability au
 - ✅ Role-aware UI: audited every active-surface page (Vendors, Impact, Assessments, Audit Readiness, Dashboard) for `deleteDoc` calls — found **zero**, so there was nothing to hide. The unconditional delete buttons found in the original audit all live on frozen pages (Connectors, Policies, RiskManagement, ContractNegotiator, VendorRisk, PolicyDraftsman, AuditCalendar) that aren't reachable today; tracked as a task to fix before any of those are ever re-enabled, now that real non-admin members are possible. The one new admin-gated action (sending invites) is admin-only from the start.
 - **Found while building this, tracked as follow-ups (not fixed):** `Onboarding.tsx` unconditionally overwrites the organization's name/industry from whatever the current user types, with no check for whether they're the org's original creator — a real risk now that invited teammates go through the same onboarding wizard and could clobber a shared org's settings. Also found a hardcoded personal-email "Admin Bypass" button in `Onboarding.tsx`, the same pattern as the `isAtIdhee` Firestore-rules bypass already removed elsewhere — missed in that cleanup.
 
-### Sprint 5 — Validation & abuse hardening (NEW — addresses §2 items 8-12)
-- Field-shape validation (`hasOnly`, type checks) for the 13+ unguarded Firestore collections
-
-### Sprint 5 — Validation & abuse hardening (NEW — addresses §2 items 8-12)
-- Field-shape validation (`hasOnly`, type checks) for the 13+ unguarded Firestore collections
-- Client-side validation for the 6 currently-unvalidated forms
-- Content-type enforcement on evidence/attachment Storage rules
-- Basic rate limiting on `/api/ai/*` + prompt length caps
-- CSV export formula-injection sanitization
+### Sprint 5 — Validation & abuse hardening ✅ done (2026-07-25)
+- ✅ Storage content-type enforcement: `storage.rules`' `evidence/` and `attachments/` paths only checked file size before — now all three upload paths (portal, evidence, attachments) share one `isAllowedDocType()` check mirroring `EVIDENCE_ALLOWED_TYPES`, since client-side `File.type` is trivially spoofable.
+- ✅ CSV/export formula-injection sanitization: new `sanitizeForSpreadsheet()` in `validators.ts` (OWASP-standard leading-quote mitigation for values starting with `=+-@`) applied to CSV bulk-import fields and the markdown register export's `escapeCell()` — both layers, since a payload could enter via import and leave via export.
+- ✅ AI abuse hardening: new dependency-free `server/middleware/rateLimit.ts` (in-memory fixed-window, keyed by Firebase uid) applied to all of `/api/ai/*` (20 req/min), plus a 20,000-character prompt cap on `/api/ai/generate`. Known limitation: per-process state, would need a shared store for a multi-replica deployment — not attempted to avoid a new infra dependency.
+- ✅ Firestore field-shape validation — **scoped down deliberately, see below.** Added soft type guards (`isStringIfPresent`/`isNumberIfPresent` — reject a known field written with an obviously wrong type, never reject missing/unknown fields) to `vendors` and `audit_readiness`, the only two of the 13 flagged collections actually reachable on the active surface today. The other 11 were **not** given a strict `hasOnly()` allowlist: this repo has no visibility into what's already sitting in any deployed database, and guessing an exact field list risked breaking updates to pre-existing documents with unknown fields. Tracked in `docs/KNOWN_ISSUES.md` (#11) for a real per-collection audit if/when any of those frozen pages are re-enabled.
+- ✅ Client-side validation pass across the 6 originally-flagged forms — findings were more mixed than the original audit suggested:
+  - `Onboarding.tsx` already validated org name; added a missing industry-required check and a `maxLength`.
+  - `ContractNegotiator.tsx` already required non-empty contract text; added a `maxLength` cap.
+  - `PolicyDraftsman.tsx`'s brief field is intentionally optional (no required-check needed); added a `maxLength` cap.
+  - `VendorPortal.tsx`'s answer-required validation was already added in Sprint 2; added a `maxLength` to the optional context textarea.
+  - `LiveAssistant.tsx` has no form at all — it's audio/voice only (Gemini Live API), so the original "unvalidated form" claim didn't apply.
+  - `Settings.tsx` is now covered by the Team Members invite form added in Sprint 4, which already validates email format.
 
 ### Sprint 6 — Notifications & invite flow (was Sprint 3)
 - Email infra (Firebase Trigger Email extension) for vendor invites, reminders, due-date nudges

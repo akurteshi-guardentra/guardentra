@@ -1,4 +1,5 @@
 import { displayRiskScore, effectiveRiskLevel, hasRealRiskScore } from './risk';
+import { sanitizeForSpreadsheet } from './validators';
 import type { RiskLevel, Vendor, VendorAssessment } from './types';
 
 /** Client-ready third-party risk summary (markdown). Gap vs Cynomi: PDF later. */
@@ -47,7 +48,7 @@ export function buildVendorRegisterMarkdown(
 }
 
 function escapeCell(value: string): string {
-  return value.replace(/\|/g, '\\|').replace(/\n/g, ' ');
+  return sanitizeForSpreadsheet(value).replace(/\|/g, '\\|').replace(/\n/g, ' ');
 }
 
 export function downloadMarkdown(filename: string, content: string): void {

@@ -524,6 +524,7 @@ export function VendorPortal() {
                   rows={3}
                   value={comments[currentQuestion.id] || ''}
                   onChange={(e) => setComment(currentQuestion.id, e.target.value)}
+                  maxLength={2000}
                   placeholder="Explain controls, exceptions, or compensating measures…"
                 />
               </div>

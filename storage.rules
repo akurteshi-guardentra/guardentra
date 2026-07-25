@@ -5,18 +5,26 @@ service firebase.storage {
       return request.auth != null;
     }
 
+    // Matches src/lib/vendor/constants.ts EVIDENCE_ALLOWED_TYPES (pdf, doc/docx,
+    // xls/xlsx via the application/vnd.* wildcard, png, jpeg) — client-side File.type
+    // is trivially spoofable, so this is the real enforcement, not the client check.
+    function isAllowedDocType() {
+      return request.resource.contentType.matches('application/pdf|application/msword|application/vnd\\..*|image/png|image/jpeg');
+    }
+
     // Portal evidence uploads (anonymous or signed-in)
     match /portal/{assessmentId}/{fileName} {
       allow read: if isSignedIn();
       allow write: if isSignedIn()
         && request.resource.size < 25 * 1024 * 1024
-        && request.resource.contentType.matches('application/pdf|application/msword|application/vnd\\..*|image/png|image/jpeg');
+        && isAllowedDocType();
     }
 
     match /orgs/{orgId}/vendors/{vendorId}/evidence/{fileName} {
       allow read: if isSignedIn();
       allow write: if isSignedIn()
-        && request.resource.size < 25 * 1024 * 1024;
+        && request.resource.size < 25 * 1024 * 1024
+        && isAllowedDocType();
     }
 
     // Vendor-level general attachments (src/lib/vendor/evidenceUpload.ts uploadVendorAttachment,
@@ -24,7 +32,8 @@ service firebase.storage {
     match /orgs/{orgId}/vendors/{vendorId}/attachments/{fileName} {
       allow read: if isSignedIn();
       allow write: if isSignedIn()
-        && request.resource.size < 20 * 1024 * 1024;
+        && request.resource.size < 20 * 1024 * 1024
+        && isAllowedDocType();
     }
   }
 }

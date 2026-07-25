@@ -222,6 +222,7 @@ export function PolicyDraftsman() {
                   placeholder="Include specific organizational constraints or focus areas..."
                   value={customBrief}
                   onChange={(e) => setCustomBrief(e.target.value)}
+                  maxLength={4000}
                   className="w-full min-h-[120px] p-4 rounded-xl bg-black/40 border border-white/10 text-white text-sm focus:ring-1 focus:ring-primary resize-none placeholder:text-slate-600"
                 />
               </div>

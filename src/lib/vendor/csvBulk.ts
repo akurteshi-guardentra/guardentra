@@ -1,5 +1,5 @@
 import type { RiskLevel } from './types';
-import { validateBulkVendorRow, type BulkVendorRow } from './validators';
+import { sanitizeForSpreadsheet, validateBulkVendorRow, type BulkVendorRow } from './validators';
 
 export const BULK_VENDOR_HEADERS = [
   'name',
@@ -131,12 +131,14 @@ export function parseVendorCsv(text: string): BulkParseResult {
   for (let i = 1; i < lines.length; i++) {
     const cols = splitCsvLine(lines[i], delimiter);
     const row: ParsedBulkVendor = {
-      name: cols[indexMap.name!] || '',
-      category: cols[indexMap.category!] || '',
+      name: sanitizeForSpreadsheet(cols[indexMap.name!] || ''),
+      category: sanitizeForSpreadsheet(cols[indexMap.category!] || ''),
       criticality: normalizeCriticality(
         indexMap.criticality != null ? cols[indexMap.criticality] || 'Medium' : 'Medium'
       ),
-      primaryContactName: indexMap.primaryContactName != null ? cols[indexMap.primaryContactName] || '' : '',
+      primaryContactName: sanitizeForSpreadsheet(
+        indexMap.primaryContactName != null ? cols[indexMap.primaryContactName] || '' : ''
+      ),
       primaryContactEmail: indexMap.primaryContactEmail != null ? cols[indexMap.primaryContactEmail] || '' : '',
     };
 

@@ -34,6 +34,20 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
+    // Type guards used to add basic field-shape validation without a strict hasOnly()
+    // allowlist — deliberately "soft": they never reject a missing or unknown field
+    // (so they can't break existing documents or fields this rules file doesn't know
+    // about), they only reject a *known* field written with an obviously wrong type
+    // (e.g. riskScore set to a string). Safer than guessing an exact field list against
+    // data this repo can't inspect (no access to what's already in any deployed DB).
+    function isStringIfPresent(data, field) {
+      return !(field in data) || data[field] is string;
+    }
+
+    function isNumberIfPresent(data, field) {
+      return !(field in data) || data[field] is number;
+    }
+
     // ===============================================================
     // Collection Rules
     // ===============================================================
@@ -113,11 +127,20 @@ service cloud.firestore {
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
-    // Vendors Collection
+    // Vendors Collection — src/lib/vendor/types.ts Vendor interface is the shape;
+    // soft type guards on the fields most likely to be attacked (score/rating spoofing).
+    function vendorFieldsValid() {
+      return isStringIfPresent(request.resource.data, 'name') &&
+        isStringIfPresent(request.resource.data, 'category') &&
+        isStringIfPresent(request.resource.data, 'criticality') &&
+        isNumberIfPresent(request.resource.data, 'riskScore') &&
+        isNumberIfPresent(request.resource.data, 'trustScore');
+    }
+
     match /vendors/{vendorId} {
       allow read: if isDocOrgMember();
-      allow create: if isCreatingForOwnOrg();
-      allow update: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg() && vendorFieldsValid();
+      allow update: if isDocOrgMember() && vendorFieldsValid();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
@@ -170,11 +193,18 @@ service cloud.firestore {
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
-    // Audit Readiness Collection
+    // Audit Readiness Collection — shape written by AuditReadiness.tsx / seeding.ts.
+    function auditReadinessFieldsValid() {
+      return isStringIfPresent(request.resource.data, 'framework') &&
+        isStringIfPresent(request.resource.data, 'status') &&
+        isNumberIfPresent(request.resource.data, 'readinessScore') &&
+        isNumberIfPresent(request.resource.data, 'coveragePercent');
+    }
+
     match /audit_readiness/{auditId} {
       allow read: if isDocOrgMember();
-      allow create: if isCreatingForOwnOrg();
-      allow update: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg() && auditReadinessFieldsValid();
+      allow update: if isDocOrgMember() && auditReadinessFieldsValid();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 

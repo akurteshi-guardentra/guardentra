@@ -3,6 +3,7 @@ import { riskLevelFromScore } from '../lib/vendor/risk';
 import { buildVendorRegisterMarkdown } from '../lib/vendor/reportExport';
 import { combineImpactAndSecurity, vendorRatingLabel } from '../lib/vendor/vendorRating';
 import {
+  sanitizeForSpreadsheet,
   validateAssessmentWizard,
   validateEvidenceFile,
   validateVendorForm,
@@ -40,6 +41,20 @@ describe('vendor validators', () => {
   });
 });
 
+describe('spreadsheet formula-injection sanitization', () => {
+  it('neutralizes values that would execute as a formula in Excel/Sheets', () => {
+    expect(sanitizeForSpreadsheet('=CMD(calc)')).toBe("'=CMD(calc)");
+    expect(sanitizeForSpreadsheet('+1234')).toBe("'+1234");
+    expect(sanitizeForSpreadsheet('-1 Solutions')).toBe("'-1 Solutions");
+    expect(sanitizeForSpreadsheet('@Widgets')).toBe("'@Widgets");
+  });
+
+  it('leaves ordinary values untouched', () => {
+    expect(sanitizeForSpreadsheet('TechCloud Services')).toBe('TechCloud Services');
+    expect(sanitizeForSpreadsheet('')).toBe('');
+  });
+});
+
 describe('risk bands', () => {
   it('maps scores to mockup bands', () => {
     expect(riskLevelFromScore(92)).toBe('Critical');
@@ -68,6 +83,22 @@ describe('vendor register markdown export', () => {
     expect(md).toMatch(/Third-Party Risk Register/);
     expect(md).toMatch(/Acme Cloud/);
     expect(md).toMatch(/High/);
+  });
+
+  it('sanitizes a formula-injection payload in a vendor name before export', () => {
+    const md = buildVendorRegisterMarkdown([
+      {
+        id: 'v2',
+        name: '=CMD(calc)',
+        category: 'SaaS',
+        criticality: 'Low',
+        status: 'Active',
+        riskScore: 0,
+        organizationId: 'org1',
+        createdAt: '2026-01-01',
+      },
+    ]);
+    expect(md).toContain("'=CMD(calc)");
   });
 });
 

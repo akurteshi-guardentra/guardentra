@@ -48,6 +48,10 @@ export function Onboarding() {
       setError("Organization name is too short");
       return;
     }
+    if (step === 1 && !industry) {
+      setError("Please select an industry vertical");
+      return;
+    }
     setStep(step + 1);
   };
 
@@ -204,10 +208,11 @@ export function Onboarding() {
                   <label className="text-xs font-bold text-slate-500 uppercase tracking-widest pl-1">Organization Name</label>
                   <div className="relative">
                     <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-500" />
-                    <Input 
+                    <Input
                       placeholder="e.g. Acme Cybersec"
                       value={orgName}
                       onChange={(e) => setOrgName(e.target.value)}
+                      maxLength={120}
                       className="pl-12 h-14 bg-white/5 border-white/10 text-lg text-white"
                     />
                   </div>

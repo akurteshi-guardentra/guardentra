@@ -3,6 +3,17 @@ import type { FrameworkId, RiskLevel, VendorStatus } from './types';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Excel/Sheets treats a leading =, +, -, @ (or tab/CR) as a formula — a vendor name or
+// contact field with such a prefix could execute arbitrary commands for whoever opens
+// an export in a spreadsheet app. Prefixing with a single quote is the standard OWASP
+// CSV-injection mitigation: it forces the cell to render as plain text instead of
+// rejecting values that legitimately start with those characters.
+const FORMULA_TRIGGER_RE = /^[=+\-@\t\r]/;
+
+export function sanitizeForSpreadsheet(value: string): string {
+  return FORMULA_TRIGGER_RE.test(value) ? `'${value}` : value;
+}
+
 export interface VendorFormInput {
   name: string;
   category: string;

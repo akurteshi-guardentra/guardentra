@@ -153,11 +153,12 @@ export function ContractNegotiator() {
                     </div>
                 </CardHeader>
                 <CardContent className="flex-1 pb-6">
-                    <textarea 
+                    <textarea
                       className="w-full h-96 bg-black/40 border border-white/10 rounded-xl p-6 text-slate-300 font-mono text-sm focus:outline-none focus:ring-1 focus:ring-primary/50 resize-none transition-all duration-300 placeholder:text-slate-700"
                       placeholder="Paste the security or data protection clauses here (e.g., Section 4: Data Security)..."
                       value={contractText}
                       onChange={(e) => setContractText(e.target.value)}
+                      maxLength={20000}
                     />
                     <div className="mt-6">
                         <Button 
