@@ -5,7 +5,7 @@ import { Button } from '../components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { cn } from '@/src/lib/utils';
-import { GoogleGenAI } from "@google/genai";
+import { authHeaders } from '../lib/authHeaders';
 import { useAuth } from '../lib/AuthContext';
 import { db } from '../firebase';
 import { collection, addDoc, query, where, getDocs, orderBy, deleteDoc, doc } from 'firebase/firestore';
@@ -40,19 +40,20 @@ export function ContractNegotiator() {
     setIsAnalyzing(true);
     setResults(null);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const prompt = `Act as a senior Cyber Lawyer and GRC lead. Analyze the following security clauses from a vendor contract:
       ${contractText}
       Compare this against industry standards (ISO 27001/GDPR). Identify 3 risky clauses and suggest "counter-language" for negotiation.
       Return JSON: { "score": 0-100, "risks": [{ "clause": "...", "risk": "...", "counter": "..." }], "summary": "..." }`;
 
-      const result = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-        config: { responseMimeType: "application/json" }
+      const response = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ prompt, model: 'gemini-3-flash-preview', responseMimeType: 'application/json' }),
       });
-      
-      const cleanJson = (result.text || "{}").replace(/```json/g, '').replace(/```/g, '').trim();
+      if (!response.ok) throw new Error('AI generation failed');
+      const { text } = await response.json();
+
+      const cleanJson = (text || "{}").replace(/```json/g, '').replace(/```/g, '').trim();
       const parsed = JSON.parse(cleanJson);
       setResults(parsed);
 

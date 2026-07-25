@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { GoogleGenAI } from "@google/genai";
+import { authHeaders } from '../lib/authHeaders';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/src/lib/utils';
 
@@ -108,21 +108,21 @@ export function Connectors() {
   const runAIScan = async (connector: Connector) => {
     setIsScanning(connector.id);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      
-      const prompt = `Simulate a security compliance scan for a ${connector.type} environment. 
+      const prompt = `Simulate a security compliance scan for a ${connector.type} environment.
       Analyze common security controls (MFA, Encryption, Access Logging, Public Buckets).
       Return a JSON array of 4 scan results.
       Each result must have: control (string), status ('Pass' | 'Fail' | 'Warning'), evidence (string), recommendation (string).
       Make it realistic and technical.`;
 
-      const result = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-        config: { responseMimeType: "application/json" }
+      const response = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ prompt, model: 'gemini-3-flash-preview', responseMimeType: 'application/json' }),
       });
+      if (!response.ok) throw new Error('AI generation failed');
+      const { text } = await response.json();
 
-      const results = JSON.parse(result.text || "[]");
+      const results = JSON.parse(text || "[]");
       setScanResults(prev => ({ ...prev, [connector.id]: results }));
       
       // Update connector status in Firestore

@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { db } from '../firebase';
 import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, getDocs, limit } from 'firebase/firestore';
 import { useAuth } from '../lib/AuthContext';
-import { GoogleGenAI, Type } from "@google/genai";
+import { authHeaders } from '../lib/authHeaders';
 import { cn } from '@/src/lib/utils';
 import { Input } from '@/src/components/ui/input';
 
@@ -75,20 +75,20 @@ export function Compliance() {
   const handleRunGapAnalysis = async (framework: Framework) => {
     setIsAnalyzing(framework.id);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      
-      const prompt = `Perform a predictive gap analysis for the ${framework.name} framework. 
-                  Current Progress: ${framework.progress}%. 
+      const prompt = `Perform a predictive gap analysis for the ${framework.name} framework.
+                  Current Progress: ${framework.progress}%.
                   Status: ${framework.status}.
                   Identify potential audit risks, missing evidence types, and recommended actions.
                   Return JSON: { predicted_audit_risk, evidence_gaps[], recommended_actions[{action, owner_role, effort}] }`;
 
-      const result = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-        config: { responseMimeType: "application/json" }
+      const response = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ prompt, model: 'gemini-3-flash-preview', responseMimeType: 'application/json' }),
       });
-      const analysis = JSON.parse(result.text || "{}");
+      if (!response.ok) throw new Error('AI generation failed');
+      const { text } = await response.json();
+      const analysis = JSON.parse(text || "{}");
       await updateDoc(doc(db, 'compliance', framework.id), {
         gapAnalysis: analysis
       });
@@ -104,16 +104,17 @@ export function Compliance() {
     setIsBuilding(base.name);
     
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const prompt = `Act as a GRC Expert. For the compliance framework "${base.name}", provide a high-level implementation roadmap.
       Return a JSON object with: { description, initialTaskCount, keyControls[], suggestedQuestionnaire }.`;
 
-      const result = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-        config: { responseMimeType: "application/json" }
+      const response = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ prompt, model: 'gemini-3-flash-preview', responseMimeType: 'application/json' }),
       });
-      const aiResponse = JSON.parse((result.text || "{}").replace(/```json/g, '').replace(/```/g, '').trim());
+      if (!response.ok) throw new Error('AI generation failed');
+      const { text } = await response.json();
+      const aiResponse = JSON.parse((text || "{}").replace(/```json/g, '').replace(/```/g, '').trim());
 
       await addDoc(collection(db, 'compliance'), {
         ...base,

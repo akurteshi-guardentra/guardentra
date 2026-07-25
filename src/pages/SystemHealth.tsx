@@ -19,7 +19,7 @@ import {
   TestTube2
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
-import { GoogleGenAI } from "@google/genai";
+import { authHeaders } from '../lib/authHeaders';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/src/lib/utils';
 import { seedTestData } from '../lib/seedData';
@@ -92,11 +92,12 @@ export function SystemHealth() {
     updateCheck('ai', { status: 'running', message: 'Warming Gemini...' });
     try {
       const startTime = Date.now();
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: "ping",
+      const pingResponse = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ prompt: 'ping', model: 'gemini-3-flash-preview' }),
       });
+      if (!pingResponse.ok) throw new Error('AI generation failed');
       const latency = Date.now() - startTime;
       updateCheck('ai', { status: 'passed', message: 'AI Logic engine responsive', latency });
       addLog(`AI: Gemini service heart-beat OK (${latency}ms)`);

@@ -9,7 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { db } from '../firebase';
 import { collection, query, where, onSnapshot, addDoc, updateDoc, doc } from 'firebase/firestore';
 import { useAuth } from '../lib/AuthContext';
-import { GoogleGenAI, Type } from "@google/genai";
+import { authHeaders } from '../lib/authHeaders';
 import { cn } from '@/src/lib/utils';
 
 interface PlaybookStep {
@@ -112,42 +112,46 @@ export function Incidents() {
   const handleGeneratePlaybook = async (incident: Incident) => {
     setIsGenerating(incident.id);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      
-      const response = await ai.models.generateContent({
-        model: "gemini-3.1-pro-preview",
-        contents: `Generate a structured incident response playbook for: ${incident.title}. 
-                  Severity: ${incident.severity}. 
+      const responseSchema = {
+        type: 'OBJECT',
+        properties: {
+          incident_type: { type: 'STRING' },
+          severity: { type: 'STRING' },
+          steps: {
+            type: 'ARRAY',
+            items: {
+              type: 'OBJECT',
+              properties: {
+                title: { type: 'STRING' },
+                description: { type: 'STRING' },
+                owner_role: { type: 'STRING' }
+              },
+              required: ["title", "description", "owner_role"]
+            }
+          },
+          communications: { type: 'ARRAY', items: { type: 'STRING' } },
+          evidence_to_collect: { type: 'ARRAY', items: { type: 'STRING' } }
+        },
+        required: ["incident_type", "severity", "steps", "communications", "evidence_to_collect"]
+      };
+
+      const response = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          prompt: `Generate a structured incident response playbook for: ${incident.title}.
+                  Severity: ${incident.severity}.
                   Status: ${incident.status}.
                   Provide clear steps, communication requirements, and evidence to collect.`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              incident_type: { type: Type.STRING },
-              severity: { type: Type.STRING },
-              steps: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    title: { type: Type.STRING },
-                    description: { type: Type.STRING },
-                    owner_role: { type: Type.STRING }
-                  },
-                  required: ["title", "description", "owner_role"]
-                }
-              },
-              communications: { type: Type.ARRAY, items: { type: Type.STRING } },
-              evidence_to_collect: { type: Type.ARRAY, items: { type: Type.STRING } }
-            },
-            required: ["incident_type", "severity", "steps", "communications", "evidence_to_collect"]
-          }
-        }
+          model: 'gemini-3.1-pro-preview',
+          responseMimeType: 'application/json',
+          responseSchema,
+        }),
       });
+      if (!response.ok) throw new Error('AI generation failed');
+      const { text } = await response.json();
 
-      const playbook = JSON.parse(response.text || '{}');
+      const playbook = JSON.parse(text || '{}');
       await updateDoc(doc(db, 'incidents', incident.id), {
         playbook: playbook
       });

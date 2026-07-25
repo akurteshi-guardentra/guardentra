@@ -25,7 +25,7 @@ import {
   FileQuestion,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
-import { GoogleGenAI, Type } from '@google/genai';
+import { authHeaders } from '../lib/authHeaders';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/src/lib/utils';
 import ReactMarkdown from 'react-markdown';
@@ -282,7 +282,6 @@ export function AuditReadiness() {
         complianceProgress: matchingCompliance?.progress ?? null,
       };
 
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const prompt = `Act as a strict regulatory auditor.
 Analyze organizational data for audit readiness against the ${frameworkName} framework.
 
@@ -308,60 +307,66 @@ Return JSON with:
 
 Call out TPRM and incident-response gaps when relevant.`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.1-pro-preview',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              readinessScore: { type: Type.NUMBER },
-              status: { type: Type.STRING },
-              redFlags: { type: Type.ARRAY, items: { type: Type.STRING } },
-              recommendations: { type: Type.ARRAY, items: { type: Type.STRING } },
-              auditorOpinion: { type: Type.STRING },
-              coveragePercent: { type: Type.NUMBER },
-              controlCoverage: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    id: { type: Type.STRING },
-                    name: { type: Type.STRING },
-                    status: { type: Type.STRING },
-                    evidenceHint: { type: Type.STRING },
-                  },
-                  required: ['id', 'name', 'status', 'evidenceHint'],
-                },
+      const responseSchema = {
+        type: 'OBJECT',
+        properties: {
+          readinessScore: { type: 'NUMBER' },
+          status: { type: 'STRING' },
+          redFlags: { type: 'ARRAY', items: { type: 'STRING' } },
+          recommendations: { type: 'ARRAY', items: { type: 'STRING' } },
+          auditorOpinion: { type: 'STRING' },
+          coveragePercent: { type: 'NUMBER' },
+          controlCoverage: {
+            type: 'ARRAY',
+            items: {
+              type: 'OBJECT',
+              properties: {
+                id: { type: 'STRING' },
+                name: { type: 'STRING' },
+                status: { type: 'STRING' },
+                evidenceHint: { type: 'STRING' },
               },
-              evidenceGaps: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    evidenceName: { type: Type.STRING },
-                    reason: { type: Type.STRING },
-                    priority: { type: Type.STRING },
-                  },
-                  required: ['evidenceName', 'reason', 'priority'],
-                },
-              },
+              required: ['id', 'name', 'status', 'evidenceHint'],
             },
-            required: [
-              'readinessScore',
-              'status',
-              'redFlags',
-              'recommendations',
-              'auditorOpinion',
-              'controlCoverage',
-              'evidenceGaps',
-            ],
+          },
+          evidenceGaps: {
+            type: 'ARRAY',
+            items: {
+              type: 'OBJECT',
+              properties: {
+                evidenceName: { type: 'STRING' },
+                reason: { type: 'STRING' },
+                priority: { type: 'STRING' },
+              },
+              required: ['evidenceName', 'reason', 'priority'],
+            },
           },
         },
-      });
+        required: [
+          'readinessScore',
+          'status',
+          'redFlags',
+          'recommendations',
+          'auditorOpinion',
+          'controlCoverage',
+          'evidenceGaps',
+        ],
+      };
 
-      const result = JSON.parse(response.text || '{}');
+      const response = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          prompt,
+          model: 'gemini-3.1-pro-preview',
+          responseMimeType: 'application/json',
+          responseSchema,
+        }),
+      });
+      if (!response.ok) throw new Error('AI generation failed');
+      const { text } = await response.json();
+
+      const result = JSON.parse(text || '{}');
       const readinessScore = Number(result.readinessScore) || 0;
 
       await addDoc(collection(db, 'audit_readiness'), {

@@ -24,7 +24,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../co
 import { Input } from '../components/ui/input';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/src/lib/utils';
-import { GoogleGenAI } from "@google/genai";
 
 interface CalendarEvent {
   id: string;

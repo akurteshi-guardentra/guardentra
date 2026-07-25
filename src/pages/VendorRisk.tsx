@@ -38,7 +38,7 @@ import {
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
-import { GoogleGenAI, Type } from "@google/genai";
+import { authHeaders } from '../lib/authHeaders';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/src/lib/utils';
 
@@ -471,19 +471,20 @@ export function VendorRisk() {
     if (vendors.length === 0) return;
     setIsRefreshingNews(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const vendorNames = vendors.slice(0, 5).map(v => v.name).join(', ');
-      
+
       const prompt = `Act as a Cyber Threat Intelligence analyst. For these vendors: ${vendorNames}, provide 3 simulated recent security news items or "global alerts".
       The alerts should be business-critical. Include a "Recommended Action" that a NON-TECHNICAL manager can take.
       Return a JSON array: [{ vendor, date, severity: 'Critical'|'High'|'Medium', title, summary, action: "Simple step like 'Email their rep' or 'Check usage'" }]`;
 
-      const result = await ai.models.generateContent({
-        model: "gemini-1.5-flash",
-        contents: prompt,
-        config: { responseMimeType: "application/json" }
+      const response = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ prompt, model: 'gemini-1.5-flash', responseMimeType: 'application/json' }),
       });
-      const data = JSON.parse(result.text || "[]");
+      if (!response.ok) throw new Error('AI generation failed');
+      const { text } = await response.json();
+      const data = JSON.parse(text || "[]");
       setVendorNews(data);
     } catch (e) {
       console.error("Failed to fetch vendor intelligence:", e);
@@ -557,20 +558,21 @@ export function VendorRisk() {
     
     setIsAnalyzing('magic-adding');
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const prompt = `Act as an Insurance GRC Expert. For the company "${vendorName}", determine:
       1. Business Category (e.g., Claims Processing, Policy Admin Systems, Cloud Infrastructure)
       2. Suggested Criticality (Critical, High, Medium, Low)
       3. A brief 1-sentence risk summary focusing on potential regulatory impact (e.g., NYDFS/NAIC).
       Return JSON: { category, criticality, reputation }`;
 
-      const result = await ai.models.generateContent({
-        model: "gemini-1.5-flash",
-        contents: prompt,
-        config: { responseMimeType: "application/json" }
+      const response = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ prompt, model: 'gemini-1.5-flash', responseMimeType: 'application/json' }),
       });
-      
-      const info = JSON.parse(result.text || "{}");
+      if (!response.ok) throw new Error('AI generation failed');
+      const { text } = await response.json();
+
+      const info = JSON.parse(text || "{}");
       
       await addDoc(collection(db, 'vendors'), {
         name: vendorName,
@@ -595,20 +597,21 @@ export function VendorRisk() {
     if (!excelPaste.trim() || !profile?.organizationId) return;
     setIsAnalyzing('excel-importing');
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const prompt = `I have several rows copied from an Excel sheet for vendor management. 
+      const prompt = `I have several rows copied from an Excel sheet for vendor management.
       Text: "${excelPaste}"
-      
+
       Task: Extract each unique company name and categorize them for an INSURANCE company's third-party risk program.
       Return a JSON array of vendors: [{ name, category, criticality }] (Max 10).`;
 
-      const result = await ai.models.generateContent({
-        model: "gemini-1.5-flash",
-        contents: prompt,
-        config: { responseMimeType: "application/json" }
+      const response = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ prompt, model: 'gemini-1.5-flash', responseMimeType: 'application/json' }),
       });
-      
-      const extractedVendors = JSON.parse(result.text || "[]");
+      if (!response.ok) throw new Error('AI generation failed');
+      const { text } = await response.json();
+
+      const extractedVendors = JSON.parse(text || "[]");
       
       for (const v of extractedVendors) {
         await addDoc(collection(db, 'vendors'), {
@@ -673,8 +676,6 @@ export function VendorRisk() {
   const runAIAssessment = async (vendor: Vendor) => {
     setIsAnalyzing(vendor.id);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      
       const prompt = `Perform a Regulatory Third-Party Risk Assessment for an INSURANCE environment: "${vendor.name}".
       Vendor Category: ${vendor.category}.
       
@@ -696,13 +697,15 @@ export function VendorRisk() {
         "briefing": "ClaimsPlus is a critical vendor with medium compliance maturity and missing MFA evidence."
       }`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-1.5-flash",
-        contents: prompt,
-        config: { responseMimeType: "application/json" }
+      const response = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ prompt, model: 'gemini-1.5-flash', responseMimeType: 'application/json' }),
       });
+      if (!response.ok) throw new Error('AI generation failed');
+      const { text } = await response.json();
 
-      const result = JSON.parse(response.text || "{}");
+      const result = JSON.parse(text || "{}");
       
       await addDoc(collection(db, 'vendor_assessments'), {
         vendorId: vendor.id,
