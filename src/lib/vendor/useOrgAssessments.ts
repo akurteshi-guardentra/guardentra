@@ -1,14 +1,33 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { addDoc, collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { isFirestoreUnavailableError } from './localVendorStore';
 import {
   listLocalAssessments,
+  removeLocalAssessment,
   type StoredAssessment,
 } from './localAssessmentStore';
 import type { FrameworkId } from './types';
 
 export type AssessmentDataMode = 'firestore' | 'local';
+
+const RETRY_INTERVAL_MS = 30000;
+
+/** Write any local-only assessments (created while Firestore was unreachable) for real,
+ * then drop them from the local store — otherwise they'd stay invisible to teammates
+ * forever even after Firestore reconnects. */
+async function promoteLocalAssessments(orgId: string): Promise<void> {
+  const localOnly = listLocalAssessments(orgId).filter((a) => a.id.startsWith('local_asm_'));
+  for (const assessment of localOnly) {
+    try {
+      const { id, ...rest } = assessment;
+      await addDoc(collection(db, 'assessments'), rest);
+      removeLocalAssessment(orgId, id);
+    } catch (err) {
+      console.warn('useOrgAssessments: could not promote local-only assessment, will retry next reconnect', err);
+    }
+  }
+}
 
 function normalizeCloudDoc(id: string, data: Record<string, unknown>): StoredAssessment {
   const frameworks = (data.frameworks as FrameworkId[] | undefined) || [];
@@ -49,6 +68,7 @@ export function useOrgAssessments(orgId?: string | null) {
   const [assessments, setAssessments] = useState<StoredAssessment[]>([]);
   const [mode, setMode] = useState<AssessmentDataMode>('firestore');
   const [loading, setLoading] = useState(true);
+  const [retryTick, setRetryTick] = useState(0);
   const modeRef = useRef<AssessmentDataMode>('firestore');
 
   const refreshLocal = useCallback(() => {
@@ -58,6 +78,10 @@ export function useOrgAssessments(orgId?: string | null) {
     setMode('local');
     setLoading(false);
   }, [orgId]);
+
+  const retryFirestore = useCallback(() => {
+    setRetryTick((t) => t + 1);
+  }, []);
 
   useEffect(() => {
     if (!orgId) {
@@ -86,13 +110,18 @@ export function useOrgAssessments(orgId?: string | null) {
       const q = query(collection(db, 'assessments'), where('organizationId', '==', orgId));
       unsub = onSnapshot(
         q,
-        (snap) => {
+        async (snap) => {
           if (settled && modeRef.current === 'local') return;
           settled = true;
           window.clearTimeout(failSafe);
+          const wasLocal = modeRef.current === 'local';
+          if (wasLocal) {
+            await promoteLocalAssessments(orgId);
+          }
           const rows = snap.docs.map((d) => normalizeCloudDoc(d.id, d.data() as Record<string, unknown>));
           rows.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-          // Merge any local-only rows so local creates still show when cloud is empty-but-listening.
+          // Merge any remaining local-only rows (e.g. promotion above partially failed)
+          // so local creates still show when cloud is empty-but-listening.
           const local = listLocalAssessments(orgId);
           const cloudIds = new Set(rows.map((r) => r.id));
           const merged = [...rows, ...local.filter((l) => !cloudIds.has(l.id))];
@@ -119,7 +148,15 @@ export function useOrgAssessments(orgId?: string | null) {
       window.clearTimeout(failSafe);
       if (unsub) unsub();
     };
-  }, [orgId, refreshLocal]);
+  }, [orgId, refreshLocal, retryTick]);
 
-  return { assessments, mode, loading, refreshLocal, modeRef };
+  // Auto-retry while stuck in local mode, so a transient outage can self-heal
+  // without requiring a page reload.
+  useEffect(() => {
+    if (mode !== 'local') return;
+    const interval = window.setInterval(retryFirestore, RETRY_INTERVAL_MS);
+    return () => window.clearInterval(interval);
+  }, [mode, retryFirestore]);
+
+  return { assessments, mode, loading, refreshLocal, retryFirestore, modeRef };
 }

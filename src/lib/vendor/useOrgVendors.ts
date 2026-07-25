@@ -1,19 +1,41 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { addDoc, collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import type { Vendor } from './types';
-import { isFirestoreUnavailableError, listLocalVendors } from './localVendorStore';
+import { isFirestoreUnavailableError, listLocalVendors, removeLocalVendor } from './localVendorStore';
 
 export type VendorDataMode = 'firestore' | 'local';
 
+const RETRY_INTERVAL_MS = 30000;
+
+/** Write any local-only vendors (created while Firestore was unreachable) for real,
+ * then drop them from the local store — otherwise they'd stay invisible to teammates
+ * forever even after Firestore reconnects. */
+async function promoteLocalVendors(orgId: string): Promise<void> {
+  const localOnly = listLocalVendors(orgId).filter((v) => v.id.startsWith('local_'));
+  for (const vendor of localOnly) {
+    try {
+      const { id, ...rest } = vendor;
+      await addDoc(collection(db, 'vendors'), rest);
+      removeLocalVendor(orgId, id);
+    } catch (err) {
+      console.warn('useOrgVendors: could not promote local-only vendor, will retry next reconnect', err);
+    }
+  }
+}
+
 /**
  * Shared vendor list for Vendors directory consumers (wizard, Assessments).
- * Falls back to localStorage when Firestore is missing or times out.
+ * Falls back to localStorage when Firestore is missing or times out, and keeps
+ * retrying Firestore in the background (every 30s) rather than staying local-only
+ * forever — a reconnect promotes any local-only creates before trusting the cloud
+ * snapshot as the full picture.
  */
 export function useOrgVendors(orgId?: string | null) {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [mode, setMode] = useState<VendorDataMode>('firestore');
   const [loading, setLoading] = useState(true);
+  const [retryTick, setRetryTick] = useState(0);
   const modeRef = useRef<VendorDataMode>('firestore');
 
   const refreshLocal = useCallback(() => {
@@ -24,6 +46,10 @@ export function useOrgVendors(orgId?: string | null) {
     setMode('local');
     setLoading(false);
   }, [orgId]);
+
+  const retryFirestore = useCallback(() => {
+    setRetryTick((t) => t + 1);
+  }, []);
 
   useEffect(() => {
     if (!orgId) {
@@ -52,10 +78,14 @@ export function useOrgVendors(orgId?: string | null) {
       const q = query(collection(db, 'vendors'), where('organizationId', '==', orgId));
       unsub = onSnapshot(
         q,
-        (snap) => {
+        async (snap) => {
           if (settled && modeRef.current === 'local') return;
           settled = true;
           window.clearTimeout(failSafe);
+          const wasLocal = modeRef.current === 'local';
+          if (wasLocal) {
+            await promoteLocalVendors(orgId);
+          }
           const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Vendor));
           rows.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
           setVendors(rows);
@@ -81,7 +111,15 @@ export function useOrgVendors(orgId?: string | null) {
       window.clearTimeout(failSafe);
       if (unsub) unsub();
     };
-  }, [orgId, refreshLocal]);
+  }, [orgId, refreshLocal, retryTick]);
 
-  return { vendors, mode, loading, refreshLocal, modeRef };
+  // Auto-retry while stuck in local mode, so a transient outage can self-heal
+  // without requiring a page reload.
+  useEffect(() => {
+    if (mode !== 'local') return;
+    const interval = window.setInterval(retryFirestore, RETRY_INTERVAL_MS);
+    return () => window.clearInterval(interval);
+  }, [mode, retryFirestore]);
+
+  return { vendors, mode, loading, refreshLocal, retryFirestore, modeRef };
 }

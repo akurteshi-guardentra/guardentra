@@ -69,6 +69,14 @@ export function replaceLocalVendors(orgId: string, vendors: Vendor[]) {
   writeStore(store);
 }
 
+/** Drop a local-only row once it's been promoted to a real Firestore doc. */
+export function removeLocalVendor(orgId: string, vendorId: string): void {
+  const store = readStore();
+  const rows = store[orgId] || [];
+  store[orgId] = rows.filter((v) => v.id !== vendorId);
+  writeStore(store);
+}
+
 export function patchLocalVendor(
   orgId: string,
   vendorId: string,

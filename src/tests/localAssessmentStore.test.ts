@@ -4,6 +4,7 @@ import {
   deriveStatusFromAssessments,
   listLocalAssessments,
   listLocalAssessmentsForVendor,
+  removeLocalAssessment,
   replaceLocalAssessments,
 } from '../lib/vendor/localAssessmentStore';
 import {
@@ -67,5 +68,26 @@ describe('local assessment store + vendor correlation', () => {
       ])
     ).toBe('Completed');
     expect(deriveStatusFromAssessments([{ status: 'Overdue', progressPct: 10 }])).toBe('Overdue');
+  });
+
+  it('removeLocalAssessment drops only the promoted row (used when Firestore reconnects)', () => {
+    const vendor = createLocalVendor(orgId, { name: 'Promo Co', category: 'SaaS', criticality: 'High' });
+    const promoted = createLocalAssessment(orgId, {
+      vendorId: vendor.id,
+      vendorName: vendor.name,
+      frameworks: ['soc2'],
+    });
+    createLocalAssessment(orgId, {
+      vendorId: vendor.id,
+      vendorName: vendor.name,
+      frameworks: ['iso27001'],
+    });
+    expect(listLocalAssessments(orgId)).toHaveLength(2);
+
+    removeLocalAssessment(orgId, promoted.id);
+
+    const remaining = listLocalAssessments(orgId);
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].id).not.toBe(promoted.id);
   });
 });

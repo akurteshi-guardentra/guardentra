@@ -527,6 +527,10 @@ export function VendorRisk() {
   const fetchAssessments = (vendorId: string) => {
     if (assessments[vendorId]) return;
 
+    // NOTE: `vendor_assessments` is no longer written to (AssessmentWizard.tsx now writes
+    // only `assessments`, the app's real source of truth). This page is frozen behind the
+    // `vendorsLegacy` flag; if it's ever re-enabled, point this query at `assessments`
+    // instead (where vendorId + orderBy createdAt) or this history panel will stay empty.
     const q = query(
       collection(db, 'vendor_assessments'),
       where('vendorId', '==', vendorId),

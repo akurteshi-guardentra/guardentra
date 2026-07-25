@@ -3,6 +3,7 @@ import {
   createLocalVendor,
   isFirestoreUnavailableError,
   listLocalVendors,
+  removeLocalVendor,
   replaceLocalVendors,
 } from '../lib/vendor/localVendorStore';
 
@@ -49,5 +50,17 @@ describe('localVendorStore', () => {
     createLocalVendor('orgZ', { name: 'A', category: 'SaaS', criticality: 'Low' });
     replaceLocalVendors('orgZ', []);
     expect(listLocalVendors('orgZ')).toEqual([]);
+  });
+
+  it('removeLocalVendor drops only the promoted row, leaving other org vendors intact', () => {
+    const promoted = createLocalVendor('orgP', { name: 'Promoted Co', category: 'SaaS', criticality: 'High' });
+    createLocalVendor('orgP', { name: 'Still Local Co', category: 'IT Services', criticality: 'Low' });
+    expect(listLocalVendors('orgP')).toHaveLength(2);
+
+    removeLocalVendor('orgP', promoted.id);
+
+    const remaining = listLocalVendors('orgP');
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].name).toBe('Still Local Co');
   });
 });

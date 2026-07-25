@@ -1,5 +1,5 @@
 import { auth, db } from '../firebase';
-import { doc, getDoc, setDoc, collection, addDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, writeBatch } from 'firebase/firestore';
 import { GoogleAuthProvider, signInWithPopup, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
 
 enum OperationType {
@@ -69,23 +69,16 @@ export const signInWithGoogle = async () => {
     }
 
     if (!userSnap.exists()) {
-      // Create a default organization for the new user
-      let orgRef;
+      // Org + profile are created atomically (single batch) — either both are persisted
+      // or neither is, so a failed profile write can never orphan a real organization doc.
+      const orgRef = doc(collection(db, 'organizations'));
       try {
-        orgRef = await addDoc(collection(db, 'organizations'), {
+        const batch = writeBatch(db);
+        batch.set(orgRef, {
           name: `${user.displayName || 'User'}'s Organization`,
           createdAt: new Date().toISOString()
         });
-      } catch (e: any) {
-        if (e.code === 'permission-denied') {
-          handleFirestoreError(e, OperationType.CREATE, 'organizations');
-        }
-        throw e;
-      }
-
-      // Create the user profile
-      try {
-        await setDoc(userRef, {
+        batch.set(userRef, {
           email: user.email,
           displayName: user.displayName,
           role: 'admin',
@@ -93,9 +86,10 @@ export const signInWithGoogle = async () => {
           onboarded: false,
           createdAt: new Date().toISOString()
         });
+        await batch.commit();
       } catch (e: any) {
         if (e.code === 'permission-denied') {
-          handleFirestoreError(e, OperationType.WRITE, 'users/' + user.uid);
+          handleFirestoreError(e, OperationType.WRITE, 'organizations+users/' + user.uid);
         }
         throw e;
       }
@@ -120,24 +114,17 @@ export const signUpWithEmail = async (email: string, password: string, name: str
     
     await updateProfile(user, { displayName: name });
 
-    // Create a default organization for the new user
-    let orgRef;
+    // Org + profile are created atomically (single batch) — either both are persisted
+    // or neither is, so a failed profile write can never orphan a real organization doc.
+    const userRef = doc(db, 'users', user.uid);
+    const orgRef = doc(collection(db, 'organizations'));
     try {
-      orgRef = await addDoc(collection(db, 'organizations'), {
+      const batch = writeBatch(db);
+      batch.set(orgRef, {
         name: `${name || 'User'}'s Organization`,
         createdAt: new Date().toISOString()
       });
-    } catch (e: any) {
-      if (e.code === 'permission-denied') {
-        handleFirestoreError(e, OperationType.CREATE, 'organizations');
-      }
-      throw e;
-    }
-
-    // Create the user profile
-    const userRef = doc(db, 'users', user.uid);
-    try {
-      await setDoc(userRef, {
+      batch.set(userRef, {
         email: user.email,
         displayName: name,
         role: 'admin',
@@ -145,13 +132,14 @@ export const signUpWithEmail = async (email: string, password: string, name: str
         onboarded: false,
         createdAt: new Date().toISOString()
       });
+      await batch.commit();
     } catch (e: any) {
       if (e.code === 'permission-denied') {
-        handleFirestoreError(e, OperationType.WRITE, 'users/' + user.uid);
+        handleFirestoreError(e, OperationType.WRITE, 'organizations+users/' + user.uid);
       }
       throw e;
     }
-    
+
     return user;
   } catch (error: any) {
     console.error("Error signing up with email", error);

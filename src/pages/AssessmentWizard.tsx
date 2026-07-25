@@ -179,20 +179,13 @@ export function AssessmentWizard() {
         writeTimeout,
       ]);
 
-      try {
-        await addDoc(collection(db, 'vendor_assessments'), {
-          vendorId,
-          type: 'Questionnaire',
-          summary: `Framework assessment: ${frameworks.join(', ')}`,
-          findings: [],
-          score: 0,
-          organizationId: orgId,
-          createdAt: new Date().toISOString(),
-          assessmentId: ref.id,
-        });
-      } catch {
-        /* legacy stub is best-effort */
-      }
+      // `assessments` (above) is the sole source of truth for the active app. The old
+      // best-effort dual-write to `vendor_assessments` was silently inconsistent — any
+      // assessment whose legacy write failed was invisible on /vendors/legacy while
+      // showing correctly everywhere else. Removed; /vendors/legacy is frozen behind the
+      // `vendorsLegacy` flag today. If it's ever re-enabled, migrate VendorRisk.tsx's
+      // assessment-history query to read `assessments` (where vendorId + orderBy createdAt)
+      // instead of resurrecting this write.
 
       await syncVendorAfterAssessmentCreate(orgId, vendorId, false);
       navigate(`/portal/${ref.id}`);

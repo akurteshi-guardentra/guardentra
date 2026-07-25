@@ -91,6 +91,14 @@ export function replaceLocalAssessments(orgId: string, assessments: StoredAssess
   writeStore(store);
 }
 
+/** Drop a local-only row once it's been promoted to a real Firestore doc. */
+export function removeLocalAssessment(orgId: string, id: string): void {
+  const store = readStore();
+  const rows = store[orgId] || [];
+  store[orgId] = rows.filter((a) => a.id !== id);
+  writeStore(store);
+}
+
 /** Map assessment rows for a vendor into a directory chip status. */
 export function deriveStatusFromAssessments(
   assessments: Pick<StoredAssessment, 'status' | 'dueAt' | 'dueDate' | 'progressPct' | 'progress'>[]

@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { auth, db } from '../firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, onSnapshot, setDoc, addDoc, collection } from 'firebase/firestore';
+import { doc, onSnapshot, collection, writeBatch } from 'firebase/firestore';
 
 interface UserProfile {
   email: string;
@@ -159,14 +159,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               } else {
                 console.log('AuthContext: Profile missing for authenticated user, attempting auto-initialization...');
                 try {
-                  console.log('AuthContext: Creating organization...');
-                  const orgRef = await addDoc(collection(db, 'organizations'), {
-                    name: `${currentUser.displayName || 'User'}'s Organization`,
-                    createdAt: new Date().toISOString(),
-                    autoCreated: true,
-                  });
-                  console.log('AuthContext: Auto-created organization:', orgRef.id);
-
+                  // Org + profile creation is atomic (single batch): either both are
+                  // persisted or neither is. Previously these were two separate awaited
+                  // writes — if the org write succeeded but the profile write failed, the
+                  // org was orphaned (no user ever pointed at it) and, since userSnap still
+                  // didn't exist, the *next* snapshot/login would run this whole block
+                  // again and create yet another org. Pre-generating the org's doc ref lets
+                  // us know its id before committing either write.
+                  const orgRef = doc(collection(db, 'organizations'));
                   const newProfile = {
                     email: currentUser.email,
                     displayName: currentUser.displayName || 'New User',
@@ -176,9 +176,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     createdAt: new Date().toISOString(),
                   };
 
-                  console.log('AuthContext: Creating user profile document...');
-                  await setDoc(userRef, newProfile);
-                  console.log('AuthContext: Auto-created user profile successfully');
+                  console.log('AuthContext: Creating organization + user profile atomically...');
+                  const batch = writeBatch(db);
+                  batch.set(orgRef, {
+                    name: `${currentUser.displayName || 'User'}'s Organization`,
+                    createdAt: new Date().toISOString(),
+                    autoCreated: true,
+                  });
+                  batch.set(userRef, newProfile);
+                  await batch.commit();
+                  console.log('AuthContext: Auto-created organization + user profile successfully:', orgRef.id);
                 } catch (initErr: any) {
                   console.error('AuthContext: Auto-initialization failed:', initErr);
                   if (isDbMissingError(initErr) || initErr?.code === 'permission-denied') {
