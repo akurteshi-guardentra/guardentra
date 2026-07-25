@@ -18,5 +18,13 @@ service firebase.storage {
       allow write: if isSignedIn()
         && request.resource.size < 25 * 1024 * 1024;
     }
+
+    // Vendor-level general attachments (src/lib/vendor/evidenceUpload.ts uploadVendorAttachment,
+    // used by the Impact page) — 20MB cap matches the app-side check in that function.
+    match /orgs/{orgId}/vendors/{vendorId}/attachments/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn()
+        && request.resource.size < 20 * 1024 * 1024;
+    }
   }
 }

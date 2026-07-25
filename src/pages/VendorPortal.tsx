@@ -21,16 +21,18 @@ import { auth, db } from '../firebase';
 import { Button } from '../components/ui/button';
 import { cn } from '../lib/utils';
 import type { AnswerValue } from '../lib/vendor/types';
+import { CheckSquare, Square } from 'lucide-react';
 import {
   buildQuestionsForFrameworks,
   categoryProgress,
+  isAnswered,
   overallProgressPct,
   QUESTION_CATEGORIES,
   type PortalQuestion,
 } from '../lib/vendor/questionBank';
 import { uploadPortalEvidence, type UploadedEvidence } from '../lib/vendor/evidenceUpload';
 
-type AnswersMap = Record<string, AnswerValue | undefined>;
+type AnswersMap = Record<string, AnswerValue | string | string[] | undefined>;
 type CommentsMap = Record<string, string>;
 type EvidenceMap = Record<string, UploadedEvidence[]>;
 
@@ -144,10 +146,17 @@ export function VendorPortal() {
     [persistDraft]
   );
 
-  const setAnswer = (questionId: string, value: AnswerValue) => {
+  const setAnswer = (questionId: string, value: AnswerValue | string | string[]) => {
     const next = { ...answers, [questionId]: value };
     setAnswers(next);
     scheduleSave(next, comments, evidence);
+  };
+
+  const toggleMultiChoice = (questionId: string, option: string) => {
+    const current = answers[questionId];
+    const selected = Array.isArray(current) ? current : [];
+    const next = selected.includes(option) ? selected.filter((o) => o !== option) : [...selected, option];
+    setAnswer(questionId, next);
   };
 
   const setComment = (questionId: string, value: string) => {
@@ -181,7 +190,7 @@ export function VendorPortal() {
 
   const handleSubmit = async () => {
     if (!assessmentId) return;
-    const missing = questions.filter((q) => q.required && !answers[q.id]);
+    const missing = questions.filter((q) => q.required && !isAnswered(answers[q.id]));
     if (missing.length) {
       setUploadError(`Answer all required questions (${missing.length} remaining).`);
       return;
@@ -470,15 +479,23 @@ export function VendorPortal() {
 
               <div className="mt-6 grid gap-2 sm:grid-cols-2">
                 {currentQuestion.options.map((option) => {
-                  const selected = answers[currentQuestion.id] === option;
-                  const isNo = option === 'No';
+                  const isMulti = currentQuestion.type === 'multiple_choice';
+                  const currentValue = answers[currentQuestion.id];
+                  const selected = isMulti
+                    ? Array.isArray(currentValue) && currentValue.includes(option)
+                    : currentValue === option;
+                  const isNo = !isMulti && option === 'No';
                   return (
                     <button
                       key={option}
                       type="button"
-                      onClick={() => setAnswer(currentQuestion.id, option)}
+                      onClick={() =>
+                        isMulti
+                          ? toggleMultiChoice(currentQuestion.id, option)
+                          : setAnswer(currentQuestion.id, option)
+                      }
                       className={cn(
-                        'rounded-xl border px-4 py-3 text-left text-sm font-medium transition',
+                        'flex items-center gap-2 rounded-xl border px-4 py-3 text-left text-sm font-medium transition',
                         selected
                           ? isNo
                             ? 'border-rose-500/40 bg-rose-500/10 text-rose-300'
@@ -486,6 +503,12 @@ export function VendorPortal() {
                           : 'border-white/10 text-slate-300 hover:bg-white/5'
                       )}
                     >
+                      {isMulti &&
+                        (selected ? (
+                          <CheckSquare className="h-4 w-4 shrink-0" />
+                        ) : (
+                          <Square className="h-4 w-4 shrink-0" />
+                        ))}
                       {option}
                     </button>
                   );

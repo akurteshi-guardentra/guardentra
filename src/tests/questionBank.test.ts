@@ -3,6 +3,7 @@ import {
   buildQuestionsForFrameworks,
   categoryProgress,
   countQuestionsForFramework,
+  isAnswered,
   overallProgressPct,
 } from '../lib/vendor/questionBank';
 
@@ -44,5 +45,30 @@ describe('question bank', () => {
       expect(countQuestionsForFramework(id)).toBe(buildQuestionsForFrameworks([id]).length);
       expect(countQuestionsForFramework(id)).toBeGreaterThan(0);
     }
+  });
+
+  it('includes real single_choice and multiple_choice questions alongside yesno', () => {
+    const qs = buildQuestionsForFrameworks([]);
+    const singleChoice = qs.filter((q) => q.type === 'single_choice');
+    const multipleChoice = qs.filter((q) => q.type === 'multiple_choice');
+    const yesNo = qs.filter((q) => q.type === 'yesno');
+
+    expect(singleChoice.length).toBeGreaterThan(0);
+    expect(multipleChoice.length).toBeGreaterThan(0);
+    expect(yesNo.length).toBeGreaterThan(0);
+
+    // Non-yesno questions must carry their own answer choices, not the Yes/No/Partial/N/A rail.
+    for (const q of [...singleChoice, ...multipleChoice]) {
+      expect(q.options).not.toEqual(['Yes', 'No', 'Partially', 'Not Applicable']);
+      expect(q.options.length).toBeGreaterThan(1);
+    }
+  });
+
+  it('treats an empty multiple_choice selection as unanswered, a non-empty one as answered', () => {
+    expect(isAnswered(undefined)).toBe(false);
+    expect(isAnswered('')).toBe(false);
+    expect(isAnswered([])).toBe(false);
+    expect(isAnswered('Yes')).toBe(true);
+    expect(isAnswered(['ISO 27001'])).toBe(true);
   });
 });

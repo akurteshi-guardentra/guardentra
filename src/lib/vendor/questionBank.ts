@@ -1,10 +1,12 @@
-import type { AnswerValue, FrameworkId, QuestionCategory } from './types';
+import type { AnswerValue, FrameworkId, QuestionCategory, QuestionType } from './types';
 
 export interface PortalQuestion {
   id: string;
   category: QuestionCategory;
   question: string;
-  options: AnswerValue[];
+  type: QuestionType;
+  /** Yes/No/Partially/N/A for 'yesno'; the question's own answer choices for single/multiple choice. */
+  options: string[];
   required: boolean;
 }
 
@@ -17,6 +19,9 @@ interface BankItem {
    * multiple frameworks on purpose — that overlap is what makes cross-framework
    * dedup real: a vendor answers this once even if 3 selected frameworks require it. */
   frameworks: FrameworkId[];
+  /** Defaults to 'yesno'. single_choice/multiple_choice must set their own `choices`. */
+  type?: QuestionType;
+  choices?: string[];
 }
 
 /**
@@ -276,6 +281,58 @@ const BANK: BankItem[] = [
     text: 'Do you run an annual disaster recovery tabletop exercise with key stakeholders?',
     frameworks: ['nist_csf_2', 'iso27001'],
   },
+
+  // ---- Single choice ----
+  {
+    category: 'Company Profile',
+    text: "What is the maturity of your organization's SOC 2 report?",
+    frameworks: ['soc2'],
+    type: 'single_choice',
+    choices: ['Type I', 'Type II', 'No SOC 2 report'],
+  },
+  {
+    category: 'Incident Response',
+    text: 'How frequently does your organization perform third-party penetration testing?',
+    frameworks: ['nist_csf_2', 'pci_dss_4', 'cis_controls'],
+    type: 'single_choice',
+    choices: ['Quarterly or more', 'Semi-annually', 'Annually', 'Not performed'],
+  },
+  {
+    category: 'Access Control',
+    text: 'What is the maximum credential rotation interval enforced for privileged accounts?',
+    frameworks: ['pci_dss_4', 'cis_controls'],
+    type: 'single_choice',
+    choices: ['30 days', '90 days', '180 days', 'No enforced rotation'],
+  },
+
+  // ---- Multiple choice ----
+  {
+    category: 'Company Profile',
+    text: 'Which of the following third-party certifications does your organization currently hold?',
+    frameworks: ['nist_csf_2', 'soc2', 'iso27001', 'hipaa', 'pci_dss_4'],
+    type: 'multiple_choice',
+    choices: ['ISO 27001', 'SOC 2', 'PCI DSS', 'HIPAA/HITRUST', 'FedRAMP', 'None'],
+  },
+  {
+    category: 'Access Control',
+    text: 'Which authentication factors are supported for user login?',
+    frameworks: ['nist_csf_2', 'soc2', 'iso27001', 'cis_controls'],
+    type: 'multiple_choice',
+    choices: [
+      'Password',
+      'SMS one-time code',
+      'Authenticator app (TOTP)',
+      'Hardware security key (FIDO2)',
+      'Biometric',
+    ],
+  },
+  {
+    category: 'Data Protection',
+    text: 'Which of the following data protection controls are implemented?',
+    frameworks: ['iso27001', 'pci_dss_4'],
+    type: 'multiple_choice',
+    choices: ['Encryption at rest', 'Encryption in transit', 'Tokenization', 'Data loss prevention (DLP)', 'None of the above'],
+  },
 ];
 
 /** Real per-framework count, derived from the bank rather than a hand-maintained number. */
@@ -294,7 +351,8 @@ export function buildQuestionsForFrameworks(frameworks: FrameworkId[] = []): Por
     id: `q_${index + 1}`,
     category: item.category,
     question: item.text,
-    options: [...OPTIONS],
+    type: item.type ?? 'yesno',
+    options: item.choices ?? [...OPTIONS],
     required: true,
   }));
 }
@@ -307,9 +365,14 @@ export const QUESTION_CATEGORIES: QuestionCategory[] = [
   'Business Continuity',
 ];
 
+/** An unanswered multiple_choice question defaults to []; an array is only "answered" if non-empty. */
+export function isAnswered(value: unknown): boolean {
+  return Array.isArray(value) ? value.length > 0 : Boolean(value);
+}
+
 export function categoryProgress(
   questions: PortalQuestion[],
-  answers: Record<string, AnswerValue | undefined>
+  answers: Record<string, AnswerValue | string | string[] | undefined>
 ): Record<QuestionCategory, { total: number; answered: number }> {
   const result = Object.fromEntries(
     QUESTION_CATEGORIES.map((c) => [c, { total: 0, answered: 0 }])
@@ -317,16 +380,16 @@ export function categoryProgress(
 
   for (const q of questions) {
     result[q.category].total += 1;
-    if (answers[q.id]) result[q.category].answered += 1;
+    if (isAnswered(answers[q.id])) result[q.category].answered += 1;
   }
   return result;
 }
 
 export function overallProgressPct(
   questions: PortalQuestion[],
-  answers: Record<string, AnswerValue | undefined>
+  answers: Record<string, AnswerValue | string | string[] | undefined>
 ): number {
   if (!questions.length) return 0;
-  const answered = questions.filter((q) => answers[q.id]).length;
+  const answered = questions.filter((q) => isAnswered(answers[q.id])).length;
   return Math.round((answered / questions.length) * 100);
 }

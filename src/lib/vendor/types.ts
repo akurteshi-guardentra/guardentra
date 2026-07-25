@@ -15,6 +15,9 @@ export type AssessmentStatus =
 
 export type AnswerValue = 'Yes' | 'No' | 'Partially' | 'Not Applicable';
 
+/** yesno = the standard Yes/No/Partially/N/A rail; single_choice/multiple_choice carry their own options. */
+export type QuestionType = 'yesno' | 'single_choice' | 'multiple_choice';
+
 export type FrameworkId =
   | 'nist_csf_2'
   | 'soc2'

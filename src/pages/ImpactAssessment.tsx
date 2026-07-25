@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { ArrowLeft, CheckCircle2, Paperclip, Trash2, Upload } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, FileDown, Paperclip, Trash2, Upload } from 'lucide-react';
 import { db } from '../firebase';
 import { useAuth } from '../lib/AuthContext';
 import { Button } from '../components/ui/button';
@@ -11,6 +11,7 @@ import type { RiskLevel, Vendor } from '../lib/vendor/types';
 import { riskBandClasses } from '../lib/vendor/risk';
 import { combineImpactAndSecurity, securityLevelFromScore, vendorRatingLabel } from '../lib/vendor/vendorRating';
 import { uploadVendorAttachment, type UploadedEvidence } from '../lib/vendor/evidenceUpload';
+import { openVendorReportForPrint } from '../lib/vendor/reportExport';
 
 const IMPACT_PROMPTS: { id: string; label: string; hint: string }[] = [
   {
@@ -187,11 +188,28 @@ export function ImpactAssessment() {
         <Link to="/vendors" className="mb-4 inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white">
           <ArrowLeft className="h-4 w-4" /> Vendors
         </Link>
-        <h1 className="text-2xl font-semibold text-white">Impact Assessment</h1>
-        <p className="mt-1 text-slate-400">
-          Business impact for <span className="text-white">{vendor.name}</span>. Combined with the security
-          questionnaire to produce a final vendor rating.
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold text-white">Impact Assessment</h1>
+            <p className="mt-1 text-slate-400">
+              Business impact for <span className="text-white">{vendor.name}</span>. Combined with the security
+              questionnaire to produce a final vendor rating.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              try {
+                openVendorReportForPrint({ vendor, impactLevel, notes, attachments });
+              } catch (e: any) {
+                setError(e?.message || 'Could not open the report window.');
+              }
+            }}
+          >
+            <FileDown className="mr-2 h-4 w-4" /> Report
+          </Button>
+        </div>
       </div>
 
       <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
