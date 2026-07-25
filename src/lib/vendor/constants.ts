@@ -1,41 +1,42 @@
 import type { FrameworkDefinition, RiskLevel } from './types';
+import { countQuestionsForFramework } from './questionBank';
 
 export const FRAMEWORK_CATALOG: FrameworkDefinition[] = [
   {
     id: 'nist_csf_2',
     name: 'NIST CSF 2.0',
     description: 'Cybersecurity risk and controls',
-    questionCount: 42,
+    questionCount: countQuestionsForFramework('nist_csf_2'),
   },
   {
     id: 'soc2',
     name: 'SOC 2',
     description: 'Security, availability, and confidentiality',
-    questionCount: 36,
+    questionCount: countQuestionsForFramework('soc2'),
   },
   {
     id: 'iso27001',
     name: 'ISO 27001',
     description: 'Information security management',
-    questionCount: 48,
+    questionCount: countQuestionsForFramework('iso27001'),
   },
   {
     id: 'hipaa',
     name: 'HIPAA',
     description: 'Protected health information',
-    questionCount: 34,
+    questionCount: countQuestionsForFramework('hipaa'),
   },
   {
     id: 'pci_dss_4',
     name: 'PCI DSS 4.0',
     description: 'Payment card security',
-    questionCount: 40,
+    questionCount: countQuestionsForFramework('pci_dss_4'),
   },
   {
     id: 'cis_controls',
     name: 'CIS Controls',
     description: 'Technical security safeguards',
-    questionCount: 30,
+    questionCount: countQuestionsForFramework('cis_controls'),
   },
   {
     id: 'custom',

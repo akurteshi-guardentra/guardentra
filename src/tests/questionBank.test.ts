@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildQuestionsForFrameworks,
   categoryProgress,
+  countQuestionsForFramework,
   overallProgressPct,
 } from '../lib/vendor/questionBank';
 
@@ -20,5 +21,28 @@ describe('question bank', () => {
     expect(overallProgressPct(qs, answers)).toBe(Math.round((2 / qs.length) * 100));
     const cats = categoryProgress(qs, answers);
     expect(cats['Company Profile'].answered).toBeGreaterThanOrEqual(1);
+  });
+
+  it('actually deduplicates overlapping controls across frameworks (not a no-op)', () => {
+    const nistOnly = buildQuestionsForFrameworks(['nist_csf_2']);
+    const soc2Only = buildQuestionsForFrameworks(['soc2']);
+    const combined = buildQuestionsForFrameworks(['nist_csf_2', 'soc2']);
+
+    // Real dedup: shared controls (MFA, encryption, incident response, etc.) collapse to one
+    // question, so the union must be smaller than the naive sum of the two frameworks alone.
+    expect(combined.length).toBeLessThan(nistOnly.length + soc2Only.length);
+    expect(combined.length).toBeGreaterThanOrEqual(Math.max(nistOnly.length, soc2Only.length));
+
+    // Selecting a framework can only ever add questions, never remove them.
+    expect(combined.length).toBeGreaterThanOrEqual(nistOnly.length);
+    expect(combined.length).toBeGreaterThanOrEqual(soc2Only.length);
+  });
+
+  it('derives per-framework counts from the same bank buildQuestionsForFrameworks uses', () => {
+    const frameworkIds = ['nist_csf_2', 'soc2', 'iso27001', 'hipaa', 'pci_dss_4', 'cis_controls'] as const;
+    for (const id of frameworkIds) {
+      expect(countQuestionsForFramework(id)).toBe(buildQuestionsForFrameworks([id]).length);
+      expect(countQuestionsForFramework(id)).toBeGreaterThan(0);
+    }
   });
 });

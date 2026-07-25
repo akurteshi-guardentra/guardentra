@@ -1,6 +1,10 @@
 import '@testing-library/jest-dom';
 import { vi } from 'vitest';
 
+// Dummy key so importing src/firebase.ts in component tests does not throw.
+// Must look like a real Web API key shape (AIza…, length > 20); never a live secret.
+vi.stubEnv('VITE_FIREBASE_API_KEY', 'AIzaSyDummyVitestFirebaseKey000');
+
 // Mock Firebase
 vi.mock('firebase/app', () => ({
   initializeApp: vi.fn(() => ({ name: '[DEFAULT]' })),
