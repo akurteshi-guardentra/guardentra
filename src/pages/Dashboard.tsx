@@ -10,7 +10,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { collection, query, where, getDocs, limit, orderBy } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../lib/AuthContext';
-import { GoogleGenAI } from "@google/genai";
+import { authHeaders } from '../lib/authHeaders';
 import { calculateTrustScore, TrustScoreDetails } from '../lib/TrustScoreEngine';
 import { ActivityFeed } from '../components/ActivityFeed';
 
@@ -73,8 +73,6 @@ export function Dashboard() {
     setIsDrilling(true);
     setShowDrillModal(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      
       // Fetch recent incidents to make the drill relevant
       const recentIncidentsText = activities
         .filter(a => a.module === 'Incident')
@@ -82,17 +80,19 @@ export function Dashboard() {
         .map(i => i.title)
         .join(', ');
 
-      const prompt = `Act as a Red Team Lead. Generate a high-stakes GRC security drill for an SME. 
+      const prompt = `Act as a Red Team Lead. Generate a high-stakes GRC security drill for an SME.
       ${recentIncidentsText ? `The organization recently faced these incidents: ${recentIncidentsText}. Build a drill that tests if they've learned from these.` : 'Generate a scenario for a common breach type like SIM Swap or API Key Leak.'}
       Return JSON: { "title": "...", "impact": "...", "goal": "...", "score": 78 }`;
 
-      const result = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-        config: { responseMimeType: "application/json" }
+      const response = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ prompt, responseMimeType: 'application/json' }),
       });
-      
-      const cleanJson = (result.text || "{}").replace(/```json/g, '').replace(/```/g, '').trim();
+      if (!response.ok) throw new Error('AI generation failed');
+      const { text } = await response.json();
+
+      const cleanJson = (text || "{}").replace(/```json/g, '').replace(/```/g, '').trim();
       setDrillScenario(JSON.parse(cleanJson));
     } catch (e) {
       setDrillScenario({ 
@@ -212,10 +212,15 @@ export function Dashboard() {
           }
         }
 
-        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
         const prompt = `Analyze: Total Risks: ${risks.length}, Compliance: ${score}%, Incidents: ${incidentCount}. Briefing (3-4 sentences) and 3 priorities. JSON: { "briefing": "...", "priorities": ["...", "...", "..."] }`;
-        const result = await ai.models.generateContent({ model: "gemini-3-flash-preview", contents: prompt, config: { responseMimeType: "application/json" } });
-        const text = result.text || '{}';
+        const response = await fetch('/api/ai/generate', {
+          method: 'POST',
+          headers: await authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ prompt, responseMimeType: 'application/json' }),
+        });
+        if (!response.ok) throw new Error('AI generation failed');
+        const { text: rawText } = await response.json();
+        const text = rawText || '{}';
         const aiData = JSON.parse(text.replace(/```json/g, '').replace(/```/g, '').trim());
         setAiBriefing(aiData.briefing);
         setActionableSteps(aiData.priorities);

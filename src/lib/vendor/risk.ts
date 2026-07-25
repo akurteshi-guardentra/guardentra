@@ -30,6 +30,11 @@ export function effectiveRiskLevel(
   return vendor.criticality;
 }
 
+/** True when the vendor has a real, stored risk score rather than a derived/fabricated one. */
+export function hasRealRiskScore(vendor: Pick<Vendor, 'riskScore'>): boolean {
+  return vendor.riskScore > 0;
+}
+
 /** Display score: prefer stored riskScore; otherwise a band midpoint for mockup-style chips. */
 export function displayRiskScore(
   vendor: Pick<Vendor, 'criticality' | 'riskScore'> & { finalRating?: RiskLevel; impactLevel?: RiskLevel }

@@ -18,7 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../co
 import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
 import { motion } from 'framer-motion';
-import { GoogleGenAI } from '@google/genai';
+import { authHeaders } from '../lib/authHeaders';
 import { cn } from '../lib/utils';
 import { useOrgAssessments } from '../lib/vendor/useOrgAssessments';
 import { useOrgVendors } from '../lib/vendor/useOrgVendors';
@@ -111,22 +111,23 @@ export function Assessments() {
 
     if (assessment.status === 'Under Review' || assessment.status === 'Completed') {
       try {
-        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
         const questions = (assessment.questions || []) as { question?: string; answer?: string }[];
         const answers = questions.map((q) => `${q.question}: ${q.answer || 'No Answer'}`).join('\n');
         const prompt = `Analyze vendor assessment for "${assessment.vendorName}" against "${frameworkLabel(assessment)}".
         Answers:
         ${answers}
-        
+
         Provide a risk summary, an overall security rating (A-F), and one primary recommendation.
         Return JSON: { "summary": "...", "rating": "...", "recommendation": "..." }`;
 
-        const result = await ai.models.generateContent({
-          model: 'gemini-3-flash-preview',
-          contents: prompt,
-          config: { responseMimeType: 'application/json' },
+        const response = await fetch('/api/ai/generate', {
+          method: 'POST',
+          headers: await authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ prompt, responseMimeType: 'application/json' }),
         });
-        setReviewAnalysis(JSON.parse(result.text || '{}'));
+        if (!response.ok) throw new Error('AI generation failed');
+        const { text } = await response.json();
+        setReviewAnalysis(JSON.parse(text || '{}'));
       } catch (e) {
         console.error('AI Review failed:', e);
       }

@@ -33,7 +33,7 @@ import { Input } from '../components/ui/input';
 import { cn } from '../lib/utils';
 import type { AssessmentStatus, RiskLevel, Vendor } from '../lib/vendor/types';
 import { VENDOR_CATEGORIES, RISK_LEVELS } from '../lib/vendor/constants';
-import { assessmentStatusClasses, displayRiskScore, effectiveRiskLevel, riskBandClasses } from '../lib/vendor/risk';
+import { assessmentStatusClasses, displayRiskScore, effectiveRiskLevel, hasRealRiskScore, riskBandClasses } from '../lib/vendor/risk';
 import { validateVendorForm } from '../lib/vendor/validators';
 import {
   downloadVendorCsvTemplate,
@@ -715,9 +715,13 @@ export function VendorsDirectory() {
                               riskBandClasses(level)
                             )}
                           >
-                            <span className="tabular-nums">{displayRiskScore(v)}</span>
-                            <span className="opacity-80">·</span>
-                            {level}
+                            {hasRealRiskScore(v) && (
+                              <>
+                                <span className="tabular-nums">{displayRiskScore(v)}</span>
+                                <span className="opacity-80">·</span>
+                              </>
+                            )}
+                            {hasRealRiskScore(v) ? level : 'Not assessed'}
                           </span>
                         </td>
                         <td className="px-4 py-3">

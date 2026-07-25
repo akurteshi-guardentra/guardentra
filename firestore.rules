@@ -115,18 +115,33 @@ service cloud.firestore {
       return isAuthenticated() && resource.data.portalOpen == true;
     }
 
+    // Fields VendorPortal.tsx actually writes during autosave/submit (src/pages/VendorPortal.tsx).
+    // A portal session (incl. anonymous) may only ever change these — never organizationId,
+    // vendorId, frameworks, dueAt/dueDate, or the portalOpen flag itself.
+    function onlyPortalAssessmentFieldsChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['answers', 'comments', 'evidenceByQuestion', 'progressPct', 'progress', 'status', 'questions', 'updatedAt', 'completedAt']);
+    }
+
+    // assessment_responses has no current writer in the app, but keep the same
+    // allowlist discipline for whenever it's used, so anonymous access stays answer-scoped.
+    function onlyPortalResponseFieldsChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['answer', 'comment', 'evidenceFileIds', 'updatedAt']);
+    }
+
     match /assessments/{assessmentId} {
       allow read: if isDocOrgMember() || isOpenPortalAssessment();
       allow create: if isCreatingForOwnOrg();
-      // Org members can update fully; vendor portal (auth incl. anonymous) when portalOpen
-      allow update: if isDocOrgMember() || isOpenPortalAssessment();
+      // Org members can update fully; vendor portal (auth incl. anonymous) only for answer/progress fields
+      allow update: if isDocOrgMember() || (isOpenPortalAssessment() && onlyPortalAssessmentFieldsChanged());
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
     match /assessment_responses/{responseId} {
       allow read: if isDocOrgMember() || isOpenPortalAssessment();
       allow create: if isAuthenticated() && request.resource.data.organizationId is string;
-      allow update: if isDocOrgMember() || isOpenPortalAssessment();
+      allow update: if isDocOrgMember() || (isOpenPortalAssessment() && onlyPortalResponseFieldsChanged());
       allow delete: if isDocOrgMember() && isAdmin();
     }
 

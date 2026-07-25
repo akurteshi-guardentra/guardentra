@@ -170,6 +170,34 @@ router.post('/analyze', async (req, res) => {
   }
 });
 
+// Generic prompt passthrough — lets pages that previously called Gemini directly from the
+// browser (exposing GEMINI_API_KEY client-side) keep their existing prompt/parsing logic while
+// moving the actual model call server-side. Callers should keep their existing try/catch fallback:
+// a non-2xx response here means "no key configured / call failed", same as a thrown client SDK error before.
+router.post('/generate', async (req, res) => {
+  const { prompt, responseMimeType, responseSchema, model } = req.body || {};
+  if (typeof prompt !== 'string' || !prompt.trim()) {
+    return res.status(400).json({ error: 'prompt is required' });
+  }
+  try {
+    if (!hasAIApi) {
+      return res.status(503).json({ error: 'AI not configured' });
+    }
+    const config: Record<string, unknown> = {};
+    if (responseMimeType) config.responseMimeType = responseMimeType;
+    if (responseSchema) config.responseSchema = responseSchema;
+    const result = await ai!.models.generateContent({
+      model: typeof model === 'string' && model.trim() ? model : 'gemini-3.5-flash',
+      contents: prompt,
+      config: Object.keys(config).length ? config : undefined,
+    });
+    return res.json({ text: result.text || '' });
+  } catch (err) {
+    console.warn('Generate Error:', err);
+    return res.status(502).json({ error: 'AI generation failed' });
+  }
+});
+
 // New AI Vendor Assessment Generator API
 router.post('/gov-assessment', async (req, res) => {
   const { name, vendorType, sector, country, services, frameworks, incidents, agencyMode } = req.body;

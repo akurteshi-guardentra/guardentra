@@ -9,7 +9,7 @@ import { Input } from '../components/ui/input';
 import { cn } from '../lib/utils';
 import { FRAMEWORK_CATALOG } from '../lib/vendor/constants';
 import type { FrameworkId } from '../lib/vendor/types';
-import { displayRiskScore, effectiveRiskLevel, riskBandClasses } from '../lib/vendor/risk';
+import { displayRiskScore, effectiveRiskLevel, hasRealRiskScore, riskBandClasses } from '../lib/vendor/risk';
 import { validateAssessmentWizard } from '../lib/vendor/validators';
 import {
   buildQuestionsForFrameworks,
@@ -332,9 +332,13 @@ export function AssessmentWizard() {
                         riskBandClasses(effectiveRiskLevel(selected))
                       )}
                     >
-                      <span className="tabular-nums">{displayRiskScore(selected)}</span>
-                      <span className="opacity-80">·</span>
-                      {effectiveRiskLevel(selected)}
+                      {hasRealRiskScore(selected) && (
+                        <>
+                          <span className="tabular-nums">{displayRiskScore(selected)}</span>
+                          <span className="opacity-80">·</span>
+                        </>
+                      )}
+                      {hasRealRiskScore(selected) ? effectiveRiskLevel(selected) : 'Not assessed'}
                     </span>
                   </div>
                 </div>
