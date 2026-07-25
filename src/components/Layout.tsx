@@ -19,7 +19,7 @@ import {
 import { cn } from '@/src/lib/utils';
 import { Button } from './ui/button';
 import { useAuth } from '../lib/AuthContext';
-import { logOut } from '../lib/firebase-utils';
+import { logOut, resendVerificationEmail } from '../lib/firebase-utils';
 import { useTranslation } from 'react-i18next';
 import { UserGuide } from './UserGuide';
 import { BackButton } from './BackButton';
@@ -41,6 +41,19 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [isCopilotOpen, setIsCopilotOpen] = React.useState(false);
   const { user, profile } = useAuth();
   const { i18n } = useTranslation();
+  const [verificationDismissed, setVerificationDismissed] = React.useState(false);
+  const [verificationResent, setVerificationResent] = React.useState(false);
+  const showVerificationBanner =
+    !!user && !user.isAnonymous && !user.emailVerified && !verificationDismissed;
+
+  const handleResendVerification = async () => {
+    try {
+      await resendVerificationEmail();
+      setVerificationResent(true);
+    } catch {
+      /* resendVerificationEmail already logs the error */
+    }
+  };
 
   React.useEffect(() => {
     const hasSeenGuide = localStorage.getItem('guardentra_guide_seen');
@@ -241,6 +254,34 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </header>
 
         <main className="flex-1 overflow-y-auto p-3 sm:p-6 lg:p-8">
+          {showVerificationBanner && (
+            <div className="mx-auto max-w-7xl mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
+              <span>
+                {verificationResent
+                  ? 'Verification email sent — check your inbox.'
+                  : 'Please verify your email address to secure your account.'}
+              </span>
+              <div className="flex items-center gap-3">
+                {!verificationResent && (
+                  <button
+                    type="button"
+                    onClick={handleResendVerification}
+                    className="font-medium underline underline-offset-2 hover:text-amber-200"
+                  >
+                    Resend email
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setVerificationDismissed(true)}
+                  className="text-amber-400/70 hover:text-amber-300"
+                  aria-label="Dismiss"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          )}
           {!isDashboard && <BackButton className="mb-2 sm:mb-4" />}
           <div className="mx-auto max-w-7xl">{children}</div>
         </main>

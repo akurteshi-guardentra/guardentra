@@ -55,6 +55,24 @@ service cloud.firestore {
       allow update: if isAuthenticated() && isOrgMember(orgId);
     }
 
+    // Org invites: a brand-new signup (no org yet) must be able to look up
+    // "is there a pending invite for my email" before they're a member of
+    // anything, so this can't gate on org membership alone like other
+    // collections — it also allows read/accept by exact email match on the
+    // invite itself (request.auth.token.email is a Firebase-set claim, not
+    // client-controlled, so this can't be used to read someone else's invite).
+    match /org_invites/{inviteId} {
+      allow read: if isAuthenticated() &&
+        (resource.data.email == request.auth.token.email || isDocOrgMember());
+      allow create: if isCreatingForOwnOrg() && isAdmin() && request.resource.data.email is string;
+      allow update: if isAuthenticated() && (
+        (resource.data.email == request.auth.token.email &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptedByUid', 'acceptedAt'])) ||
+        (isDocOrgMember() && isAdmin())
+      );
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
     // Risks Collection
     match /risks/{riskId} {
       allow read: if isDocOrgMember();

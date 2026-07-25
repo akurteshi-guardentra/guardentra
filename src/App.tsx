@@ -32,7 +32,7 @@ import { TrustIntelligence } from './pages/TrustIntelligence';
 import { GmailAudit } from './pages/GmailAudit';
 import { AuthProvider, useAuth } from './lib/AuthContext';
 import { DemoProvider } from './lib/DemoContext';
-import { signInWithGoogle, signInWithEmail, signUpWithEmail } from './lib/firebase-utils';
+import { signInWithGoogle, signInWithEmail, signUpWithEmail, resetPassword } from './lib/firebase-utils';
 import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
 import { Shield, Loader2, Mail, Lock, User, AlertCircle } from 'lucide-react';
@@ -93,6 +93,7 @@ const Login = () => {
   const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [resetMessage, setResetMessage] = useState('');
   const isInIframe = window.self !== window.top;
 
   if (user) {
@@ -177,6 +178,29 @@ const Login = () => {
     }
   };
 
+  const handleForgotPassword = async () => {
+    setError('');
+    setResetMessage('');
+    if (!email.trim()) {
+      setError('Enter your email above first, then click "Forgot password?"');
+      return;
+    }
+    setIsLoading(true);
+    try {
+      await resetPassword(email);
+      setResetMessage('Password reset email sent — check your inbox.');
+    } catch (err: any) {
+      if (err.code === 'auth/user-not-found') {
+        // Don't reveal whether the account exists.
+        setResetMessage('If an account exists for that email, a reset link has been sent.');
+      } else {
+        setError(err.message || 'Could not send reset email.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 relative overflow-hidden">
       {/* Background Effects */}
@@ -204,6 +228,12 @@ const Login = () => {
         {error && (
           <div className="mb-6 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
             {error}
+          </div>
+        )}
+
+        {resetMessage && (
+          <div className="mb-6 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-emerald-400 text-sm">
+            {resetMessage}
           </div>
         )}
 
@@ -244,8 +274,19 @@ const Login = () => {
               minLength={6}
             />
           </div>
-          <Button 
-            type="submit" 
+          {!isSignUp && (
+            <div className="text-right">
+              <button
+                type="button"
+                onClick={handleForgotPassword}
+                className="text-xs text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
+              >
+                Forgot password?
+              </button>
+            </div>
+          )}
+          <Button
+            type="submit"
             className="w-full bg-indigo-600 hover:bg-indigo-700 text-white h-11"
             disabled={isLoading}
           >

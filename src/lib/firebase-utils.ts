@@ -1,6 +1,7 @@
 import { auth, db } from '../firebase';
-import { doc, getDoc, collection, writeBatch } from 'firebase/firestore';
-import { GoogleAuthProvider, signInWithPopup, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { GoogleAuthProvider, signInWithPopup, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification, updateProfile } from 'firebase/auth';
+import { bootstrapUserProfile } from './orgBootstrap';
 
 enum OperationType {
   CREATE = 'create',
@@ -69,24 +70,13 @@ export const signInWithGoogle = async () => {
     }
 
     if (!userSnap.exists()) {
-      // Org + profile are created atomically (single batch) — either both are persisted
-      // or neither is, so a failed profile write can never orphan a real organization doc.
-      const orgRef = doc(collection(db, 'organizations'));
+      // Joins an existing org if there's a pending invite for this email, otherwise
+      // creates a new org — atomically either way (see orgBootstrap.ts).
       try {
-        const batch = writeBatch(db);
-        batch.set(orgRef, {
-          name: `${user.displayName || 'User'}'s Organization`,
-          createdAt: new Date().toISOString()
-        });
-        batch.set(userRef, {
+        await bootstrapUserProfile(user.uid, {
           email: user.email,
-          displayName: user.displayName,
-          role: 'admin',
-          organizationId: orgRef.id,
-          onboarded: false,
-          createdAt: new Date().toISOString()
+          displayName: user.displayName || 'New User',
         });
-        await batch.commit();
       } catch (e: any) {
         if (e.code === 'permission-denied') {
           handleFirestoreError(e, OperationType.WRITE, 'organizations+users/' + user.uid);
@@ -114,30 +104,22 @@ export const signUpWithEmail = async (email: string, password: string, name: str
     
     await updateProfile(user, { displayName: name });
 
-    // Org + profile are created atomically (single batch) — either both are persisted
-    // or neither is, so a failed profile write can never orphan a real organization doc.
-    const userRef = doc(db, 'users', user.uid);
-    const orgRef = doc(collection(db, 'organizations'));
+    // Joins an existing org if there's a pending invite for this email, otherwise
+    // creates a new org — atomically either way (see orgBootstrap.ts).
     try {
-      const batch = writeBatch(db);
-      batch.set(orgRef, {
-        name: `${name || 'User'}'s Organization`,
-        createdAt: new Date().toISOString()
-      });
-      batch.set(userRef, {
-        email: user.email,
-        displayName: name,
-        role: 'admin',
-        organizationId: orgRef.id,
-        onboarded: false,
-        createdAt: new Date().toISOString()
-      });
-      await batch.commit();
+      await bootstrapUserProfile(user.uid, { email: user.email, displayName: name });
     } catch (e: any) {
       if (e.code === 'permission-denied') {
         handleFirestoreError(e, OperationType.WRITE, 'organizations+users/' + user.uid);
       }
       throw e;
+    }
+
+    // Best-effort — a verification-email failure shouldn't block account creation.
+    try {
+      await sendEmailVerification(user);
+    } catch (e) {
+      console.warn('Could not send verification email', e);
     }
 
     return user;
@@ -162,5 +144,24 @@ export const logOut = async () => {
     await signOut(auth);
   } catch (error) {
     console.error("Error signing out", error);
+  }
+};
+
+export const resendVerificationEmail = async () => {
+  if (!auth.currentUser) return;
+  try {
+    await sendEmailVerification(auth.currentUser);
+  } catch (error) {
+    console.error("Error resending verification email", error);
+    throw error;
+  }
+};
+
+export const resetPassword = async (email: string) => {
+  try {
+    await sendPasswordResetEmail(auth, email);
+  } catch (error) {
+    console.error("Error sending password reset email", error);
+    throw error;
   }
 };
