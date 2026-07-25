@@ -167,4 +167,5 @@ Each sprint ≈ 1–2 weeks. Renumbered from the original plan: the stability au
 | `docs/CYNOMI_GAP_NOTES.md` | Competitor parity gap notes |
 | `docs/ENVIRONMENTS.md` | Project aliases, secrets, pre-customer checklist |
 | `docs/SECRETS.md` | Key/secret handling policy |
+| `docs/KNOWN_ISSUES.md` | Running list of every found-but-not-fixed issue discovered mid-sprint — check before starting a new sprint |
 | This doc | Codebase validation, architectural stability audit, AI-differentiation brainstorm, sprint backlog |
