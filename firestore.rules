@@ -137,9 +137,25 @@ service cloud.firestore {
         isNumberIfPresent(request.resource.data, 'trustScore');
     }
 
+    // Vendor-cap enforcement (docs/ARCHITECTURE_FOUNDATION.md §4 tier sketch — Starter
+    // defaults below match that sketch). This is soft enforcement, not airtight: the
+    // counter is maintained by client code (src/pages/VendorsDirectory.tsx createVendor,
+    // via a transaction) alongside the create, so it stops normal over-cap growth through
+    // the app but a client using the Firestore SDK/REST API directly could skip the
+    // increment and bypass it — same accepted risk tolerance as the AI soft-metering
+    // already described in that doc. True hard enforcement needs vendor writes routed
+    // through a server endpoint that authoritatively counts via the Admin SDK; not done
+    // here (bigger change, no live customers to violate a cap yet — see KNOWN_ISSUES.md).
+    function orgField(orgId, field, fallback) {
+      let org = get(/databases/$(database)/documents/organizations/$(orgId)).data;
+      return (field in org) ? org[field] : fallback;
+    }
+
     match /vendors/{vendorId} {
       allow read: if isDocOrgMember();
-      allow create: if isCreatingForOwnOrg() && vendorFieldsValid();
+      allow create: if isCreatingForOwnOrg() && vendorFieldsValid() &&
+        orgField(request.resource.data.organizationId, 'vendorCount', 0) <
+        orgField(request.resource.data.organizationId, 'vendorCap', 25);
       allow update: if isDocOrgMember() && vendorFieldsValid();
       allow delete: if isDocOrgMember() && isAdmin();
     }

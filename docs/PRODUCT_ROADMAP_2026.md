@@ -149,10 +149,15 @@ Each sprint ≈ 1–2 weeks. Renumbered from the original plan: the stability au
 
 **Verification status:** first sprint verified for real — Node/npm are now installed in this sandbox (direct download from nodejs.org, after a `brew install node` attempt proved impossibly slow compiling from source on this unsupported macOS 12 host). `tsc --noEmit`: 0 errors. `npm test` + `npm run test:vitest`: 12/12 files, 50/50 tests passing.
 
-### Sprint 7 — Billing hardening (was Sprint 4)
-(per `ARCHITECTURE_FOUNDATION.md` §4, already scoped there)
-- Real Stripe Checkout wired, remove "simulate active subscription" path
-- Seat/vendor cap enforcement server-side
+### Sprint 7 — Billing hardening (was Sprint 4) ✅ done (2026-07-26)
+- ✅ Real Stripe Checkout wired: `Pricing.tsx`'s "subscribe" button previously just `updateDoc`'d the user's own profile to `subscriptionStatus: active` directly — a pure client-side fake with zero Stripe involvement. Now calls the (already-real) `/api/stripe/create-checkout-session` and redirects to actual Stripe Checkout.
+  - That endpoint was also completely unauthenticated — fixed: added `requireFirebaseAuth`, and `userId`/`email` now come from the verified token instead of trusting client-submitted body values (previously anyone could pass an arbitrary `userId` and have a completed checkout misattributed via the webhook).
+  - Removed the `payment_method_types` override per `ARCHITECTURE_FOUNDATION.md`'s own note, so Stripe Dashboard's configured dynamic payment methods apply. No `STRIPE_SECRET_KEY` now returns a clear 503 instead of a fake mock checkout URL that would 404.
+  - Plan copy updated to match the Starter/Growth/Gov tier sketch already documented in `ARCHITECTURE_FOUNDATION.md` §4 (previous copy was generic "GRC" boilerplate predating the vendor-TPRM-spine focus) — price IDs now read from `VITE_STRIPE_PRICE_*` env vars instead of fake hardcoded strings; real Products/Prices still need creating in the Stripe Dashboard (can't be done from code).
+- ✅ Vendor cap enforcement (soft, not airtight — see `docs/KNOWN_ISSUES.md` #12): `organizations.vendorCount`/`vendorCap` (Starter default 25) checked by `firestore.rules` at vendor-create time; the counter is maintained by a Firestore transaction in `createVendor` (`VendorsDirectory.tsx`), which all three vendor-creation paths (Add One Vendor, Invite Vendor, bulk CSV import) already funnel through, so all three correctly stop at the cap.
+- **Scoped out, tracked:** seat cap enforcement (`docs/KNOWN_ISSUES.md` #13) — only vendor cap was wired this pass, to avoid doubling the transaction/counter work across two different paths in one sprint.
+
+**Verification status:** `tsc --noEmit` clean, 50/50 tests passing (one transient/unreproducible flake noted in `docs/KNOWN_ISSUES.md` #14).
 
 ### Sprint 8 — Differentiation / Growth-Gov upsell (was Sprint 5)
 - AI risk narrative per vendor (`TrustScoreEngine.ts` → LLM summary)

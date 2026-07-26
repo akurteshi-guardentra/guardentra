@@ -6,6 +6,8 @@ import {
   query,
   where,
   addDoc,
+  doc,
+  runTransaction,
 } from 'firebase/firestore';
 import {
   Search,
@@ -318,7 +320,26 @@ export function VendorsDirectory() {
           reject(err);
         }, 4000);
       });
-      await Promise.race([addDoc(collection(db, 'vendors'), payload), writeTimeout]);
+      // Transaction so the vendor create and the org's vendorCount stay in lockstep —
+      // Firestore rules enforce the actual cap (organizations.vendorCount < vendorCap,
+      // Starter default 25) using this same counter. This is soft enforcement: it stops
+      // normal over-cap growth through the app, but doesn't prevent a client bypassing
+      // the increment via direct Firestore access — see firestore.rules' orgField()
+      // comment and docs/KNOWN_ISSUES.md.
+      const write = runTransaction(db, async (tx) => {
+        const orgRef = doc(db, 'organizations', orgId);
+        const orgSnap = await tx.get(orgRef);
+        const orgData = orgSnap.data() || {};
+        const count = typeof orgData.vendorCount === 'number' ? orgData.vendorCount : 0;
+        const cap = typeof orgData.vendorCap === 'number' ? orgData.vendorCap : 25;
+        if (count >= cap) {
+          throw new Error(`Vendor limit reached (${cap} on your plan). Upgrade to add more vendors.`);
+        }
+        const vendorRef = doc(collection(db, 'vendors'));
+        tx.set(vendorRef, payload);
+        tx.set(orgRef, { vendorCount: count + 1 }, { merge: true });
+      });
+      await Promise.race([write, writeTimeout]);
     } catch (ex) {
       if (isFirestoreUnavailableError(ex)) {
         setDataError(
