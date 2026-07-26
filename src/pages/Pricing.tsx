@@ -1,65 +1,67 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle2, Sparkles, Loader2 } from 'lucide-react';
+import { CheckCircle2, Sparkles, Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '@/src/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/src/components/ui/card';
 import { useAuth } from '../lib/AuthContext';
-import { db } from '../firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { authHeaders } from '../lib/authHeaders';
 
+// Tier sketch per docs/ARCHITECTURE_FOUNDATION.md §4 — Vendor TPRM spine framing,
+// not a generic GRC suite. List prices are Guardentra starter proposals.
 const plans = [
   {
     id: 'starter',
     name: 'Starter',
-    description: 'Perfect for small teams getting started with GRC.',
-    price: { monthly: 99, annually: 990 },
+    description: 'The vendor TPRM spine for teams getting off spreadsheets.',
+    price: { monthly: 149, annually: 1490 },
     features: [
-      'Up to 5 users',
-      'Basic Risk Management',
-      'Standard Compliance Frameworks',
-      'Email Support'
+      'Up to 25 vendors',
+      '3 seats',
+      'Vendor questionnaire portal + evidence',
+      'Audit Lab (1 framework pack)',
+      'Markdown TPRM register export',
     ],
     priceId: {
-      monthly: 'price_starter_monthly',
-      annually: 'price_starter_annually'
-    }
+      monthly: import.meta.env.VITE_STRIPE_PRICE_STARTER_MONTHLY || '',
+      annually: import.meta.env.VITE_STRIPE_PRICE_STARTER_ANNUAL || '',
+    },
   },
   {
-    id: 'professional',
-    name: 'Professional',
-    description: 'Advanced features for growing organizations.',
-    price: { monthly: 299, annually: 2990 },
+    id: 'growth',
+    name: 'Growth',
+    description: 'More vendors, more frameworks, more seats.',
+    price: { monthly: 399, annually: 3990 },
     popular: true,
     features: [
-      'Up to 25 users',
-      'Advanced Risk Analytics',
-      'Custom Compliance Frameworks',
-      'AI-Powered Insights',
-      'Priority Support'
+      'Up to 150 vendors',
+      '10 seats',
+      'Multi-framework packs + bulk CSV',
+      'Priority email support',
+      'AI review assists (soft usage cap)',
     ],
     priceId: {
-      monthly: 'price_pro_monthly',
-      annually: 'price_pro_annually'
-    }
+      monthly: import.meta.env.VITE_STRIPE_PRICE_GROWTH_MONTHLY || '',
+      annually: import.meta.env.VITE_STRIPE_PRICE_GROWTH_ANNUAL || '',
+    },
   },
   {
-    id: 'enterprise',
-    name: 'Enterprise',
-    description: 'Full-scale GRC solution for large enterprises.',
+    id: 'gov',
+    name: 'Gov',
+    description: 'Higher volume, SSO/SAML, dedicated staging, BAA/DPA process.',
     price: { monthly: 'Custom', annually: 'Custom' },
     features: [
-      'Unlimited users',
-      'Dedicated Account Manager',
-      'On-premise deployment options',
-      'Custom AI Model Training',
-      '24/7 Phone Support'
+      'Higher/unlimited vendors',
+      'SSO / SAML',
+      'Dedicated staging environment',
+      'BAA / DPA process',
+      'Negotiated add-on modules',
     ],
     priceId: {
       monthly: 'contact_sales',
-      annually: 'contact_sales'
-    }
-  }
+      annually: 'contact_sales',
+    },
+  },
 ];
 
 export function Pricing() {
@@ -67,7 +69,7 @@ export function Pricing() {
   const { user, profile } = useAuth();
   const [isAnnual, setIsAnnual] = useState(true);
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const hasActiveSubscription = profile?.subscriptionStatus === 'active';
 
@@ -76,46 +78,46 @@ export function Pricing() {
       window.location.href = 'mailto:sales@nexusgrc.com';
       return;
     }
+    if (!priceId) {
+      setError('This plan is not available for self-serve checkout yet — contact sales.');
+      return;
+    }
 
+    setError(null);
     setLoadingPlan(priceId);
     try {
-      if (profile && profile.organizationId) {
-        const userRef = doc(db, 'users', user!.uid);
-        await updateDoc(userRef, {
-          subscriptionStatus: 'active',
-          planId: priceId,
-          updatedAt: new Date().toISOString()
-        });
-        
-        await new Promise(r => setTimeout(r, 1000));
-        setToastMessage(`SUCCESS: Plan upgraded to ${priceId?.toUpperCase()} successfully!`);
-        setTimeout(() => {
-          window.location.reload();
-        }, 2200);
+      const response = await fetch('/api/stripe/create-checkout-session', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ priceId, userId: user?.uid, email: user?.email }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.url) {
+        throw new Error(data.error || 'Could not start checkout.');
       }
-    } catch (error) {
-      console.error('Simulation failed:', error);
-    } finally {
+      window.location.href = data.url;
+    } catch (ex: any) {
+      setError(ex?.message || 'Could not start checkout.');
       setLoadingPlan(null);
     }
   };
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className="space-y-8 max-w-6xl mx-auto relative h-full"
     >
       <AnimatePresence>
-        {toastMessage && (
-          <motion.div 
+        {error && (
+          <motion.div
             initial={{ opacity: 0, y: -20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -20, scale: 0.95 }}
-            className="fixed top-24 right-6 z-50 p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-semibold shadow-2xl backdrop-blur-md flex items-center gap-2"
+            className="fixed top-24 right-6 z-50 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-semibold shadow-2xl backdrop-blur-md flex items-center gap-2 max-w-sm"
           >
-            <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-            {toastMessage}
+            <AlertCircle className="h-4 w-4 text-rose-400 shrink-0" />
+            {error}
           </motion.div>
         )}
       </AnimatePresence>
@@ -125,10 +127,10 @@ export function Pricing() {
         <p className="text-lg text-slate-400 max-w-2xl mx-auto">
           {t('pricing.subtitle')}
         </p>
-        
+
         <div className="flex items-center justify-center gap-3 mt-8">
           <span className={`text-sm ${!isAnnual ? 'text-white' : 'text-slate-400'}`}>{t('pricing.monthly')}</span>
-          <button 
+          <button
             onClick={() => setIsAnnual(!isAnnual)}
             className="relative inline-flex h-6 w-11 items-center rounded-full bg-primary/20 border border-primary/50 transition-colors focus:outline-none"
           >
@@ -185,7 +187,7 @@ export function Pricing() {
                 </ul>
               </CardContent>
               <CardFooter>
-                <Button 
+                <Button
                   className={`w-full ${plan.popular ? 'bg-primary hover:bg-primary/90 text-white' : 'bg-white/5 hover:bg-white/10 text-white border border-white/10'} ${hasActiveSubscription ? 'opacity-50 cursor-not-allowed' : ''}`}
                   onClick={() => handleSubscribe(isAnnual ? plan.priceId.annually : plan.priceId.monthly)}
                   disabled={loadingPlan === (isAnnual ? plan.priceId.annually : plan.priceId.monthly) || hasActiveSubscription}
@@ -194,7 +196,7 @@ export function Pricing() {
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : hasActiveSubscription ? (
                     t('pricing.current_plan')
-                  ) : plan.id === 'enterprise' ? (
+                  ) : plan.id === 'gov' ? (
                     'Contact Sales'
                   ) : (
                     t('pricing.subscribe')
