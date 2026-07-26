@@ -1,6 +1,6 @@
 # Guardentra — Architecture Foundation
 
-Durable architecture notes for Database, Auth/SSO, Policy validation, Stripe subscriptions, competitive positioning, and a future regulatory-fine workflow.
+Durable architecture notes for Database, Auth/SSO, Policy validation, Stripe subscriptions, competitive positioning, a future regulatory-fine workflow, continuous monitoring signals (§7), and the three Enterprise design spikes — SSO/SAML (§8), trust exchange (§9), MSP multi-client (§10).
 
 **Product lock-in:** Vendor TPRM spine under the existing **dark** Guardentra theme (`docs/PRODUCT_FOCUS.md`). Non-spine modules stay frozen behind feature flags.
 
@@ -305,6 +305,88 @@ Grounded in `docs/CYNOMI_GAP_NOTES.md` and shipped spine — **not** roadmap vap
 | Next, pending your answers above | Add `website` field to `Vendor`; pick the free-tier signals to start with; decide GitHub Actions cron vs. Cloud Scheduler |
 | Later | Wire the chosen signals into a scheduled job writing to a new `vendor_signals` collection (or fields on the vendor doc), surfaced as a distinct "Monitoring" badge alongside (not replacing) the assessment-derived risk score |
 | Out of scope until a real budget decision | Any paid breach-feed API (HaveIBeenPwned) — free DNS/cert checks first |
+
+---
+
+## 8. SSO/SAML for Gov/Enterprise (design spike, `docs/PRODUCT_ROADMAP_2026.md` Sprint 9a)
+
+**Now viable to design** — this was blocked on multi-user orgs (Sprint 4, done: `src/lib/orgBootstrap.ts`, `org_invites`). Still not viable to *build* blind: real SAML requires infrastructure this project doesn't have and a live IdP to test against, neither of which can be provisioned from code.
+
+### The real blocker
+
+Firebase Auth's base tier doesn't support SAML/OIDC providers — that requires upgrading to **Google Cloud Identity Platform**, a paid, opt-in extension of Firebase Auth (per-MAU billing). That's a billing decision only you can make in the Firebase/GCP Console; nothing here can enable it. Once enabled, `firebase/auth`'s `SAMLAuthProvider`/`OAuthProvider` classes work with the same `signInWithPopup`/`signInWithRedirect` calls already used for Google sign-in (`src/lib/firebase-utils.ts` `signInWithGoogle`) — the client-side mechanics are a small, well-understood change. The hard parts are everything around it:
+
+### Design
+
+- **Org-to-IdP mapping.** Guardentra's tenancy is flat collections + an `organizationId` field (`firestore.rules`), not Firebase's own multi-tenant feature. Simplest viable approach without adopting Identity Platform tenants: store `ssoProviderId`/`ssoDomain` on the `organizations` doc. On Login, ask for email first; if the domain matches a configured `ssoDomain`, redirect to that provider instead of showing a password field.
+- **Provisioning from SSO.** `bootstrapUserProfile()` (`src/lib/orgBootstrap.ts`) already has the right shape for this — extend its "no existing profile" branch to check email-domain → org match (alongside the existing pending-invite check) before falling back to creating a brand-new org.
+- **Role mapping from IdP groups.** Needs the IdP to pass group/role claims, and something server-side to read them and set `users/{uid}.role` accordingly — Identity Platform supports this via a "beforeSignIn" blocking Cloud Function, which is a new piece of infrastructure (this project has none today, per `docs/ARCHITECTURE_FOUNDATION.md` §1's Cloud Run/Express-only backend).
+- **Self-serve IdP configuration.** A real enterprise customer expects to paste their own SAML metadata (Entity ID, SSO URL, x509 cert) into a settings page. Identity Platform providers are configured in the GCP Console, not through your own app UI, unless you build a wrapper around the Identity Platform Admin REST API from a trusted server route — more scope again.
+
+### Plan
+
+| Phase | Work |
+|-------|------|
+| Now | Design only (this section) |
+| Blocking decision needed from you | Enable Identity Platform billing; pick a real IdP (Okta/Azure AD/etc.) to test against — nothing below can be verified without one |
+| Next | `ssoProviderId`/`ssoDomain` on `organizations`; domain-aware Login page; extend `bootstrapUserProfile()` |
+| Later | Role-from-IdP-group mapping (needs a Cloud Function — new infra); self-serve IdP config UI (needs the Identity Platform Admin API) |
+| Not recommended now | Building any of this without a real IdP to test end-to-end — auth bugs are exactly the wrong place to ship unverified |
+
+---
+
+## 9. "Answer once, reuse everywhere" trust exchange (design spike, Sprint 9b)
+
+**Intent:** a vendor who's completed a questionnaire for Customer A can reuse those answers for Customer B, instead of answering the same NIST/SOC2 questions from scratch every time a new customer asks. This is Whistic's core wedge (`docs/PRODUCT_ROADMAP_2026.md` §3) — genuinely the biggest strategic differentiator on the roadmap, and also the biggest lift.
+
+### Why this doesn't fit today's model
+
+Every `assessments` doc is scoped to exactly one `organizationId` + one `vendorId` (`firestore.rules`), and the vendor has no identity of their own — `VendorPortal.tsx` uses `signInAnonymously`, a fresh anonymous session per link, not a persistent vendor account. There is nothing to attach a "reusable" answer set *to*.
+
+### Design
+
+- **Vendor needs a real identity**, independent of any customer org — a new `vendor_accounts/{id}` keyed by email/domain, with actual sign-in (not anonymous), separate from any one customer's `vendors/{vendorId}` record.
+- **Stable control keys.** Sprint 1's question bank (`src/lib/vendor/questionBank.ts`) dedupes within one assessment by array membership, not a stable identifier — reusing an answer *across* different customers' framework selections needs each `BankItem` to carry a durable `controlKey` so "did this vendor already answer the MFA-for-privileged-accounts control for anyone?" is a real lookup, not a text match.
+- **Consent is mandatory, not automatic.** A vendor's answers may include specifics they don't want shared with everyone who asks — every reuse needs an explicit per-customer consent step, not silent auto-fill. Sketch: `vendor_answers/{vendorAccountId}_{controlKey}` (canonical answer + evidence), `vendor_shares/{id}` (which org, which controlKeys, consented when, expires when).
+- **Cross-org Firestore rules.** Today's rules assume a doc belongs to exactly one org. A shared vendor answer needs to be readable by *multiple* customer orgs once consented — a genuinely different security model than the strict single-org scoping everywhere else in `firestore.rules`, and worth getting a second pair of eyes on before shipping.
+
+### Plan
+
+| Phase | Work |
+|-------|------|
+| Now | Design only |
+| Precursor work (own effort, sequenced first) | Real vendor accounts/auth; stable `controlKey` on the question bank; a consent UI |
+| Then | `vendor_answers`/`vendor_shares` collections + rules; wire consent into the Assessment Wizard's create flow (pre-fill overlapping controls, vendor confirms per new customer) |
+| Not attempted now | Any of the above — this is a multi-sprint effort in its own right once the precursors land, not a single pass |
+
+---
+
+## 10. MSP multi-client account switcher (design spike, Sprint 9c)
+
+**Intent:** one login for an MSP (a firm managing security for many client companies) that can switch between client organizations, instead of the current one-user-one-org model.
+
+### Scope of the change
+
+Every `users/{uid}` doc has exactly one `organizationId`, and it's read directly (not passed as a parameter) in **25 files** across the client (`profile?.organizationId` / `profile.organizationId`). `firestore.rules`' `isOrgMember(orgId)`/`isDocOrgMember()` check `users/{uid}.organizationId == orgId` as the *only* path to access — there's no "also a member of this other org" concept anywhere.
+
+One encouraging finding: the data-fetching hooks already take `orgId` as an explicit parameter (`useOrgVendors(orgId)`, `useOrgAssessments(orgId)` — `src/lib/vendor/useOrgVendors.ts`/`useOrgAssessments.ts`), not a hidden global — so the query layer itself doesn't need to change, only *what org ID gets passed in* when an MSP user is active.
+
+### Design
+
+- **New `msp_memberships/{id}`** collection: `{ mspUserId, clientOrganizationId, role }` — a user can have many of these, separate from their own home `organizationId` (their MSP firm's own org, if they have one).
+- **"Active org" context**, distinct from `profile.organizationId`: a React context holding the currently-selected client org, defaulting to the user's home org, changeable via a switcher in `Layout.tsx`'s header. Every hook/query call site among those 25 files needs auditing to read from this active-org context instead of `profile.organizationId` directly where an MSP user is involved.
+- **Firestore rules**: `isOrgMember`/`isDocOrgMember` need an alternate path — `exists()` a matching `msp_memberships` doc for `request.auth.uid` + the target org — touching every collection's rule, not a localized change.
+- **Billing**: ties into `ARCHITECTURE_FOUNDATION.md` §4, which already flagged this — "prefer org-level subscription ownership when MSP multi-client appears (future)." An MSP's billing model (one subscription covering many clients, or per-client) is a business decision, not just an engineering one.
+
+### Plan
+
+| Phase | Work |
+|-------|------|
+| Now | Design only |
+| Recommended incremental start | Read-only cross-org visibility for MSP users first (lower risk than write access across orgs from day one) |
+| Then | `msp_memberships` + active-org context + switcher UI; audit and update the 25 direct-`organizationId` call sites |
+| Then | Extend `isOrgMember`/`isDocOrgMember` in `firestore.rules` for every collection |
+| Not attempted now | This is the largest of the three Sprint 9 asks — a multi-sprint initiative once you're ready to commit to the tenancy-model change, not a single pass |
 
 ---
 

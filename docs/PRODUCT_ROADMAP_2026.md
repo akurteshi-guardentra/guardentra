@@ -167,10 +167,13 @@ Each sprint ≈ 1–2 weeks. Renumbered from the original plan: the stability au
 
 **Verification status:** `tsc --noEmit` clean, 50/50 tests passing.
 
-### Sprint 9 — Enterprise (was Sprint 6)
-- SSO/SAML for Gov/Enterprise orgs — **now explicitly depends on Sprint 4** (SSO is meaningless without multi-user orgs)
-- "Answer once, reuse everywhere" trust exchange (design spike — needs consent model + cross-org sharing rules)
-- MSP multi-client account switcher
+### Sprint 9 — Enterprise ✅ design done (2026-07-26), no implementation this round
+All three items depend on decisions or infrastructure this pass couldn't provide unilaterally — each written up as a real, grounded design spike in `docs/ARCHITECTURE_FOUNDATION.md` §8-10 rather than built blind:
+- ✅ SSO/SAML for Gov/Enterprise orgs (§8) — real blocker: SAML needs Google Cloud Identity Platform (a paid, opt-in upgrade — a billing decision only you can make) and a live IdP to test against (Okta/Azure AD/etc.), neither obtainable from code. Design covers org-to-IdP domain mapping, extending `bootstrapUserProfile()` for SSO provisioning, and why role-from-IdP-group mapping needs a Cloud Function this project doesn't have yet.
+- ✅ "Answer once, reuse everywhere" trust exchange (§9) — the biggest strategic differentiator on this roadmap and the biggest lift: needs real vendor accounts (today's `VendorPortal.tsx` uses anonymous sign-in per link, nothing persistent to attach reusable answers to), stable `controlKey`s on the question bank (today's dedup is array-position-based, not a durable identifier), a mandatory consent UI, and cross-org Firestore rules (a real departure from today's strict single-org-per-doc model).
+- ✅ MSP multi-client account switcher (§10) — confirmed the real scope: `profile.organizationId` is read directly in **25 files**; every collection's Firestore rule (`isOrgMember`/`isDocOrgMember`) would need an alternate `msp_memberships` path. One encouraging finding: the data hooks (`useOrgVendors`, `useOrgAssessments`) already take `orgId` as an explicit parameter, so the query layer itself doesn't need to change — only what org ID gets passed in.
+
+**This closes out the original 9-sprint roadmap.** Remaining work going forward lives in `docs/KNOWN_ISSUES.md` (15 tracked items) and whichever of the three Sprint 9 designs you choose to actually build next.
 
 ---
 
