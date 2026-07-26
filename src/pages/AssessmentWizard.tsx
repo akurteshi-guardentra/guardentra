@@ -20,6 +20,7 @@ import { useOrgVendors } from '../lib/vendor/useOrgVendors';
 import { createLocalAssessment } from '../lib/vendor/localAssessmentStore';
 import { isFirestoreUnavailableError } from '../lib/vendor/localVendorStore';
 import { syncVendorAfterAssessmentCreate } from '../lib/vendor/syncVendorAssessment';
+import { sendEmailBestEffort } from '../lib/notifications';
 
 export function AssessmentWizard() {
   const { profile } = useAuth();
@@ -188,6 +189,16 @@ export function AssessmentWizard() {
       // instead of resurrecting this write.
 
       await syncVendorAfterAssessmentCreate(orgId, vendorId, false);
+
+      if (selected.primaryContactEmail) {
+        const portalUrl = `${window.location.origin}/portal/${ref.id}`;
+        void sendEmailBestEffort({
+          to: selected.primaryContactEmail,
+          subject: `Security assessment request — ${selected.name}`,
+          text: `Hi${selected.primaryContactName ? ` ${selected.primaryContactName}` : ''},\n\n${selected.name} has been asked to complete a security assessment (${frameworkName}).\n\nComplete it here: ${portalUrl}\n\nDue: ${due.toLocaleDateString()}\n\nYour progress saves automatically and this link stays valid until the assessment is complete.`,
+        });
+      }
+
       navigate(`/portal/${ref.id}`);
     } catch (ex: unknown) {
       if (isFirestoreUnavailableError(ex)) {

@@ -33,7 +33,7 @@ const IMPACT_PROMPTS: { id: string; label: string; hint: string }[] = [
 
 export function ImpactAssessment() {
   const { vendorId = '' } = useParams();
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
   const navigate = useNavigate();
   const [vendor, setVendor] = useState<Vendor | null>(null);
   const [impactLevel, setImpactLevel] = useState<RiskLevel>('Medium');
@@ -105,7 +105,7 @@ export function ImpactAssessment() {
         impactLevel,
         impactNotes: notes.trim() || null,
         impactCompletedAt: new Date().toISOString(),
-        impactCompletedBy: profile.displayName || profile.email || profile.uid,
+        impactCompletedBy: profile.displayName || profile.email || user?.uid,
         finalRating: finalRating || null,
         criticality: impactLevel,
         attachments: attachments.map((a) => ({
@@ -115,7 +115,7 @@ export function ImpactAssessment() {
           storagePath: a.storagePath,
           downloadUrl: a.downloadUrl,
           uploadedAt: a.uploadedAt,
-          uploadedBy: profile.displayName || profile.email || profile.uid,
+          uploadedBy: profile.displayName || profile.email || user?.uid,
         })),
       });
       navigate('/vendors');
@@ -151,7 +151,7 @@ export function ImpactAssessment() {
           storagePath: a.storagePath,
           downloadUrl: a.downloadUrl,
           uploadedAt: a.uploadedAt,
-          uploadedBy: profile.displayName || profile.email || profile.uid,
+          uploadedBy: profile.displayName || profile.email || user?.uid,
         })),
       });
     } catch (e) {

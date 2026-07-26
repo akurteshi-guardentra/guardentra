@@ -57,3 +57,4 @@ See **[`docs/SECRETS.md`](./SECRETS.md)** for the full policy:
 4. Confirm production rules have **no** personal email bypass (`isAtIdhee` removed).
 5. Point App Hosting / Cloud Run `main` at `guardentra-prod` only.
 6. Keep `GEMINI_API_KEY` server-only (not in client production bundles).
+7. **Install the "Trigger Email from Firestore" extension** (Console → Extensions → search "firestore-send-email") in each project, configured with a real SMTP or SendGrid provider. `server/routes/notify.ts` (`POST /api/notify/mail`) already writes correctly-shaped docs to the `mail` collection — without this extension installed, those writes succeed but no email is ever actually sent. This is the one piece of Sprint 6 (notifications) that can't be done from code.

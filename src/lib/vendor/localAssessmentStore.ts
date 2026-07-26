@@ -99,9 +99,13 @@ export function removeLocalAssessment(orgId: string, id: string): void {
   writeStore(store);
 }
 
-/** Map assessment rows for a vendor into a directory chip status. */
+/** Map assessment rows for a vendor into a directory chip status. progressPct is
+ * optional here (unlike VendorAssessment, where it's required) because this
+ * function already falls back to `progress` when it's absent — see below. */
 export function deriveStatusFromAssessments(
-  assessments: Pick<StoredAssessment, 'status' | 'dueAt' | 'dueDate' | 'progressPct' | 'progress'>[]
+  assessments: (Pick<StoredAssessment, 'status' | 'dueAt' | 'dueDate' | 'progress'> & {
+    progressPct?: number;
+  })[]
 ): AssessmentStatus | undefined {
   if (!assessments.length) return undefined;
 

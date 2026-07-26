@@ -11,7 +11,11 @@ export type AssessmentStatus =
   | 'Due Soon'
   | 'Overdue'
   | 'Completed'
-  | 'Sent';
+  | 'Sent'
+  // Set by VendorPortal.tsx's handleSubmit — was missing from this union even
+  // though it's a real runtime value, causing a type error on any comparison
+  // against it (pre-existing, first hit in Assessments.tsx before this session).
+  | 'Under Review';
 
 export type AnswerValue = 'Yes' | 'No' | 'Partially' | 'Not Applicable';
 

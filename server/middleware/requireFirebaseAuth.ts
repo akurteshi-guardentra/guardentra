@@ -2,7 +2,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { getApps, initializeApp, applicationDefault } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 
-function ensureAdmin() {
+export function ensureAdmin() {
   if (getApps().length) return;
   try {
     initializeApp({ credential: applicationDefault() });

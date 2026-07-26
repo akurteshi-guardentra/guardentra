@@ -10,6 +10,7 @@ import {
   FileText,
   Sparkles,
   X,
+  Mail,
 } from 'lucide-react';
 import { db } from '../firebase';
 import { useAuth } from '../lib/AuthContext';
@@ -22,6 +23,7 @@ import { authHeaders } from '../lib/authHeaders';
 import { cn } from '../lib/utils';
 import { useOrgAssessments } from '../lib/vendor/useOrgAssessments';
 import { useOrgVendors } from '../lib/vendor/useOrgVendors';
+import { sendEmail } from '../lib/notifications';
 import {
   deriveStatusFromAssessments,
   upsertLocalAssessment,
@@ -64,6 +66,7 @@ export function Assessments() {
   const [vendorFilter, setVendorFilter] = useState(presetVendorId || 'all');
   const [reviewAssessment, setReviewAssessment] = useState<StoredAssessment | null>(null);
   const [isReviewing, setIsReviewing] = useState(false);
+  const [reminderState, setReminderState] = useState<Record<string, 'sending' | 'sent' | 'error'>>({});
   const [reviewAnalysis, setReviewAnalysis] = useState<{
     summary: string;
     rating: string;
@@ -131,6 +134,28 @@ export function Assessments() {
       } catch (e) {
         console.error('AI Review failed:', e);
       }
+    }
+  };
+
+  const handleSendReminder = async (assessment: StoredAssessment) => {
+    const vendor = vendors.find((v) => v.id === assessment.vendorId);
+    if (!vendor?.primaryContactEmail) {
+      setReminderState((prev) => ({ ...prev, [assessment.id]: 'error' }));
+      return;
+    }
+    setReminderState((prev) => ({ ...prev, [assessment.id]: 'sending' }));
+    try {
+      const portalUrl = `${window.location.origin}/portal/${assessment.id}`;
+      const due = assessment.dueAt || assessment.dueDate;
+      await sendEmail({
+        to: vendor.primaryContactEmail,
+        subject: `Reminder: security assessment pending — ${assessment.vendorName || vendor.name}`,
+        text: `Hi${vendor.primaryContactName ? ` ${vendor.primaryContactName}` : ''},\n\nThis is a reminder that a security assessment (${frameworkLabel(assessment)}) is still awaiting your response.\n\nComplete it here: ${portalUrl}\n${due ? `\nDue: ${new Date(due).toLocaleDateString()}\n` : ''}\nYour progress saves automatically.`,
+      });
+      setReminderState((prev) => ({ ...prev, [assessment.id]: 'sent' }));
+    } catch (e) {
+      console.warn('Send reminder failed', e);
+      setReminderState((prev) => ({ ...prev, [assessment.id]: 'error' }));
     }
   };
 
@@ -401,6 +426,37 @@ export function Assessments() {
                         >
                           <ExternalLink className="h-4 w-4" />
                         </Button>
+                        {a.status !== 'Completed' && a.status !== 'Under Review' && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className={cn(
+                              'mr-2 h-8 w-8 p-0 transition-colors',
+                              reminderState[a.id] === 'sent'
+                                ? 'text-emerald-400'
+                                : reminderState[a.id] === 'error'
+                                ? 'text-rose-400'
+                                : 'text-slate-400 hover:text-primary'
+                            )}
+                            disabled={reminderState[a.id] === 'sending'}
+                            onClick={() => void handleSendReminder(a)}
+                            title={
+                              reminderState[a.id] === 'sent'
+                                ? 'Reminder sent'
+                                : reminderState[a.id] === 'error'
+                                ? 'Could not send — check vendor has a contact email'
+                                : 'Send Reminder'
+                            }
+                          >
+                            {reminderState[a.id] === 'sending' ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : reminderState[a.id] === 'sent' ? (
+                              <CheckCircle2 className="h-4 w-4" />
+                            ) : (
+                              <Mail className="h-4 w-4" />
+                            )}
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="sm"

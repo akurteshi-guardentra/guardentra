@@ -259,5 +259,13 @@ service cloud.firestore {
     match /system/{docId} {
       allow read: if isAuthenticated();
     }
+
+    // Mail queue (Firebase "Trigger Email from Firestore" extension shape). Only
+    // written by server/routes/notify.ts via the Admin SDK, which bypasses these
+    // rules entirely — so this stays fully closed to every client, preventing any
+    // authenticated user from queuing arbitrary emails directly through Firestore.
+    match /mail/{mailId} {
+      allow read, write: if false;
+    }
   }
 }

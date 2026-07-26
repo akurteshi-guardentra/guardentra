@@ -7,6 +7,7 @@ import type { Server } from "http";
 
 import aiRoutes from "./server/routes/ai.ts";
 import stripeRoutes from "./server/routes/stripe.ts";
+import notifyRoutes from "./server/routes/notify.ts";
 import { requireFirebaseAuth } from "./server/middleware/requireFirebaseAuth.ts";
 
 /** Cloud Run / Firebase App Hosting: always prefer process.env.PORT, fallback 8080. */
@@ -36,6 +37,7 @@ export async function createApp() {
   });
 
   app.use("/api/ai", requireFirebaseAuth, aiRoutes);
+  app.use("/api/notify", requireFirebaseAuth, notifyRoutes);
   app.use("/api/stripe", stripeRoutes);
 
   // Vite middleware for development
