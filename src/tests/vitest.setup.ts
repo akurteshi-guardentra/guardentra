@@ -117,3 +117,35 @@ vi.mock('@google/genai', () => ({
     NUMBER: 'number',
   },
 }));
+
+// Mock /api/ai/generate — Sprint 0 moved ~15 components off the direct @google/genai
+// client-side call (mocked above) onto this server proxy instead. Same canned
+// responses as the @google/genai mock, keyed on the same prompt substrings, so
+// existing tests (e.g. Dashboard.test.tsx's "Mocked AI Briefing" expectation) keep
+// working against the new call path. See docs/KNOWN_ISSUES.md #2.
+const realFetch = global.fetch;
+global.fetch = vi.fn((input: any, init?: any) => {
+  const url = typeof input === 'string' ? input : input?.url || '';
+  if (!url.includes('/api/ai/generate')) {
+    return realFetch ? realFetch(input, init) : Promise.reject(new Error(`Unmocked fetch: ${url}`));
+  }
+
+  const body = init?.body ? JSON.parse(init.body) : {};
+  const p = String(body.prompt || '').toLowerCase();
+  let text = '';
+  if (p.includes('brief')) {
+    text = JSON.stringify({ briefing: 'Mocked AI Briefing', priorities: ['Fix tests', 'Build UI'] });
+  } else if (p.includes('incident response playbook')) {
+    text = JSON.stringify({ incident_type: 'Security Breach', severity: 'High', steps: [], communications: [], evidence_to_collect: [] });
+  } else if (p.includes('predict 4 high-probability')) {
+    text = JSON.stringify([{ title: 'AI Risk 1', severity: 'High', impact: 'Significant', likelihood: 'Frequent', category: 'Operational' }]);
+  } else {
+    text = JSON.stringify({ result: 'Generic AI response' });
+  }
+
+  return Promise.resolve({
+    ok: true,
+    status: 200,
+    json: () => Promise.resolve({ text }),
+  } as Response);
+}) as typeof fetch;
