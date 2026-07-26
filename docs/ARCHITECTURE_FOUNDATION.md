@@ -280,6 +280,34 @@ Grounded in `docs/CYNOMI_GAP_NOTES.md` and shipped spine — **not** roadmap vap
 
 ---
 
+## 7. Continuous monitoring signals (design spike, per `docs/PRODUCT_ROADMAP_2026.md` Sprint 8c)
+
+**Intent:** blend lightweight external signal ingestion into vendor risk between assessment cycles, so risk isn't static until the next questionnaire — a Growth/Gov-tier differentiator vs. SecurityScorecard/BitSight-style continuous monitoring. This section is a design spike only — deliberately no code yet, per the roadmap's own sequencing (design first, build later, once the open questions below have real answers).
+
+### Open questions this spike surfaces (need your answers before any code)
+
+1. **Which signals, and from where?** Realistic v1 candidates using cheap/free public APIs rather than a commercial threat-intel subscription:
+   - Domain/certificate hygiene — SSL cert expiry and config via SSL Labs' free API, or `securityheaders.com`'s API for missing security headers.
+   - Public breach disclosure — HaveIBeenPwned's domain-search API (paid tier; per-lookup cost needs a real budget decision, not a default-on assumption).
+   - DNS hygiene — SPF/DKIM/DMARC presence (free, simple DNS TXT lookups).
+   None of these require a vendor's cooperation — they only need the vendor's public domain, already on file as `primaryContactEmail`'s domain or a new `website` field (`Vendor` type doesn't have one today — would need adding).
+2. **Who runs the scan, and how often?** This is inherently a background job, not something to fetch on page load (API keys, rate limits, cost). No Cloud Scheduler/Cloud Functions exist in this project today. Two options, neither built:
+   - A GitHub Actions scheduled workflow (`on: schedule`) hitting a new authenticated server endpoint — reuses the CI mechanism already in this repo (`.github/workflows/ci.yml`), no new GCP infra, but GitHub's free-tier cron can be delayed/skipped (acceptable for a weekly cadence, not for anything time-sensitive).
+   - Cloud Scheduler + a Cloud Function / Cloud Run job — more reliable, but a genuinely new piece of infrastructure this project doesn't have.
+3. **How does this show up in the UI without breaking the audit trail?** `ARCHITECTURE_FOUNDATION.md` §3 already establishes that Guardentra's differentiator is an auditable "what was attested vs. what failed" chain. Silently blending an external signal into the existing assessment-derived `riskScore` would break that traceability. Proposed instead: a separate `continuousMonitoringScore`/`signalFlags: string[]` field, shown distinctly (e.g. "Assessed: 85 (Jul 2026) · 2 new monitoring flags since"), never overwriting the assessment-derived number.
+4. **Tier gating and cost control.** Growth/Gov only, per the original positioning — needs a subscription-tier check before running any paid-API lookup for a given org, and a hard per-org monthly cap on paid lookups (same soft-metering pattern already used for AI usage and vendor caps).
+
+### Plan
+
+| Phase | Work |
+|-------|------|
+| Now | Design only (this section) — no code, no new collection, no scheduled job |
+| Next, pending your answers above | Add `website` field to `Vendor`; pick the free-tier signals to start with; decide GitHub Actions cron vs. Cloud Scheduler |
+| Later | Wire the chosen signals into a scheduled job writing to a new `vendor_signals` collection (or fields on the vendor doc), surfaced as a distinct "Monitoring" badge alongside (not replacing) the assessment-derived risk score |
+| Out of scope until a real budget decision | Any paid breach-feed API (HaveIBeenPwned) — free DNS/cert checks first |
+
+---
+
 ## Cross-cutting references
 
 | Doc / code | Role |
@@ -296,4 +324,4 @@ Grounded in `docs/CYNOMI_GAP_NOTES.md` and shipped spine — **not** roadmap vap
 
 ---
 
-*Last updated: 2026-07-24. Do not treat list prices as competitor benchmarks; treat them as Guardentra catalog starters pending Stripe Product creation.*
+*Last updated: 2026-07-26. Do not treat list prices as competitor benchmarks; treat them as Guardentra catalog starters pending Stripe Product creation.*

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { ArrowLeft, CheckCircle2, FileDown, Paperclip, Trash2, Upload } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, FileDown, Loader2, Paperclip, Sparkles, Trash2, Upload } from 'lucide-react';
 import { db } from '../firebase';
 import { useAuth } from '../lib/AuthContext';
 import { Button } from '../components/ui/button';
@@ -12,6 +12,7 @@ import { riskBandClasses } from '../lib/vendor/risk';
 import { combineImpactAndSecurity, securityLevelFromScore, vendorRatingLabel } from '../lib/vendor/vendorRating';
 import { uploadVendorAttachment, type UploadedEvidence } from '../lib/vendor/evidenceUpload';
 import { openVendorReportForPrint } from '../lib/vendor/reportExport';
+import { authHeaders } from '../lib/authHeaders';
 
 const IMPACT_PROMPTS: { id: string; label: string; hint: string }[] = [
   {
@@ -43,6 +44,9 @@ export function ImpactAssessment() {
   const [loading, setLoading] = useState(true);
   const [attachments, setAttachments] = useState<UploadedEvidence[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [narrative, setNarrative] = useState('');
+  const [narrativeLoading, setNarrativeLoading] = useState(false);
+  const [narrativeError, setNarrativeError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -89,6 +93,44 @@ export function ImpactAssessment() {
     const security = securityLevelFromScore(vendor?.riskScore);
     return vendorRatingLabel(impactLevel, vendor?.riskScore);
   }, [impactLevel, vendor?.riskScore]);
+
+  const handleGenerateNarrative = async () => {
+    if (!vendor) return;
+    setNarrativeLoading(true);
+    setNarrativeError('');
+    try {
+      const prompt = `Act as a third-party risk analyst. Write a concise executive risk
+narrative for this vendor — exactly 3 sentences, plain English, no markdown — so a
+security team can understand their posture at a glance without opening the full record.
+
+Vendor: ${vendor.name}
+Category: ${vendor.category || 'Unknown'}
+Criticality: ${vendor.criticality}
+Security risk score: ${vendor.riskScore > 0 ? vendor.riskScore : 'not yet assessed'}
+Business impact level: ${impactLevel}
+Combined rating: ${preview.rating || 'pending — impact and security assessments not both complete'}
+Assessment status: ${vendor.assessmentStatus || 'Not Started'}
+Last assessed: ${vendor.lastAssessmentAt || 'never'}
+
+If the rating is High or Critical, name the specific driver (e.g. an unresolved
+security gap or high business impact). Return JSON: { "summary": "..." }`;
+
+      const response = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ prompt, responseMimeType: 'application/json' }),
+      });
+      if (!response.ok) throw new Error('AI generation failed');
+      const { text } = await response.json();
+      const parsed = JSON.parse((text || '{}').replace(/```json/g, '').replace(/```/g, '').trim());
+      setNarrative(parsed.summary || 'No summary returned.');
+    } catch (e) {
+      console.error('Risk narrative generation failed:', e);
+      setNarrativeError('Could not generate a narrative right now.');
+    } finally {
+      setNarrativeLoading(false);
+    }
+  };
 
   const save = async () => {
     if (!vendor || !profile) return;
@@ -270,6 +312,40 @@ export function ImpactAssessment() {
             )}
           </div>
         </div>
+      </div>
+
+      <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-2 text-sm font-medium text-white">
+            <Sparkles className="h-4 w-4 text-primary" />
+            AI Risk Narrative
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="border-white/10"
+            onClick={() => void handleGenerateNarrative()}
+            disabled={narrativeLoading}
+          >
+            {narrativeLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : narrative ? (
+              'Regenerate'
+            ) : (
+              'Generate'
+            )}
+          </Button>
+        </div>
+        {narrativeError && <p className="mt-2 text-xs text-rose-400">{narrativeError}</p>}
+        {narrative && !narrativeLoading && (
+          <p className="mt-3 text-sm leading-relaxed text-slate-300">{narrative}</p>
+        )}
+        {!narrative && !narrativeLoading && !narrativeError && (
+          <p className="mt-2 text-xs text-slate-500">
+            Generate a 3-sentence executive summary of this vendor's risk posture.
+          </p>
+        )}
       </div>
 
       <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">

@@ -23,12 +23,14 @@ import {
   Scale,
   ListChecks,
   FileQuestion,
+  Sparkles,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { authHeaders } from '../lib/authHeaders';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/src/lib/utils';
 import ReactMarkdown from 'react-markdown';
+import { RemediationService } from '../services/RemediationService';
 
 interface ControlCoverageItem {
   id: string;
@@ -120,6 +122,32 @@ export function AuditReadiness() {
   const [isScanning, setIsScanning] = useState(false);
   const [selectedAudit, setSelectedAudit] = useState<AuditAssessment | null>(null);
   const [scanError, setScanError] = useState('');
+  const [ticketState, setTicketState] = useState<Record<string, 'creating' | 'created' | 'error'>>({});
+
+  // Closes the loop between a detected gap and an actionable remediation task: generates
+  // a real AI plan (server /api/ai/remediation-plan, same service the frozen legacy
+  // vendor-risk board already uses) and persists it to the remediations collection.
+  // These gaps are org-wide (not tied to one vendor), so tickets are recorded against
+  // the organization rather than a specific vendorId.
+  const handleCreateTicket = async (key: string, finding: string, recommendation: string) => {
+    if (!profile?.organizationId) return;
+    setTicketState((prev) => ({ ...prev, [key]: 'creating' }));
+    try {
+      const plan = await RemediationService.generateAIPlan(finding, recommendation, undefined);
+      await RemediationService.createTicket({
+        vendorId: 'org-wide',
+        vendorName: profile.organizationName || 'Organization',
+        ...plan,
+        status: 'Backlog',
+        createdAt: new Date().toISOString(),
+        organizationId: profile.organizationId,
+      });
+      setTicketState((prev) => ({ ...prev, [key]: 'created' }));
+    } catch (e) {
+      console.error('Create remediation ticket failed:', e);
+      setTicketState((prev) => ({ ...prev, [key]: 'error' }));
+    }
+  };
 
   useEffect(() => {
     if (loading) return;
@@ -617,25 +645,49 @@ Call out TPRM and incident-response gaps when relevant.`;
                         Evidence Gaps
                       </h3>
                       <div className="space-y-3">
-                        {selectedAudit.evidenceGaps!.map((gap, i) => (
-                          <div
-                            key={`${gap.evidenceName}-${i}`}
-                            className="flex items-start justify-between gap-4 rounded-xl border border-white/5 bg-slate-950/40 p-4"
-                          >
-                            <div>
-                              <p className="text-sm font-medium text-white">{gap.evidenceName}</p>
-                              <p className="mt-1 text-xs text-slate-400">{gap.reason}</p>
-                            </div>
-                            <span
-                              className={cn(
-                                'shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-mono',
-                                priorityClass(gap.priority)
-                              )}
+                        {selectedAudit.evidenceGaps!.map((gap, i) => {
+                          const key = `gap-${i}-${gap.evidenceName}`;
+                          const state = ticketState[key];
+                          return (
+                            <div
+                              key={key}
+                              className="flex items-start justify-between gap-4 rounded-xl border border-white/5 bg-slate-950/40 p-4"
                             >
-                              {gap.priority}
-                            </span>
-                          </div>
-                        ))}
+                              <div>
+                                <p className="text-sm font-medium text-white">{gap.evidenceName}</p>
+                                <p className="mt-1 text-xs text-slate-400">{gap.reason}</p>
+                              </div>
+                              <div className="flex shrink-0 items-center gap-2">
+                                <span
+                                  className={cn(
+                                    'rounded-full border px-2 py-0.5 text-[10px] font-mono',
+                                    priorityClass(gap.priority)
+                                  )}
+                                >
+                                  {gap.priority}
+                                </span>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 border-white/10 px-2 text-[10px]"
+                                  disabled={state === 'creating' || state === 'created'}
+                                  onClick={() =>
+                                    void handleCreateTicket(key, `Evidence gap: ${gap.evidenceName}`, gap.reason)
+                                  }
+                                >
+                                  {state === 'creating' ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : state === 'created' ? (
+                                    <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                                  ) : (
+                                    <Sparkles className="h-3 w-3" />
+                                  )}
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -664,15 +716,42 @@ Call out TPRM and incident-response gaps when relevant.`;
                       Remediation Checklist
                     </h3>
                     <div className="space-y-4">
-                      {(selectedAudit.recommendations || []).map((rec, i) => (
-                        <div
-                          key={i}
-                          className="flex gap-4 rounded-xl border border-emerald-500/10 bg-emerald-500/5 p-4"
-                        >
-                          <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-500" />
-                          <p className="text-sm text-slate-300">{rec}</p>
-                        </div>
-                      ))}
+                      {(selectedAudit.recommendations || []).map((rec, i) => {
+                        const key = `rec-${i}`;
+                        const state = ticketState[key];
+                        return (
+                          <div
+                            key={key}
+                            className="flex items-start justify-between gap-4 rounded-xl border border-emerald-500/10 bg-emerald-500/5 p-4"
+                          >
+                            <div className="flex gap-4">
+                              <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-500" />
+                              <p className="text-sm text-slate-300">{rec}</p>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-7 shrink-0 border-white/10 px-2 text-[10px]"
+                              disabled={state === 'creating' || state === 'created'}
+                              onClick={() => void handleCreateTicket(key, rec, rec)}
+                              title={state === 'created' ? 'Remediation ticket created' : 'Create remediation ticket'}
+                            >
+                              {state === 'creating' ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : state === 'created' ? (
+                                <>
+                                  <CheckCircle2 className="mr-1 h-3 w-3 text-emerald-400" /> Ticket created
+                                </>
+                              ) : (
+                                <>
+                                  <Sparkles className="mr-1 h-3 w-3" /> Create Ticket
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>

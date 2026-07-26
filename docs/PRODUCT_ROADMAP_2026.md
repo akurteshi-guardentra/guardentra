@@ -159,10 +159,13 @@ Each sprint ≈ 1–2 weeks. Renumbered from the original plan: the stability au
 
 **Verification status:** `tsc --noEmit` clean, 50/50 tests passing (one transient/unreproducible flake noted in `docs/KNOWN_ISSUES.md` #14).
 
-### Sprint 8 — Differentiation / Growth-Gov upsell (was Sprint 5)
-- AI risk narrative per vendor (`TrustScoreEngine.ts` → LLM summary)
-- AI-drafted remediation tickets tied to Audit Lab gaps
-- Continuous monitoring signal ingestion (design spike first)
+### Sprint 8 — Differentiation / Growth-Gov upsell (was Sprint 5) ✅ done (2026-07-26)
+- ✅ AI risk narrative per vendor: new "AI Risk Narrative" card on the Impact page (`ImpactAssessment.tsx`) — on-demand (button-triggered, not auto-fired on load), calls the existing `/api/ai/generate` proxy with the vendor's real data (risk score, criticality, impact level, combined rating, assessment status), returns a 3-sentence plain-English summary. Distinct from `TrustScoreEngine.ts`'s existing org-wide Trust Score narration (which already works via `/api/ai/trust-explain`) — this is genuinely per-vendor, which didn't exist before.
+- ✅ AI-drafted remediation tickets tied to Audit Lab gaps: "Create Ticket" buttons added to both the Evidence Gaps list and the Remediation Checklist on `AuditReadiness.tsx`, calling the already-real `RemediationService.generateAIPlan()` + `createTicket()` (previously only wired up on the frozen legacy `VendorRisk.tsx` page via `RemediationEngine.tsx`). Tickets are org-wide (`vendorId: 'org-wide'`) since Audit Lab scans aren't tied to one vendor.
+  - **Found and tracked, not fixed:** created tickets have no view anywhere in the active app yet — `RemediationEngine`'s Kanban board (the only UI that renders them) is vendor-oriented and lives on the frozen page. `docs/KNOWN_ISSUES.md` #15.
+- ✅ Continuous monitoring signal ingestion — **design spike only**, as scoped: written up as a new §7 in `docs/ARCHITECTURE_FOUNDATION.md` with the open questions (which signals, who runs the scan and how often, how to surface it without breaking the audit trail, tier gating/cost control) that need real answers before any code. Deliberately no implementation this round — this needs a new field (`Vendor.website`), a decision on GitHub Actions cron vs. Cloud Scheduler (neither exists in this project today), and a real budget call on any paid API (HaveIBeenPwned).
+
+**Verification status:** `tsc --noEmit` clean, 50/50 tests passing.
 
 ### Sprint 9 — Enterprise (was Sprint 6)
 - SSO/SAML for Gov/Enterprise orgs — **now explicitly depends on Sprint 4** (SSO is meaningless without multi-user orgs)
