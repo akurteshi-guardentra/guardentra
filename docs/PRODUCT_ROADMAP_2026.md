@@ -140,9 +140,14 @@ Each sprint ≈ 1–2 weeks. Renumbered from the original plan: the stability au
   - `LiveAssistant.tsx` has no form at all — it's audio/voice only (Gemini Live API), so the original "unvalidated form" claim didn't apply.
   - `Settings.tsx` is now covered by the Team Members invite form added in Sprint 4, which already validates email format.
 
-### Sprint 6 — Notifications & invite flow (was Sprint 3)
-- Email infra (Firebase Trigger Email extension) for vendor invites, reminders, due-date nudges
-- Activate the unused `vendor_invites` collection end-to-end
+### Sprint 6 — Notifications & invite flow (was Sprint 3) ✅ done (2026-07-26)
+- ✅ Email infra: `server/routes/notify.ts` (`POST /api/notify/mail`, rate-limited, auth-gated) writes Trigger-Email-extension-shaped docs to a `mail` collection via the Admin SDK — `firestore.rules` denies all direct client access to `mail`, so this server route is the only path that can queue an email. Installing/configuring the actual extension in the Firebase Console is documented in `docs/ENVIRONMENTS.md` §7 — that one step can't be done from code.
+- ✅ Vendor gets emailed automatically when an assessment is created (`AssessmentWizard.tsx`, best-effort) — previously there was no notification at all, just a "Copy Vendor Portal Link" button for manually sharing it yourself.
+- ✅ On-demand "Send Reminder" action on pending/in-progress rows in `Assessments.tsx` (no Cloud Scheduler/Functions available, so this is admin-triggered, not a real automated cron nudge).
+- ✅ Real "Invite Vendor" quick action in `VendorsDirectory.tsx` — the mockup's third quick action was never actually built before this (confirmed zero references anywhere in the codebase). Adds the vendor, records a `vendor_invites` audit entry (new Firestore rule; the collection existed as a name in `COLLECTIONS` but nothing ever wrote to it), and sends a welcome email — distinct from the pre-existing "Invite to assessment" shortcut, which just navigates to the wizard.
+- **Bonus, now that Node/npm work in this sandbox:** fixed every remaining pre-existing `tsc` error (6 total, none caused by this session's work, all confirmed via `git blame` to predate it) — missing `AssessmentStatus` union member (`'Under Review'`, a real value `VendorPortal.tsx` sets but the type never declared), dead `profile.uid` references in `ImpactAssessment.tsx` (should be `user.uid` — `UserProfile` never had a `uid` field), a test missing a required `progressPct`, and missing `vite/client` types in `tsconfig.json`. `tsc --noEmit` is now completely clean.
+
+**Verification status:** first sprint verified for real — Node/npm are now installed in this sandbox (direct download from nodejs.org, after a `brew install node` attempt proved impossibly slow compiling from source on this unsupported macOS 12 host). `tsc --noEmit`: 0 errors. `npm test` + `npm run test:vitest`: 12/12 files, 50/50 tests passing.
 
 ### Sprint 7 — Billing hardening (was Sprint 4)
 (per `ARCHITECTURE_FOUNDATION.md` §4, already scoped there)

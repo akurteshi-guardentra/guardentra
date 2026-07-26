@@ -25,6 +25,7 @@ import {
   Clock,
   Circle,
   Loader2,
+  Mail,
 } from 'lucide-react';
 import { db } from '../firebase';
 import { useAuth } from '../lib/AuthContext';
@@ -42,6 +43,7 @@ import {
   type ParsedBulkVendor,
 } from '../lib/vendor/csvBulk';
 import { downloadVendorRegisterReport } from '../lib/vendor/reportExport';
+import { sendEmailBestEffort } from '../lib/notifications';
 import {
   createLocalVendor,
   isFirestoreUnavailableError,
@@ -143,6 +145,9 @@ export function VendorsDirectory() {
   const [ownerFilter, setOwnerFilter] = useState('all');
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
+  const [showInvite, setShowInvite] = useState(false);
+  const [inviteError, setInviteError] = useState('');
+  const [inviteSaving, setInviteSaving] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
   const [bulkRows, setBulkRows] = useState<ParsedBulkVendor[]>([]);
   const [bulkErrors, setBulkErrors] = useState<string[]>([]);
@@ -350,6 +355,62 @@ export function VendorsDirectory() {
       setFormError(ex?.message || 'Failed to create vendor.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  /** Distinct from "Add One Vendor": creates the vendor, records a vendor_invites
+   * audit entry (previously declared in COLLECTIONS but never written anywhere),
+   * and emails the vendor a welcome notice — all in one step. */
+  const handleInviteVendor = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const input = {
+      name: String(fd.get('name') || ''),
+      category: String(fd.get('category') || ''),
+      criticality: 'Medium' as RiskLevel,
+      primaryContactName: String(fd.get('primaryContactName') || ''),
+      primaryContactEmail: String(fd.get('primaryContactEmail') || ''),
+    };
+    const err = validateVendorForm(input);
+    if (err) {
+      setInviteError(err);
+      return;
+    }
+    if (!input.primaryContactEmail) {
+      setInviteError('Contact email is required to send an invite.');
+      return;
+    }
+    setInviteSaving(true);
+    setInviteError('');
+    try {
+      await createVendor(input);
+
+      if (orgId) {
+        try {
+          await addDoc(collection(db, 'vendor_invites'), {
+            organizationId: orgId,
+            vendorName: input.name,
+            vendorEmail: input.primaryContactEmail,
+            invitedByEmail: profile?.email || null,
+            status: 'sent',
+            createdAt: new Date().toISOString(),
+          });
+        } catch (invEx) {
+          console.warn('Could not record vendor_invites audit entry', invEx);
+        }
+      }
+
+      void sendEmailBestEffort({
+        to: input.primaryContactEmail,
+        subject: `You've been added as a vendor in Guardentra`,
+        text: `Hi${input.primaryContactName ? ` ${input.primaryContactName}` : ''},\n\n${input.name} has been added to Guardentra's vendor register${profile?.displayName ? ` by ${profile.displayName}` : ''}. A security assessment questionnaire will follow separately.\n\nNo action is needed from you yet.`,
+      });
+
+      setShowInvite(false);
+    } catch (ex: any) {
+      setInviteError(ex?.message || 'Failed to invite vendor.');
+    } finally {
+      setInviteSaving(false);
     }
   };
 
@@ -823,6 +884,20 @@ export function VendorsDirectory() {
               </button>
               <button
                 type="button"
+                onClick={() => {
+                  setInviteError('');
+                  setShowInvite(true);
+                }}
+                className="flex w-full flex-col items-start gap-0.5 rounded-lg border border-white/10 px-3 py-2 text-left text-sm hover:bg-white/5"
+              >
+                <span className="flex items-center gap-2">
+                  <Mail className="h-4 w-4 text-primary" />
+                  Invite Vendor
+                </span>
+                <span className="pl-6 text-xs text-slate-500">Add vendor &amp; send a welcome email</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => navigate('/assessments/new')}
                 className="flex w-full flex-col items-start gap-0.5 rounded-lg border border-white/10 px-3 py-2 text-left text-sm hover:bg-white/5"
               >
@@ -939,6 +1014,73 @@ export function VendorsDirectory() {
                 disabled={saving}
               >
                 {saving ? 'Saving…' : 'Create'}
+              </Button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {showInvite && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <form
+            onSubmit={handleInviteVendor}
+            className="w-full max-w-md space-y-4 rounded-xl border border-white/10 bg-slate-900 p-6 shadow-xl"
+          >
+            <div>
+              <h3 className="text-lg font-semibold text-white">Invite Vendor</h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Adds the vendor to your register and emails them a welcome notice. A security
+                assessment can be sent separately once you're ready.
+              </p>
+            </div>
+            {inviteError && <p className="text-sm text-rose-400">{inviteError}</p>}
+            <div>
+              <label className="text-xs font-medium text-slate-400">Vendor name</label>
+              <Input name="name" className="mt-1 border-white/10 bg-black/20 text-white" required />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-400">Category</label>
+              <select name="category" className={cn(SELECT_CLASS, 'mt-1 w-full')} required>
+                {VENDOR_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-400">Contact name</label>
+              <Input
+                name="primaryContactName"
+                className="mt-1 border-white/10 bg-black/20 text-white"
+                placeholder="Name"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-400">Contact email</label>
+              <Input
+                name="primaryContactEmail"
+                type="email"
+                className="mt-1 border-white/10 bg-black/20 text-white"
+                placeholder="email@vendor.com"
+                required
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="border-white/10"
+                onClick={() => setShowInvite(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                className="bg-primary text-white hover:bg-primary/90"
+                disabled={inviteSaving}
+              >
+                {inviteSaving ? 'Sending…' : 'Add & Invite'}
               </Button>
             </div>
           </form>

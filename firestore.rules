@@ -144,6 +144,15 @@ service cloud.firestore {
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
+    // Vendor invite audit trail (src/pages/VendorsDirectory.tsx "Invite Vendor" quick
+    // action) — write-once record of who was invited and by whom; not user-editable
+    // after creation.
+    match /vendor_invites/{inviteId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
     // Vendor Assessments Collections (handle both names)
     match /vendor_assessments/{assessmentId} {
       allow read: if isDocOrgMember();
