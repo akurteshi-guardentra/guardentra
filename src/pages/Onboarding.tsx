@@ -64,58 +64,68 @@ export function Onboarding() {
     setError(null);
 
     const activeOrgId = profile?.organizationId || `org_${user.uid}`;
-    
+    // bootstrapUserProfile only sets role: 'member' for someone who joined an
+    // existing org via invite — everyone else (including the fallback org id
+    // above) is the org's own creator/admin. A joining member going through
+    // this same wizard must not overwrite the shared org's name/industry or
+    // re-run framework init/demo-data seeding on top of the admin's real data.
+    const isOrgCreator = profile?.role !== 'member';
+
     // Set immediate client-side onboarding state so they are never locked out
     localStorage.setItem('guardentra_onboarded', 'true');
     localStorage.setItem('guardentra_fallback_org_id', activeOrgId);
 
     try {
       console.log("Onboarding: Starting finish process for org:", activeOrgId);
-      
-      // 1. Update Organization
-      try {
-        await updateDoc(doc(db, 'organizations', activeOrgId), {
-          name: orgName || `${user.displayName || 'User'}'s Organization`,
-          industry: industry || 'SaaS',
-          onboarded: true,
-          setupAt: new Date().toISOString()
-        });
-        console.log("Onboarding: Organization document updated successfully");
-      } catch (e: any) {
-        console.warn("Onboarding: Organization update failed:", e);
-      }
 
-      // 2. Initialize Selected Frameworks
-      if (selectedFrameworks.length > 0) {
-        console.log("Onboarding: Initializing frameworks...", selectedFrameworks);
+      if (isOrgCreator) {
+        // 1. Update Organization
         try {
-          await Promise.all(selectedFrameworks.map(async (frameworkId) => {
-            const fw = FRAMEWORKS.find(f => f.id === frameworkId);
-            return addDoc(collection(db, 'compliance'), {
-              name: fw?.name || frameworkId,
-              organizationId: activeOrgId,
-              status: 'Active',
-              progress: 0,
-              activatedAt: new Date().toISOString()
-            });
-          }));
-          console.log("Onboarding: Frameworks initialized");
+          await updateDoc(doc(db, 'organizations', activeOrgId), {
+            name: orgName || `${user.displayName || 'User'}'s Organization`,
+            industry: industry || 'SaaS',
+            onboarded: true,
+            setupAt: new Date().toISOString()
+          });
+          console.log("Onboarding: Organization document updated successfully");
         } catch (e: any) {
-          console.warn("Onboarding: Frameworks initialization failed:", e);
+          console.warn("Onboarding: Organization update failed:", e);
         }
-      }
 
-      // 3. Seed Professional Data Templates
-      console.log("Onboarding: Seeding professional metrics...");
-      try {
-        await seedProfessionalData({
-          organizationId: activeOrgId,
-          industry: industry || 'SaaS',
-          frameworks: selectedFrameworks
-        });
-        console.log("Onboarding: Seeding completed");
-      } catch (e: any) {
-        console.warn("Onboarding: Seeding failed, proceeding with local fallback:", e);
+        // 2. Initialize Selected Frameworks
+        if (selectedFrameworks.length > 0) {
+          console.log("Onboarding: Initializing frameworks...", selectedFrameworks);
+          try {
+            await Promise.all(selectedFrameworks.map(async (frameworkId) => {
+              const fw = FRAMEWORKS.find(f => f.id === frameworkId);
+              return addDoc(collection(db, 'compliance'), {
+                name: fw?.name || frameworkId,
+                organizationId: activeOrgId,
+                status: 'Active',
+                progress: 0,
+                activatedAt: new Date().toISOString()
+              });
+            }));
+            console.log("Onboarding: Frameworks initialized");
+          } catch (e: any) {
+            console.warn("Onboarding: Frameworks initialization failed:", e);
+          }
+        }
+
+        // 3. Seed Professional Data Templates
+        console.log("Onboarding: Seeding professional metrics...");
+        try {
+          await seedProfessionalData({
+            organizationId: activeOrgId,
+            industry: industry || 'SaaS',
+            frameworks: selectedFrameworks
+          });
+          console.log("Onboarding: Seeding completed");
+        } catch (e: any) {
+          console.warn("Onboarding: Seeding failed, proceeding with local fallback:", e);
+        }
+      } else {
+        console.log("Onboarding: Invited member joining existing org — skipping org update/framework init/seeding");
       }
 
       // 4. Update User Profile
