@@ -131,14 +131,16 @@ export function ContractNegotiator() {
                                  <p className="text-[10px] text-slate-500 uppercase">{new Date(audit.createdAt).toLocaleDateString()}</p>
                               </div>
                            </div>
-                           <Button 
-                             variant="ghost" 
-                             size="icon" 
-                             onClick={(e) => deleteAudit(audit.id, e)}
-                             className="opacity-0 group-hover:opacity-100 text-slate-600 hover:text-rose-400 transition-all"
-                           >
-                              <Trash2 className="h-4 w-4" />
-                           </Button>
+                           {profile?.role === 'admin' && (
+                             <Button
+                               variant="ghost"
+                               size="icon"
+                               onClick={(e) => deleteAudit(audit.id, e)}
+                               className="opacity-0 group-hover:opacity-100 text-slate-600 hover:text-rose-400 transition-all"
+                             >
+                                <Trash2 className="h-4 w-4" />
+                             </Button>
+                           )}
                         </div>
                       ))
                     )}

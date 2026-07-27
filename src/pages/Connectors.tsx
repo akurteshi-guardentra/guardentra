@@ -281,14 +281,16 @@ export function Connectors() {
                     >
                       {isScanning === connector.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                     </Button>
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="h-8 w-8 p-0 text-slate-400 hover:text-rose-400"
-                      onClick={() => handleDeleteConnector(connector.id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    {profile?.role === 'admin' && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-slate-400 hover:text-rose-400"
+                        onClick={() => handleDeleteConnector(connector.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
                 </div>
 

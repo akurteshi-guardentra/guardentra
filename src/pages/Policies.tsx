@@ -286,14 +286,16 @@ export function Policies() {
                       Archive
                     </Button>
                   )}
-                  <Button 
-                    size="sm" 
-                    variant="ghost" 
-                    className="text-rose-400 hover:bg-rose-500/10"
-                    onClick={() => deletePolicy(selectedPolicy.id)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  {profile?.role === 'admin' && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-rose-400 hover:bg-rose-500/10"
+                      onClick={() => deletePolicy(selectedPolicy.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
                 </div>
               </div>
 

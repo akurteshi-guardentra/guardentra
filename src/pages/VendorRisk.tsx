@@ -1414,15 +1414,17 @@ export function VendorRisk() {
                                               {record.documentType}
                                             </span>
                                           </div>
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleDeleteReview(vendor.id, record.id);
-                                            }}
-                                            className="p-1 rounded opacity-60 hover:opacity-100 hover:bg-rose-500/10 text-rose-400 transition-colors"
-                                          >
-                                            <Trash2 className="h-3 w-3" />
-                                          </button>
+                                          {profile?.role === 'admin' && (
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleDeleteReview(vendor.id, record.id);
+                                              }}
+                                              className="p-1 rounded opacity-60 hover:opacity-100 hover:bg-rose-500/10 text-rose-400 transition-colors"
+                                            >
+                                              <Trash2 className="h-3 w-3" />
+                                            </button>
+                                          )}
                                         </div>
 
                                         <div className="flex justify-between items-center text-[9px] font-mono text-slate-400">
