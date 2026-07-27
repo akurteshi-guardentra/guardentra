@@ -60,6 +60,18 @@ vi.mock('firebase/firestore', () => ({
   deleteDoc: vi.fn(),
   orderBy: vi.fn(),
   limit: vi.fn(),
+  // Sprint 3d/4c added writeBatch-based org/profile bootstrap (src/lib/orgBootstrap.ts)
+  // — this was missing entirely before, though harmless since the onSnapshot mock
+  // above always returns exists:()=>true for users/*, so that code path never
+  // actually ran under the default mock. Still incomplete: collection/query/where
+  // are bare stubs (return undefined), so a future test exercising the pending-invite
+  // lookup in bootstrapUserProfile will need those fleshed out too, not just this.
+  writeBatch: vi.fn(() => ({
+    set: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+    commit: vi.fn(() => Promise.resolve()),
+  })),
 }));
 
 vi.mock('firebase/storage', () => ({

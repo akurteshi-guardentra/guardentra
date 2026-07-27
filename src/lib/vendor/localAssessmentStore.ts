@@ -9,6 +9,10 @@ export interface StoredAssessment extends VendorAssessment {
   dueDate?: string;
   questions?: unknown[];
   portalOpen?: boolean;
+  /** Vendor's answers, keyed by question id — VendorPortal.tsx writes these onto the
+   * assessment doc separately from `questions`, which never carries the answer itself. */
+  answers?: Record<string, string | string[]>;
+  comments?: Record<string, string>;
 }
 
 type StoreShape = Record<string, StoredAssessment[]>;

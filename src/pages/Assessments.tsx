@@ -52,6 +52,12 @@ function dueLabel(a: StoredAssessment): string {
   return a.dueDate || (a.dueAt ? a.dueAt.slice(0, 10) : '—');
 }
 
+/** answers are string for yesno/single_choice, string[] for multiple_choice. */
+function formatAssessmentAnswer(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) return value.length ? value.join(', ') : 'No Answer';
+  return value || 'No Answer';
+}
+
 export function Assessments() {
   const { profile, loading: authLoading } = useAuth();
   const orgId = profile?.organizationId;
@@ -114,8 +120,10 @@ export function Assessments() {
 
     if (assessment.status === 'Under Review' || assessment.status === 'Completed') {
       try {
-        const questions = (assessment.questions || []) as { question?: string; answer?: string }[];
-        const answers = questions.map((q) => `${q.question}: ${q.answer || 'No Answer'}`).join('\n');
+        const questions = (assessment.questions || []) as { id: string; question?: string }[];
+        const answers = questions
+          .map((q) => `${q.question}: ${formatAssessmentAnswer(assessment.answers?.[q.id])}`)
+          .join('\n');
         const prompt = `Analyze vendor assessment for "${assessment.vendorName}" against "${frameworkLabel(assessment)}".
         Answers:
         ${answers}
@@ -508,7 +516,7 @@ export function Assessments() {
                   <h3 className="mb-4 text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
                     Response Intelligence
                   </h3>
-                  {((reviewAssessment.questions || []) as { id?: string; question?: string; answer?: string; category?: string }[]).map(
+                  {((reviewAssessment.questions || []) as { id?: string; question?: string; category?: string }[]).map(
                     (q, idx) => (
                       <div key={q.id || idx} className="space-y-3">
                         <div className="flex gap-4">
@@ -517,7 +525,9 @@ export function Assessments() {
                             <p className="mb-2 text-sm font-medium text-slate-200">{q.question}</p>
                             <div className="rounded-xl border border-white/5 bg-white/[0.03] p-4">
                               <p className="text-sm font-medium text-primary">
-                                {q.answer || 'No response provided.'}
+                                {q.id && reviewAssessment.answers?.[q.id]
+                                  ? formatAssessmentAnswer(reviewAssessment.answers[q.id])
+                                  : 'No response provided.'}
                               </p>
                             </div>
                             {q.category && (

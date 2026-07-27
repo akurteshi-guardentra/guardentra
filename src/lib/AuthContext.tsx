@@ -171,11 +171,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   console.log('AuthContext: Auto-created/joined organization + user profile successfully');
                 } catch (initErr: any) {
                   console.error('AuthContext: Auto-initialization failed:', initErr);
+                  if (initErr?.code === 'permission-denied') {
+                    // handleFirestoreError logs rich diagnostic info but always throws
+                    // afterward — swallow that here so we still fall through to the
+                    // local-profile fallback and setLoading(false) below, rather than
+                    // leaving the UI stuck in a permanent loading state.
+                    try {
+                      handleFirestoreError(initErr, OperationType.WRITE, 'profile_auto_init');
+                    } catch {
+                      /* logged above; intentionally not re-thrown */
+                    }
+                  }
                   if (isDbMissingError(initErr) || initErr?.code === 'permission-denied') {
                     const local = buildLocalProfile(currentUser);
                     setProfile(local);
-                  } else if (initErr.code === 'permission-denied') {
-                    handleFirestoreError(initErr, OperationType.WRITE, 'profile_auto_init');
                   }
                   setLoading(false);
                 }

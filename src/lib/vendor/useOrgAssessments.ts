@@ -58,6 +58,11 @@ function normalizeCloudDoc(id: string, data: Record<string, unknown>): StoredAss
     createdAt: String(data.createdAt || ''),
     sentAt: data.sentAt as string | undefined,
     completedAt: data.completedAt as string | undefined,
+    // VendorPortal.tsx writes these onto the assessment doc separately from `questions`
+    // (which never carries the answer itself) — previously dropped here entirely, which
+    // is why the org-side review screen always showed "No response provided."
+    answers: data.answers as Record<string, string | string[]> | undefined,
+    comments: data.comments as Record<string, string> | undefined,
   };
 }
 

@@ -347,7 +347,7 @@ export function Onboarding() {
                 {isFinishing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Deploy Architecture"}
               </Button>
 
-              {user?.email === 'atdhee.kurteshi@gmail.com' && (
+              {import.meta.env.DEV && (
                 <div className="mt-8 pt-8 border-t border-white/5">
                   <Button 
                     variant="ghost" 
