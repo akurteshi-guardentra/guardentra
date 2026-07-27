@@ -176,6 +176,7 @@ export function Assessments() {
           status: 'Completed',
           progressPct: 100,
           progress: 100,
+          portalOpen: false,
           completedAt: new Date().toISOString(),
         });
         refreshLocal();
@@ -184,6 +185,13 @@ export function Assessments() {
           status: 'Completed',
           progress: 100,
           progressPct: 100,
+          // Closes the vendor's portal link and, via isOpenPortalAssessment() in
+          // firestore.rules/storage.rules, revokes the anonymous session's access to
+          // this assessment's docs and evidence. Nothing set this to false before, so
+          // every portal link stayed live forever — see docs/KNOWN_ISSUES.md #1.
+          // Only an org member can write this field (the portal's own allowlist in
+          // firestore.rules deliberately excludes it), so approval is the right place.
+          portalOpen: false,
         });
       }
       setIsReviewing(false);

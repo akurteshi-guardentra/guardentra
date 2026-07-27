@@ -1,7 +1,6 @@
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../../firebase';
 import { validateEvidenceFile } from './validators';
-import { evidenceStoragePath } from './types';
 
 export interface UploadedEvidence {
   fileName: string;
@@ -26,11 +25,14 @@ export async function uploadPortalEvidence(input: {
   }
 
   const fileId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const storagePath = evidenceStoragePath(input.orgId || 'portal', input.vendorId || input.assessmentId, fileId, input.file.name);
-  // Prefer portal-scoped path for unauthenticated-friendly rules when org is known
-  const path = input.orgId
-    ? storagePath
-    : `portal/${input.assessmentId}/${fileId}-${input.file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+  // Always the portal-scoped path. This previously preferred the org path
+  // (`orgs/{orgId}/vendors/{vendorId}/evidence/...`) whenever orgId was truthy —
+  // and VendorPortal.tsx always passes the assessment's organizationId, so in
+  // practice every vendor upload landed there. That path's storage rule is only
+  // `isSignedIn()`, meaning an anonymous portal session could write into any
+  // org's evidence folder; `portal/{assessmentId}/...` is the one storage.rules
+  // actually scopes to this assessment's portalOpen/org.
+  const path = `portal/${input.assessmentId}/${fileId}-${input.file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
 
   const storageRef = ref(storage, path);
   await uploadBytes(storageRef, input.file, { contentType: input.file.type || 'application/octet-stream' });
