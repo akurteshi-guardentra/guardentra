@@ -12,14 +12,16 @@ service firebase.storage {
       return request.resource.contentType.matches('application/pdf|application/msword|application/vnd\\..*|image/png|image/jpeg');
     }
 
-    // ⚠️ DEPLOY PREREQUISITE — the database id below is hardcoded as `(default)`.
-    // Storage rules can't read env vars, so this literal must match whatever
-    // VITE_FIRESTORE_DATABASE_ID points at in the target environment
+    // ⚠️ PER-ENVIRONMENT DEPLOY CHECK — the database id below is hardcoded as
+    // `(default)`. Storage rules can't read env vars, so this literal must match
+    // whatever VITE_FIRESTORE_DATABASE_ID points at in the target environment
     // (src/firebase.ts:40-42 supports a named DB; docs/ARCHITECTURE_FOUNDATION.md §1
     // warns against mixing the two). If an environment's Firestore data lives in a
     // *named* database, these firestore.get() calls read an empty `(default)` DB and
-    // every portal upload/read is DENIED. Before deploying to any environment:
-    // either create/use `(default)` there, or change `(default)` here to that db id.
+    // every portal upload/read is DENIED.
+    // Confirmed `(default)` on guardentra-7f582 (demo//deployed 2026-07-27). Re-check
+    // before the first deploy to guardentra-dev / -staging / -prod — separate projects,
+    // separate databases, per .firebaserc.
     //
     // Mirrors isOpenPortalAssessment() in firestore.rules — the assessment doc is the
     // single source of truth for whether an (incl. anonymous) portal session may still
