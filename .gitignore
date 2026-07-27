@@ -12,6 +12,12 @@ dist
 dist-ssr
 *.local
 .tools/
+firestore-debug.log
+firebase-debug.log
+database-debug.log
+ui-debug.log
+storage-debug.log
+*.log.bak
 
 # Secrets & credentials (never commit real values — see docs/SECRETS.md)
 .env
