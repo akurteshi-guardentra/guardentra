@@ -12,10 +12,27 @@ service firebase.storage {
       return request.resource.contentType.matches('application/pdf|application/msword|application/vnd\\..*|image/png|image/jpeg');
     }
 
+    // Mirrors isOpenPortalAssessment() in firestore.rules — the assessment doc is the
+    // single source of truth for whether an (incl. anonymous) portal session may still
+    // touch this path, so a vendor session for assessment A can't read/write assessment B.
+    function isOpenPortalAssessment(assessmentId) {
+      return firestore.get(/databases/(default)/documents/assessments/$(assessmentId)).data.portalOpen == true;
+    }
+
+    // Org members keep read access to their own org's evidence even after the portal
+    // closes (e.g. reviewing a completed assessment) — mirrors isOrgMember() in firestore.rules.
+    function isOrgMemberOfAssessment(assessmentId) {
+      return isSignedIn() &&
+        firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
+        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.organizationId ==
+          firestore.get(/databases/(default)/documents/assessments/$(assessmentId)).data.organizationId;
+    }
+
     // Portal evidence uploads (anonymous or signed-in)
     match /portal/{assessmentId}/{fileName} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() && (isOrgMemberOfAssessment(assessmentId) || isOpenPortalAssessment(assessmentId));
       allow write: if isSignedIn()
+        && isOpenPortalAssessment(assessmentId)
         && request.resource.size < 25 * 1024 * 1024
         && isAllowedDocType();
     }
