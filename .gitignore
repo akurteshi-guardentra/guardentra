@@ -34,3 +34,6 @@ GoogleService-Info.plist
 *.njsproj
 *.sln
 *.sw?
+
+# Mockup/reference screenshots dropped at repo root, not app assets
+*.webp
