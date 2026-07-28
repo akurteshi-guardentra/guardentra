@@ -44,7 +44,12 @@ let envApiKey = process.env.VITE_FIREBASE_API_KEY;
 if (!envApiKey) {
   try {
     const envLocal = readFileSync(new URL('../../.env.local', import.meta.url), 'utf8');
-    envApiKey = envLocal.match(/^\s*VITE_FIREBASE_API_KEY\s*=\s*(.+)\s*$/m)?.[1]?.trim();
+    // Strip surrounding quotes the way dotenv/Vite do — a quoted value in .env.local is
+    // valid and works in the app, so this parser must not pass the quotes through.
+    envApiKey = envLocal
+      .match(/^\s*VITE_FIREBASE_API_KEY\s*=\s*(.+?)\s*$/m)?.[1]
+      ?.replace(/^(['"])(.*)\1$/, '$2')
+      .trim();
   } catch {
     /* no .env.local — fall through to the error below */
   }
