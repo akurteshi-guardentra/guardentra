@@ -11,6 +11,7 @@
     "test": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand --config jest.config.js",
     "test:vitest": "vitest run",
     "test:storage-rules": "firebase emulators:exec --only firestore,storage --project demo-guardentra-storage-rules \"node src/tests/storage.rules.test.mjs\"",
+    "smoke:portal": "node src/tests/portal.smoke.mjs",
     "start": "node dist/server.cjs",
     "preview": "vite preview"
   },
