@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Response } from 'express';
 import { GoogleGenAI, Type } from '@google/genai';
 import { createRateLimiter } from '../middleware/rateLimit';
 
@@ -232,9 +232,35 @@ router.post('/generate', async (req, res) => {
     return res.json({ text: result.text || '' });
   } catch (err) {
     console.warn('Generate Error:', err);
-    return res.status(502).json({ error: 'AI generation failed' });
+    return sendAIError(res, err);
   }
 });
+
+/**
+ * Map an upstream failure to something a caller can act on.
+ *
+ * Everything used to collapse into a flat 502 "AI generation failed", so an exhausted
+ * quota, a rejected key and an unsupported model were indistinguishable in the UI —
+ * which is why the Audit Lab's scan failure took a server-log read to explain. The
+ * message stays generic enough not to leak upstream internals, but names the category.
+ */
+function sendAIError(res: Response, err: unknown) {
+  const status = (err as { status?: number })?.status;
+
+  if (status === 429) {
+    return res.status(429).json({
+      error: 'AI quota exhausted. Check billing for the Gemini API key, then retry.',
+    });
+  }
+  if (status === 401 || status === 403) {
+    return res.status(502).json({ error: 'AI credentials were rejected. Check GEMINI_API_KEY.' });
+  }
+  if (status === 404) {
+    // resolveModel() should prevent this, so a 404 means the default itself is stale.
+    return res.status(502).json({ error: 'The configured AI model is unavailable.' });
+  }
+  return res.status(502).json({ error: 'AI generation failed' });
+}
 
 // New AI Vendor Assessment Generator API
 router.post('/gov-assessment', async (req, res) => {

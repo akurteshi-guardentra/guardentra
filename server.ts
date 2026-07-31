@@ -1,5 +1,7 @@
 // NexusGRC Main Server - Deployment Revision 2026-04-29-1952-v3
-import "dotenv/config";
+// MUST stay first: route modules read process.env at import time, and ESM evaluates
+// imports before any statement below them. See server/loadEnv.ts.
+import "./server/loadEnv.ts";
 import express from "express";
 import path from "path";
 import cors from "cors";
