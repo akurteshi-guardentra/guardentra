@@ -182,6 +182,33 @@ router.post('/analyze', async (req, res) => {
 // a non-2xx response here means "no key configured / call failed", same as a thrown client SDK error before.
 const MAX_PROMPT_LENGTH = 20_000; // generous for any legitimate wizard/copilot prompt
 
+const DEFAULT_MODEL = 'gemini-3.5-flash';
+
+/**
+ * Models this server will actually forward. Everything else falls back to the default.
+ *
+ * The `model` field used to be passed through verbatim, so a stale or misspelled name
+ * reached the API, threw, and came back to the user as a generic 502 — which is how the
+ * Audit Lab's scan was failing. Callers across the app still ask for four different
+ * names (`gemini-3.1-pro-preview`, `gemini-3-flash-preview`, `gemini-1.5-flash`, and
+ * the default), none of which the server's own routes use; those pages now degrade to a
+ * working model instead of erroring.
+ *
+ * Also closes a smaller hole: an arbitrary client-supplied string could previously
+ * select any model the API key can reach, including far more expensive ones.
+ *
+ * Adding a model here is a one-line change once it's been verified against the key.
+ */
+const ALLOWED_MODELS = new Set([DEFAULT_MODEL]);
+
+function resolveModel(requested: unknown): string {
+  if (typeof requested !== 'string' || !requested.trim()) return DEFAULT_MODEL;
+  const name = requested.trim();
+  if (ALLOWED_MODELS.has(name)) return name;
+  console.warn(`[ai] Ignoring unsupported model "${name}", using ${DEFAULT_MODEL}`);
+  return DEFAULT_MODEL;
+}
+
 router.post('/generate', async (req, res) => {
   const { prompt, responseMimeType, responseSchema, model } = req.body || {};
   if (typeof prompt !== 'string' || !prompt.trim()) {
@@ -198,7 +225,7 @@ router.post('/generate', async (req, res) => {
     if (responseMimeType) config.responseMimeType = responseMimeType;
     if (responseSchema) config.responseSchema = responseSchema;
     const result = await ai!.models.generateContent({
-      model: typeof model === 'string' && model.trim() ? model : 'gemini-3.5-flash',
+      model: resolveModel(model),
       contents: prompt,
       config: Object.keys(config).length ? config : undefined,
     });

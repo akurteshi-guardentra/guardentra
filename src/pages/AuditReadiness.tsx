@@ -384,9 +384,11 @@ Call out TPRM and incident-response gaps when relevant.`;
       const response = await fetch('/api/ai/generate', {
         method: 'POST',
         headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        // No model override — the server picks the supported default. This used to pin
+        // 'gemini-3.1-pro-preview', which the server forwarded verbatim; when that name
+        // didn't resolve the scan failed with a generic "AI generation failed".
         body: JSON.stringify({
           prompt,
-          model: 'gemini-3.1-pro-preview',
           responseMimeType: 'application/json',
           responseSchema,
         }),
