@@ -32,9 +32,18 @@ function arg(name) {
 }
 
 const openId = arg('open');
-const otherId = arg('other');
-if (!openId || !otherId) {
-  console.error('Usage: node src/tests/portal.smoke.mjs --open <assessmentId> --other <assessmentId>');
+// Defaults to an id that cannot exist, which is the same rules outcome as a closed
+// assessment (isOpenPortalAssessment() is false either way) — so the gating deny check
+// still runs even without a real closed assessment on hand.
+const closedId = arg('closed') || `__nonexistent_${Date.now()}`;
+const otherOpenId = arg('other-open');
+if (!openId) {
+  console.error(
+    'Usage: node src/tests/portal.smoke.mjs --open <assessmentId> [--closed <assessmentId>] [--other-open <assessmentId>]\n' +
+      '  --open        an assessment with portalOpen: true (the allow path)\n' +
+      '  --closed      an assessment with portalOpen: false (gating deny; defaults to a nonexistent id)\n' +
+      '  --other-open  a second portalOpen: true assessment (probes KNOWN_ISSUES #17)',
+  );
   process.exit(2);
 }
 
@@ -124,9 +133,24 @@ await expectAllow('read back own uploaded evidence', () =>
   getDownloadURL(ref(storage, `portal/${openId}/${stamp}`)),
 );
 
-await expectDeny("upload to a DIFFERENT assessment's portal path", () =>
-  uploadBytes(ref(storage, `portal/${otherId}/${stamp}`), payload, meta),
+// Gating deny: an assessment this session must not reach because it is not open
+// (closed, or nonexistent — both make isOpenPortalAssessment() false).
+await expectDeny('upload to a CLOSED/unknown assessment\'s portal path', () =>
+  uploadBytes(ref(storage, `portal/${closedId}/${stamp}`), payload, meta),
 );
+
+// Informational — docs/KNOWN_ISSUES.md #17. The rules ask "is this assessment open",
+// never "is this *your* assessment", so any *other* currently-open assessment is
+// reachable by any anonymous session. Expect a GAP line here until portal sessions
+// carry a portalAssessmentId claim. This is the realistic case in production, where
+// every in-flight assessment is portalOpen: true.
+if (otherOpenId) {
+  await expectDeny(
+    "upload to a DIFFERENT but also-OPEN assessment's portal path (KNOWN_ISSUES #17)",
+    () => uploadBytes(ref(storage, `portal/${otherOpenId}/${stamp}`), payload, meta),
+    true,
+  );
+}
 
 // Informational only — this is docs/KNOWN_ISSUES.md #18, a known-and-deferred gap:
 // the legacy orgs/.../evidence/ path still has a bare isSignedIn() rule. Expect a GAP
