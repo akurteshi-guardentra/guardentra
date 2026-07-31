@@ -40,6 +40,56 @@ Replace placeholder IDs in `.firebaserc` once projects exist (`guardentra-dev`, 
 - Per-env secrets: `GEMINI_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`.
 - Staging Stripe = test mode; prod Stripe = live mode.
 
+## Deploying the app (Firebase App Hosting)
+
+[`apphosting.yaml`](../apphosting.yaml) is the deploy config. App Hosting runs
+`npm run build` then `npm start`, which this repo already satisfies — verified locally:
+health, the SPA index, and the `/portal/{id}` deep-link fallback all serve from
+`dist/server.cjs`, and `APP_ENV=production` makes `/api/*` correctly return 401 without
+a token.
+
+**One backend per environment**, each pointed at its own Firebase project and branch
+(`dev` → sandbox, `test` → staging, `main` → production):
+
+```bash
+firebase apphosting:backends:create --project guardentra-7f582
+```
+
+Then set the secrets that backend needs. These live in Google Secret Manager, never git:
+
+```bash
+firebase apphosting:secrets:set VITE_FIREBASE_API_KEY --project guardentra-7f582
+firebase apphosting:secrets:set GEMINI_API_KEY        --project guardentra-7f582
+firebase apphosting:secrets:set STRIPE_SECRET_KEY     --project guardentra-7f582
+firebase apphosting:secrets:set STRIPE_WEBHOOK_SECRET --project guardentra-7f582
+```
+
+After that, pushing to the connected branch builds and deploys automatically.
+
+### Two prerequisites that fail silently if missed
+
+1. **Grant the backend's service account `roles/iam.serviceAccountTokenCreator`.**
+   `server/routes/portal.ts` calls `createCustomToken()` to mint vendor-portal
+   sessions, which requires signing a JWT. Without this role every portal link
+   returns "Portal link invalid" — the app looks fine until a vendor opens one.
+
+2. **Deploy the app *before* the rules.** `firestore.rules`/`storage.rules` now require
+   the `portalAssessmentId` claim that only a build containing `9519bd3` mints. A
+   scoped token still satisfies the *old* rules, so app-first is safe; rules-first
+   breaks every in-flight vendor portal link at once. Once the app is live:
+
+   ```bash
+   firebase deploy --only firestore:rules,storage --project guardentra-7f582
+   npm run smoke:portal -- --open <assessmentId> --other-open <assessmentId>
+   ```
+
+   The smoke run reports `[mode: scoped-token]` and gates the cross-assessment check
+   only when the portal endpoint is reachable; otherwise it falls back to anonymous
+   and says so, so a stale deploy can't produce a misleading pass.
+
+`Dockerfile` is retained for local container testing and keeps Cloud Run available as
+an alternative; it is not used by App Hosting.
+
 ## Secrets & identity
 
 See **[`docs/SECRETS.md`](./SECRETS.md)** for the full policy:
