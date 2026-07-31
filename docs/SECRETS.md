@@ -48,6 +48,32 @@ Agents cannot revoke GCP keys without your Console access. Complete **[Firebase 
 - Commit `.env`, `.env.local`, service-account JSON, or real `sk_` / `rk_` / `GEMINI_API_KEY` / live `AIzaSy…` Web API keys.
 - Hand agents full Stripe admin credentials. Use **restricted API keys** and Cursor’s Stripe MCP **OAuth** instead.
 
+## Three separate stores — setting one does not populate the others
+
+This trips people up, so it is worth stating plainly. The same secret has to be
+provisioned independently in each place that needs it:
+
+| Where | Used by | How it is set |
+|-------|---------|----------------|
+| `.env.local` | your machine (`npm run dev`, `npm start`, `npm run smoke:portal`) | edit the file; gitignored via `.env.*` |
+| **GitHub Actions repository secrets** | **only** workflows in `.github/workflows/` | `gh secret set NAME`, or repo Settings → Secrets and variables → Actions |
+| **Google Secret Manager** | the **deployed** app on App Hosting / Cloud Run | `firebase apphosting:secrets:set NAME --project …`, referenced from `apphosting.yaml` |
+
+A GitHub Actions secret is **not** visible to the deployed application. App Hosting
+builds and runs outside GitHub Actions and reads only Secret Manager, so a key that
+exists solely as a repo secret leaves the live app returning
+`503 AI not configured` from `/api/ai/generate`.
+
+Current state: `GEMINI_API_KEY` exists as a repository secret. `ci.yml` runs only
+lint, jest and vitest — none of which call a real model (`src/tests/vitest.setup.ts`
+mocks `/api/ai/generate`) — so CI does not consume it today. It becomes useful if a
+future workflow exercises a live AI path; otherwise the two stores that actually
+matter for running the product are `.env.local` and Secret Manager.
+
+Inspect repository secrets with `gh secret list` — GitHub returns names and
+timestamps only and never reveals a stored value, so this is safe to run and to paste
+into an issue.
+
 ## Preferred secret stores
 
 | Secret | Local | Hosted (App Hosting / Cloud Run) |
