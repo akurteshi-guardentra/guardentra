@@ -181,6 +181,15 @@ service cloud.firestore {
       return isAuthenticated() && resource.data.portalOpen == true;
     }
 
+    // Binds a portal session to the ONE assessment its link was minted for.
+    // server/routes/portal.ts puts this claim on the custom token; without it, a
+    // session authenticated for assessment A could reach every other open assessment
+    // (docs/KNOWN_ISSUES.md #17 — confirmed live). Org members never carry the claim
+    // and are authorised by isDocOrgMember() instead.
+    function isPortalSessionFor(assessmentId) {
+      return isAuthenticated() && request.auth.token.portalAssessmentId == assessmentId;
+    }
+
     // Fields VendorPortal.tsx actually writes during autosave/submit (src/pages/VendorPortal.tsx).
     // A portal session (incl. anonymous) may only ever change these — never organizationId,
     // vendorId, frameworks, dueAt/dueDate, or the portalOpen flag itself.
@@ -197,17 +206,23 @@ service cloud.firestore {
     }
 
     match /assessments/{assessmentId} {
-      allow read: if isDocOrgMember() || isOpenPortalAssessment();
+      allow read: if isDocOrgMember() || (isPortalSessionFor(assessmentId) && isOpenPortalAssessment());
       allow create: if isCreatingForOwnOrg();
-      // Org members can update fully; vendor portal (auth incl. anonymous) only for answer/progress fields
-      allow update: if isDocOrgMember() || (isOpenPortalAssessment() && onlyPortalAssessmentFieldsChanged());
+      // Org members can update fully; a vendor portal session only for answer/progress
+      // fields, and only on the assessment its own link was issued for.
+      allow update: if isDocOrgMember() ||
+        (isPortalSessionFor(assessmentId) && isOpenPortalAssessment() && onlyPortalAssessmentFieldsChanged());
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
+    // Still has no writer in the app (see above), but kept in step with /assessments
+    // so it can't become the loophole later: a portal session must hold the claim for
+    // the assessment this response belongs to.
     match /assessment_responses/{responseId} {
-      allow read: if isDocOrgMember() || isOpenPortalAssessment();
+      allow read: if isDocOrgMember() || isPortalSessionFor(resource.data.assessmentId);
       allow create: if isAuthenticated() && request.resource.data.organizationId is string;
-      allow update: if isDocOrgMember() || (isOpenPortalAssessment() && onlyPortalResponseFieldsChanged());
+      allow update: if isDocOrgMember() ||
+        (isPortalSessionFor(resource.data.assessmentId) && onlyPortalResponseFieldsChanged());
       allow delete: if isDocOrgMember() && isAdmin();
     }
 

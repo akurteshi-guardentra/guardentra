@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { signInAnonymously } from 'firebase/auth';
+import { signInWithCustomToken } from 'firebase/auth';
 import { 
   Shield, 
   CheckCircle2, 
@@ -56,15 +56,44 @@ export function VendorPortal() {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    // Anonymous session enables Storage rules that require auth without employee login
-    signInAnonymously(auth).catch(() => {
-      /* Storage may still fail if anonymous auth is disabled in Firebase console */
-    });
-  }, []);
+    /**
+     * Establish a session scoped to THIS assessment before reading anything.
+     *
+     * Previously this was a fire-and-forget signInAnonymously() in its own effect,
+     * racing the fetch below. That session carried no notion of which assessment it
+     * was for, so one portal link could reach every other open assessment's data and
+     * evidence (docs/KNOWN_ISSUES.md #17 — confirmed live, not theoretical). The
+     * server now mints a token carrying a portalAssessmentId claim, and the rules
+     * compare it against the id in the path.
+     *
+     * The sequencing is load-bearing: the rules check that claim, so a read issued
+     * before sign-in resolves is denied rather than merely unauthenticated.
+     */
+    const startPortalSession = async () => {
+      const res = await fetch('/api/portal/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assessmentId }),
+      });
+      if (!res.ok) {
+        throw new Error(`Portal session request failed (${res.status})`);
+      }
+      const { token } = (await res.json()) as { token?: string };
+      if (!token) throw new Error('Portal session response contained no token');
+      await signInWithCustomToken(auth, token);
+    };
 
-  useEffect(() => {
     const fetchAssessment = async () => {
       if (!assessmentId) {
+        setIsLoading(false);
+        return;
+      }
+      try {
+        await startPortalSession();
+      } catch (err) {
+        // Closed, unknown, or rate-limited link — leave `assessment` null so the
+        // existing "Portal link invalid" screen renders. No new UI state needed.
+        console.error('Failed to start portal session', err);
         setIsLoading(false);
         return;
       }

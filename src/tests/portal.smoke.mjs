@@ -22,7 +22,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously } from 'firebase/auth';
+import { getAuth, signInAnonymously, signInWithCustomToken } from 'firebase/auth';
 import { getFirestore, doc, getDoc } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
@@ -113,15 +113,40 @@ const meta = { contentType: 'application/pdf' };
 
 console.log(`\nProject: ${applet.projectId}  DB: ${firestoreDatabaseId || '(default)'}\n`);
 
-const cred = await signInAnonymously(getAuth(app)).catch((err) => {
-  console.error(
-    `\nCould not sign in anonymously (${err?.code}).` +
-      '\nIf this is auth/operation-not-allowed, Anonymous Authentication is still disabled' +
-      '\non this project — Console → Authentication → Sign-in method → Anonymous → Enable.\n',
-  );
-  process.exit(1);
-});
-console.log(`Signed in anonymously as ${cred.user.uid}\n`);
+// Mirrors what VendorPortal.tsx does: ask the server for a session scoped to this one
+// assessment. Falls back to anonymous so the script still reports something useful
+// against an environment where the portal endpoint isn't deployed yet — the run is
+// labelled either way, since the two modes prove very different things.
+const serverBase = process.env.PORTAL_API_BASE || 'http://localhost:8080';
+let mode = 'scoped-token';
+const cred = await (async () => {
+  try {
+    const res = await fetch(`${serverBase}/api/portal/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assessmentId: openId }),
+    });
+    if (!res.ok) throw new Error(`portal session endpoint returned ${res.status}`);
+    const { token } = await res.json();
+    return await signInWithCustomToken(getAuth(app), token);
+  } catch (err) {
+    mode = 'anonymous-fallback';
+    console.warn(
+      `Could not mint a scoped portal session (${err?.message}).\n` +
+        `Falling back to anonymous auth — this tests the OLD unscoped behaviour.\n` +
+        `Start the server (npm run dev) or set PORTAL_API_BASE to test the real fix.\n`,
+    );
+    return signInAnonymously(getAuth(app)).catch((anonErr) => {
+      console.error(
+        `\nCould not sign in anonymously either (${anonErr?.code}).` +
+          '\nIf this is auth/operation-not-allowed, Anonymous Authentication is disabled' +
+          '\non this project — Console → Authentication → Sign-in method → Anonymous.\n',
+      );
+      process.exit(1);
+    });
+  }
+})();
+console.log(`Signed in as ${cred.user.uid}  [mode: ${mode}]\n`);
 
 await expectAllow('read own OPEN assessment doc', () => getDoc(doc(db, 'assessments', openId)));
 
@@ -139,16 +164,14 @@ await expectDeny('upload to a CLOSED/unknown assessment\'s portal path', () =>
   uploadBytes(ref(storage, `portal/${closedId}/${stamp}`), payload, meta),
 );
 
-// Informational — docs/KNOWN_ISSUES.md #17. The rules ask "is this assessment open",
-// never "is this *your* assessment", so any *other* currently-open assessment is
-// reachable by any anonymous session. Expect a GAP line here until portal sessions
-// carry a portalAssessmentId claim. This is the realistic case in production, where
-// every in-flight assessment is portalOpen: true.
+// docs/KNOWN_ISSUES.md #17 — the check that matters most. With a scoped token this
+// MUST be denied, so it gates. Under the anonymous fallback it is expected to be
+// allowed (that's the old broken behaviour), so it only reports.
 if (otherOpenId) {
   await expectDeny(
-    "upload to a DIFFERENT but also-OPEN assessment's portal path (KNOWN_ISSUES #17)",
+    `upload to a DIFFERENT but also-OPEN assessment's portal path (KNOWN_ISSUES #17)`,
     () => uploadBytes(ref(storage, `portal/${otherOpenId}/${stamp}`), payload, meta),
-    true,
+    mode !== 'scoped-token',
   );
 }
 
