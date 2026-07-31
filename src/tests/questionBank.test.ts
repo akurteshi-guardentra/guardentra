@@ -5,6 +5,7 @@ import {
   countQuestionsForFramework,
   isAnswered,
   overallProgressPct,
+  QUESTION_CATEGORIES,
 } from '../lib/vendor/questionBank';
 
 describe('question bank', () => {
@@ -61,6 +62,25 @@ describe('question bank', () => {
     for (const q of [...singleChoice, ...multipleChoice]) {
       expect(q.options).not.toEqual(['Yes', 'No', 'Partially', 'Not Applicable']);
       expect(q.options.length).toBeGreaterThan(1);
+    }
+  });
+
+  it('numbers questions in the order the portal actually walks them', () => {
+    // Regression: the rich-answer-type questions were appended to the end of the bank
+    // in mixed categories, while the portal walks category by category. That made the
+    // "Question N of M" counter jump (…14, then 49, then 52) and put the Submit button
+    // on the wrong question. Ids must follow the traversal order, not raw bank order.
+    for (const frameworks of [[], ['soc2'], ['nist_csf_2', 'iso27001', 'pci_dss_4']] as const) {
+      const qs = buildQuestionsForFrameworks([...frameworks] as never);
+      const ranks = qs.map((q) => QUESTION_CATEGORIES.indexOf(q.category));
+
+      // No question may belong to an earlier category than the one before it.
+      for (let i = 1; i < ranks.length; i++) {
+        expect(ranks[i]).toBeGreaterThanOrEqual(ranks[i - 1]);
+      }
+
+      // And the ids stay a dense 1..n sequence in that same order.
+      expect(qs.map((q) => q.id)).toEqual(qs.map((_, i) => `q_${i + 1}`));
     }
   });
 

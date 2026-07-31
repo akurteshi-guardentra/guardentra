@@ -347,7 +347,15 @@ export function buildQuestionsForFrameworks(frameworks: FrameworkId[] = []): Por
       ? BANK
       : BANK.filter((item) => item.frameworks.some((f) => frameworks.includes(f)));
 
-  return items.map((item, index) => ({
+  // Group by category before numbering. BANK is *mostly* category-grouped, but the
+  // rich-answer-type questions added later sit at the end in mixed categories — and
+  // since the portal walks category by category, raw bank order made the displayed
+  // "Question N of M" jump (…14, then 49, then 52). Sorting here keeps the ids, the
+  // wizard's review list, and the portal's counter all in the order a vendor actually
+  // answers them. Stable sort, so ordering within a category is unchanged.
+  const ordered = [...items].sort((a, b) => categoryRank(a.category) - categoryRank(b.category));
+
+  return ordered.map((item, index) => ({
     id: `q_${index + 1}`,
     category: item.category,
     question: item.text,
@@ -355,6 +363,12 @@ export function buildQuestionsForFrameworks(frameworks: FrameworkId[] = []): Por
     options: item.choices ?? [...OPTIONS],
     required: true,
   }));
+}
+
+/** Position of a category in the portal's rail order; unknown categories sort last. */
+function categoryRank(category: QuestionCategory): number {
+  const i = QUESTION_CATEGORIES.indexOf(category);
+  return i === -1 ? QUESTION_CATEGORIES.length : i;
 }
 
 export const QUESTION_CATEGORIES: QuestionCategory[] = [

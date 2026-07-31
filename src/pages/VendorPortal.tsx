@@ -410,7 +410,15 @@ export function VendorPortal() {
     );
   }
 
-  const globalIndex = questions.findIndex((q) => q.id === currentQuestion?.id);
+  // Position in the order the vendor actually walks the questionnaire (category by
+  // category, per QUESTION_CATEGORIES), not the raw stored array order. New assessments
+  // are already built in this order, but ones created before that fix have the
+  // rich-answer-type questions grouped at the end, which made this counter jump
+  // (…14, then 49). Ordering here keeps those existing assessments correct too.
+  const orderedQuestions = QUESTION_CATEGORIES.flatMap((cat) =>
+    questions.filter((q) => q.category === cat)
+  ).concat(questions.filter((q) => !QUESTION_CATEGORIES.includes(q.category as any)));
+  const globalIndex = orderedQuestions.findIndex((q) => q.id === currentQuestion?.id);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
