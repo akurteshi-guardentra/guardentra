@@ -199,7 +199,12 @@ export function AssessmentWizard() {
         });
       }
 
-      navigate(`/portal/${ref.id}`);
+      // Land on the org-side tracker, filtered to this vendor — the same place the
+      // local-fallback path above already goes. This previously jumped to the vendor
+      // portal, which is an external-facing page with no app navigation, so whoever
+      // created the assessment hit a dead end with no way back. The portal link is
+      // still one click away from here via "Copy Vendor Portal Link".
+      navigate(`/assessments?vendorId=${encodeURIComponent(vendorId)}`);
     } catch (ex: unknown) {
       if (isFirestoreUnavailableError(ex)) {
         try {
