@@ -632,8 +632,13 @@ export function VendorsDirectory() {
           </div>
 
           <div className="rounded-xl border border-white/5 bg-slate-900/50">
-            <div className="flex flex-col gap-3 border-b border-white/5 p-4 lg:flex-row lg:items-center">
-              <div className="relative flex-1">
+            {/* lg:flex-wrap + shrink-0 on the controls: without them these six items
+                shared one non-wrapping row, and between ~1024-1280px the selects were
+                squeezed below the width of their own longest option ("Payment
+                Processing", "Not Started"), so the labels ran into the neighbouring
+                control. Wrapping matches the More Filters row directly below. */}
+            <div className="flex flex-col gap-3 border-b border-white/5 p-4 lg:flex-row lg:flex-wrap lg:items-center">
+              <div className="relative flex-1 lg:min-w-[16rem]">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <Input
                   value={search}
@@ -645,7 +650,7 @@ export function VendorsDirectory() {
               <select
                 value={riskFilter}
                 onChange={(e) => setRiskFilter(e.target.value)}
-                className={SELECT_CLASS}
+                className={cn(SELECT_CLASS, 'shrink-0')}
                 aria-label="Risk Level"
               >
                 <option value="all">Risk Level</option>
@@ -658,7 +663,7 @@ export function VendorsDirectory() {
               <select
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value)}
-                className={SELECT_CLASS}
+                className={cn(SELECT_CLASS, 'shrink-0')}
                 aria-label="Category"
               >
                 <option value="all">Category</option>
@@ -671,7 +676,7 @@ export function VendorsDirectory() {
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className={SELECT_CLASS}
+                className={cn(SELECT_CLASS, 'shrink-0')}
                 aria-label="Status"
               >
                 <option value="all">Status</option>
@@ -685,7 +690,7 @@ export function VendorsDirectory() {
                 type="button"
                 variant="outline"
                 className={cn(
-                  'border-white/10 text-slate-300',
+                  'shrink-0 border-white/10 text-slate-300',
                   showMoreFilters && 'border-primary/40 bg-primary/10 text-primary'
                 )}
                 onClick={() => setShowMoreFilters((v) => !v)}
@@ -696,7 +701,7 @@ export function VendorsDirectory() {
               <Button
                 type="button"
                 variant="outline"
-                className="border-white/10 text-slate-300"
+                className="shrink-0 border-white/10 text-slate-300"
                 onClick={() => downloadVendorRegisterReport(filtered)}
               >
                 <Download className="mr-2 h-4 w-4" />
