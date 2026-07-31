@@ -14,10 +14,30 @@ import { seedProfessionalData } from '../lib/seeding';
 import { logOut } from '../lib/firebase-utils';
 
 const FRAMEWORKS = [
-  { id: 'iso27001', name: 'ISO 27001:2022', icon: Shield, desc: 'Global information security standard' },
-  { id: 'soc2', name: 'SOC 2 Type II', icon: Target, desc: 'Security, Availability, and Privacy' },
-  { id: 'nist', name: 'NIST CSF 2.0', icon: Globe, desc: 'Critical infrastructure protection' },
-  { id: 'hipaa', name: 'HIPAA', icon: Shield, desc: 'Healthcare data privacy' },
+  {
+    id: 'iso27001',
+    name: 'ISO 27001:2022',
+    icon: Shield,
+    desc: 'The certification enterprise buyers ask for most often in security reviews.',
+  },
+  {
+    id: 'soc2',
+    name: 'SOC 2 Type II',
+    icon: Target,
+    desc: 'Audited proof of how you handle security, availability and confidentiality over time.',
+  },
+  {
+    id: 'nist',
+    name: 'NIST CSF 2.0',
+    icon: Globe,
+    desc: 'A practical control baseline. Common in US public sector and critical infrastructure.',
+  },
+  {
+    id: 'hipaa',
+    name: 'HIPAA',
+    icon: Shield,
+    desc: 'Required if you or your vendors touch protected health information.',
+  },
 ];
 
 export function Onboarding() {
@@ -49,7 +69,7 @@ export function Onboarding() {
       return;
     }
     if (step === 1 && !industry) {
-      setError("Please select an industry vertical");
+      setError("Please select your industry");
       return;
     }
     setStep(step + 1);
@@ -208,9 +228,13 @@ export function Onboarding() {
               className="space-y-8"
             >
               <div className="space-y-2">
-                <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">Step 01 / Identity</Badge>
-                <h1 className="text-4xl font-bold text-white tracking-tight font-display">Let's build your security foundation.</h1>
-                <p className="text-slate-400">Define your organization to tailor the AI risk mapping.</p>
+                <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">Step 1 of 3 · Organization</Badge>
+                <h1 className="text-4xl font-bold text-white tracking-tight font-display">Let's set up your workspace.</h1>
+                <p className="text-slate-400">
+                  Two details, about a minute. They shape the vendor questionnaires, risk
+                  scoring and reports you'll get by default — and you can change both later in
+                  Settings.
+                </p>
               </div>
 
               <div className="space-y-6">
@@ -229,19 +253,29 @@ export function Onboarding() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest pl-1">Industry Vertical</label>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest pl-1">Industry</label>
                   <select 
                     value={industry}
                     onChange={(e) => setIndustry(e.target.value)}
                     className="w-full h-14 px-4 rounded-xl bg-white/5 border border-white/10 text-white text-lg focus:ring-1 focus:ring-primary outline-none"
                   >
                     <option value="" disabled>Select industry...</option>
-                    <option value="FinTech">FinTech / Banking</option>
-                    <option value="HealthTech">Healthcare / Life Sciences</option>
+                    <option value="FinTech">Financial services / FinTech</option>
+                    <option value="Insurance">Insurance</option>
+                    <option value="HealthTech">Healthcare / Life sciences</option>
                     <option value="SaaS">SaaS / Software</option>
                     <option value="E-commerce">Retail / E-commerce</option>
-                    <option value="GovTech">Government / Public Sector</option>
+                    <option value="Manufacturing">Manufacturing / Industrial</option>
+                    <option value="ProfessionalServices">Professional services</option>
+                    <option value="Education">Education</option>
+                    <option value="Energy">Energy / Utilities</option>
+                    <option value="GovTech">Government / Public sector</option>
+                    <option value="Nonprofit">Non-profit</option>
+                    <option value="Other">Other</option>
                   </select>
+                  <p className="pl-1 text-xs text-slate-500">
+                    Sets your starting vendor categories and which regulations we watch for you.
+                  </p>
                 </div>
               </div>
 
@@ -263,9 +297,13 @@ export function Onboarding() {
               className="space-y-8"
             >
               <div className="space-y-2">
-                <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">Step 02 / Scope</Badge>
-                <h1 className="text-4xl font-bold text-white tracking-tight font-display">Target Compliance Goals.</h1>
-                <p className="text-slate-400">Select the frameworks you need to map against your risk register.</p>
+                <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">Step 2 of 3 · Frameworks</Badge>
+                <h1 className="text-4xl font-bold text-white tracking-tight font-display">What do you report against?</h1>
+                <p className="text-slate-400">
+                  Pick every framework you're accountable for — more than one is normal. Where
+                  two frameworks ask for the same control, your vendors answer it once instead
+                  of repeating themselves, so questionnaires stay short as your scope grows.
+                </p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -301,12 +339,12 @@ export function Onboarding() {
 
               <div className="flex gap-4">
                 <Button variant="ghost" onClick={() => setStep(1)} className="flex-1 text-slate-500">Back</Button>
-                <Button 
+                <Button
                   disabled={selectedFrameworks.length === 0}
                   onClick={() => setStep(3)}
                   className="flex-[2] h-14 bg-primary hover:bg-primary/90 text-white"
                 >
-                  Confirm Strategy <ChevronRight className="ml-2 h-5 w-5" />
+                  Review and finish <ChevronRight className="ml-2 h-5 w-5" />
                 </Button>
               </div>
             </motion.div>
@@ -323,12 +361,16 @@ export function Onboarding() {
                  <div className="w-24 h-24 rounded-full bg-emerald-500/20 border-2 border-emerald-500/50 flex items-center justify-center mb-6">
                     <Sparkles className="h-10 w-10 text-emerald-400 text-glow" />
                  </div>
-                 <h1 className="text-4xl font-bold text-white font-display">Ready to Launch.</h1>
-                 <p className="text-slate-400 mt-2 max-w-md">Guardentra AI is ready to initialize your Risk Matrix and Compliance Roadmap for <span className="text-white font-bold">{orgName}</span>.</p>
+                 <h1 className="text-4xl font-bold text-white font-display">You're all set.</h1>
+                 <p className="text-slate-400 mt-2 max-w-md">
+                   We'll set up <span className="text-white font-bold">{orgName}</span> with your
+                   frameworks, a starting risk register and your vendor directory. Add your first
+                   vendor next — that's where assessments and scoring begin.
+                 </p>
               </div>
 
               <Card className="bg-white/5 border-white/10 p-6 text-left">
-                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Onboarding Summary</h4>
+                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Your setup</h4>
                 <div className="space-y-3">
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-slate-500">Organization</span>
@@ -339,7 +381,7 @@ export function Onboarding() {
                     <span className="text-white font-bold">{industry}</span>
                   </div>
                   <div className="flex justify-between items-center text-sm">
-                    <span className="text-slate-500">Active Goals</span>
+                    <span className="text-slate-500">Frameworks</span>
                     <div className="flex gap-1 flex-wrap justify-end max-w-[200px]">
                       {selectedFrameworks.map(id => (
                         <Badge key={id} variant="outline" className="text-[9px] border-white/10">{id.toUpperCase()}</Badge>
@@ -354,7 +396,7 @@ export function Onboarding() {
                 disabled={isFinishing}
                 className="w-full h-16 text-xl bg-primary hover:bg-primary/90 text-white font-bold shadow-2xl shadow-primary/40 animate-pulse-slow"
               >
-                {isFinishing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Deploy Architecture"}
+                {isFinishing ? <Loader2 className="h-6 w-6 animate-spin" /> : 'Finish setup'}
               </Button>
 
               {import.meta.env.DEV && (
