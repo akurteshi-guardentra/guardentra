@@ -1,7 +1,10 @@
-# Migrating from `akurteshi@guardentra.com` to `admin@guardentra.com`
+# Decommissioning `akurteshi@guardentra.com` in favour of `admin@guardentra.com`
+
+Goal: `admin@` owns and accesses everything, and nothing depends on `akurteshi@` any more.
 
 Work through this in order and tick the boxes. The phases are sequenced deliberately —
-doing Phase 5 before Phase 2 is how people lock themselves out or break a live API key.
+running the decommission before the billing and app-data phases is how people lock
+themselves out, break a live API key, or orphan their own test data.
 
 **The rule that prevents every disaster here: _add and verify the new account before
 removing the old one._** Never remove `akurteshi@` from anything until `admin@` has been
@@ -22,6 +25,7 @@ Nothing in this file is something Claude can do for you — it all needs your pa
 | GitHub repo `akurteshi-guardentra/guardentra` | `akurteshi-guardentra` | Separate system — repo transfer, optional |
 | Git commit identity | `a1400098@unet.univie.ac.at` | `git config` — a third identity, unrelated to either |
 | Stripe, domain, Workspace | separate accounts | Each has its own owner/admin transfer |
+| **The app's own user + organization** | `akurteshi@` as a Guardentra user | Invite `admin@` into the existing org, or start fresh — see Phase 5 |
 
 ---
 
@@ -121,7 +125,49 @@ git config user.name "Atdhe Kurteshi"
 
 ---
 
-## Phase 5 — Everything else
+## Phase 5 — The app's own user records (easy to miss, expensive to get wrong)
+
+Everything above is infrastructure. This phase is **application data**, and it is the one
+that quietly breaks things if you skip it.
+
+`akurteshi@guardentra.com` has almost certainly signed into Guardentra itself during
+development. If so, Firebase Auth holds a user for it, and Firestore holds a
+`users/{uid}` document plus an `organizations/{orgId}` that this account created and is
+`admin` of. **Every vendor, assessment and piece of evidence created during testing hangs
+off that organization** — including the assessments used for the portal smoke tests.
+
+Deleting or disabling that Auth user without acting first orphans the whole org: the data
+survives in Firestore but no one can reach it, because access is granted by
+`users/{uid}.organizationId` matching the document's `organizationId`.
+
+Decide which you want:
+
+**Option A — keep the org, move `admin@` into it (recommended if the test data matters).**
+Use the teammate invite flow already in the product:
+
+- [ ] Sign into the app as `akurteshi@`, go to **Settings → Team**, invite
+      `admin@guardentra.com` with the **admin** role.
+- [ ] Sign in as `admin@` and accept. `bootstrapUserProfile` in
+      [`src/lib/orgBootstrap.ts`](../src/lib/orgBootstrap.ts) puts the new user into the
+      *existing* org rather than creating a fresh one.
+- [ ] Confirm `admin@` sees the same vendors and assessments.
+- [ ] Only then delete the `akurteshi@` user in Firebase Console → Authentication.
+
+**Option B — start clean (fine if the test data is disposable).**
+
+- [ ] Sign in as `admin@`, let it create its own org through onboarding.
+- [ ] Delete the `akurteshi@` Auth user and, if you want the storage back, its
+      `organizations/{orgId}` document and the vendors/assessments referencing it.
+- [ ] Accept that the existing test assessments become unreachable.
+
+Either way:
+
+- [ ] Firebase Console → Authentication → Users: confirm `akurteshi@` is gone at the end.
+- [ ] Check Firestore `users` for a stale document with that email.
+
+---
+
+## Phase 6 — Everything else
 
 - [ ] **Stripe** — separate account entirely. Transfer ownership or add `admin@` as an
       administrator. Keys in `.env.example` are still unset, so nothing is live yet.
@@ -133,11 +179,38 @@ git config user.name "Atdhe Kurteshi"
 
 ---
 
-## Phase 6 — Cleanup (only after everything above is verified)
+## Phase 7 — Decommission `akurteshi@` (only after everything above is verified)
 
-- [ ] Re-verify `admin@` can do everything: read Firestore, see Auth users, deploy rules.
-- [ ] **Then** remove or downgrade `akurteshi@` in IAM & Admin → IAM.
+Goal is that nothing depends on `akurteshi@` any more. Work through it as a sweep, because
+the account can be referenced in places that never show up in a single console screen.
+
+- [ ] Re-verify `admin@` can do everything: read Firestore, see Auth users, deploy rules,
+      run a build. If any of these fail, stop — do not remove anything yet.
+- [ ] **Google Cloud IAM** → remove `akurteshi@` from IAM & Admin → IAM.
+- [ ] **Billing** → remove it from the billing account's IAM (separate list).
+- [ ] **Firebase Auth** → confirm the app user is gone (Phase 5).
+- [ ] **Service accounts** → IAM & Admin → Service Accounts. Any created by `akurteshi@`
+      keep working after the human account goes, but check for keys you no longer want.
+- [ ] **API keys** → APIs & Services → Credentials. The old Gemini key should already be
+      deleted from Phase 2.
+- [ ] **OAuth consent screen** → APIs & Services → OAuth consent screen. The support and
+      developer contact emails often still say `akurteshi@`. Note
+      [`firebase-applet-config.json`](../firebase-applet-config.json) carries an
+      `oAuthClientId` — the client itself is fine, only the contact metadata needs changing.
+- [ ] **GitHub** → if the repo stays on `akurteshi-guardentra`, you have *not* finished
+      decommissioning. Transferring is the only way to fully detach; remember repository
+      secrets do not transfer and `GEMINI_API_KEY` must be re-added.
+- [ ] **Git identity** → Phase 4. Past commits keep the old author; that is normal and not
+      worth rewriting history for.
 - [ ] Shut down the genuinely unused projects: IAM & Admin → **Settings → Shut down**.
+
+### What cannot be moved, and does not matter
+
+- The project **creator** is immutable metadata. `guardentra-7f582` will always record
+  that `akurteshi@` created it. This grants no access once IAM is removed.
+- Commit authorship in existing git history.
+
+Neither is a security issue — they are records, not permissions.
 
 Deletion is a **soft delete with a 30-day recovery window**, so a mistake is recoverable —
 but only if you catch it in time, and the project is unusable meanwhile.
@@ -158,3 +231,8 @@ but only if you catch it in time, and the project is unusable meanwhile.
 - [ ] `POST /api/ai/generate` returns 200, not 429 — this closes `KNOWN_ISSUES.md` #20
 - [ ] `firebase deploy --only firestore:rules,storage` succeeds as `admin@`
 - [ ] Only the intended projects remain in the console
+- [ ] Signing into the app as `admin@` shows the vendors and assessments you expect
+- [ ] `akurteshi@` appears in **no** IAM list, **no** billing IAM list, and **not** in
+      Firebase Authentication
+- [ ] Nothing still works only because you are signed in as `akurteshi@` somewhere —
+      sign out of it everywhere and confirm the app, console and CLI all still function
