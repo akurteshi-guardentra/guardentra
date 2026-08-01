@@ -29,6 +29,63 @@ Nothing in this file is something Claude can do for you — it all needs your pa
 
 ---
 
+## First, one decision that changes everything below
+
+**Are you keeping project `guardentra-7f582` and changing who owns it, or creating a brand
+new project under `admin@`?**
+
+**Keep the project (strongly recommended).** Ownership is just IAM — the project, its
+Firestore data, Auth users, Storage objects and project ID all stay exactly as they are.
+Almost nothing in this repo changes. This is what the rest of this document assumes.
+
+**Create a new project.** Everything below still applies, *plus* you would have to
+regenerate every identifier in `firebase-applet-config.json`, issue a new Web API key, and
+migrate all Firestore and Storage data across projects by hand — there is no built-in
+"move project data" operation. Auth users cannot be exported with their passwords intact
+without the Identity Toolkit export/import dance, and every existing vendor portal link
+would break. Only do this if you have a hard requirement that the project ID itself change.
+
+---
+
+## Repository inventory — what in this repo is actually affected
+
+Audited across all source, config, tests and docs.
+
+### Needs updating
+
+| File | What | When |
+|------|------|------|
+| `.env.local` *(gitignored, local only)* | `GEMINI_API_KEY` — the new key from Phase 2 | Always |
+| GitHub repository secret | `GEMINI_API_KEY` via `gh secret set` | Always |
+| Google Secret Manager | all four secrets | Once an App Hosting backend exists |
+| [`.firebaserc`](../.firebaserc) | `dev`/`staging`/`prod` are placeholders for projects that do not exist yet | Only when you create those projects |
+| [`firebase-applet-config.json`](../firebase-applet-config.json) | `projectId`, `appId`, `authDomain`, `storageBucket`, `messagingSenderId`, `oAuthClientId` — all bound to project `967769575761` | **Only if you create a new project.** Unchanged if you keep `guardentra-7f582` |
+| `.env.local` → `VITE_FIREBASE_API_KEY` | project-specific Web API key | **Only if you create a new project** |
+
+### Needs no change at all
+
+- **All application source** — `src/**`, `server/**`. Nothing hardcodes an account or
+  project; everything reads from `firebase-applet-config.json` and environment variables.
+  Verified by search: no `akurteshi`, no `atdhee`, no personal email anywhere in code. The
+  old `isAtIdhee` rules bypass and the hardcoded admin-bypass button were both removed
+  earlier (`KNOWN_ISSUES.md` #9).
+- **`firestore.rules` / `storage.rules`** — no account references; they key off
+  `request.auth.uid` and org membership.
+- **`src/tests/storage.rules.test.mjs`** — runs against its own throwaway emulator project
+  `demo-guardentra-storage-rules`. Completely independent of your real project and
+  unaffected by any of this.
+- **`src/tests/portal.smoke.mjs`** — reads the project from `firebase-applet-config.json`
+  and takes assessment IDs as arguments, so it follows whatever you configure. You will
+  need *new* assessment IDs after Phase 5 if you start a fresh org.
+- **`vitest` / `jest` suites** — fully mocked, never touch a real project.
+- **`apphosting.yaml`** — references secret *names*, never values.
+- **`Dockerfile`, `.github/workflows/ci.yml`** — no account or project references.
+
+**In short: if you keep the project, the only repo-side change is the Gemini API key.**
+Everything else is console work.
+
+---
+
 ## Phase 1 — Google Cloud IAM (do this first, everything depends on it)
 
 Firebase Console has no separate permission system; it reads Google Cloud IAM. Granting
