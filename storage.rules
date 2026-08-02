@@ -62,18 +62,34 @@ service firebase.storage {
         && isAllowedDocType();
     }
 
+    // Is the caller a member of the org that owns this path? Both paths below used to
+    // allow any signed-in caller — including an anonymous vendor-portal session — to
+    // read and write any org's files (docs/KNOWN_ISSUES.md #18). A portal session has no
+    // users/{uid} document, so this correctly denies it; portal uploads belong under
+    // portal/{assessmentId}/ which is scoped by the claim above.
+    function isMemberOfOrg(orgId) {
+      return isSignedIn()
+        && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.organizationId == orgId;
+    }
+
+    // Legacy per-question evidence path. Nothing in the app writes here any more —
+    // uploadPortalEvidence() moved to portal/{assessmentId}/ in 6f72829 — but the rule
+    // stays org-scoped rather than removed so any objects already stored remain readable
+    // to their owning org.
     match /orgs/{orgId}/vendors/{vendorId}/evidence/{fileName} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn()
+      allow read: if isMemberOfOrg(orgId);
+      allow write: if isMemberOfOrg(orgId)
         && request.resource.size < 25 * 1024 * 1024
         && isAllowedDocType();
     }
 
     // Vendor-level general attachments (src/lib/vendor/evidenceUpload.ts uploadVendorAttachment,
     // used by the Impact page) — 20MB cap matches the app-side check in that function.
+    // Written by signed-in org members, so org scoping is the correct gate.
     match /orgs/{orgId}/vendors/{vendorId}/attachments/{fileName} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn()
+      allow read: if isMemberOfOrg(orgId);
+      allow write: if isMemberOfOrg(orgId)
         && request.resource.size < 20 * 1024 * 1024
         && isAllowedDocType();
     }

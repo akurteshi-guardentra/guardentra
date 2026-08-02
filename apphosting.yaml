@@ -34,10 +34,13 @@ env:
     availability:
       - RUNTIME
 
+  # RUNTIME only — deliberately NOT BUILD. The buildpack runs `npm ci` with whatever
+  # NODE_ENV is set at build time, and NODE_ENV=production makes npm skip
+  # devDependencies. vite, esbuild and typescript all live there, so declaring this at
+  # BUILD produced `sh: 1: vite: not found` and failed the build outright.
   - variable: NODE_ENV
     value: production
     availability:
-      - BUILD
       - RUNTIME
 
   # Vite inlines VITE_* at build time, so this must be BUILD, not RUNTIME —
@@ -58,14 +61,23 @@ env:
     availability:
       - RUNTIME
 
-  # Staging uses Stripe test mode, production uses live mode — so these resolve to
-  # different secret values per backend, not different names.
-  - variable: STRIPE_SECRET_KEY
-    secret: STRIPE_SECRET_KEY
-    availability:
-      - RUNTIME
-
-  - variable: STRIPE_WEBHOOK_SECRET
-    secret: STRIPE_WEBHOOK_SECRET
-    availability:
-      - RUNTIME
+  # Stripe — commented out until the keys actually exist. App Hosting fails the build
+  # if a referenced secret is absent from Secret Manager, and no Stripe key has been
+  # issued yet. The app degrades correctly meanwhile: server/routes/stripe.ts returns a
+  # clear "not configured" error rather than faking a successful checkout.
+  #
+  # To enable, create the secrets then uncomment. Staging uses Stripe test mode and
+  # production uses live mode, so these resolve to different values per backend, not
+  # different names:
+  #   gcloud secrets create STRIPE_SECRET_KEY --data-file=- --project guardentra-7f582
+  #   firebase apphosting:secrets:grantaccess STRIPE_SECRET_KEY --backend guardentra
+  #
+  # - variable: STRIPE_SECRET_KEY
+  #   secret: STRIPE_SECRET_KEY
+  #   availability:
+  #     - RUNTIME
+  #
+  # - variable: STRIPE_WEBHOOK_SECRET
+  #   secret: STRIPE_WEBHOOK_SECRET
+  #   availability:
+  #     - RUNTIME

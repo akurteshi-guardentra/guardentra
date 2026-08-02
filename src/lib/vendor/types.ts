@@ -147,16 +147,10 @@ export interface EvidenceFile {
   uploadedBy?: string;
 }
 
-/** Storage path helper: orgs/{orgId}/vendors/{vendorId}/evidence/{fileId}-{fileName} */
-export function evidenceStoragePath(
-  orgId: string,
-  vendorId: string,
-  fileId: string,
-  fileName: string
-): string {
-  const safe = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
-  return `orgs/${orgId}/vendors/${vendorId}/evidence/${fileId}-${safe}`;
-}
+// evidenceStoragePath() lived here and built orgs/{orgId}/vendors/{vendorId}/evidence/…
+// Removed: uploadPortalEvidence() moved to the claim-scoped portal/{assessmentId}/ path
+// in 6f72829, leaving this with no callers. The Storage rule for that path is kept
+// org-scoped so existing objects stay readable — see storage.rules.
 
 export const COLLECTIONS = {
   vendors: 'vendors',
