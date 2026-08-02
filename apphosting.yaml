@@ -34,10 +34,13 @@ env:
     availability:
       - RUNTIME
 
+  # RUNTIME only — deliberately NOT BUILD. The buildpack runs `npm ci` with whatever
+  # NODE_ENV is set at build time, and NODE_ENV=production makes npm skip
+  # devDependencies. vite, esbuild and typescript all live there, so declaring this at
+  # BUILD produced `sh: 1: vite: not found` and failed the build outright.
   - variable: NODE_ENV
     value: production
     availability:
-      - BUILD
       - RUNTIME
 
   # Vite inlines VITE_* at build time, so this must be BUILD, not RUNTIME —
