@@ -1,5 +1,8 @@
-import { collection, doc, getDocs, limit, query, where, writeBatch } from 'firebase/firestore';
+import { collection, doc, getDocs, increment, limit, query, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
+
+/** Starter-tier seat allowance (docs/ARCHITECTURE_FOUNDATION.md §4). Growth raises it to 10. */
+export const DEFAULT_SEAT_CAP = 3;
 
 interface NewProfileFields {
   email: string | null;
@@ -57,12 +60,21 @@ export async function bootstrapUserProfile(uid: string, fields: NewProfileFields
       acceptedByUid: uid,
       acceptedAt: new Date().toISOString(),
     });
+    // A seat is consumed the moment someone actually joins, not when invited — an
+    // invite that is never accepted should not hold a seat forever. Kept in the same
+    // batch as the profile write so the count cannot drift from reality.
+    batch.update(doc(db, 'organizations', pendingInvite.organizationId), {
+      seatCount: increment(1),
+    });
   } else {
     const orgRef = doc(collection(db, 'organizations'));
     batch.set(orgRef, {
       name: `${fields.displayName || 'User'}'s Organization`,
       createdAt: new Date().toISOString(),
       autoCreated: true,
+      // The creator occupies the first seat.
+      seatCount: 1,
+      seatCap: DEFAULT_SEAT_CAP,
     });
     batch.set(userRef, {
       email: fields.email,

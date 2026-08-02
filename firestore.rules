@@ -48,6 +48,81 @@ service cloud.firestore {
       return !(field in data) || data[field] is number;
     }
 
+    // Soft type guards for the collections that previously had none (KNOWN_ISSUES #11).
+    //
+    // These field lists are not guesses — they were read off the real documents in
+    // guardentra-7f582 via the Firestore REST API, which is what unblocked this: the
+    // original concern was that a strict hasOnly() would reject updates to existing
+    // docs carrying fields this repo had never seen. Staying with the isXIfPresent
+    // pattern keeps that impossible: a missing field is always fine, an unknown field
+    // is always fine, and only a *known* field written with an obviously wrong type is
+    // rejected. That is the same posture Sprint 5a used for vendors.
+    function riskFieldsValid() {
+      let d = request.resource.data;
+      return isStringIfPresent(d, 'title') && isStringIfPresent(d, 'category') &&
+        isStringIfPresent(d, 'severity') && isStringIfPresent(d, 'status') &&
+        isStringIfPresent(d, 'owner') && isStringIfPresent(d, 'mitigation') &&
+        isNumberIfPresent(d, 'impact') && isNumberIfPresent(d, 'likelihood');
+    }
+
+    function incidentFieldsValid() {
+      let d = request.resource.data;
+      return isStringIfPresent(d, 'title') && isStringIfPresent(d, 'severity') &&
+        isStringIfPresent(d, 'status') && isStringIfPresent(d, 'reporter') &&
+        isStringIfPresent(d, 'date');
+    }
+
+    function complianceFieldsValid() {
+      let d = request.resource.data;
+      return isStringIfPresent(d, 'name') && isStringIfPresent(d, 'status') &&
+        isStringIfPresent(d, 'description') && isStringIfPresent(d, 'nextAudit') &&
+        isNumberIfPresent(d, 'progress');
+    }
+
+    function connectorFieldsValid() {
+      let d = request.resource.data;
+      return isStringIfPresent(d, 'name') && isStringIfPresent(d, 'type') &&
+        isStringIfPresent(d, 'status') &&
+        isNumberIfPresent(d, 'findings') && isNumberIfPresent(d, 'health');
+    }
+
+    function policyFieldsValid() {
+      let d = request.resource.data;
+      return isStringIfPresent(d, 'title') && isStringIfPresent(d, 'category') &&
+        isStringIfPresent(d, 'status') && isStringIfPresent(d, 'content') &&
+        isStringIfPresent(d, 'version');
+    }
+
+    function calendarEventFieldsValid() {
+      let d = request.resource.data;
+      return isStringIfPresent(d, 'title') && isStringIfPresent(d, 'type') &&
+        isStringIfPresent(d, 'description') && isStringIfPresent(d, 'startDate');
+    }
+
+    function identityFieldsValid() {
+      let d = request.resource.data;
+      return isStringIfPresent(d, 'name') && isStringIfPresent(d, 'email') &&
+        isStringIfPresent(d, 'accessLevel') && isStringIfPresent(d, 'dataSensitivity') &&
+        isStringIfPresent(d, 'device') &&
+        isNumberIfPresent(d, 'riskScore') && isNumberIfPresent(d, 'deviceHealth');
+    }
+
+    // Written only by AI-generated flows, so no live documents existed to sample. Guards
+    // are derived from the writing code rather than from data: RemediationService.ts's
+    // RemediationTicket for remediations, and the AI route response shapes for the rest.
+    function remediationFieldsValid() {
+      let d = request.resource.data;
+      return isStringIfPresent(d, 'finding') && isStringIfPresent(d, 'severity') &&
+        isStringIfPresent(d, 'status') && isStringIfPresent(d, 'priority') &&
+        isStringIfPresent(d, 'dueDate') && isStringIfPresent(d, 'vendorName');
+    }
+
+    function genericAIDocFieldsValid() {
+      let d = request.resource.data;
+      return isStringIfPresent(d, 'title') && isStringIfPresent(d, 'status') &&
+        isStringIfPresent(d, 'createdAt') && isNumberIfPresent(d, 'score');
+    }
+
     // ===============================================================
     // Collection Rules
     // ===============================================================
@@ -78,7 +153,19 @@ service cloud.firestore {
     match /org_invites/{inviteId} {
       allow read: if isAuthenticated() &&
         (resource.data.email == request.auth.token.email || isDocOrgMember());
-      allow create: if isCreatingForOwnOrg() && isAdmin() && request.resource.data.email is string;
+      // Seat cap (docs/ARCHITECTURE_FOUNDATION.md §4: Starter 3, Growth 10). Enforced at
+      // invite time because that is the only chokepoint an admin controls — the profile
+      // write that actually consumes the seat happens later, during the invitee's own
+      // signup, when there is no admin in the request to reject.
+      //
+      // seatCount is maintained by src/lib/orgBootstrap.ts: set to 1 when an org is
+      // created, incremented in the same batch as the joining member's profile. Same
+      // soft-metering posture as vendorCount — a client writing through the SDK directly
+      // could still skip the increment (KNOWN_ISSUES.md #12 covers the equivalent gap for
+      // vendors); this stops the ordinary path, not a determined bypass.
+      allow create: if isCreatingForOwnOrg() && isAdmin() && request.resource.data.email is string &&
+        orgField(request.resource.data.organizationId, 'seatCount', 1) <
+        orgField(request.resource.data.organizationId, 'seatCap', 3);
       allow update: if isAuthenticated() && (
         (resource.data.email == request.auth.token.email &&
          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptedByUid', 'acceptedAt'])) ||
@@ -90,40 +177,40 @@ service cloud.firestore {
     // Risks Collection
     match /risks/{riskId} {
       allow read: if isDocOrgMember();
-      allow create: if isCreatingForOwnOrg();
-      allow update: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg() && riskFieldsValid();
+      allow update: if isDocOrgMember() && riskFieldsValid();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
     // Incidents Collection
     match /incidents/{incidentId} {
       allow read: if isDocOrgMember();
-      allow create: if isCreatingForOwnOrg();
-      allow update: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg() && incidentFieldsValid();
+      allow update: if isDocOrgMember() && incidentFieldsValid();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
     // Compliance Collection
     match /compliance/{complianceId} {
       allow read: if isDocOrgMember();
-      allow create: if isCreatingForOwnOrg();
-      allow update: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg() && complianceFieldsValid();
+      allow update: if isDocOrgMember() && complianceFieldsValid();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
     // Connectors Collection
     match /connectors/{connectorId} {
       allow read: if isDocOrgMember();
-      allow create: if isCreatingForOwnOrg();
-      allow update: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg() && connectorFieldsValid();
+      allow update: if isDocOrgMember() && connectorFieldsValid();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
     // Policies Collection
     match /policies/{policyId} {
       allow read: if isDocOrgMember();
-      allow create: if isCreatingForOwnOrg();
-      allow update: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg() && policyFieldsValid();
+      allow update: if isDocOrgMember() && policyFieldsValid();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
@@ -251,47 +338,47 @@ service cloud.firestore {
     // Executive Reports Collection
     match /executive_reports/{reportId} {
       allow read: if isDocOrgMember();
-      allow create: if isCreatingForOwnOrg();
-      allow update: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg() && genericAIDocFieldsValid();
+      allow update: if isDocOrgMember() && genericAIDocFieldsValid();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
     // Calendar Events Collection
     match /calendar_events/{eventId} {
       allow read: if isDocOrgMember();
-      allow create: if isCreatingForOwnOrg();
-      allow update: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg() && calendarEventFieldsValid();
+      allow update: if isDocOrgMember() && calendarEventFieldsValid();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
     // Identities Collection
     match /identities/{identityId} {
       allow read: if isDocOrgMember();
-      allow create: if isCreatingForOwnOrg();
-      allow update: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg() && identityFieldsValid();
+      allow update: if isDocOrgMember() && identityFieldsValid();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
     // Contract Audits
     match /contract_audits/{auditId} {
       allow read: if isDocOrgMember();
-      allow create: if isCreatingForOwnOrg();
+      allow create: if isCreatingForOwnOrg() && genericAIDocFieldsValid();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
     // Evidence Reviews
     match /evidence_reviews/{reviewId} {
       allow read: if isDocOrgMember();
-      allow create: if isCreatingForOwnOrg();
-      allow update: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg() && genericAIDocFieldsValid();
+      allow update: if isDocOrgMember() && genericAIDocFieldsValid();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
     // Remediations Collection
     match /remediations/{remediationId} {
       allow read: if isDocOrgMember();
-      allow create: if isCreatingForOwnOrg();
-      allow update: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg() && remediationFieldsValid();
+      allow update: if isDocOrgMember() && remediationFieldsValid();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 

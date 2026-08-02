@@ -31,6 +31,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/src/lib/utils';
 import ReactMarkdown from 'react-markdown';
 import { RemediationService } from '../services/RemediationService';
+import { RemediationBoard } from '../components/RemediationBoard';
 
 interface ControlCoverageItem {
   id: string;
@@ -123,6 +124,12 @@ export function AuditReadiness() {
   const [selectedAudit, setSelectedAudit] = useState<AuditAssessment | null>(null);
   const [scanError, setScanError] = useState('');
   const [ticketState, setTicketState] = useState<Record<string, 'creating' | 'created' | 'error'>>({});
+  // Tickets created from this page had nowhere to be viewed (docs/KNOWN_ISSUES.md #15).
+  // `remediation` swaps the main panel for the org-wide list; `remediationKey` forces a
+  // remount so switching back to it re-fetches rather than showing a stale list after
+  // new tickets were created.
+  const [mainView, setMainView] = useState<'audits' | 'remediation'>('audits');
+  const [remediationKey, setRemediationKey] = useState(0);
 
   // Closes the loop between a detected gap and an actionable remediation task: generates
   // a real AI plan (server /api/ai/remediation-plan, same service the frozen legacy
@@ -143,6 +150,8 @@ export function AuditReadiness() {
         organizationId: profile.organizationId,
       });
       setTicketState((prev) => ({ ...prev, [key]: 'created' }));
+      // Invalidate the remediation list so it reflects this ticket when next opened.
+      setRemediationKey((k) => k + 1);
     } catch (e) {
       console.error('Create remediation ticket failed:', e);
       setTicketState((prev) => ({ ...prev, [key]: 'error' }));
@@ -480,6 +489,29 @@ Call out TPRM and incident-response gaps when relevant.`;
 
         {scanError && <p className="text-xs text-rose-400">{scanError}</p>}
 
+        {/* Assessments vs the org-wide remediation list. Tickets created from a readiness
+            report used to have no view anywhere in the active app (KNOWN_ISSUES #15). */}
+        <div className="flex gap-1 rounded-lg border border-white/10 bg-black/20 p-1">
+          {([
+            { id: 'audits' as const, label: 'Assessments' },
+            { id: 'remediation' as const, label: 'Remediation' },
+          ]).map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setMainView(tab.id)}
+              className={cn(
+                'flex-1 rounded-md px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-colors',
+                mainView === tab.id
+                  ? 'bg-white/10 text-white'
+                  : 'text-slate-500 hover:text-slate-300'
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
         <div className="custom-scrollbar flex-1 space-y-3 overflow-y-auto pr-2">
           {isLoading ? (
             <div className="flex justify-center py-12">
@@ -497,7 +529,12 @@ Call out TPRM and incident-response gaps when relevant.`;
               <button
                 key={audit.id}
                 type="button"
-                onClick={() => setSelectedAudit(audit)}
+                onClick={() => {
+                  setSelectedAudit(audit);
+                  // Picking a report while the remediation list is showing should bring
+                  // the report forward, otherwise the click appears to do nothing.
+                  setMainView('audits');
+                }}
                 className={cn(
                   'group relative w-full overflow-hidden rounded-xl border p-4 text-left transition-all',
                   selectedAudit?.id === audit.id
@@ -545,7 +582,20 @@ Call out TPRM and incident-response gaps when relevant.`;
 
       <div className="glass-panel flex flex-1 flex-col overflow-hidden rounded-2xl border border-white/5">
         <AnimatePresence mode="wait">
-          {selectedAudit ? (
+          {mainView === 'remediation' ? (
+            <motion.div
+              key={`remediation-${remediationKey}`}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="flex flex-1 flex-col overflow-hidden"
+            >
+              <RemediationBoard
+                organizationId={profile?.organizationId || ''}
+                canDelete={profile?.role === 'admin'}
+              />
+            </motion.div>
+          ) : selectedAudit ? (
             <motion.div
               key={selectedAudit.id}
               initial={{ opacity: 0, y: 10 }}

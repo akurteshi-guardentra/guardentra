@@ -3,10 +3,17 @@
  * Run via: npm run test:storage-rules
  * (starts Firestore + Storage emulators, then executes this file)
  *
- * Note: rules check the assessmentId in the Storage path against that doc's
- * portalOpen / org membership. They do not bind an anonymous Auth uid to a
- * single assessment — if assessment B is also portalOpen, another open portal
- * path is reachable (same model as firestore.rules isOpenPortalAssessment).
+ * Rules check the assessmentId in the Storage path against that doc's portalOpen AND
+ * against a `portalAssessmentId` custom-token claim minted by server/routes/portal.ts.
+ *
+ * This file originally documented the absence of that bind as accepted behaviour. It is
+ * no longer accepted: a session for assessment A reaching assessment B's evidence was a
+ * live cross-tenant exposure (docs/KNOWN_ISSUES.md #17), confirmed in production and then
+ * closed. The cases below now assert the bind, so a regression fails here rather than
+ * silently reopening the hole.
+ *
+ * `portal(id)` builds a context carrying the claim, which is what a real vendor session
+ * looks like. A bare anonymous context — no claim — must now be denied everywhere.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -90,22 +97,43 @@ async function main() {
     email: 'member@example.com',
   });
   const unauth = testEnv.unauthenticatedContext();
+  // What server/routes/portal.ts actually mints: uid portal_<id> + the scoping claim.
+  const portal = (assessmentId) =>
+    testEnv.authenticatedContext(`portal_${assessmentId}`, {
+      firebase: { sign_in_provider: 'custom' },
+      portalAssessmentId: assessmentId,
+    });
 
   console.log('Matrix:');
 
   await check(
-    'anonymous CAN write /portal/assessmentA/... when portalOpen=true',
+    'scoped portal session CAN write its own /portal/assessmentA/... when portalOpen=true',
     async () => {
       await assertSucceeds(
-        uploadBytes(ref(anon.storage(), 'portal/assessmentA/evidence-a.pdf'), pdfBytes, pdfMeta),
+        uploadBytes(
+          ref(portal('assessmentA').storage(), 'portal/assessmentA/evidence-a.pdf'),
+          pdfBytes,
+          pdfMeta,
+        ),
       );
     },
   );
 
   await check(
-    'anonymous CAN read /portal/assessmentA/... when portalOpen=true',
+    'scoped portal session CAN read back its own evidence',
     async () => {
-      await assertSucceeds(getBytes(ref(anon.storage(), 'portal/assessmentA/evidence-a.pdf')));
+      await assertSucceeds(
+        getBytes(ref(portal('assessmentA').storage(), 'portal/assessmentA/evidence-a.pdf')),
+      );
+    },
+  );
+
+  await check(
+    'bare anonymous session (no portalAssessmentId claim) CANNOT write — KNOWN_ISSUES #17',
+    async () => {
+      await assertFails(
+        uploadBytes(ref(anon.storage(), 'portal/assessmentA/no-claim.pdf'), pdfBytes, pdfMeta),
+      );
     },
   );
 
@@ -134,13 +162,50 @@ async function main() {
   );
 
   await check(
-    'anonymous CAN write /portal/assessmentC/... when C is also portalOpen (no uid↔assessment bind)',
+    'session for A CANNOT write to also-open assessment C — the KNOWN_ISSUES #17 fix',
     async () => {
-      await assertSucceeds(
-        uploadBytes(ref(anon.storage(), 'portal/assessmentC/cross-open.pdf'), pdfBytes, pdfMeta),
+      await assertFails(
+        uploadBytes(
+          ref(portal('assessmentA').storage(), 'portal/assessmentC/cross-open.pdf'),
+          pdfBytes,
+          pdfMeta,
+        ),
       );
     },
   );
+
+  await check(
+    'session for A CANNOT write to the legacy org evidence path — KNOWN_ISSUES #18',
+    async () => {
+      await assertFails(
+        uploadBytes(
+          ref(portal('assessmentA').storage(), 'orgs/org1/vendors/v1/evidence/x.pdf'),
+          pdfBytes,
+          pdfMeta,
+        ),
+      );
+    },
+  );
+
+  await check('org member CAN write the org evidence path (org-scoped, not blanket-denied)', async () => {
+    await assertSucceeds(
+      uploadBytes(
+        ref(member.storage(), 'orgs/org1/vendors/v1/evidence/member.pdf'),
+        pdfBytes,
+        pdfMeta,
+      ),
+    );
+  });
+
+  await check('org member CANNOT write another org\'s evidence path', async () => {
+    await assertFails(
+      uploadBytes(
+        ref(member.storage(), 'orgs/org2/vendors/v1/evidence/foreign.pdf'),
+        pdfBytes,
+        pdfMeta,
+      ),
+    );
+  });
 
   await check('unauthenticated CANNOT write portal path', async () => {
     await assertFails(
@@ -153,18 +218,24 @@ async function main() {
   });
 
   await check(
-    'anonymous CANNOT write /portal/assessmentA/... after portalOpen=false',
+    'scoped session CANNOT write after portalOpen=false (approval closes the portal)',
     async () => {
       await assertFails(
-        uploadBytes(ref(anon.storage(), 'portal/assessmentA/after-close.pdf'), pdfBytes, pdfMeta),
+        uploadBytes(
+          ref(portal('assessmentA').storage(), 'portal/assessmentA/after-close.pdf'),
+          pdfBytes,
+          pdfMeta,
+        ),
       );
     },
   );
 
   await check(
-    'anonymous CANNOT read /portal/assessmentA/... after portalOpen=false',
+    'scoped session CANNOT read after portalOpen=false',
     async () => {
-      await assertFails(getBytes(ref(anon.storage(), 'portal/assessmentA/evidence-a.pdf')));
+      await assertFails(
+        getBytes(ref(portal('assessmentA').storage(), 'portal/assessmentA/evidence-a.pdf')),
+      );
     },
   );
 
