@@ -273,8 +273,19 @@ the account can be referenced in places that never show up in a single console s
 
 - [ ] Re-verify `admin@` can do everything: read Firestore, see Auth users, deploy rules,
       run a build. If any of these fail, stop — do not remove anything yet.
-- [ ] **Google Cloud IAM** → remove `akurteshi@` from IAM & Admin → IAM.
+- [ ] **Google Cloud IAM** → remove `akurteshi@` from IAM & Admin → IAM. Do this step
+      *signed in as `admin@`*, not as `akurteshi@`: if `admin@` can edit IAM, that proves
+      it genuinely holds Owner. If it cannot, the grant did not work — and you have
+      learned that while `akurteshi@` still has access to fix it.
 - [ ] **Billing** → remove it from the billing account's IAM (separate list).
+- [ ] **Organization-level IAM** → if `guardentra.com` is a Cloud organization, switch the
+      resource picker at the top of the IAM page from the project to the **organization**
+      and check there too. An org-level role **inherits into every project**, so the
+      project stays visible to `akurteshi@` no matter how often you remove the
+      project-level binding.
+- [ ] Verify in an **incognito window or separate browser profile** — Google caches
+      signed-in sessions, and a stale tab will keep showing a project you no longer have
+      access to. Signed in as `akurteshi@`, the project should be absent from the picker.
 - [ ] **Firebase Auth** → confirm the app user is gone (Phase 5).
 - [ ] **Service accounts** → IAM & Admin → Service Accounts. Any created by `akurteshi@`
       keep working after the human account goes, but check for keys you no longer want.
