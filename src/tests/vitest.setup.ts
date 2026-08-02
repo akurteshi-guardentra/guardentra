@@ -81,52 +81,41 @@ vi.mock('firebase/storage', () => ({
   getDownloadURL: vi.fn(() => Promise.resolve('https://example.com/file.pdf')),
 }));
 
-// Mock Google Generative AI
+/**
+ * Mock @google/genai — deliberately minimal.
+ *
+ * This used to carry an elaborate `getGenerativeModel` / `models.generateContent`
+ * implementation with prompt-keyed canned responses. All of it was dead, and
+ * misleadingly so (docs/KNOWN_ISSUES.md #2): Sprint 0 moved 15 of the 16 components
+ * that called Gemini onto `fetch('/api/ai/generate')`, which the fetch mock below
+ * intercepts instead. The one remaining client-side consumer is LiveAssistant.tsx,
+ * and it calls `ai.live.connect()` — the Live API — which that mock never provided.
+ * So it simultaneously mocked things nothing calls and failed to mock the thing
+ * something does.
+ *
+ * What is actually imported from this package on the client:
+ *   LiveAssistant.tsx → GoogleGenAI, LiveServerMessage (type only), Modality
+ *
+ * No test currently renders LiveAssistant, so this exists to keep the import
+ * resolvable and give a future test a seam to work against. `live.connect` resolves
+ * to a session stub rather than throwing, so rendering the component will not blow up.
+ */
 vi.mock('@google/genai', () => ({
-  GoogleGenAI: vi.fn().mockImplementation(function() {
-    return {
-      getGenerativeModel: vi.fn(({ model }) => ({
-        generateContent: vi.fn((prompt) => {
-          let text = '';
-          const p = typeof prompt === 'string' ? prompt : JSON.stringify(prompt);
-          if (p.includes('briefing')) {
-            text = JSON.stringify({ briefing: 'Mocked AI Briefing', priorities: ['Fix tests', 'Build UI'] });
-          } else if (p.includes('incident response playbook')) {
-            text = JSON.stringify({ incident_type: 'Security Breach', severity: 'High', steps: [], communications: [], evidence_to_collect: [] });
-          } else if (p.includes('predict 4 high-probability')) {
-            text = JSON.stringify([{ title: 'AI Risk 1', severity: 'High', impact: 'Significant', likelihood: 'Frequent', category: 'Operational' }]);
-          } else {
-            text = JSON.stringify({ result: 'Generic AI response' });
-          }
-          return Promise.resolve({
-            response: {
-              text: () => text,
-            },
-          });
+  GoogleGenAI: vi.fn().mockImplementation(() => ({
+    live: {
+      connect: vi.fn(() =>
+        Promise.resolve({
+          sendRealtimeInput: vi.fn(),
+          sendClientContent: vi.fn(),
+          close: vi.fn(),
         }),
-      })),
-      models: {
-        generateContent: vi.fn(({ contents }) => {
-          let text = '';
-          if (contents.includes('briefing')) {
-            text = JSON.stringify({ briefing: 'Mocked AI Briefing', priorities: ['Fix tests', 'Build UI'] });
-          } else if (contents.includes('incident response playbook')) {
-            text = JSON.stringify({ incident_type: 'Security Breach', severity: 'High', steps: [], communications: [], evidence_to_collect: [] });
-          } else if (contents.includes('predict 4 high-probability')) {
-            text = JSON.stringify([{ title: 'AI Risk 1', severity: 'High', impact: 'Significant', likelihood: 'Frequent', category: 'Operational' }]);
-          } else {
-            text = JSON.stringify({ result: 'Generic AI response' });
-          }
-          return Promise.resolve({ text });
-        }),
-      },
-    };
-  }),
-  Type: {
-    OBJECT: 'object',
-    ARRAY: 'array',
-    STRING: 'string',
-    NUMBER: 'number',
+      ),
+    },
+  })),
+  Modality: {
+    AUDIO: 'AUDIO',
+    TEXT: 'TEXT',
+    IMAGE: 'IMAGE',
   },
 }));
 
