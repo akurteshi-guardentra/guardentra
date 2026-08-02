@@ -2,6 +2,18 @@
 
 Goal: `admin@` owns and accesses everything, and nothing depends on `akurteshi@` any more.
 
+**Target end state (decided):** every sign-in — Firebase Console, Google Cloud Console,
+the Firebase CLI, the app itself — happens as `admin@`. The single permitted exception is
+**git commit authorship**, which may keep showing `akurteshi@`.
+
+That exception is safe, and the reason matters: a git author email is **metadata written
+into the commit, not a credential**. It grants no access to anything and is never checked
+by GitHub, Google or Firebase. Anyone can set any value with `git config`. So leaving it
+alone — or continuing to commit as `akurteshi@` — has no security consequence at all.
+
+Do not confuse it with the **GitHub account used to push**, which is real access and is
+covered in Phase 4.
+
 Work through this in order and tick the boxes. The phases are sequenced deliberately —
 running the decommission before the billing and app-data phases is how people lock
 themselves out, break a live API key, or orphan their own test data.
@@ -91,6 +103,21 @@ Everything else is console work.
 Firebase Console has no separate permission system; it reads Google Cloud IAM. Granting
 here fixes both at once.
 
+> **Trap — two different "Users" screens in Firebase Console.**
+>
+> | Screen | What it is |
+> |--------|------------|
+> | **Authentication → Users** | your *application's* end users — the vendors and org members who sign into Guardentra. Adding an account here grants **no** administrative access to anything. |
+> | **⚙️ Project settings → Users and permissions** | project members. This one **is** Google Cloud IAM, and is what grants ownership. |
+>
+> Adding `admin@` under Authentication does nothing for ownership. It is a useful step,
+> but it belongs to Phase 5, not this one.
+
+**Firestore, Storage and "the backend" cannot be owned separately.** They live inside the
+project, there is no per-service ownership, and nothing needs migrating individually. One
+project-level Owner grant covers Firestore, Storage, Authentication and every service you
+add later.
+
 - [ ] Sign in to <https://console.cloud.google.com> as **`akurteshi@guardentra.com`** —
       the account that currently has access. `admin@` cannot grant itself access to a
       project it cannot see; "project doesn't exist" is simply how Google words
@@ -169,16 +196,19 @@ The repo is `akurteshi-guardentra/guardentra` and is currently **public**.
       the key-rotation history in `SECRETS.md`, also confirm public is intentional.
 - [ ] If moving it: Settings → *Transfer ownership*. Note that **repository secrets do not
       transfer** — `GEMINI_API_KEY` must be re-added afterward.
-- [ ] Fix the commit identity, which is currently a university address unrelated to either
-      account:
+- [ ] **Commit identity — deliberately exempt.** It is currently
+      `a1400098@unet.univie.ac.at`, a university address belonging to neither account.
+      Per the target end state above, commit authorship may stay as-is or use
+      `akurteshi@`; a commit author is metadata, not a credential, and grants nothing.
+      Change it only if you want the history to read consistently:
 
 ```bash
 git config user.email admin@guardentra.com
 git config user.name "Atdhe Kurteshi"
 ```
 
-  (Add `--global` to apply outside this repo. Past commits keep the old address; that is
-  normal and not worth rewriting history over.)
+  (Add `--global` to apply outside this repo. Past commits keep the old address either
+  way — rewriting history is not worth it for a cosmetic field.)
 
 ---
 
@@ -243,11 +273,38 @@ the account can be referenced in places that never show up in a single console s
 
 - [ ] Re-verify `admin@` can do everything: read Firestore, see Auth users, deploy rules,
       run a build. If any of these fail, stop — do not remove anything yet.
-- [ ] **Google Cloud IAM** → remove `akurteshi@` from IAM & Admin → IAM.
+- [ ] **Google Cloud IAM** → remove `akurteshi@` from IAM & Admin → IAM. Do this step
+      *signed in as `admin@`*, not as `akurteshi@`: if `admin@` can edit IAM, that proves
+      it genuinely holds Owner. If it cannot, the grant did not work — and you have
+      learned that while `akurteshi@` still has access to fix it.
 - [ ] **Billing** → remove it from the billing account's IAM (separate list).
+- [ ] **Organization-level IAM** → if `guardentra.com` is a Cloud organization, switch the
+      resource picker at the top of the IAM page from the project to the **organization**
+      and check there too. An org-level role **inherits into every project**, so the
+      project stays visible to `akurteshi@` no matter how often you remove the
+      project-level binding.
+- [ ] Verify in an **incognito window or separate browser profile** — Google caches
+      signed-in sessions, and a stale tab will keep showing a project you no longer have
+      access to. Signed in as `akurteshi@`, the project should be absent from the picker.
 - [ ] **Firebase Auth** → confirm the app user is gone (Phase 5).
 - [ ] **Service accounts** → IAM & Admin → Service Accounts. Any created by `akurteshi@`
       keep working after the human account goes, but check for keys you no longer want.
+
+> ### ⛔ Do not delete service accounts
+>
+> The IAM list mixes people and machines. **Delete only principals that are a person's
+> email address.** Anything ending in `.gserviceaccount.com` is infrastructure owned by
+> the project, not by `akurteshi@`, and it keeps working unchanged once `admin@` is Owner
+> — service accounts were never held by a person, so they do not change hands.
+>
+> | Principal | Deleting it breaks |
+> |-----------|--------------------|
+> | `firebase-adminsdk-…@guardentra-7f582.iam.gserviceaccount.com` | `createCustomToken()` in `server/routes/portal.ts` — **every vendor portal link stops working** |
+> | `<project-number>-compute@developer.gserviceaccount.com` | App Hosting / Cloud Run run the backend *as* this identity — the app cannot start |
+> | `firebase-hosting@…`, `service-<n>@gcp-sa-*.iam.gserviceaccount.com` | Google-managed service agents. Mostly undeletable; the rest auto-recreate, usually after something has already failed |
+>
+> In this migration exactly **one** row gets removed: `akurteshi@guardentra.com` — from
+> project IAM, and again from the billing account's separate IAM list.
 - [ ] **API keys** → APIs & Services → Credentials. The old Gemini key should already be
       deleted from Phase 2.
 - [ ] **OAuth consent screen** → APIs & Services → OAuth consent screen. The support and
