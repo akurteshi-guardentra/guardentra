@@ -278,6 +278,22 @@ the account can be referenced in places that never show up in a single console s
 - [ ] **Firebase Auth** → confirm the app user is gone (Phase 5).
 - [ ] **Service accounts** → IAM & Admin → Service Accounts. Any created by `akurteshi@`
       keep working after the human account goes, but check for keys you no longer want.
+
+> ### ⛔ Do not delete service accounts
+>
+> The IAM list mixes people and machines. **Delete only principals that are a person's
+> email address.** Anything ending in `.gserviceaccount.com` is infrastructure owned by
+> the project, not by `akurteshi@`, and it keeps working unchanged once `admin@` is Owner
+> — service accounts were never held by a person, so they do not change hands.
+>
+> | Principal | Deleting it breaks |
+> |-----------|--------------------|
+> | `firebase-adminsdk-…@guardentra-7f582.iam.gserviceaccount.com` | `createCustomToken()` in `server/routes/portal.ts` — **every vendor portal link stops working** |
+> | `<project-number>-compute@developer.gserviceaccount.com` | App Hosting / Cloud Run run the backend *as* this identity — the app cannot start |
+> | `firebase-hosting@…`, `service-<n>@gcp-sa-*.iam.gserviceaccount.com` | Google-managed service agents. Mostly undeletable; the rest auto-recreate, usually after something has already failed |
+>
+> In this migration exactly **one** row gets removed: `akurteshi@guardentra.com` — from
+> project IAM, and again from the billing account's separate IAM list.
 - [ ] **API keys** → APIs & Services → Credentials. The old Gemini key should already be
       deleted from Phase 2.
 - [ ] **OAuth consent screen** → APIs & Services → OAuth consent screen. The support and
