@@ -1,0 +1,81 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Matches src/lib/vendor/constants.ts EVIDENCE_ALLOWED_TYPES (pdf, doc/docx,
+    // xls/xlsx via the application/vnd.* wildcard, png, jpeg) — client-side File.type
+    // is trivially spoofable, so this is the real enforcement, not the client check.
+    function isAllowedDocType() {
+      return request.resource.contentType.matches('application/pdf|application/msword|application/vnd\\..*|image/png|image/jpeg');
+    }
+
+    // ⚠️ PER-ENVIRONMENT DEPLOY CHECK — the database id below is hardcoded as
+    // `(default)`. Storage rules can't read env vars, so this literal must match
+    // whatever VITE_FIRESTORE_DATABASE_ID points at in the target environment
+    // (src/firebase.ts:40-42 supports a named DB; docs/ARCHITECTURE_FOUNDATION.md §1
+    // warns against mixing the two). If an environment's Firestore data lives in a
+    // *named* database, these firestore.get() calls read an empty `(default)` DB and
+    // every portal upload/read is DENIED.
+    // Confirmed `(default)` on guardentra-7f582 (demo//deployed 2026-07-27). Re-check
+    // before the first deploy to guardentra-dev / -staging / -prod — separate projects,
+    // separate databases, per .firebaserc.
+    //
+    // Mirrors isOpenPortalAssessment() in firestore.rules — the assessment doc is the
+    // single source of truth for whether an (incl. anonymous) portal session may still
+    // touch this path, so a vendor session for assessment A can't read/write assessment B.
+    function isOpenPortalAssessment(assessmentId) {
+      return firestore.get(/databases/(default)/documents/assessments/$(assessmentId)).data.portalOpen == true;
+    }
+
+    // Org members keep read access to their own org's evidence even after the portal
+    // closes (e.g. reviewing a completed assessment) — mirrors isOrgMember() in firestore.rules.
+    function isOrgMemberOfAssessment(assessmentId) {
+      return isSignedIn() &&
+        firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
+        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.organizationId ==
+          firestore.get(/databases/(default)/documents/assessments/$(assessmentId)).data.organizationId;
+    }
+
+    // Binds a portal session to the ONE assessment its link was minted for.
+    // server/routes/portal.ts puts this claim on the custom token. Without it,
+    // isOpenPortalAssessment() alone only asked "is this assessment open?", so a
+    // session for assessment A could read and write assessment B's evidence whenever
+    // B was also open — which is every in-flight assessment. Confirmed live via
+    // `npm run smoke:portal`, then fixed. See docs/KNOWN_ISSUES.md #17.
+    function isPortalSessionFor(assessmentId) {
+      return request.auth.token.portalAssessmentId == assessmentId;
+    }
+
+    // Portal evidence uploads (vendor portal session, scoped to its own assessment)
+    match /portal/{assessmentId}/{fileName} {
+      allow read: if isSignedIn() && (
+        isOrgMemberOfAssessment(assessmentId) ||
+        (isPortalSessionFor(assessmentId) && isOpenPortalAssessment(assessmentId))
+      );
+      allow write: if isSignedIn()
+        && isPortalSessionFor(assessmentId)
+        && isOpenPortalAssessment(assessmentId)
+        && request.resource.size < 25 * 1024 * 1024
+        && isAllowedDocType();
+    }
+
+    match /orgs/{orgId}/vendors/{vendorId}/evidence/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn()
+        && request.resource.size < 25 * 1024 * 1024
+        && isAllowedDocType();
+    }
+
+    // Vendor-level general attachments (src/lib/vendor/evidenceUpload.ts uploadVendorAttachment,
+    // used by the Impact page) — 20MB cap matches the app-side check in that function.
+    match /orgs/{orgId}/vendors/{vendorId}/attachments/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn()
+        && request.resource.size < 20 * 1024 * 1024
+        && isAllowedDocType();
+    }
+  }
+}

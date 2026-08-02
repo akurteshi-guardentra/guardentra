@@ -10,7 +10,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { collection, query, where, getDocs, limit, orderBy } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../lib/AuthContext';
-import { GoogleGenAI } from "@google/genai";
+import { authHeaders } from '../lib/authHeaders';
 import { calculateTrustScore, TrustScoreDetails } from '../lib/TrustScoreEngine';
 import { ActivityFeed } from '../components/ActivityFeed';
 
@@ -69,12 +69,29 @@ export function Dashboard() {
   const [drillScenario, setDrillScenario] = useState<any>(null);
   const [trustDetails, setTrustDetails] = useState<TrustScoreDetails | null>(null);
 
+  /** Single exit point for the drill modal. Clearing the scenario matters: without it
+   * the previous run's result flashes behind the loader the next time the drill opens. */
+  const closeDrill = () => {
+    setShowDrillModal(false);
+    setDrillScenario(null);
+  };
+
+  // The modal had no backdrop-click or Escape handler, so if it ever rendered without
+  // a scenario (see the fallback branch below) there was no way out of it at all.
+  useEffect(() => {
+    if (!showDrillModal) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isDrilling) closeDrill();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showDrillModal, isDrilling]);
+
   const startSecurityDrill = async () => {
+    setDrillScenario(null);
     setIsDrilling(true);
     setShowDrillModal(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      
       // Fetch recent incidents to make the drill relevant
       const recentIncidentsText = activities
         .filter(a => a.module === 'Incident')
@@ -82,17 +99,19 @@ export function Dashboard() {
         .map(i => i.title)
         .join(', ');
 
-      const prompt = `Act as a Red Team Lead. Generate a high-stakes GRC security drill for an SME. 
+      const prompt = `Act as a Red Team Lead. Generate a high-stakes GRC security drill for an SME.
       ${recentIncidentsText ? `The organization recently faced these incidents: ${recentIncidentsText}. Build a drill that tests if they've learned from these.` : 'Generate a scenario for a common breach type like SIM Swap or API Key Leak.'}
       Return JSON: { "title": "...", "impact": "...", "goal": "...", "score": 78 }`;
 
-      const result = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-        config: { responseMimeType: "application/json" }
+      const response = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ prompt, responseMimeType: 'application/json' }),
       });
-      
-      const cleanJson = (result.text || "{}").replace(/```json/g, '').replace(/```/g, '').trim();
+      if (!response.ok) throw new Error('AI generation failed');
+      const { text } = await response.json();
+
+      const cleanJson = (text || "{}").replace(/```json/g, '').replace(/```/g, '').trim();
       setDrillScenario(JSON.parse(cleanJson));
     } catch (e) {
       setDrillScenario({ 
@@ -212,10 +231,15 @@ export function Dashboard() {
           }
         }
 
-        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
         const prompt = `Analyze: Total Risks: ${risks.length}, Compliance: ${score}%, Incidents: ${incidentCount}. Briefing (3-4 sentences) and 3 priorities. JSON: { "briefing": "...", "priorities": ["...", "...", "..."] }`;
-        const result = await ai.models.generateContent({ model: "gemini-3-flash-preview", contents: prompt, config: { responseMimeType: "application/json" } });
-        const text = result.text || '{}';
+        const response = await fetch('/api/ai/generate', {
+          method: 'POST',
+          headers: await authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ prompt, responseMimeType: 'application/json' }),
+        });
+        if (!response.ok) throw new Error('AI generation failed');
+        const { text: rawText } = await response.json();
+        const text = rawText || '{}';
         const aiData = JSON.parse(text.replace(/```json/g, '').replace(/```/g, '').trim());
         setAiBriefing(aiData.briefing);
         setActionableSteps(aiData.priorities);
@@ -267,7 +291,7 @@ export function Dashboard() {
           </div>
           
           <div 
-            onClick={() => navigate('/trust-intelligence')}
+            onClick={() => navigate('/vendors')}
             className="glass-panel px-6 py-3 rounded-2xl border border-white/5 flex items-center gap-4 bg-white/[0.02] shadow-xl shadow-indigo-500/5 hover:bg-white/[0.04] hover:border-indigo-500/20 cursor-pointer transition-all duration-300"
           >
              <div className="flex flex-col items-end">
@@ -479,8 +503,12 @@ export function Dashboard() {
                     disabled={isDrilling}
                     className="w-full sm:w-auto bg-white text-black hover:bg-slate-200 px-6 sm:px-8 py-4 sm:py-6 rounded-2xl font-bold text-base sm:text-lg shadow-xl shadow-white/5"
                   >
-                    {isDrilling ? <Loader2 className="h-5 w-5 sm:h-6 sm:w-6 animate-spin" /> : <PlayCircle className="h-5 w-5 sm:h-6 sm:w-6 mr-2" />}
-                    Initialize Drill
+                    {isDrilling ? (
+                      <Loader2 className="h-5 w-5 sm:h-6 sm:w-6 mr-2 animate-spin" />
+                    ) : (
+                      <PlayCircle className="h-5 w-5 sm:h-6 sm:w-6 mr-2" />
+                    )}
+                    {isDrilling ? 'Running Drill…' : 'Initialize Drill'}
                   </Button>
                </div>
             </div>
@@ -508,11 +536,17 @@ export function Dashboard() {
       {/* Drill Results Modal */}
       <AnimatePresence>
         {showDrillModal && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-            <motion.div 
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+            onClick={() => {
+              if (!isDrilling) closeDrill();
+            }}
+          >
+            <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
               className="glass-panel max-w-2xl w-full p-10 rounded-3xl border border-white/10 relative overflow-hidden"
             >
               <div className="absolute top-0 right-0 p-8 opacity-10">
@@ -528,7 +562,20 @@ export function Dashboard() {
                    <h3 className="text-2xl font-bold text-white font-display">AI Strategist is generating Paradox Scenario...</h3>
                    <p className="text-slate-500 font-mono text-sm max-w-xs uppercase tracking-tighter">Analyzing identity maps, cloud connectors & active policies</p>
                 </div>
-              ) : drillScenario && (
+              ) : !drillScenario ? (
+                // Previously `drillScenario && (…)`, which rendered an empty panel with no
+                // dismiss control if the scenario was ever missing — an undismissable
+                // overlay stuck over the dashboard.
+                <div className="py-16 flex flex-col items-center justify-center text-center space-y-4">
+                  <h3 className="text-xl font-bold text-white font-display">Drill unavailable</h3>
+                  <p className="text-sm text-slate-400 max-w-sm">
+                    The scenario could not be generated. Close this and try again.
+                  </p>
+                  <Button variant="ghost" className="text-slate-400 hover:text-white" onClick={closeDrill}>
+                    Close
+                  </Button>
+                </div>
+              ) : (
                 <div className="space-y-8">
                   <div>
                     <Badge className="bg-primary/20 text-primary border-primary/30 mb-4 uppercase tracking-[0.2em] text-[10px] px-3 py-1">Paradox Drill Phase 1</Badge>
@@ -554,15 +601,15 @@ export function Dashboard() {
                       className="flex-1 bg-primary text-white hover:bg-primary/90 h-14 font-bold text-lg"
                       onClick={() => {
                         // In a real app, this would start the interactive response flow
-                        setShowDrillModal(false);
+                        closeDrill();
                       }}
                     >
                       Initialize Response Playbook
                     </Button>
                     <Button 
-                      variant="ghost" 
+                      variant="ghost"
                       className="text-slate-500 hover:text-white"
-                      onClick={() => setShowDrillModal(false)}
+                      onClick={closeDrill}
                     >
                       Dismiss Drill
                     </Button>
@@ -668,25 +715,25 @@ export function Dashboard() {
                    <div className="p-2 w-fit rounded-lg bg-emerald-500/10 text-emerald-400 mb-4 group-hover:scale-110 transition-transform">
                       <AlertTriangle className="h-5 w-5" />
                    </div>
-                   <h3 className="font-bold text-white mb-1">Risk Register</h3>
-                   <p className="text-xs text-slate-500 mb-4">Log your first risk to calibrate the Value at Risk engine.</p>
-                   <button onClick={() => navigate('/risks')} className="text-primary font-bold text-[10px] uppercase tracking-widest hover:underline">Go to Risks →</button>
+                   <h3 className="font-bold text-white mb-1">Vendor Register</h3>
+                   <p className="text-xs text-slate-500 mb-4">Add or bulk-upload vendors to start third-party risk work.</p>
+                   <button onClick={() => navigate('/vendors')} className="text-primary font-bold text-[10px] uppercase tracking-widest hover:underline">Go to Vendors →</button>
                 </div>
                 <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/5 hover:border-primary/30 transition-all group">
                    <div className="p-2 w-fit rounded-lg bg-indigo-500/10 text-indigo-400 mb-4 group-hover:scale-110 transition-transform">
                       <Zap className="h-5 w-5" />
                    </div>
-                   <h3 className="font-bold text-white mb-1">AI Draftsman</h3>
-                   <p className="text-xs text-slate-500 mb-4">Let AI write your first ISO 27001 policy in seconds.</p>
-                   <button onClick={() => navigate('/policies/draftsman')} className="text-primary font-bold text-[10px] uppercase tracking-widest hover:underline">Draft Now →</button>
+                   <h3 className="font-bold text-white mb-1">New Assessment</h3>
+                   <p className="text-xs text-slate-500 mb-4">Pick a vendor and frameworks, then send the portal questionnaire.</p>
+                   <button onClick={() => navigate('/assessments/new')} className="text-primary font-bold text-[10px] uppercase tracking-widest hover:underline">Start Wizard →</button>
                 </div>
                 <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/5 hover:border-primary/30 transition-all group">
                    <div className="p-2 w-fit rounded-lg bg-amber-500/10 text-amber-400 mb-4 group-hover:scale-110 transition-transform">
                       <Activity className="h-5 w-5" />
                    </div>
-                   <h3 className="font-bold text-white mb-1">System Audit</h3>
-                   <p className="text-xs text-slate-500 mb-4">Verify the core infrastructure and security rules.</p>
-                   <button onClick={() => navigate('/health')} className="text-primary font-bold text-[10px] uppercase tracking-widest hover:underline">Run QA Test →</button>
+                   <h3 className="font-bold text-white mb-1">Audit Lab</h3>
+                   <p className="text-xs text-slate-500 mb-4">Check framework coverage and evidence gaps.</p>
+                   <button onClick={() => navigate('/audit-readiness')} className="text-primary font-bold text-[10px] uppercase tracking-widest hover:underline">Open Audit Lab →</button>
                 </div>
              </div>
           </div>
@@ -753,6 +800,16 @@ export function Dashboard() {
             </CardHeader>
             <CardContent className="pl-2">
               <div className="h-[300px] w-full">
+                {complianceCharts.every((c) => !c.score) ? (
+                  // Recharts happily renders axes with zero-height bars, which reads as a
+                  // broken chart rather than "nothing tracked yet" on a new org.
+                  <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
+                    <p className="text-sm font-medium text-slate-300">No framework scores yet</p>
+                    <p className="max-w-xs text-xs text-slate-500">
+                      Activate a framework in onboarding or the Audit Lab and adherence will chart here.
+                    </p>
+                  </div>
+                ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={complianceCharts}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" />
@@ -775,6 +832,7 @@ export function Dashboard() {
                     </defs>
                   </BarChart>
                 </ResponsiveContainer>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -787,6 +845,17 @@ export function Dashboard() {
             </CardHeader>
             <CardContent>
               <div className="h-[300px] w-full flex items-center justify-center relative">
+                {riskDistribution.every((r) => !r.value) ? (
+                  // With every value at 0 the Pie draws no slices at all, leaving a bare
+                  // "0 / Total Risks" floating in empty space — the disconnected look.
+                  <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
+                    <p className="text-sm font-medium text-slate-300">No risks logged yet</p>
+                    <p className="max-w-xs text-xs text-slate-500">
+                      Risks raised from assessments and the Audit Lab will break down by severity here.
+                    </p>
+                  </div>
+                ) : (
+                  <>
                 <div className="absolute inset-0 flex items-center justify-center flex-col">
                   <span className="text-3xl font-bold text-white">{stats.totalRisks}</span>
                   <span className="text-xs text-slate-400 tracking-tighter uppercase font-bold">Total Risks</span>
@@ -812,15 +881,21 @@ export function Dashboard() {
                     />
                   </PieChart>
                 </ResponsiveContainer>
+                  </>
+                )}
               </div>
-              <div className="flex justify-center flex-wrap gap-4 mt-2">
-                {riskDistribution.map((item) => (
-                  <div key={item.name} className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full shadow-[0_0_8px_currentColor]" style={{ backgroundColor: item.color, color: item.color }} />
-                    <span className="text-[10px] uppercase font-bold text-slate-300">{item.name}</span>
-                  </div>
-                ))}
-              </div>
+              {/* Legend belongs to the chart — showing four severity dots above an empty
+                  plot was a large part of why this card read as disconnected. */}
+              {!riskDistribution.every((r) => !r.value) && (
+                <div className="flex justify-center flex-wrap gap-4 mt-2">
+                  {riskDistribution.map((item) => (
+                    <div key={item.name} className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full shadow-[0_0_8px_currentColor]" style={{ backgroundColor: item.color, color: item.color }} />
+                      <span className="text-[10px] uppercase font-bold text-slate-300">{item.name}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </motion.div>

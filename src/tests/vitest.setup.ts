@@ -1,9 +1,14 @@
 import '@testing-library/jest-dom';
 import { vi } from 'vitest';
 
+// Dummy key so importing src/firebase.ts in component tests does not throw.
+// Must look like a real Web API key shape (AIza…, length > 20); never a live secret.
+vi.stubEnv('VITE_FIREBASE_API_KEY', 'AIzaSyDummyVitestFirebaseKey000');
+
 // Mock Firebase
 vi.mock('firebase/app', () => ({
-  initializeApp: vi.fn(),
+  initializeApp: vi.fn(() => ({ name: '[DEFAULT]' })),
+  getApp: vi.fn(() => ({ name: '[DEFAULT]' })),
 }));
 
 vi.mock('firebase/auth', () => ({
@@ -15,6 +20,7 @@ vi.mock('firebase/auth', () => ({
     return vi.fn();
   }),
   signInWithPopup: vi.fn(),
+  signInAnonymously: vi.fn(() => Promise.resolve({ user: { uid: 'anon' } })),
   signOut: vi.fn(),
   GoogleAuthProvider: vi.fn(),
   setPersistence: vi.fn(() => Promise.resolve()),
@@ -49,9 +55,30 @@ vi.mock('firebase/firestore', () => ({
   doc: vi.fn((db, coll, id) => ({ id, collection: coll, path: `${coll}/${id}` })),
   getDocs: vi.fn(() => Promise.resolve({ docs: [], size: 0, empty: true })),
   getDoc: vi.fn(() => Promise.resolve({ exists: () => true, data: () => ({}) })),
+  getDocFromServer: vi.fn(() => Promise.resolve({ exists: () => false, data: () => ({}) })),
+  getDocFromCache: vi.fn(() => Promise.resolve({ exists: () => false, data: () => ({}) })),
   deleteDoc: vi.fn(),
   orderBy: vi.fn(),
   limit: vi.fn(),
+  // Sprint 3d/4c added writeBatch-based org/profile bootstrap (src/lib/orgBootstrap.ts)
+  // — this was missing entirely before, though harmless since the onSnapshot mock
+  // above always returns exists:()=>true for users/*, so that code path never
+  // actually ran under the default mock. Still incomplete: collection/query/where
+  // are bare stubs (return undefined), so a future test exercising the pending-invite
+  // lookup in bootstrapUserProfile will need those fleshed out too, not just this.
+  writeBatch: vi.fn(() => ({
+    set: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+    commit: vi.fn(() => Promise.resolve()),
+  })),
+}));
+
+vi.mock('firebase/storage', () => ({
+  getStorage: vi.fn(() => ({})),
+  ref: vi.fn(),
+  uploadBytes: vi.fn(),
+  getDownloadURL: vi.fn(() => Promise.resolve('https://example.com/file.pdf')),
 }));
 
 // Mock Google Generative AI
@@ -102,3 +129,35 @@ vi.mock('@google/genai', () => ({
     NUMBER: 'number',
   },
 }));
+
+// Mock /api/ai/generate — Sprint 0 moved ~15 components off the direct @google/genai
+// client-side call (mocked above) onto this server proxy instead. Same canned
+// responses as the @google/genai mock, keyed on the same prompt substrings, so
+// existing tests (e.g. Dashboard.test.tsx's "Mocked AI Briefing" expectation) keep
+// working against the new call path. See docs/KNOWN_ISSUES.md #2.
+const realFetch = global.fetch;
+global.fetch = vi.fn((input: any, init?: any) => {
+  const url = typeof input === 'string' ? input : input?.url || '';
+  if (!url.includes('/api/ai/generate')) {
+    return realFetch ? realFetch(input, init) : Promise.reject(new Error(`Unmocked fetch: ${url}`));
+  }
+
+  const body = init?.body ? JSON.parse(init.body) : {};
+  const p = String(body.prompt || '').toLowerCase();
+  let text = '';
+  if (p.includes('brief')) {
+    text = JSON.stringify({ briefing: 'Mocked AI Briefing', priorities: ['Fix tests', 'Build UI'] });
+  } else if (p.includes('incident response playbook')) {
+    text = JSON.stringify({ incident_type: 'Security Breach', severity: 'High', steps: [], communications: [], evidence_to_collect: [] });
+  } else if (p.includes('predict 4 high-probability')) {
+    text = JSON.stringify([{ title: 'AI Risk 1', severity: 'High', impact: 'Significant', likelihood: 'Frequent', category: 'Operational' }]);
+  } else {
+    text = JSON.stringify({ result: 'Generic AI response' });
+  }
+
+  return Promise.resolve({
+    ok: true,
+    status: 200,
+    json: () => Promise.resolve({ text }),
+  } as Response);
+}) as typeof fetch;

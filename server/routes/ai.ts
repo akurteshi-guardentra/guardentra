@@ -1,7 +1,13 @@
-import { Router } from 'express';
+import { Router, type Response } from 'express';
 import { GoogleGenAI, Type } from '@google/genai';
+import { createRateLimiter } from '../middleware/rateLimit';
 
 const router = Router();
+
+// Every route in this file is an LLM call — cap frequency per user so one account
+// can't drive unbounded Gemini spend or hammer the endpoint. 20/min is generous for
+// interactive use (Copilot chat, wizard previews) but bounds scripted abuse.
+router.use(createRateLimiter({ windowMs: 60_000, max: 20 }));
 
 const isPlaceholderKey = (key?: string) => {
   if (!key) return true;
@@ -169,6 +175,92 @@ router.post('/analyze', async (req, res) => {
     });
   }
 });
+
+// Generic prompt passthrough — lets pages that previously called Gemini directly from the
+// browser (exposing GEMINI_API_KEY client-side) keep their existing prompt/parsing logic while
+// moving the actual model call server-side. Callers should keep their existing try/catch fallback:
+// a non-2xx response here means "no key configured / call failed", same as a thrown client SDK error before.
+const MAX_PROMPT_LENGTH = 20_000; // generous for any legitimate wizard/copilot prompt
+
+const DEFAULT_MODEL = 'gemini-3.5-flash';
+
+/**
+ * Models this server will actually forward. Everything else falls back to the default.
+ *
+ * The `model` field used to be passed through verbatim, so a stale or misspelled name
+ * reached the API, threw, and came back to the user as a generic 502 — which is how the
+ * Audit Lab's scan was failing. Callers across the app still ask for four different
+ * names (`gemini-3.1-pro-preview`, `gemini-3-flash-preview`, `gemini-1.5-flash`, and
+ * the default), none of which the server's own routes use; those pages now degrade to a
+ * working model instead of erroring.
+ *
+ * Also closes a smaller hole: an arbitrary client-supplied string could previously
+ * select any model the API key can reach, including far more expensive ones.
+ *
+ * Adding a model here is a one-line change once it's been verified against the key.
+ */
+const ALLOWED_MODELS = new Set([DEFAULT_MODEL]);
+
+function resolveModel(requested: unknown): string {
+  if (typeof requested !== 'string' || !requested.trim()) return DEFAULT_MODEL;
+  const name = requested.trim();
+  if (ALLOWED_MODELS.has(name)) return name;
+  console.warn(`[ai] Ignoring unsupported model "${name}", using ${DEFAULT_MODEL}`);
+  return DEFAULT_MODEL;
+}
+
+router.post('/generate', async (req, res) => {
+  const { prompt, responseMimeType, responseSchema, model } = req.body || {};
+  if (typeof prompt !== 'string' || !prompt.trim()) {
+    return res.status(400).json({ error: 'prompt is required' });
+  }
+  if (prompt.length > MAX_PROMPT_LENGTH) {
+    return res.status(413).json({ error: `prompt exceeds ${MAX_PROMPT_LENGTH} characters` });
+  }
+  try {
+    if (!hasAIApi) {
+      return res.status(503).json({ error: 'AI not configured' });
+    }
+    const config: Record<string, unknown> = {};
+    if (responseMimeType) config.responseMimeType = responseMimeType;
+    if (responseSchema) config.responseSchema = responseSchema;
+    const result = await ai!.models.generateContent({
+      model: resolveModel(model),
+      contents: prompt,
+      config: Object.keys(config).length ? config : undefined,
+    });
+    return res.json({ text: result.text || '' });
+  } catch (err) {
+    console.warn('Generate Error:', err);
+    return sendAIError(res, err);
+  }
+});
+
+/**
+ * Map an upstream failure to something a caller can act on.
+ *
+ * Everything used to collapse into a flat 502 "AI generation failed", so an exhausted
+ * quota, a rejected key and an unsupported model were indistinguishable in the UI —
+ * which is why the Audit Lab's scan failure took a server-log read to explain. The
+ * message stays generic enough not to leak upstream internals, but names the category.
+ */
+function sendAIError(res: Response, err: unknown) {
+  const status = (err as { status?: number })?.status;
+
+  if (status === 429) {
+    return res.status(429).json({
+      error: 'AI quota exhausted. Check billing for the Gemini API key, then retry.',
+    });
+  }
+  if (status === 401 || status === 403) {
+    return res.status(502).json({ error: 'AI credentials were rejected. Check GEMINI_API_KEY.' });
+  }
+  if (status === 404) {
+    // resolveModel() should prevent this, so a 404 means the default itself is stale.
+    return res.status(502).json({ error: 'The configured AI model is unavailable.' });
+  }
+  return res.status(502).json({ error: 'AI generation failed' });
+}
 
 // New AI Vendor Assessment Generator API
 router.post('/gov-assessment', async (req, res) => {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useDemo, DemoMode } from '../lib/DemoContext';
+import { authHeaders } from '../lib/authHeaders';
 import { 
   Shield, 
   Building2, 
@@ -242,7 +243,7 @@ export function GovIntelSuite() {
     try {
       const response = await fetch('/api/ai/gov-assessment', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           name: vendorName,
           vendorType,
@@ -274,7 +275,7 @@ export function GovIntelSuite() {
     try {
       const response = await fetch('/api/ai/grant-report', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ agencyMode: demoMode })
       });
       const data = await response.json();

@@ -11,6 +11,24 @@ node_modules
 dist
 dist-ssr
 *.local
+.tools/
+firestore-debug.log
+firebase-debug.log
+database-debug.log
+ui-debug.log
+storage-debug.log
+*.log.bak
+
+# Secrets & credentials (never commit real values — see docs/SECRETS.md)
+.env
+.env.*
+!.env.example
+*.pem
+*credentials*.json
+*serviceAccount*.json
+service-account*.json
+google-services.json
+GoogleService-Info.plist
 
 # Editor directories and files
 .vscode/*
@@ -22,3 +40,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Mockup/reference screenshots dropped at repo root, not app assets
+*.webp

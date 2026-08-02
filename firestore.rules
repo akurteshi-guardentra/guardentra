@@ -11,46 +11,47 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isAtIdhee() {
-      return isAuthenticated() && request.auth.token.email == "atdhee.kurteshi@gmail.com";
-    }
 
     function isOrgMember(orgId) {
-      return isAuthenticated() && (
-        isAtIdhee() || 
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId == orgId)
-      );
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId == orgId;
     }
 
     function isDocOrgMember() {
-      return isAuthenticated() && (
-        isAtIdhee() || 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId == resource.data.organizationId
-      );
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId == resource.data.organizationId;
     }
 
     function isCreatingForOwnOrg() {
-      return isAuthenticated() && (
-        isAtIdhee() ||
-        request.resource.data.organizationId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId
-      );
+      return isAuthenticated() &&
+        request.resource.data.organizationId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId;
     }
 
     function isAdmin() {
       return isAuthenticated() &&
-        (isAtIdhee() || 
-         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Type guards used to add basic field-shape validation without a strict hasOnly()
+    // allowlist — deliberately "soft": they never reject a missing or unknown field
+    // (so they can't break existing documents or fields this rules file doesn't know
+    // about), they only reject a *known* field written with an obviously wrong type
+    // (e.g. riskScore set to a string). Safer than guessing an exact field list against
+    // data this repo can't inspect (no access to what's already in any deployed DB).
+    function isStringIfPresent(data, field) {
+      return !(field in data) || data[field] is string;
+    }
+
+    function isNumberIfPresent(data, field) {
+      return !(field in data) || data[field] is number;
     }
 
     // ===============================================================
     // Collection Rules
     // ===============================================================
 
-    // Allow everything to atdhee
-    match /{document=**} {
-      allow read, write: if isAtIdhee();
-    }
 
     // Users Collection
     match /users/{userId} {
@@ -66,6 +67,24 @@ service cloud.firestore {
       allow read: if isAuthenticated() && isOrgMember(orgId);
       allow create: if isAuthenticated();
       allow update: if isAuthenticated() && isOrgMember(orgId);
+    }
+
+    // Org invites: a brand-new signup (no org yet) must be able to look up
+    // "is there a pending invite for my email" before they're a member of
+    // anything, so this can't gate on org membership alone like other
+    // collections — it also allows read/accept by exact email match on the
+    // invite itself (request.auth.token.email is a Firebase-set claim, not
+    // client-controlled, so this can't be used to read someone else's invite).
+    match /org_invites/{inviteId} {
+      allow read: if isAuthenticated() &&
+        (resource.data.email == request.auth.token.email || isDocOrgMember());
+      allow create: if isCreatingForOwnOrg() && isAdmin() && request.resource.data.email is string;
+      allow update: if isAuthenticated() && (
+        (resource.data.email == request.auth.token.email &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptedByUid', 'acceptedAt'])) ||
+        (isDocOrgMember() && isAdmin())
+      );
+      allow delete: if isDocOrgMember() && isAdmin();
     }
 
     // Risks Collection
@@ -108,11 +127,45 @@ service cloud.firestore {
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
-    // Vendors Collection
+    // Vendors Collection — src/lib/vendor/types.ts Vendor interface is the shape;
+    // soft type guards on the fields most likely to be attacked (score/rating spoofing).
+    function vendorFieldsValid() {
+      return isStringIfPresent(request.resource.data, 'name') &&
+        isStringIfPresent(request.resource.data, 'category') &&
+        isStringIfPresent(request.resource.data, 'criticality') &&
+        isNumberIfPresent(request.resource.data, 'riskScore') &&
+        isNumberIfPresent(request.resource.data, 'trustScore');
+    }
+
+    // Vendor-cap enforcement (docs/ARCHITECTURE_FOUNDATION.md §4 tier sketch — Starter
+    // defaults below match that sketch). This is soft enforcement, not airtight: the
+    // counter is maintained by client code (src/pages/VendorsDirectory.tsx createVendor,
+    // via a transaction) alongside the create, so it stops normal over-cap growth through
+    // the app but a client using the Firestore SDK/REST API directly could skip the
+    // increment and bypass it — same accepted risk tolerance as the AI soft-metering
+    // already described in that doc. True hard enforcement needs vendor writes routed
+    // through a server endpoint that authoritatively counts via the Admin SDK; not done
+    // here (bigger change, no live customers to violate a cap yet — see KNOWN_ISSUES.md).
+    function orgField(orgId, field, fallback) {
+      let org = get(/databases/$(database)/documents/organizations/$(orgId)).data;
+      return (field in org) ? org[field] : fallback;
+    }
+
     match /vendors/{vendorId} {
       allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg() && vendorFieldsValid() &&
+        orgField(request.resource.data.organizationId, 'vendorCount', 0) <
+        orgField(request.resource.data.organizationId, 'vendorCap', 25);
+      allow update: if isDocOrgMember() && vendorFieldsValid();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // Vendor invite audit trail (src/pages/VendorsDirectory.tsx "Invite Vendor" quick
+    // action) — write-once record of who was invited and by whom; not user-editable
+    // after creation.
+    match /vendor_invites/{inviteId} {
+      allow read: if isDocOrgMember();
       allow create: if isCreatingForOwnOrg();
-      allow update: if isDocOrgMember();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
@@ -124,18 +177,74 @@ service cloud.firestore {
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
+    function isOpenPortalAssessment() {
+      return isAuthenticated() && resource.data.portalOpen == true;
+    }
+
+    // Binds a portal session to the ONE assessment its link was minted for.
+    // server/routes/portal.ts puts this claim on the custom token; without it, a
+    // session authenticated for assessment A could reach every other open assessment
+    // (docs/KNOWN_ISSUES.md #17 — confirmed live). Org members never carry the claim
+    // and are authorised by isDocOrgMember() instead.
+    function isPortalSessionFor(assessmentId) {
+      return isAuthenticated() && request.auth.token.portalAssessmentId == assessmentId;
+    }
+
+    // Fields VendorPortal.tsx actually writes during autosave/submit (src/pages/VendorPortal.tsx).
+    // A portal session (incl. anonymous) may only ever change these — never organizationId,
+    // vendorId, frameworks, dueAt/dueDate, or the portalOpen flag itself.
+    function onlyPortalAssessmentFieldsChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['answers', 'comments', 'evidenceByQuestion', 'progressPct', 'progress', 'status', 'questions', 'updatedAt', 'completedAt']);
+    }
+
+    // assessment_responses has no current writer in the app, but keep the same
+    // allowlist discipline for whenever it's used, so anonymous access stays answer-scoped.
+    function onlyPortalResponseFieldsChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['answer', 'comment', 'evidenceFileIds', 'updatedAt']);
+    }
+
     match /assessments/{assessmentId} {
-      allow read: if isDocOrgMember();
+      allow read: if isDocOrgMember() || (isPortalSessionFor(assessmentId) && isOpenPortalAssessment());
       allow create: if isCreatingForOwnOrg();
+      // Org members can update fully; a vendor portal session only for answer/progress
+      // fields, and only on the assessment its own link was issued for.
+      allow update: if isDocOrgMember() ||
+        (isPortalSessionFor(assessmentId) && isOpenPortalAssessment() && onlyPortalAssessmentFieldsChanged());
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // Still has no writer in the app (see above), but kept in step with /assessments
+    // so it can't become the loophole later: a portal session must hold the claim for
+    // the assessment this response belongs to.
+    match /assessment_responses/{responseId} {
+      allow read: if isDocOrgMember() || isPortalSessionFor(resource.data.assessmentId);
+      allow create: if isAuthenticated() && request.resource.data.organizationId is string;
+      allow update: if isDocOrgMember() ||
+        (isPortalSessionFor(resource.data.assessmentId) && onlyPortalResponseFieldsChanged());
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    match /evidence/{evidenceId} {
+      allow read: if isDocOrgMember();
+      allow create: if isAuthenticated() && request.resource.data.organizationId is string;
       allow update: if isDocOrgMember();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
-    // Audit Readiness Collection
+    // Audit Readiness Collection — shape written by AuditReadiness.tsx / seeding.ts.
+    function auditReadinessFieldsValid() {
+      return isStringIfPresent(request.resource.data, 'framework') &&
+        isStringIfPresent(request.resource.data, 'status') &&
+        isNumberIfPresent(request.resource.data, 'readinessScore') &&
+        isNumberIfPresent(request.resource.data, 'coveragePercent');
+    }
+
     match /audit_readiness/{auditId} {
       allow read: if isDocOrgMember();
-      allow create: if isCreatingForOwnOrg();
-      allow update: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg() && auditReadinessFieldsValid();
+      allow update: if isDocOrgMember() && auditReadinessFieldsValid();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
@@ -188,7 +297,15 @@ service cloud.firestore {
 
     // System Collection (for connectivity tests)
     match /system/{docId} {
-      allow read: if true;
+      allow read: if isAuthenticated();
+    }
+
+    // Mail queue (Firebase "Trigger Email from Firestore" extension shape). Only
+    // written by server/routes/notify.ts via the Admin SDK, which bypasses these
+    // rules entirely — so this stays fully closed to every client, preventing any
+    // authenticated user from queuing arbitrary emails directly through Firestore.
+    match /mail/{mailId} {
+      allow read, write: if false;
     }
   }
 }

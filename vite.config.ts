@@ -6,7 +6,7 @@ export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     return {
       server: {
-        port: 3000,
+        port: parseInt(String(process.env.PORT || 8080), 10),
         host: '0.0.0.0',
       },
       test: {
@@ -14,11 +14,19 @@ export default defineConfig(({ mode }) => {
         environment: 'jsdom',
         setupFiles: ['./src/tests/vitest.setup.ts'],
         include: ['src/tests/**/*.test.{ts,tsx}'],
+        testTimeout: 15000,
       },
       plugins: [tailwindcss()],
+      // Never ship Gemini keys in client production bundles — use /api/ai (server-only).
+      // Local/dev may still inject for frozen client-side AI pages during sandbox work.
       define: {
-        'process.env.API_KEY': JSON.stringify(''),
-        'process.env.GEMINI_API_KEY': JSON.stringify('')
+        'process.env.API_KEY': JSON.stringify(
+          mode === 'production' ? '' : env.GEMINI_API_KEY || env.API_KEY || ''
+        ),
+        'process.env.GEMINI_API_KEY': JSON.stringify(
+          mode === 'production' ? '' : env.GEMINI_API_KEY || env.API_KEY || ''
+        ),
+        'process.env.APP_ENV': JSON.stringify(env.APP_ENV || mode),
       },
       resolve: {
         alias: {

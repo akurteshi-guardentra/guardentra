@@ -20,7 +20,7 @@ describe('Onboarding Flow (BDD)', () => {
     renderWithProviders(<Onboarding />);
     
     // Step 1: Identity
-    expect(screen.getByText(/build your security foundation/i)).toBeInTheDocument();
+    expect(screen.getByText(/set up your workspace/i)).toBeInTheDocument();
     
     fireEvent.change(screen.getByPlaceholderText(/e.g. Acme Cybersec/i), { target: { value: 'Guardentra Test Org' } });
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'SaaS' } });
@@ -29,20 +29,20 @@ describe('Onboarding Flow (BDD)', () => {
     
     // Step 2: Scope
     await waitFor(() => {
-      expect(screen.getByText(/Target Compliance Goals/i)).toBeInTheDocument();
+      expect(screen.getByText(/What do you report against/i)).toBeInTheDocument();
     });
     
     // Select ISO 27001
     fireEvent.click(screen.getByText(/ISO 27001:2022/i));
     
-    fireEvent.click(screen.getByText(/Confirm Strategy/i));
+    fireEvent.click(screen.getByText(/Review and finish/i));
     
     // Step 3: Launch
     await waitFor(() => {
-      expect(screen.getByText(/Ready to Launch/i)).toBeInTheDocument();
+      expect(screen.getByText(/You're all set/i)).toBeInTheDocument();
     });
     
-    fireEvent.click(screen.getByText(/Deploy Architecture/i));
+    fireEvent.click(screen.getByText(/Finish setup/i));
     
     // Verify Firestore updates
     await waitFor(() => {

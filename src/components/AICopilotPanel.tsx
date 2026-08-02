@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
-import { GoogleGenAI } from '@google/genai';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Sparkles, 
@@ -31,6 +30,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Badge } from './ui/badge';
 import { useAuth } from '../lib/AuthContext';
+import { authHeaders } from '../lib/authHeaders';
 import { GuardentraLogo } from './GuardentraBrand';
 import { cn } from '@/src/lib/utils';
 
@@ -134,14 +134,17 @@ export function AICopilotPanel({ isOpen, onClose }: AICopilotPanelProps) {
   // Handle universal model call to Gemini
   const askGemini = async (promptText: string, jsonFormat = false) => {
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      // Fast preview model
-      const res = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
-        contents: promptText,
-        config: jsonFormat ? { responseMimeType: 'application/json' } : undefined
+      const response = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          prompt: promptText,
+          responseMimeType: jsonFormat ? 'application/json' : undefined,
+        }),
       });
-      return res.text || "";
+      if (!response.ok) throw new Error('AI generation failed');
+      const { text } = await response.json();
+      return text || "";
     } catch (e: any) {
       console.warn("Copilot Gemini API call failed, using high-context fallback. Details:", e);
       return "";

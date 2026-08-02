@@ -5,7 +5,7 @@ import { Button } from '../components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { cn } from '@/src/lib/utils';
-import { GoogleGenAI } from "@google/genai";
+import { authHeaders } from '../lib/authHeaders';
 import { useAuth } from '../lib/AuthContext';
 import { db } from '../firebase';
 import { collection, addDoc, query, where, getDocs, orderBy, deleteDoc, doc } from 'firebase/firestore';
@@ -40,19 +40,20 @@ export function ContractNegotiator() {
     setIsAnalyzing(true);
     setResults(null);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const prompt = `Act as a senior Cyber Lawyer and GRC lead. Analyze the following security clauses from a vendor contract:
       ${contractText}
       Compare this against industry standards (ISO 27001/GDPR). Identify 3 risky clauses and suggest "counter-language" for negotiation.
       Return JSON: { "score": 0-100, "risks": [{ "clause": "...", "risk": "...", "counter": "..." }], "summary": "..." }`;
 
-      const result = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-        config: { responseMimeType: "application/json" }
+      const response = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ prompt, model: 'gemini-3-flash-preview', responseMimeType: 'application/json' }),
       });
-      
-      const cleanJson = (result.text || "{}").replace(/```json/g, '').replace(/```/g, '').trim();
+      if (!response.ok) throw new Error('AI generation failed');
+      const { text } = await response.json();
+
+      const cleanJson = (text || "{}").replace(/```json/g, '').replace(/```/g, '').trim();
       const parsed = JSON.parse(cleanJson);
       setResults(parsed);
 
@@ -130,14 +131,16 @@ export function ContractNegotiator() {
                                  <p className="text-[10px] text-slate-500 uppercase">{new Date(audit.createdAt).toLocaleDateString()}</p>
                               </div>
                            </div>
-                           <Button 
-                             variant="ghost" 
-                             size="icon" 
-                             onClick={(e) => deleteAudit(audit.id, e)}
-                             className="opacity-0 group-hover:opacity-100 text-slate-600 hover:text-rose-400 transition-all"
-                           >
-                              <Trash2 className="h-4 w-4" />
-                           </Button>
+                           {profile?.role === 'admin' && (
+                             <Button
+                               variant="ghost"
+                               size="icon"
+                               onClick={(e) => deleteAudit(audit.id, e)}
+                               className="opacity-0 group-hover:opacity-100 text-slate-600 hover:text-rose-400 transition-all"
+                             >
+                                <Trash2 className="h-4 w-4" />
+                             </Button>
+                           )}
                         </div>
                       ))
                     )}
@@ -152,11 +155,12 @@ export function ContractNegotiator() {
                     </div>
                 </CardHeader>
                 <CardContent className="flex-1 pb-6">
-                    <textarea 
+                    <textarea
                       className="w-full h-96 bg-black/40 border border-white/10 rounded-xl p-6 text-slate-300 font-mono text-sm focus:outline-none focus:ring-1 focus:ring-primary/50 resize-none transition-all duration-300 placeholder:text-slate-700"
                       placeholder="Paste the security or data protection clauses here (e.g., Section 4: Data Security)..."
                       value={contractText}
                       onChange={(e) => setContractText(e.target.value)}
+                      maxLength={20000}
                     />
                     <div className="mt-6">
                         <Button 

@@ -6,6 +6,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { FieldValue } from 'firebase-admin/firestore';
 import fs from 'fs';
 import path from 'path';
+import { requireFirebaseAuth } from '../middleware/requireFirebaseAuth';
 
 const router = Router();
 
@@ -32,19 +33,32 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_dummy', {
   apiVersion: '2026-03-25.dahlia' as any,
 });
 
-router.post('/create-checkout-session', async (req, res) => {
+// Auth required: without it, any caller could pass an arbitrary userId/email and
+// have a completed checkout misattributed to someone else's account via the webhook.
+router.post('/create-checkout-session', requireFirebaseAuth, async (req, res) => {
   try {
-    const { priceId, userId, email } = req.body;
+    const { priceId } = req.body;
+    // Prefer the verified token identity; body values are only a dev-mode fallback
+    // (requireFirebaseAuth allows unauthenticated requests through in non-prod).
+    const verifiedUser = (req as { user?: { uid?: string; email?: string } }).user;
+    const userId = verifiedUser?.uid || req.body.userId;
+    const email = verifiedUser?.email || req.body.email;
 
-    if (!process.env.STRIPE_SECRET_KEY) {
-      // Mock response for development without Stripe keys
-      console.warn("STRIPE_SECRET_KEY is not set. Returning a mock checkout URL.");
-      return res.json({ url: 'https://checkout.stripe.com/pay/cs_test_mock123' });
+    if (!priceId || typeof priceId !== 'string') {
+      return res.status(400).json({ error: 'priceId is required' });
+    }
+    if (!userId) {
+      return res.status(401).json({ error: 'Could not determine the user for this checkout' });
     }
 
-    // Create a Checkout Session
+    if (!process.env.STRIPE_SECRET_KEY) {
+      console.warn("STRIPE_SECRET_KEY is not set — cannot create a real checkout session.");
+      return res.status(503).json({ error: 'Billing is not configured yet. Contact support.' });
+    }
+
+    // Create a Checkout Session. No payment_method_types override — Stripe Dashboard's
+    // configured dynamic payment methods apply automatically.
     const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card', 'sepa_debit', 'sofort', 'giropay'], // Added European payment methods
       line_items: [
         {
           price: priceId,

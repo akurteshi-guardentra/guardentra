@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { GoogleGenAI } from "@google/genai";
+import { authHeaders } from '../lib/authHeaders';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import { cn } from '@/src/lib/utils';
@@ -97,8 +97,6 @@ export function Policies() {
     
     setIsGenerating(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      
       const prompt = `Generate a comprehensive enterprise security policy for: "${newPolicyTitle}".
       Category: ${newPolicyCategory}.
       The policy should be professional, follow industry standards (like ISO 27001 or SOC 2), and include:
@@ -107,15 +105,18 @@ export function Policies() {
       3. Policy Statements
       4. Roles and Responsibilities
       5. Compliance and Enforcement
-      
+
       Format the output in clean Markdown.`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3.1-pro-preview",
-        contents: prompt,
+      const response = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ prompt, model: 'gemini-3.1-pro-preview' }),
       });
+      if (!response.ok) throw new Error('AI generation failed');
+      const { text } = await response.json();
 
-      const content = response.text || "Failed to generate policy content.";
+      const content = text || "Failed to generate policy content.";
       
       const policyData = {
         title: newPolicyTitle,
@@ -285,14 +286,16 @@ export function Policies() {
                       Archive
                     </Button>
                   )}
-                  <Button 
-                    size="sm" 
-                    variant="ghost" 
-                    className="text-rose-400 hover:bg-rose-500/10"
-                    onClick={() => deletePolicy(selectedPolicy.id)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  {profile?.role === 'admin' && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-rose-400 hover:bg-rose-500/10"
+                      onClick={() => deletePolicy(selectedPolicy.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
                 </div>
               </div>
 

@@ -14,10 +14,30 @@ import { seedProfessionalData } from '../lib/seeding';
 import { logOut } from '../lib/firebase-utils';
 
 const FRAMEWORKS = [
-  { id: 'iso27001', name: 'ISO 27001:2022', icon: Shield, desc: 'Global information security standard' },
-  { id: 'soc2', name: 'SOC 2 Type II', icon: Target, desc: 'Security, Availability, and Privacy' },
-  { id: 'nist', name: 'NIST CSF 2.0', icon: Globe, desc: 'Critical infrastructure protection' },
-  { id: 'hipaa', name: 'HIPAA', icon: Shield, desc: 'Healthcare data privacy' },
+  {
+    id: 'iso27001',
+    name: 'ISO 27001:2022',
+    icon: Shield,
+    desc: 'The certification enterprise buyers ask for most often in security reviews.',
+  },
+  {
+    id: 'soc2',
+    name: 'SOC 2 Type II',
+    icon: Target,
+    desc: 'Audited proof of how you handle security, availability and confidentiality over time.',
+  },
+  {
+    id: 'nist',
+    name: 'NIST CSF 2.0',
+    icon: Globe,
+    desc: 'A practical control baseline. Common in US public sector and critical infrastructure.',
+  },
+  {
+    id: 'hipaa',
+    name: 'HIPAA',
+    icon: Shield,
+    desc: 'Required if you or your vendors touch protected health information.',
+  },
 ];
 
 export function Onboarding() {
@@ -48,6 +68,10 @@ export function Onboarding() {
       setError("Organization name is too short");
       return;
     }
+    if (step === 1 && !industry) {
+      setError("Please select your industry");
+      return;
+    }
     setStep(step + 1);
   };
 
@@ -60,58 +84,68 @@ export function Onboarding() {
     setError(null);
 
     const activeOrgId = profile?.organizationId || `org_${user.uid}`;
-    
+    // bootstrapUserProfile only sets role: 'member' for someone who joined an
+    // existing org via invite — everyone else (including the fallback org id
+    // above) is the org's own creator/admin. A joining member going through
+    // this same wizard must not overwrite the shared org's name/industry or
+    // re-run framework init/demo-data seeding on top of the admin's real data.
+    const isOrgCreator = profile?.role !== 'member';
+
     // Set immediate client-side onboarding state so they are never locked out
     localStorage.setItem('guardentra_onboarded', 'true');
     localStorage.setItem('guardentra_fallback_org_id', activeOrgId);
 
     try {
       console.log("Onboarding: Starting finish process for org:", activeOrgId);
-      
-      // 1. Update Organization
-      try {
-        await updateDoc(doc(db, 'organizations', activeOrgId), {
-          name: orgName || `${user.displayName || 'User'}'s Organization`,
-          industry: industry || 'SaaS',
-          onboarded: true,
-          setupAt: new Date().toISOString()
-        });
-        console.log("Onboarding: Organization document updated successfully");
-      } catch (e: any) {
-        console.warn("Onboarding: Organization update failed:", e);
-      }
 
-      // 2. Initialize Selected Frameworks
-      if (selectedFrameworks.length > 0) {
-        console.log("Onboarding: Initializing frameworks...", selectedFrameworks);
+      if (isOrgCreator) {
+        // 1. Update Organization
         try {
-          await Promise.all(selectedFrameworks.map(async (frameworkId) => {
-            const fw = FRAMEWORKS.find(f => f.id === frameworkId);
-            return addDoc(collection(db, 'compliance'), {
-              name: fw?.name || frameworkId,
-              organizationId: activeOrgId,
-              status: 'Active',
-              progress: 0,
-              activatedAt: new Date().toISOString()
-            });
-          }));
-          console.log("Onboarding: Frameworks initialized");
+          await updateDoc(doc(db, 'organizations', activeOrgId), {
+            name: orgName || `${user.displayName || 'User'}'s Organization`,
+            industry: industry || 'SaaS',
+            onboarded: true,
+            setupAt: new Date().toISOString()
+          });
+          console.log("Onboarding: Organization document updated successfully");
         } catch (e: any) {
-          console.warn("Onboarding: Frameworks initialization failed:", e);
+          console.warn("Onboarding: Organization update failed:", e);
         }
-      }
 
-      // 3. Seed Professional Data Templates
-      console.log("Onboarding: Seeding professional metrics...");
-      try {
-        await seedProfessionalData({
-          organizationId: activeOrgId,
-          industry: industry || 'SaaS',
-          frameworks: selectedFrameworks
-        });
-        console.log("Onboarding: Seeding completed");
-      } catch (e: any) {
-        console.warn("Onboarding: Seeding failed, proceeding with local fallback:", e);
+        // 2. Initialize Selected Frameworks
+        if (selectedFrameworks.length > 0) {
+          console.log("Onboarding: Initializing frameworks...", selectedFrameworks);
+          try {
+            await Promise.all(selectedFrameworks.map(async (frameworkId) => {
+              const fw = FRAMEWORKS.find(f => f.id === frameworkId);
+              return addDoc(collection(db, 'compliance'), {
+                name: fw?.name || frameworkId,
+                organizationId: activeOrgId,
+                status: 'Active',
+                progress: 0,
+                activatedAt: new Date().toISOString()
+              });
+            }));
+            console.log("Onboarding: Frameworks initialized");
+          } catch (e: any) {
+            console.warn("Onboarding: Frameworks initialization failed:", e);
+          }
+        }
+
+        // 3. Seed Professional Data Templates
+        console.log("Onboarding: Seeding professional metrics...");
+        try {
+          await seedProfessionalData({
+            organizationId: activeOrgId,
+            industry: industry || 'SaaS',
+            frameworks: selectedFrameworks
+          });
+          console.log("Onboarding: Seeding completed");
+        } catch (e: any) {
+          console.warn("Onboarding: Seeding failed, proceeding with local fallback:", e);
+        }
+      } else {
+        console.log("Onboarding: Invited member joining existing org — skipping org update/framework init/seeding");
       }
 
       // 4. Update User Profile
@@ -194,9 +228,13 @@ export function Onboarding() {
               className="space-y-8"
             >
               <div className="space-y-2">
-                <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">Step 01 / Identity</Badge>
-                <h1 className="text-4xl font-bold text-white tracking-tight font-display">Let's build your security foundation.</h1>
-                <p className="text-slate-400">Define your organization to tailor the AI risk mapping.</p>
+                <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">Step 1 of 3 · Organization</Badge>
+                <h1 className="text-4xl font-bold text-white tracking-tight font-display">Let's set up your workspace.</h1>
+                <p className="text-slate-400">
+                  Two details, about a minute. They shape the vendor questionnaires, risk
+                  scoring and reports you'll get by default — and you can change both later in
+                  Settings.
+                </p>
               </div>
 
               <div className="space-y-6">
@@ -204,29 +242,40 @@ export function Onboarding() {
                   <label className="text-xs font-bold text-slate-500 uppercase tracking-widest pl-1">Organization Name</label>
                   <div className="relative">
                     <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-500" />
-                    <Input 
+                    <Input
                       placeholder="e.g. Acme Cybersec"
                       value={orgName}
                       onChange={(e) => setOrgName(e.target.value)}
+                      maxLength={120}
                       className="pl-12 h-14 bg-white/5 border-white/10 text-lg text-white"
                     />
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest pl-1">Industry Vertical</label>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest pl-1">Industry</label>
                   <select 
                     value={industry}
                     onChange={(e) => setIndustry(e.target.value)}
                     className="w-full h-14 px-4 rounded-xl bg-white/5 border border-white/10 text-white text-lg focus:ring-1 focus:ring-primary outline-none"
                   >
                     <option value="" disabled>Select industry...</option>
-                    <option value="FinTech">FinTech / Banking</option>
-                    <option value="HealthTech">Healthcare / Life Sciences</option>
+                    <option value="FinTech">Financial services / FinTech</option>
+                    <option value="Insurance">Insurance</option>
+                    <option value="HealthTech">Healthcare / Life sciences</option>
                     <option value="SaaS">SaaS / Software</option>
                     <option value="E-commerce">Retail / E-commerce</option>
-                    <option value="GovTech">Government / Public Sector</option>
+                    <option value="Manufacturing">Manufacturing / Industrial</option>
+                    <option value="ProfessionalServices">Professional services</option>
+                    <option value="Education">Education</option>
+                    <option value="Energy">Energy / Utilities</option>
+                    <option value="GovTech">Government / Public sector</option>
+                    <option value="Nonprofit">Non-profit</option>
+                    <option value="Other">Other</option>
                   </select>
+                  <p className="pl-1 text-xs text-slate-500">
+                    Sets your starting vendor categories and which regulations we watch for you.
+                  </p>
                 </div>
               </div>
 
@@ -248,9 +297,13 @@ export function Onboarding() {
               className="space-y-8"
             >
               <div className="space-y-2">
-                <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">Step 02 / Scope</Badge>
-                <h1 className="text-4xl font-bold text-white tracking-tight font-display">Target Compliance Goals.</h1>
-                <p className="text-slate-400">Select the frameworks you need to map against your risk register.</p>
+                <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">Step 2 of 3 · Frameworks</Badge>
+                <h1 className="text-4xl font-bold text-white tracking-tight font-display">What do you report against?</h1>
+                <p className="text-slate-400">
+                  Pick every framework you're accountable for — more than one is normal. Where
+                  two frameworks ask for the same control, your vendors answer it once instead
+                  of repeating themselves, so questionnaires stay short as your scope grows.
+                </p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -286,12 +339,12 @@ export function Onboarding() {
 
               <div className="flex gap-4">
                 <Button variant="ghost" onClick={() => setStep(1)} className="flex-1 text-slate-500">Back</Button>
-                <Button 
+                <Button
                   disabled={selectedFrameworks.length === 0}
                   onClick={() => setStep(3)}
                   className="flex-[2] h-14 bg-primary hover:bg-primary/90 text-white"
                 >
-                  Confirm Strategy <ChevronRight className="ml-2 h-5 w-5" />
+                  Review and finish <ChevronRight className="ml-2 h-5 w-5" />
                 </Button>
               </div>
             </motion.div>
@@ -308,12 +361,16 @@ export function Onboarding() {
                  <div className="w-24 h-24 rounded-full bg-emerald-500/20 border-2 border-emerald-500/50 flex items-center justify-center mb-6">
                     <Sparkles className="h-10 w-10 text-emerald-400 text-glow" />
                  </div>
-                 <h1 className="text-4xl font-bold text-white font-display">Ready to Launch.</h1>
-                 <p className="text-slate-400 mt-2 max-w-md">Guardentra AI is ready to initialize your Risk Matrix and Compliance Roadmap for <span className="text-white font-bold">{orgName}</span>.</p>
+                 <h1 className="text-4xl font-bold text-white font-display">You're all set.</h1>
+                 <p className="text-slate-400 mt-2 max-w-md">
+                   We'll set up <span className="text-white font-bold">{orgName}</span> with your
+                   frameworks, a starting risk register and your vendor directory. Add your first
+                   vendor next — that's where assessments and scoring begin.
+                 </p>
               </div>
 
               <Card className="bg-white/5 border-white/10 p-6 text-left">
-                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Onboarding Summary</h4>
+                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Your setup</h4>
                 <div className="space-y-3">
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-slate-500">Organization</span>
@@ -324,7 +381,7 @@ export function Onboarding() {
                     <span className="text-white font-bold">{industry}</span>
                   </div>
                   <div className="flex justify-between items-center text-sm">
-                    <span className="text-slate-500">Active Goals</span>
+                    <span className="text-slate-500">Frameworks</span>
                     <div className="flex gap-1 flex-wrap justify-end max-w-[200px]">
                       {selectedFrameworks.map(id => (
                         <Badge key={id} variant="outline" className="text-[9px] border-white/10">{id.toUpperCase()}</Badge>
@@ -339,10 +396,10 @@ export function Onboarding() {
                 disabled={isFinishing}
                 className="w-full h-16 text-xl bg-primary hover:bg-primary/90 text-white font-bold shadow-2xl shadow-primary/40 animate-pulse-slow"
               >
-                {isFinishing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Deploy Architecture"}
+                {isFinishing ? <Loader2 className="h-6 w-6 animate-spin" /> : 'Finish setup'}
               </Button>
 
-              {user?.email === 'atdhee.kurteshi@gmail.com' && (
+              {import.meta.env.DEV && (
                 <div className="mt-8 pt-8 border-t border-white/5">
                   <Button 
                     variant="ghost" 

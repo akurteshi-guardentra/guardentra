@@ -1,5 +1,6 @@
 import { db } from '../firebase';
 import { collection, addDoc, getDocs, query, where, orderBy, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { authHeaders } from '../lib/authHeaders';
 
 export interface RemediationTicket {
   id: string;
@@ -36,9 +37,9 @@ export class RemediationService {
     try {
       const response = await fetch('/api/ai/remediation-plan', {
         method: 'POST',
-        headers: {
+        headers: await authHeaders({
           'Content-Type': 'application/json',
-        },
+        }),
         body: JSON.stringify({
           finding,
           recommendation,

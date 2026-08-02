@@ -1,0 +1,71 @@
+# Firebase App Hosting — runtime + build configuration.
+#
+# Why App Hosting rather than Cloud Run: this repo already satisfies its contract
+# with no new tooling — `npm run build` emits the Vite client bundle plus
+# dist/server.cjs, `npm start` runs it, and server.ts binds process.env.PORT on
+# 0.0.0.0 (docs/ENVIRONMENTS.md §Server). Secrets stay in Google Secret Manager
+# instead of GitHub Actions credentials, which matters given the key-exposure
+# history in docs/SECRETS.md. The Dockerfile is kept for local container testing
+# and leaves the Cloud Run door open.
+#
+# App Hosting builds from a connected GitHub branch. Per docs/ENVIRONMENTS.md the
+# mapping is dev → sandbox, test → staging, main → production, so create one
+# backend per environment and point each at its own Firebase project. This file is
+# shared by all of them; anything environment-specific belongs in the secrets below.
+
+runConfig:
+  cpu: 1
+  memoryMiB: 512
+  # The Express server is stateless, so requests fan out safely. Note the one piece
+  # of per-process state: the in-memory rate limiter in server/middleware/rateLimit.ts
+  # counts per instance, so the effective /api/ai limit is maxInstances x the
+  # configured max. Keeping maxInstances low bounds that drift until it moves to a
+  # shared store (already flagged in that file).
+  maxInstances: 2
+  minInstances: 0
+  concurrency: 80
+
+env:
+  # APP_ENV is load-bearing, not cosmetic: server/middleware/requireFirebaseAuth.ts
+  # only *enforces* ID-token verification when APP_ENV is production or staging.
+  # Leave this unset and every /api route silently accepts unauthenticated requests.
+  - variable: APP_ENV
+    value: production
+    availability:
+      - RUNTIME
+
+  - variable: NODE_ENV
+    value: production
+    availability:
+      - BUILD
+      - RUNTIME
+
+  # Vite inlines VITE_* at build time, so this must be BUILD, not RUNTIME —
+  # setting it only at runtime produces a bundle that throws on boot
+  # ("Missing Firebase Web API key", src/firebase.ts).
+  # A Firebase Web API key is a public identifier, not a password (docs/SECRETS.md),
+  # but it is kept in Secret Manager so it never lands in git. Restrict it by HTTP
+  # referrer and API in Google Cloud regardless.
+  - variable: VITE_FIREBASE_API_KEY
+    secret: VITE_FIREBASE_API_KEY
+    availability:
+      - BUILD
+
+  # Server-only. Must never reach a client bundle — Sprint 0 moved every AI call
+  # behind /api/ai precisely so this key stays server-side.
+  - variable: GEMINI_API_KEY
+    secret: GEMINI_API_KEY
+    availability:
+      - RUNTIME
+
+  # Staging uses Stripe test mode, production uses live mode — so these resolve to
+  # different secret values per backend, not different names.
+  - variable: STRIPE_SECRET_KEY
+    secret: STRIPE_SECRET_KEY
+    availability:
+      - RUNTIME
+
+  - variable: STRIPE_WEBHOOK_SECRET
+    secret: STRIPE_WEBHOOK_SECRET
+    availability:
+      - RUNTIME

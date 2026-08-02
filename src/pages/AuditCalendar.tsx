@@ -24,7 +24,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../co
 import { Input } from '../components/ui/input';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/src/lib/utils';
-import { GoogleGenAI } from "@google/genai";
 
 interface CalendarEvent {
   id: string;
@@ -244,9 +243,11 @@ export function AuditCalendar() {
                       )}>
                         {event.type}
                       </Badge>
-                      <button onClick={(e) => deleteEvent(event.id, e)} className="text-slate-700 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Trash2 className="h-3 w-3" />
-                      </button>
+                      {profile?.role === 'admin' && (
+                        <button onClick={(e) => deleteEvent(event.id, e)} className="text-slate-700 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      )}
                     </div>
                     <h4 className="text-sm font-bold text-white mb-1">{event.title}</h4>
                     <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono">

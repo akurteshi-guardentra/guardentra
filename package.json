@@ -8,7 +8,10 @@
     "dev": "tsx server.ts",
     "lint": "tsc --noEmit",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
-    "test": "vitest run",
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand --config jest.config.js",
+    "test:vitest": "vitest run",
+    "test:storage-rules": "firebase emulators:exec --only firestore,storage --project demo-guardentra-storage-rules \"node src/tests/storage.rules.test.mjs\"",
+    "smoke:portal": "node src/tests/portal.smoke.mjs",
     "start": "node dist/server.cjs",
     "preview": "vite preview"
   },
@@ -37,6 +40,7 @@
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.1",
     "@tailwindcss/vite": "^4.3.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
@@ -46,6 +50,8 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "esbuild": "^0.28.1",
+    "firebase-tools": "^15.24.0",
+    "jest": "^30.4.2",
     "jsdom": "^29.1.1",
     "tailwindcss": "^4.3.0",
     "tsx": "^4.22.1",

@@ -19,14 +19,11 @@ describe('Risk Management (TDD)', () => {
   it('should allow a user to trigger auto-detection', async () => {
     renderWithProviders(<RiskManagement />);
     
-    // Check if page loads
     expect(screen.getByRole('heading', { name: /Risk Intelligence/i })).toBeInTheDocument();
     
-    // Find the Auto-Detect button
     const detectBtn = screen.getByText(/Auto-Detect Risks/i);
     fireEvent.click(detectBtn);
     
-    // Verify it shows Scanning...
     await waitFor(() => {
       expect(screen.getByText(/Scanning.../i)).toBeInTheDocument();
     });
@@ -35,10 +32,15 @@ describe('Risk Management (TDD)', () => {
   it('should allow a user to manually add a risk', async () => {
     renderWithProviders(<RiskManagement />);
     
-    const addBtn = screen.getByRole('button', { name: /Add Risk/i });
-    fireEvent.click(addBtn);
+    fireEvent.click(screen.getByRole('button', { name: /Add Risk/i }));
+
+    const titleField = await screen.findByPlaceholderText(/e\.g\., Unathorized access/i);
+    fireEvent.change(titleField, { target: { value: 'Vendor access risk' } });
+
+    const form = titleField.closest('form');
+    expect(form).toBeTruthy();
+    fireEvent.submit(form!);
     
-    // The current implementation of handleAddRisk in the code adds a default risk directly
     await waitFor(() => {
       expect(firestore.addDoc).toHaveBeenCalled();
     });

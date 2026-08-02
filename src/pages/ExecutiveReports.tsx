@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
-import { GoogleGenAI } from "@google/genai";
+import { authHeaders } from '../lib/authHeaders';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/src/lib/utils';
 
@@ -101,9 +101,7 @@ export function ExecutiveReports() {
         vendorCriticality: vendorsSnap.docs.map(d => d.data().criticality)
       };
 
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      
-      const prompt = `Act as an elite Chief Information Security Officer (CISO). 
+      const prompt = `Act as an elite Chief Information Security Officer (CISO).
       Generate a data-driven Security & Risk Posture Report for the Board of Directors.
       
       Organizational Context:
@@ -127,13 +125,15 @@ export function ExecutiveReports() {
         "actionItems": ["Strategic Priority 1", "Strategic Priority 2", "Strategic Priority 3"] 
       }`;
 
-      const result = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-        config: { responseMimeType: "application/json" }
+      const response = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ prompt, model: 'gemini-3-flash-preview', responseMimeType: 'application/json' }),
       });
+      if (!response.ok) throw new Error('AI generation failed');
+      const { text } = await response.json();
 
-      const reportData = JSON.parse(result.text || "{}");
+      const reportData = JSON.parse(text || "{}");
       
       await addDoc(collection(db, 'executive_reports'), {
         ...reportData,

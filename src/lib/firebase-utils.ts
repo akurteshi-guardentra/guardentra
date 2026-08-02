@@ -1,6 +1,7 @@
 import { auth, db } from '../firebase';
-import { doc, getDoc, setDoc, collection, addDoc } from 'firebase/firestore';
-import { GoogleAuthProvider, signInWithPopup, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { GoogleAuthProvider, signInWithPopup, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification, updateProfile } from 'firebase/auth';
+import { bootstrapUserProfile } from './orgBootstrap';
 
 enum OperationType {
   CREATE = 'create',
@@ -69,33 +70,16 @@ export const signInWithGoogle = async () => {
     }
 
     if (!userSnap.exists()) {
-      // Create a default organization for the new user
-      let orgRef;
+      // Joins an existing org if there's a pending invite for this email, otherwise
+      // creates a new org — atomically either way (see orgBootstrap.ts).
       try {
-        orgRef = await addDoc(collection(db, 'organizations'), {
-          name: `${user.displayName || 'User'}'s Organization`,
-          createdAt: new Date().toISOString()
-        });
-      } catch (e: any) {
-        if (e.code === 'permission-denied') {
-          handleFirestoreError(e, OperationType.CREATE, 'organizations');
-        }
-        throw e;
-      }
-
-      // Create the user profile
-      try {
-        await setDoc(userRef, {
+        await bootstrapUserProfile(user.uid, {
           email: user.email,
-          displayName: user.displayName,
-          role: 'admin',
-          organizationId: orgRef.id,
-          onboarded: false,
-          createdAt: new Date().toISOString()
+          displayName: user.displayName || 'New User',
         });
       } catch (e: any) {
         if (e.code === 'permission-denied') {
-          handleFirestoreError(e, OperationType.WRITE, 'users/' + user.uid);
+          handleFirestoreError(e, OperationType.WRITE, 'organizations+users/' + user.uid);
         }
         throw e;
       }
@@ -120,38 +104,24 @@ export const signUpWithEmail = async (email: string, password: string, name: str
     
     await updateProfile(user, { displayName: name });
 
-    // Create a default organization for the new user
-    let orgRef;
+    // Joins an existing org if there's a pending invite for this email, otherwise
+    // creates a new org — atomically either way (see orgBootstrap.ts).
     try {
-      orgRef = await addDoc(collection(db, 'organizations'), {
-        name: `${name || 'User'}'s Organization`,
-        createdAt: new Date().toISOString()
-      });
+      await bootstrapUserProfile(user.uid, { email: user.email, displayName: name });
     } catch (e: any) {
       if (e.code === 'permission-denied') {
-        handleFirestoreError(e, OperationType.CREATE, 'organizations');
+        handleFirestoreError(e, OperationType.WRITE, 'organizations+users/' + user.uid);
       }
       throw e;
     }
 
-    // Create the user profile
-    const userRef = doc(db, 'users', user.uid);
+    // Best-effort — a verification-email failure shouldn't block account creation.
     try {
-      await setDoc(userRef, {
-        email: user.email,
-        displayName: name,
-        role: 'admin',
-        organizationId: orgRef.id,
-        onboarded: false,
-        createdAt: new Date().toISOString()
-      });
-    } catch (e: any) {
-      if (e.code === 'permission-denied') {
-        handleFirestoreError(e, OperationType.WRITE, 'users/' + user.uid);
-      }
-      throw e;
+      await sendEmailVerification(user);
+    } catch (e) {
+      console.warn('Could not send verification email', e);
     }
-    
+
     return user;
   } catch (error: any) {
     console.error("Error signing up with email", error);
@@ -174,5 +144,24 @@ export const logOut = async () => {
     await signOut(auth);
   } catch (error) {
     console.error("Error signing out", error);
+  }
+};
+
+export const resendVerificationEmail = async () => {
+  if (!auth.currentUser) return;
+  try {
+    await sendEmailVerification(auth.currentUser);
+  } catch (error) {
+    console.error("Error resending verification email", error);
+    throw error;
+  }
+};
+
+export const resetPassword = async (email: string) => {
+  try {
+    await sendPasswordResetEmail(auth, email);
+  } catch (error) {
+    console.error("Error sending password reset email", error);
+    throw error;
   }
 };

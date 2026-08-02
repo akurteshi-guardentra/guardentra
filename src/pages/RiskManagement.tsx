@@ -10,7 +10,7 @@ import { db } from '../firebase';
 import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, getDocs } from 'firebase/firestore';
 import { useAuth } from '../lib/AuthContext';
 import * as d3 from 'd3';
-import { GoogleGenAI, Type } from "@google/genai";
+import { authHeaders } from '../lib/authHeaders';
 import { cn } from '@/src/lib/utils';
 
 interface Risk {
@@ -213,24 +213,25 @@ export function RiskManagement() {
         complianceFrameworks: complianceSnap.docs.map(d => d.data().name)
       };
 
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const prompt = `Act as a senior GRC risk analyst. 
+      const prompt = `Act as a senior GRC risk analyst.
       Based on this organizational context, predict 4 high-probability security or operational risks.
       Context:
       - Active Incidents: ${context.incidentCount}
       - Vendor Categories: ${context.vendorCategories.join(', ')}
       - Compliance Focus: ${context.complianceFrameworks.join(', ')}
-      
+
       Return a JSON array of risks:
       [{ "title": string, "category": string, "severity": "Critical" | "High" | "Medium" | "Low", "impact": 1-5, "likelihood": 1-5, "description": string }]`;
 
-      const result = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-        config: { responseMimeType: "application/json" }
+      const response = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ prompt, model: 'gemini-3-flash-preview', responseMimeType: 'application/json' }),
       });
+      if (!response.ok) throw new Error('AI generation failed');
+      const { text } = await response.json();
 
-      const parsed = JSON.parse(result.text || "[]");
+      const parsed = JSON.parse(text || "[]");
       setDetectedRisks(parsed);
       setSelectedRiskIndices([]);
       setShowDetectModal(true);
@@ -303,24 +304,24 @@ export function RiskManagement() {
   const handleGenerateMitigation = async (risk: Risk) => {
     setIsGeneratingMitigation(risk.id);
     try {
-      // Using direct AI call for mitigation
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      
       const prompt = `Generate a detailed mitigation plan for the following risk:
       Title: ${risk.title}
       Category: ${risk.category}
       Severity: ${risk.severity}
       Impact: ${risk.impact}/5
       Likelihood: ${risk.likelihood}/5
-      
+
       Provide a step-by-step resolution strategy.`;
-      
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
+
+      const mitigationResponse = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ prompt, model: 'gemini-3-flash-preview' }),
       });
-      
-      const mitigation = response.text || "Failed to generate mitigation plan.";
+      if (!mitigationResponse.ok) throw new Error('AI generation failed');
+      const { text: mitigationText } = await mitigationResponse.json();
+
+      const mitigation = mitigationText || "Failed to generate mitigation plan.";
       
       await updateDoc(doc(db, 'risks', risk.id), {
         mitigation: mitigation

@@ -21,7 +21,7 @@ import {
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
-import { GoogleGenAI } from "@google/genai";
+import { authHeaders } from '../lib/authHeaders';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import { cn } from '@/src/lib/utils';
@@ -78,8 +78,6 @@ export function PolicyDraftsman() {
   const generatePolicy = async () => {
     setIsGenerating(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      
       const context = {
         framework: policyType,
         risks: includeRisks ? activeRisks.map(r => `${r.title} (${r.severity})`) : [],
@@ -103,13 +101,15 @@ export function PolicyDraftsman() {
         "rationale": "Explain how this policy specifically mitigates the provided risks and audit gaps."
       }`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3.1-pro-preview",
-        contents: prompt,
-        config: { responseMimeType: "application/json" }
+      const response = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ prompt, model: 'gemini-3.1-pro-preview', responseMimeType: 'application/json' }),
       });
+      if (!response.ok) throw new Error('AI generation failed');
+      const { text } = await response.json();
 
-      const data = JSON.parse(response.text || "{}");
+      const data = JSON.parse(text || "{}");
       setGeneratedPolicy(data.markdownContent);
       setAnalysis(data.rationale);
     } catch (error) {
@@ -222,6 +222,7 @@ export function PolicyDraftsman() {
                   placeholder="Include specific organizational constraints or focus areas..."
                   value={customBrief}
                   onChange={(e) => setCustomBrief(e.target.value)}
+                  maxLength={4000}
                   className="w-full min-h-[120px] p-4 rounded-xl bg-black/40 border border-white/10 text-white text-sm focus:ring-1 focus:ring-primary resize-none placeholder:text-slate-600"
                 />
               </div>
