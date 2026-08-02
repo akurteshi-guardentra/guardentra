@@ -78,7 +78,19 @@ service cloud.firestore {
     match /org_invites/{inviteId} {
       allow read: if isAuthenticated() &&
         (resource.data.email == request.auth.token.email || isDocOrgMember());
-      allow create: if isCreatingForOwnOrg() && isAdmin() && request.resource.data.email is string;
+      // Seat cap (docs/ARCHITECTURE_FOUNDATION.md §4: Starter 3, Growth 10). Enforced at
+      // invite time because that is the only chokepoint an admin controls — the profile
+      // write that actually consumes the seat happens later, during the invitee's own
+      // signup, when there is no admin in the request to reject.
+      //
+      // seatCount is maintained by src/lib/orgBootstrap.ts: set to 1 when an org is
+      // created, incremented in the same batch as the joining member's profile. Same
+      // soft-metering posture as vendorCount — a client writing through the SDK directly
+      // could still skip the increment (KNOWN_ISSUES.md #12 covers the equivalent gap for
+      // vendors); this stops the ordinary path, not a determined bypass.
+      allow create: if isCreatingForOwnOrg() && isAdmin() && request.resource.data.email is string &&
+        orgField(request.resource.data.organizationId, 'seatCount', 1) <
+        orgField(request.resource.data.organizationId, 'seatCap', 3);
       allow update: if isAuthenticated() && (
         (resource.data.email == request.auth.token.email &&
          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptedByUid', 'acceptedAt'])) ||
