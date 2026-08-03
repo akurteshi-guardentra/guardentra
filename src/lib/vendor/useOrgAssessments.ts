@@ -11,12 +11,12 @@ import type { FrameworkId } from './types';
 
 export type AssessmentDataMode = 'firestore' | 'local';
 
-const RETRY_INTERVAL_MS = 30000;
+export const ASSESSMENT_RETRY_INTERVAL_MS = 30000;
 
 /** Write any local-only assessments (created while Firestore was unreachable) for real,
  * then drop them from the local store — otherwise they'd stay invisible to teammates
  * forever even after Firestore reconnects. */
-async function promoteLocalAssessments(orgId: string): Promise<void> {
+export async function promoteLocalAssessments(orgId: string): Promise<void> {
   const localOnly = listLocalAssessments(orgId).filter((a) => a.id.startsWith('local_asm_'));
   for (const assessment of localOnly) {
     try {
@@ -159,7 +159,7 @@ export function useOrgAssessments(orgId?: string | null) {
   // without requiring a page reload.
   useEffect(() => {
     if (mode !== 'local') return;
-    const interval = window.setInterval(retryFirestore, RETRY_INTERVAL_MS);
+    const interval = window.setInterval(retryFirestore, ASSESSMENT_RETRY_INTERVAL_MS);
     return () => window.clearInterval(interval);
   }, [mode, retryFirestore]);
 

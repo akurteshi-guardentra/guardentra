@@ -2,7 +2,7 @@
 
 Standalone running list of everything found-but-not-fixed while working through `docs/PRODUCT_ROADMAP_2026.md`'s sprints. Each item was discovered as a side effect of other work, deliberately not fixed at the time (out of scope, needs its own testing pass, or would have been scope creep), and should not be lost. Update this file whenever a new one is found or an existing one gets fixed — move fixed items to the "Resolved" section with the commit that fixed them rather than deleting the row.
 
-*Last updated: 2026-08-02.*
+*Last updated: 2026-08-03.*
 
 ---
 
@@ -10,7 +10,6 @@ Standalone running list of everything found-but-not-fixed while working through 
 
 | # | Issue | Where | Why it matters | Why not fixed yet |
 |---|---|---|---|---|
-| 5 | Sprint 3a's retry/promotion logic (`useOrgVendors.ts`, `useOrgAssessments.ts`) has never been executed — only reasoned through and reviewed line-by-line | `src/lib/vendor/useOrgVendors.ts`, `useOrgAssessments.ts` | Involves async Firestore listeners + timers; the riskiest code written this session | No Node/npm/Firestore emulator in this sandbox. **Needs a real pass**: via the Firestore emulator (or a dev project), go offline, create a vendor + assessment, confirm local mode, go back online, wait up to 30s, confirm they land as real Firestore docs, get removed from `localStorage`, no duplicates appear, and the retry interval actually stops once reconnected |
 | 6 | Firebase ID token handling deserves a deeper look now that real non-admin members exist | `src/lib/authHeaders.ts`, `src/lib/AuthContext.tsx` | Role is read from a Firestore doc per-check (not a token custom claim) — confirm role changes take effect immediately everywhere, consider custom claims once org sizes grow, confirm no stale-token edge case when a user is removed from an org | Not urgent — quick audit already done (2026-07-25), current single-lookup model is simple and correct for today's scale; this is a "revisit later" item, not a bug |
 
 | 12 | Cap enforcement is soft for **both** vendors and seats: `organizations.vendorCount` and `organizations.seatCount` are maintained by client-side writes, and `firestore.rules` checks those counters | `firestore.rules`, `src/pages/VendorsDirectory.tsx`, `src/lib/orgBootstrap.ts` | A client using the Firestore SDK/REST directly, rather than the app UI, could create vendor docs or profiles without incrementing the counter, keeping it artificially low and bypassing the cap indefinitely | Accepted risk, matching the soft-metering tolerance `ARCHITECTURE_FOUNDATION.md` §4 documents for AI usage. Hard enforcement needs the same fix for both: route the writes through a server endpoint that counts authoritatively via the Admin SDK, since security rules cannot aggregate a collection. That is a genuine architectural change and there are no paying customers to violate a cap yet. **Note the seat cap now shares this posture** — #13 made it enforced where it previously was not enforced at all, which is a real improvement, but it is the same soft model |
@@ -19,6 +18,7 @@ Standalone running list of everything found-but-not-fixed while working through 
 
 | # | Issue | Fixed by |
 |---|---|---|
+| 5 | ✅ Sprint 3a's retry/promotion logic (`useOrgVendors.ts`, `useOrgAssessments.ts`) had never been executed end-to-end | Automated in `src/tests/useOrgPromoteRetry.test.tsx` (7/7): `promoteLocalVendors` / `promoteLocalAssessments` write Firestore docs and drop `local_*` / `local_asm_*` rows; failed `addDoc` leaves the row for the next attempt; hooks fall back to local on listen failure, re-subscribe on the 30s retry interval, promote on reconnect, and leave `mode === 'firestore'`. Promotion helpers exported for that coverage. Full vitest suite **63/63**. Live browser offline→online pass still useful as a smoke check against a real project, but the previously unexecuted code paths are now pinned. |
 | 3 | ✅ Vendor answers never reached the org-side review screen — `Assessments.tsx` read `q.answer` off `assessment.questions` items, but answers actually lived in a separate `answers` map keyed by question id | `141de52` — added `answers`/`comments` to `StoredAssessment` (`localAssessmentStore.ts`), normalized them through in `useOrgAssessments.ts`, and added `formatAssessmentAnswer()` + fixed the prompt builder and manual-review render in `Assessments.tsx` |
 | 4 | ✅ Dead-code branch in `AuthContext.tsx`'s auto-init error handling — the `else if (initErr.code === 'permission-denied')` branch was unreachable | `141de52` — `handleFirestoreError` is now actually called for permission-denied errors (wrapped in try/catch since it always throws after logging), falling through to the local-profile fallback instead of silently skipping it |
 | 7 | ✅ `vitest.setup.ts`'s `firebase/firestore` mock had no `writeBatch` export | `141de52` — added a `writeBatch` mock (`set`/`update`/`delete`/`commit`) so future tests can exercise the org-bootstrap code path |
