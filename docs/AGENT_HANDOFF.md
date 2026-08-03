@@ -4,23 +4,23 @@ Living status for parallel Claude + Cursor sessions. Update and **push** at the 
 
 ---
 
-- **Last-Updated:** 2026-08-03T12:04:00Z
+- **Last-Updated:** 2026-08-03T12:15:00Z
 - **Agent:** Cursor
-- **Branch / SHA:** `dev` @ `29fba0f` (dig worktree); `main` @ `46464df` (`origin/main`)
-- **Doing now:** Armed Claude-parallel watcher (this file + 5m Cursor loop).
+- **Branch / SHA:** `dev` (dig worktree, uncommitted KI#6 close + sync); tip before this chunk `903032d` / `origin/dev` @ `adf4b49`; `origin/main` @ `6c4bd99`
+- **Doing now:** Took over after Claude token limit — verified Claude's invite fix on Windows; closing KI#6 as audited.
 - **Done this session (Cursor / Windows):**
-  - Windows closeout: JDK 21, emulator JARs, firestore-rules 12/12, storage-rules 14/14
-  - `cross-env` for `npm test` shipped to `main`
-  - KI#5 promote/retry unit coverage; complementary hook-level tests also landed from the parallel session
-  - Added `docs/AGENT_HANDOFF.md` + watcher loop
-  - Open known-issues remaining: **#6**, **#12**
+  - Synced `origin/main` into dig (`903032d`)
+  - Verified on Windows: lint clean, vitest **72/72**, firestore-rules **19/19** (includes Claude's #21/#22 cases)
+  - KI#6 audited and moved to Resolved (Firestore-live role model correct; custom claims deferred)
+- **Done by Claude (landed before takeover):**
+  - KI#5 complementary hook-level tests
+  - Task #27: invite join batch fix (KI#21) + admin-only org settings (KI#22) — on `main` @ `6c4bd99`
 - **Blocked / next:**
-  - Fill `.env.local` on each machine (`GEMINI_API_KEY`, `VITE_FIREBASE_API_KEY`) — scaffold exists, keys empty on Windows
-  - Next product work when ready: KI#6 (token/role audit) or KI#12 (hard caps) — both parked by design
-  - Say **take over** in Cursor when Claude tokens die; say **stop the watcher** to kill the 5m loop
+  - Fill `.env.local` (`GEMINI_API_KEY`, `VITE_FIREBASE_API_KEY`) — still empty on Windows
+  - Only open known-issue left: **#12** (hard caps via Admin SDK) — parked architecture change
+  - Push this dig tip (sync + KI#6 docs) then optionally merge to `main`
 - **Do not touch:**
   - `.env.local` / secrets (never commit)
-  - Areas the other agent lists here while actively editing them
 
 ## Protocol
 
