@@ -4,21 +4,21 @@ Living status for parallel Claude + Cursor sessions. Update and **push** at the 
 
 ---
 
-- **Last-Updated:** 2026-08-03T12:15:00Z
+- **Last-Updated:** 2026-08-03T12:18:00Z
 - **Agent:** Cursor
-- **Branch / SHA:** `dev` (dig worktree, uncommitted KI#6 close + sync); tip before this chunk `903032d` / `origin/dev` @ `adf4b49`; `origin/main` @ `6c4bd99`
-- **Doing now:** Took over after Claude token limit — verified Claude's invite fix on Windows; closing KI#6 as audited.
+- **Branch / SHA:** `dev` / `origin/dev` @ `04e2c64`; `origin/main` @ `6c4bd99` (dig ahead — merge to main pending)
+- **Doing now:** Idle after takeover; KI#6 closed.
 - **Done this session (Cursor / Windows):**
-  - Synced `origin/main` into dig (`903032d`)
-  - Verified on Windows: lint clean, vitest **72/72**, firestore-rules **19/19** (includes Claude's #21/#22 cases)
-  - KI#6 audited and moved to Resolved (Firestore-live role model correct; custom claims deferred)
-- **Done by Claude (landed before takeover):**
-  - KI#5 complementary hook-level tests
-  - Task #27: invite join batch fix (KI#21) + admin-only org settings (KI#22) — on `main` @ `6c4bd99`
+  - Took over after Claude tokens died (handoff was stale)
+  - Synced main → dig; Windows verify: lint, vitest **72/72**, firestore-rules **19/19**
+  - Closed KI#6: audit + harden (`sawCloudProfile` no re-bootstrap; freeze `role`/`organizationId` on user update)
+- **Done by Claude (before takeover):**
+  - KI#5 hook-level tests; task #27 → KI#21/#22 on `main` @ `6c4bd99`
 - **Blocked / next:**
-  - Fill `.env.local` (`GEMINI_API_KEY`, `VITE_FIREBASE_API_KEY`) — still empty on Windows
-  - Only open known-issue left: **#12** (hard caps via Admin SDK) — parked architecture change
-  - Push this dig tip (sync + KI#6 docs) then optionally merge to `main`
+  - Fill `.env.local` (`GEMINI_API_KEY`, `VITE_FIREBASE_API_KEY`)
+  - Merge `dev` → `main` for KI#6 (ask Cursor)
+  - Only open known-issue: **#12** (hard caps) — parked
+  - Deploy updated `firestore.rules` when ready (KI#6 immutability + prior #21/#22 rules)
 - **Do not touch:**
   - `.env.local` / secrets (never commit)
 
