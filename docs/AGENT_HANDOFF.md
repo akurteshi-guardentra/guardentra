@@ -6,7 +6,7 @@ Living status for parallel Claude + Cursor sessions. Update and **push** at the 
 
 - **Last-Updated:** 2026-08-03T14:00:00Z
 - **Agent:** Cursor
-- **Branch / SHA:** `dev` @ `84c6467`; `origin/main` was `d25203d` (will FF with this push)
+- **Branch / SHA:** `dev` @ `0ce7534` (feature `84c6467`); left on `dev` — not merged to `main`
 - **Doing now:** Idle after surfacing `support@guardentra.com` in the web app.
 - **Done this session:**
   - Canonical support email constant + UI surfaces (Landing footer, Settings, Pricing Gov CTA, UserGuide)
