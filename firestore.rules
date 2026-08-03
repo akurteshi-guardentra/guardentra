@@ -135,7 +135,7 @@ service cloud.firestore {
       // a malicious SDK caller). Tightening that needs invite-bound create and/or
       // Admin-SDK provisioning — see KNOWN_ISSUES #6 residual. Role and orgId are
       // immutable after create so an admin cannot hop into another tenant by updating
-      // their own profile (KI#6 audit, 2026-08-03).
+      // their own profile (KI#6 audit, 2026-08-03; emulator cases in firestore.rules.test.mjs).
       allow create: if isAuthenticated() && request.auth.uid == userId;
       allow update: if isAuthenticated() && request.auth.uid == userId
         && request.resource.data.role == resource.data.role

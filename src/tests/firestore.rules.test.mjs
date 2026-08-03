@@ -176,6 +176,24 @@ async function main() {
     },
   );
 
+  console.log('\nUser profile role/orgId immutability (KI#6 audit):');
+
+  await check('admin CAN update onboarded without touching role/orgId', () =>
+    assertSucceeds(updateDoc(doc(db, 'users/member-1'), { onboarded: true })),
+  );
+
+  await check('admin CANNOT hop into another org by updating organizationId', () =>
+    assertFails(updateDoc(doc(db, 'users/member-1'), { organizationId: 'victim-org' })),
+  );
+
+  await check('member CANNOT self-elevate role to admin', () =>
+    assertFails(updateDoc(doc(memberDb, 'users/member-2'), { role: 'admin' })),
+  );
+
+  await check('admin CANNOT demote their own role via client update either', () =>
+    assertFails(updateDoc(doc(db, 'users/member-1'), { role: 'member' })),
+  );
+
   console.log('\nOrg scoping still holds:');
 
   await check('cannot write a document into another org', () =>
