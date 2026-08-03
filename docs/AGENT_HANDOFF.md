@@ -4,24 +4,27 @@ Living status for parallel Claude + Cursor sessions. Update and **push** at the 
 
 ---
 
-- **Last-Updated:** 2026-08-03T13:38:16Z
+- **Last-Updated:** 2026-08-03T14:00:00Z
 - **Agent:** Cursor
-- **Branch / SHA:** `dev` @ `e5d42c9` (+ local docs close for KI#23); `origin/main` was `e5d42c9`
-- **Doing now:** Idle after rules deploy confirmation.
+- **Branch / SHA:** `dev` @ (support email — SHA filled after commit)
+- **Doing now:** Idle after surfacing `support@guardentra.com` in the web app.
 - **Done this session:**
-  - KI#6 closed; KI#23 **deployed** to `guardentra-7f582` (Windows: Deploy complete)
-  - KI#12 parked
+  - Canonical support email constant + UI surfaces (Landing footer, Settings, Pricing Gov CTA, UserGuide)
+  - Documented Firebase Console support-email path (manual)
 - **Blocked / next:**
-  - Fill `.env.local`: `GEMINI_API_KEY`, `VITE_FIREBASE_API_KEY` (still empty on Windows)
-  - Optional live smoke: invite join + member cannot edit org name
+  - **Manual:** set project Support email in Firebase Console (see Follow-ups)
+  - Optional: copy `.env.local` keys into `guardentra-dev` worktree if needed
   - **KI#12** still parked (hard caps)
 - **Do not touch:**
   - `.env.local` / secrets (never commit)
 
 ## Follow-ups (remaining)
 
-1. **`.env.local` keys** — Firebase Console → `guardentra-7f582` → Project settings → Web API key → `VITE_FIREBASE_API_KEY`; Gemini key → `GEMINI_API_KEY`.
-2. Optional smoke after keys: `npm run dev` + invite/member org-settings check.
+1. **Firebase project Support email (Console only)** — for each Firebase project you use (`guardentra-7f582` demo, plus `guardentra-dev` / staging / prod when live):
+   - Firebase Console → ⚙️ **Project settings** → **General** → **Public settings** → **Support email** → set to `support@guardentra.com` (must be a Google account that can access the project, or an authorized address shown in the picker).
+   - Optional (OAuth branding): Google Cloud Console → **APIs & Services** → **OAuth consent screen** → **User support email** → same address.
+   - This cannot be set from app code; the agent did not change Console.
+2. Optional smoke: open Landing footer / Settings → Product support / Pricing Gov “Contact Sales” and confirm `mailto:support@guardentra.com`.
 
 ## Protocol
 

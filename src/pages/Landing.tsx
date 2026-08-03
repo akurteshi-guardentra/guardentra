@@ -4,6 +4,7 @@ import { Shield, Zap, Lock, Globe, Server, BarChart3, ArrowRight, CheckCircle2, 
 import { Button } from '../components/ui/button';
 import { Link, Navigate } from 'react-router-dom';
 import { useAuth } from '../lib/AuthContext';
+import { SUPPORT_EMAIL, SUPPORT_MAILTO } from '../lib/brand';
 
 export function Landing() {
   const { user, profile, loading } = useAuth();
@@ -253,8 +254,17 @@ export function Landing() {
 
       {/* Footer */}
       <footer className="border-t border-white/5 py-12">
-        <div className="container mx-auto px-6 text-center text-slate-600 text-sm">
-           © 2026 Guardentra Assurance Technologies. All Rights Reserved.
+        <div className="container mx-auto px-6 text-center text-slate-600 text-sm space-y-2">
+           <p>© 2026 Guardentra Assurance Technologies. All Rights Reserved.</p>
+           <p>
+             Support:{' '}
+             <a
+               href={SUPPORT_MAILTO}
+               className="text-slate-500 underline-offset-2 hover:text-slate-400 hover:underline"
+             >
+               {SUPPORT_EMAIL}
+             </a>
+           </p>
         </div>
       </footer>
     </div>

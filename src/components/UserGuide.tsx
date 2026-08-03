@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from './ui/button';
+import { SUPPORT_EMAIL, SUPPORT_MAILTO } from '../lib/brand';
 
 interface GuideStep {
   icon: any;
@@ -179,7 +180,15 @@ export function UserGuide({ isOpen, onClose }: { isOpen: boolean, onClose: () =>
                   </div>
                   <div>
                     <h5 className="font-bold text-white italic">"Welcome to the Future of Governance"</h5>
-                    <p className="text-sm text-slate-400">Start by creating your first Risk or Incident to see the AI Command Center in action.</p>
+                    <p className="text-sm text-slate-400">
+                      Start by creating your first Risk or Incident to see the AI Command Center in action. Need help?{' '}
+                      <a
+                        href={SUPPORT_MAILTO}
+                        className="text-primary underline-offset-2 hover:underline"
+                      >
+                        {SUPPORT_EMAIL}
+                      </a>
+                    </p>
                   </div>
                 </div>
               </div>

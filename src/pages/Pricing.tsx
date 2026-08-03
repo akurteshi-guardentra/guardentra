@@ -6,6 +6,7 @@ import { Button } from '@/src/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/src/components/ui/card';
 import { useAuth } from '../lib/AuthContext';
 import { authHeaders } from '../lib/authHeaders';
+import { SUPPORT_MAILTO } from '../lib/brand';
 
 // Tier sketch per docs/ARCHITECTURE_FOUNDATION.md §4 — Vendor TPRM spine framing,
 // not a generic GRC suite. List prices are Guardentra starter proposals.
@@ -75,7 +76,7 @@ export function Pricing() {
 
   const handleSubscribe = async (priceId: string) => {
     if (priceId === 'contact_sales') {
-      window.location.href = 'mailto:sales@nexusgrc.com';
+      window.location.href = SUPPORT_MAILTO;
       return;
     }
     if (!priceId) {

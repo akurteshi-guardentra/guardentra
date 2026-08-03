@@ -28,6 +28,7 @@ import {
   type OrgInviteRole,
   type OrgInviteRow,
 } from '../lib/orgInvites';
+import { SUPPORT_EMAIL, SUPPORT_MAILTO } from '../lib/brand';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -282,7 +283,37 @@ export function Settings() {
                 Data currently homed in: EU-West-2 (London)
               </div>
               <p className="text-xs text-slate-500 mt-4 leading-relaxed">
-                As part of your GRC commitment, data storage locations are immutable after registration. To migrate regions, please contact Enterprise Support.
+                As part of your GRC commitment, data storage locations are immutable after registration. To migrate
+                regions, please contact{' '}
+                <a
+                  href={SUPPORT_MAILTO}
+                  className="text-slate-400 underline-offset-2 hover:text-slate-300 hover:underline"
+                >
+                  {SUPPORT_EMAIL}
+                </a>
+                .
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-slate-900/50 border-white/10 backdrop-blur-xl">
+            <CardHeader className="border-b border-white/5">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Mail className="h-5 w-5 text-primary" />
+                Product support
+              </CardTitle>
+              <CardDescription>Questions about Guardentra, billing, or your workspace.</CardDescription>
+            </CardHeader>
+            <CardContent className="p-6">
+              <p className="text-sm text-slate-400">
+                Email us at{' '}
+                <a
+                  href={SUPPORT_MAILTO}
+                  className="font-medium text-primary underline-offset-2 hover:underline"
+                >
+                  {SUPPORT_EMAIL}
+                </a>
+                .
               </p>
             </CardContent>
           </Card>
