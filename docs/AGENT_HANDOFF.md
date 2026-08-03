@@ -4,14 +4,15 @@ Living status for parallel Claude + Cursor sessions. Update and **push** at the 
 
 ---
 
-- **Last-Updated:** 2026-08-03T13:57:36Z
+- **Last-Updated:** 2026-08-03T12:04:00Z
 - **Agent:** Cursor
-- **Branch / SHA:** `dev` @ `b9564dc` (local dig worktree); `main` @ `46464df` (`origin/main`)
+- **Branch / SHA:** `dev` @ `29fba0f` (dig worktree); `main` @ `46464df` (`origin/main`)
 - **Doing now:** Armed Claude-parallel watcher (this file + 5m Cursor loop).
 - **Done this session (Cursor / Windows):**
   - Windows closeout: JDK 21, emulator JARs, firestore-rules 12/12, storage-rules 14/14
   - `cross-env` for `npm test` shipped to `main`
-  - KI#5 promote/retry unit coverage (`useOrgPromoteRetry.test.tsx`); complementary hook-level tests also on `dev`/`main` from the parallel session
+  - KI#5 promote/retry unit coverage; complementary hook-level tests also landed from the parallel session
+  - Added `docs/AGENT_HANDOFF.md` + watcher loop
   - Open known-issues remaining: **#6**, **#12**
 - **Blocked / next:**
   - Fill `.env.local` on each machine (`GEMINI_API_KEY`, `VITE_FIREBASE_API_KEY`) — scaffold exists, keys empty on Windows
