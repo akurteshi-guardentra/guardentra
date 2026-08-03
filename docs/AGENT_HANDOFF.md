@@ -4,26 +4,35 @@ Living status for parallel Claude + Cursor sessions. Update and **push** at the 
 
 ---
 
-- **Last-Updated:** 2026-08-03T12:18:00Z
+- **Last-Updated:** 2026-08-03T13:10:00Z
 - **Agent:** Cursor
-- **Branch / SHA:** `dev` / `origin/dev` @ `04e2c64`; `origin/main` @ `6c4bd99` (dig ahead — merge to main pending)
-- **Doing now:** Idle after takeover; KI#6 closed.
-- **Done this session (Cursor / Windows):**
-  - Took over after Claude tokens died (handoff was stale)
-  - Synced main → dig; Windows verify: lint, vitest **72/72**, firestore-rules **19/19**
-  - Closed KI#6: audit + harden (`sawCloudProfile` no re-bootstrap; freeze `role`/`organizationId` on user update)
-- **Done by Claude (before takeover):**
-  - KI#5 hook-level tests; task #27 → KI#21/#22 on `main` @ `6c4bd99`
+- **Branch / SHA:** `dev` worktree dirty → commit below; tip was `f4fee40` on `origin/*`
+- **Doing now:** Housekeeping for deploy-rules + env plan; Windows has **no** `firebase login`.
+- **Done this session:**
+  - KI#6 closed + hardened; merged to `main` @ `f4fee40`
+  - Windows verify earlier: lint, vitest 72/72, firestore-rules 19/19
+  - Claude watcher stopped (tokens out; takeover complete)
+  - **KI#12 parked** — hard vendor/seat caps via Admin SDK; revisit when paying customers or abuse risk appears
 - **Blocked / next:**
-  - Fill `.env.local` (`GEMINI_API_KEY`, `VITE_FIREBASE_API_KEY`)
-  - Merge `dev` → `main` for KI#6 (ask Cursor)
-  - Only open known-issue: **#12** (hard caps) — parked
-  - Deploy updated `firestore.rules` when ready (KI#6 immutability + prior #21/#22 rules)
+  - See **Follow-ups** below (needs you on this machine)
 - **Do not touch:**
   - `.env.local` / secrets (never commit)
+
+## Follow-ups (user / next session)
+
+1. **Firebase CLI on Windows** — run `npx firebase login` (browser), then:
+   ```bash
+   npx firebase deploy --only firestore:rules --project guardentra-7f582
+   ```
+   Ships KI#6 role/orgId freeze + KI#21/#22 invite/org-settings rules that are in git but **not live** yet.
+2. **`.env.local` keys** (both worktrees; gitignored):
+   - `VITE_FIREBASE_API_KEY` — Firebase Console → `guardentra-7f582` → Project settings → Your apps (Web) → API key
+   - `GEMINI_API_KEY` — same project’s Gemini / AI key used for KI#20 live verify
+3. **After deploy** — optional smoke: create/join invite path + confirm member cannot edit org name in the live project.
+4. **KI#12** — still parked (hard caps). No work until product priority changes.
 
 ## Protocol
 
 1. End of chunk → rewrite the fields above → commit on `dev` → `git push origin HEAD`.
-2. Other agent → `git fetch` → read this file → continue **Blocked / next**.
-3. Cursor watcher (5m): fetch both worktrees, report SHAs / dirty state; if this file is missing or `Last-Updated` is older than **15 minutes**, flag *Claude may be stalled — ready to take over*.
+2. Other agent → `git fetch` → read this file → continue **Blocked / next** / **Follow-ups**.
+3. Cursor watcher (5m): optional; currently stopped.
