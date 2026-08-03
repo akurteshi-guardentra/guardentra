@@ -1,4 +1,14 @@
-import { collection, doc, getDocs, increment, limit, query, where, writeBatch } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  getDocs,
+  increment,
+  limit,
+  query,
+  updateDoc,
+  where,
+  writeBatch,
+} from 'firebase/firestore';
 import { db } from '../firebase';
 
 /** Starter-tier seat allowance (docs/ARCHITECTURE_FOUNDATION.md §4). Growth raises it to 10. */
@@ -60,12 +70,8 @@ export async function bootstrapUserProfile(uid: string, fields: NewProfileFields
       acceptedByUid: uid,
       acceptedAt: new Date().toISOString(),
     });
-    // A seat is consumed the moment someone actually joins, not when invited — an
-    // invite that is never accepted should not hold a seat forever. Kept in the same
-    // batch as the profile write so the count cannot drift from reality.
-    batch.update(doc(db, 'organizations', pendingInvite.organizationId), {
-      seatCount: increment(1),
-    });
+    // NOTE: the seatCount increment deliberately does NOT live in this batch — see
+    // below. Putting it here broke joining entirely.
   } else {
     const orgRef = doc(collection(db, 'organizations'));
     batch.set(orgRef, {
@@ -87,4 +93,29 @@ export async function bootstrapUserProfile(uid: string, fields: NewProfileFields
   }
 
   await batch.commit();
+
+  // Seat accounting happens AFTER the batch, not inside it, and its failure must never
+  // block the join.
+  //
+  // Security rules get no read-your-writes consistency within a writeBatch: a get() in a
+  // rule cannot see a sibling write from the same commit. The organizations update rule
+  // calls isOrgMember(orgId), which get()s users/{uid} — a document this very batch is
+  // creating. So bundling the increment made the rule evaluate against a non-existent
+  // profile, and the ENTIRE batch was rejected: the invited user could not create their
+  // profile at all. Verified against the emulator, which is the only way this surfaces.
+  //
+  // Once the profile is committed the same update passes cleanly. Splitting it costs
+  // atomicity, but the failure mode is now benign and in the safe direction: an
+  // undercounted seatCount lets an org invite one extra person, whereas the previous
+  // arrangement locked every invitee out entirely. That tolerance is consistent with the
+  // soft-metering posture already documented for both counters in KNOWN_ISSUES.md #12.
+  if (pendingInvite) {
+    try {
+      await updateDoc(doc(db, 'organizations', pendingInvite.organizationId), {
+        seatCount: increment(1),
+      });
+    } catch (err) {
+      console.warn('orgBootstrap: seat count increment failed; user joined regardless', err);
+    }
+  }
 }

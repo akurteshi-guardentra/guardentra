@@ -137,11 +137,31 @@ service cloud.firestore {
                     (request.resource.data.organizationId == resource.data.organizationId || isAdmin());
     }
 
+    // Only seatCount (orgBootstrap.ts, incremented in the same batch as a joining
+    // member's own profile) and vendorCount (VendorsDirectory.tsx's cap-check
+    // transaction) are legitimately written by a non-admin member. Everything else —
+    // name, industry, onboarded, setupAt — is a settings field only Onboarding.tsx's
+    // isOrgCreator branch writes, and that branch already only runs for admins.
+    function onlyMemberWritableOrgFieldsChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['seatCount', 'vendorCount']);
+    }
+
     // Organizations Collection
     match /organizations/{orgId} {
       allow read: if isAuthenticated() && isOrgMember(orgId);
       allow create: if isAuthenticated();
-      allow update: if isAuthenticated() && isOrgMember(orgId);
+      // Deeper token/role review (task #27) found this allowed ANY member to write
+      // ANY field, including name/industry — so Onboarding.tsx's isOrgCreator check
+      // (KI#8: stop an invited member from overwriting the shared org's settings) was
+      // enforced only client-side. A member using the SDK/REST directly could still
+      // overwrite it. Can't just require isAdmin() outright: a joining member's own
+      // batch legitimately increments seatCount, and VendorsDirectory's cap-check
+      // transaction increments vendorCount from any member's session — both must keep
+      // working. So: admins may change anything; everyone else is limited to exactly
+      // the two counters.
+      allow update: if isAuthenticated() && isOrgMember(orgId) &&
+        (isAdmin() || onlyMemberWritableOrgFieldsChanged());
     }
 
     // Org invites: a brand-new signup (no org yet) must be able to look up
