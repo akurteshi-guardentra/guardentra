@@ -121,6 +121,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     let profileUnsubscribe: (() => void) | null = null;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    // Once a cloud profile has been observed for this auth uid, a later
+    // !exists snapshot means removal/wipe — do not auto-create a new org.
+    let sawCloudProfile = false;
 
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       if (profileUnsubscribe) {
@@ -131,6 +134,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         clearTimeout(timeoutId);
         timeoutId = null;
       }
+      sawCloudProfile = false;
 
       setUser(currentUser);
       if (currentUser) {
@@ -155,7 +159,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               if (userSnap.exists()) {
                 const data = userSnap.data() as UserProfile;
                 console.log('AuthContext: Profile loaded. Onboarded:', data.onboarded);
+                sawCloudProfile = true;
                 setProfile(data);
+                setLoading(false);
+              } else if (sawCloudProfile) {
+                // Profile was deleted after this session had loaded it (Admin SDK /
+                // future remove-member). Sign-out would be nicer UX but clearing
+                // profile is enough to drop org-scoped UI; re-bootstrap would mint
+                // a brand-new org for a removed user.
+                console.warn('AuthContext: Cloud profile disappeared after load — clearing session profile.');
+                setProfile(null);
                 setLoading(false);
               } else {
                 console.log('AuthContext: Profile missing for authenticated user, attempting auto-initialization...');

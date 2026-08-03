@@ -131,10 +131,15 @@ service cloud.firestore {
     // Users Collection
     match /users/{userId} {
       allow read: if isAuthenticated() && (request.auth.uid == userId || isOrgMember(resource.data.organizationId));
+      // Create is still client-trusted for role + organizationId (bootstrapUserProfile /
+      // a malicious SDK caller). Tightening that needs invite-bound create and/or
+      // Admin-SDK provisioning — see KNOWN_ISSUES #6 residual. Role and orgId are
+      // immutable after create so an admin cannot hop into another tenant by updating
+      // their own profile (KI#6 audit, 2026-08-03).
       allow create: if isAuthenticated() && request.auth.uid == userId;
-      allow update: if isAuthenticated() && request.auth.uid == userId && 
-                    (request.resource.data.role == resource.data.role || isAdmin()) &&
-                    (request.resource.data.organizationId == resource.data.organizationId || isAdmin());
+      allow update: if isAuthenticated() && request.auth.uid == userId
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.organizationId == resource.data.organizationId;
     }
 
     // Only seatCount (orgBootstrap.ts, incremented in the same batch as a joining
