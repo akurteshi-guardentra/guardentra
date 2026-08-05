@@ -4,9 +4,9 @@ Living status for parallel Claude + Cursor sessions. Update and **push** at the 
 
 ---
 
-- **Last-Updated:** 2026-08-05T18:55:00Z
+- **Last-Updated:** 2026-08-05T18:56:00Z
 - **Agent:** Cursor
-- **Branch / SHA:** `main` @ (pending commit — portal/tracker lifecycle tests)
+- **Branch / SHA:** `main` @ `b422592` (portal/tracker lifecycle tests)
 - **Doing now:** Idle after portal/tracker lifecycle integration tests.
 - **Done this session:**
   - Extracted pure `assessmentLifecycle.ts` helpers (create / autosave / submit / org decision)
