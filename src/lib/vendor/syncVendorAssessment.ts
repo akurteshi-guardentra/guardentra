@@ -1,10 +1,14 @@
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
-import { isFirestoreUnavailableError, markLocalVendorAssessmentStarted } from './localVendorStore';
+import {
+  isFirestoreUnavailableError,
+  markLocalVendorAssessmentSent,
+  patchLocalVendor,
+} from './localVendorStore';
 
 /**
  * Sync vendor chip fields after creating a security assessment.
- * Tries Firestore first; falls back to local vendor store.
+ * New assessments are Sent (awaiting vendor) — not In Progress until answers arrive.
  */
 export async function syncVendorAfterAssessmentCreate(
   orgId: string,
@@ -12,12 +16,12 @@ export async function syncVendorAfterAssessmentCreate(
   preferLocal: boolean
 ): Promise<void> {
   const patch = {
-    assessmentStatus: 'In Progress' as const,
+    assessmentStatus: 'Sent' as const,
     lastAssessmentAt: new Date().toISOString(),
   };
 
   if (preferLocal || vendorId.startsWith('local_')) {
-    markLocalVendorAssessmentStarted(orgId, vendorId);
+    markLocalVendorAssessmentSent(orgId, vendorId);
     return;
   }
 
@@ -31,8 +35,61 @@ export async function syncVendorAfterAssessmentCreate(
     });
     await Promise.race([updateDoc(doc(db, 'vendors', vendorId), patch), writeTimeout]);
   } catch (err) {
-    if (isFirestoreUnavailableError(err) || true) {
-      markLocalVendorAssessmentStarted(orgId, vendorId);
+    if (isFirestoreUnavailableError(err)) {
+      markLocalVendorAssessmentSent(orgId, vendorId);
+    }
+  }
+}
+
+/** After vendor starts answering — move chip from Sent → In Progress. */
+export async function syncVendorAfterAssessmentProgress(
+  orgId: string,
+  vendorId: string,
+  preferLocal: boolean
+): Promise<void> {
+  const patch = {
+    assessmentStatus: 'In Progress' as const,
+  };
+
+  if (preferLocal || vendorId.startsWith('local_')) {
+    patchLocalVendor(orgId, vendorId, patch);
+    return;
+  }
+
+  try {
+    await updateDoc(doc(db, 'vendors', vendorId), patch);
+  } catch (err) {
+    if (isFirestoreUnavailableError(err)) {
+      patchLocalVendor(orgId, vendorId, patch);
+    }
+  }
+}
+
+/** After org approves an assessment — close the vendor loop and schedule next review. */
+export async function syncVendorAfterAssessmentApprove(
+  orgId: string,
+  vendorId: string,
+  preferLocal: boolean,
+  nextReviewAt: string
+): Promise<void> {
+  const patch = {
+    assessmentStatus: 'Completed' as const,
+    lastAssessmentAt: new Date().toISOString(),
+    nextReviewAt,
+  };
+
+  if (preferLocal || vendorId.startsWith('local_')) {
+    patchLocalVendor(orgId, vendorId, patch);
+    return;
+  }
+
+  try {
+    await updateDoc(doc(db, 'vendors', vendorId), patch);
+  } catch (err) {
+    if (isFirestoreUnavailableError(err)) {
+      patchLocalVendor(orgId, vendorId, patch);
+    } else {
+      throw err;
     }
   }
 }

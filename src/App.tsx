@@ -10,6 +10,7 @@ import { Policies } from './pages/Policies';
 import { VendorRisk } from './pages/VendorRisk';
 import { VendorsDirectory } from './pages/VendorsDirectory';
 import { AssessmentWizard } from './pages/AssessmentWizard';
+import { FastTrackTriage } from './pages/FastTrackTriage';
 import { ImpactAssessment } from './pages/ImpactAssessment';
 import { Assessments } from './pages/Assessments';
 import { VendorPortal } from './pages/VendorPortal';
@@ -413,6 +414,7 @@ function App() {
                       <Route path="/vendors/legacy" element={<FeatureGate flag="vendorsLegacy"><VendorRisk /></FeatureGate>} />
                       <Route path="/vendors/:vendorId/impact" element={<FeatureGate flag="vendorSpine"><ImpactAssessment /></FeatureGate>} />
                       <Route path="/assessments" element={<FeatureGate flag="assessments"><Assessments /></FeatureGate>} />
+                      <Route path="/assessments/triage" element={<FeatureGate flag="assessments"><FastTrackTriage /></FeatureGate>} />
                       <Route path="/assessments/new" element={<FeatureGate flag="assessments"><AssessmentWizard /></FeatureGate>} />
                       <Route path="/audit-readiness" element={<FeatureGate flag="auditReadiness"><AuditReadiness /></FeatureGate>} />
                       <Route path="/calendar" element={<FeatureGate flag="auditCalendar"><AuditCalendar /></FeatureGate>} />

@@ -39,7 +39,7 @@ describe('local assessment store + vendor correlation', () => {
     expect(listLocalAssessmentsForVendor(orgId, vendor.id)).toHaveLength(1);
   });
 
-  it('marks vendor assessment status when assessment starts', () => {
+  it('marks vendor assessment status when assessment is sent', () => {
     const vendor = createLocalVendor(orgId, {
       name: 'Status Co',
       category: 'Cloud Services',
@@ -48,17 +48,29 @@ describe('local assessment store + vendor correlation', () => {
     expect(vendor.assessmentStatus).toBe('Not Started');
     markLocalVendorAssessmentStarted(orgId, vendor.id);
     const updated = listLocalVendors(orgId).find((v) => v.id === vendor.id);
-    expect(updated?.assessmentStatus).toBe('In Progress');
+    expect(updated?.assessmentStatus).toBe('Sent');
     expect(updated?.lastAssessmentAt).toBeTruthy();
   });
 
   it('derives directory chip status from linked assessments', () => {
     expect(deriveStatusFromAssessments([])).toBeUndefined();
-    expect(deriveStatusFromAssessments([{ status: 'Sent', progressPct: 0 }])).toBe('In Progress');
+    expect(deriveStatusFromAssessments([{ status: 'Sent', progressPct: 0 }])).toBe('Sent');
+    expect(
+      deriveStatusFromAssessments([
+        { status: 'Sent', progressPct: 0 },
+        { status: 'Sent', progressPct: 0 },
+      ])
+    ).toBe('Sent');
     expect(
       deriveStatusFromAssessments([
         { status: 'Completed', progressPct: 100 },
         { status: 'Sent', progressPct: 0 },
+      ])
+    ).toBe('Sent');
+    expect(
+      deriveStatusFromAssessments([
+        { status: 'Sent', progressPct: 0 },
+        { status: 'In Progress', progressPct: 40 },
       ])
     ).toBe('In Progress');
     expect(
@@ -68,6 +80,18 @@ describe('local assessment store + vendor correlation', () => {
       ])
     ).toBe('Completed');
     expect(deriveStatusFromAssessments([{ status: 'Overdue', progressPct: 10 }])).toBe('Overdue');
+    const past = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+    expect(
+      deriveStatusFromAssessments([{ status: 'Sent', progressPct: 0, dueAt: past }])
+    ).toBe('Overdue');
+    const inThreeDays = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+    expect(
+      deriveStatusFromAssessments([{ status: 'Sent', progressPct: 0, dueAt: inThreeDays }])
+    ).toBe('Due Soon');
+    const inThreeWeeks = new Date(Date.now() + 21 * 24 * 60 * 60 * 1000).toISOString();
+    expect(
+      deriveStatusFromAssessments([{ status: 'Sent', progressPct: 0, dueAt: inThreeWeeks }])
+    ).toBe('Sent');
   });
 
   it('removeLocalAssessment drops only the promoted row (used when Firestore reconnects)', () => {

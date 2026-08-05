@@ -418,9 +418,9 @@ security gap or high business impact). Return JSON: { "summary": "..." }`;
           type="button"
           variant="outline"
           className="border-white/10"
-          onClick={() => navigate(`/assessments/new?vendorId=${vendor.id}`)}
+          onClick={() => navigate(`/assessments/triage?vendorId=${vendor.id}`)}
         >
-          Continue to security assessment
+          Continue to FastTrack triage
         </Button>
       </div>
     </div>

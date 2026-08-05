@@ -119,17 +119,33 @@ export function deriveStatusFromAssessments(
 
   const normalized = assessments.map((a) => {
     const progress = a.progressPct ?? a.progress ?? 0;
+    const dueRaw = a.dueAt || a.dueDate;
+    const dueMs = dueRaw ? new Date(dueRaw).getTime() : NaN;
+    const dueValid = !Number.isNaN(dueMs);
+    const open =
+      a.status !== 'Completed' &&
+      a.status !== 'Under Review' &&
+      progress < 100;
+
     if (a.status === 'Completed' || progress >= 100) return 'Completed' as const;
-    if (a.status === 'Overdue') return 'Overdue' as const;
-    if (a.status === 'Due Soon') return 'Due Soon' as const;
-    if (a.status === 'In Progress') return 'In Progress' as const;
-    if (a.status === 'Sent' || a.status === 'Not Started') return a.status;
+    if (a.status === 'Under Review') return 'Under Review' as const;
+    if (a.status === 'Overdue' || (open && dueValid && dueMs < Date.now())) return 'Overdue' as const;
+    // FastTrack reminder window: flag Due Soon within 7 days of due (Sent or in-progress).
+    const soon = Date.now() + 7 * 24 * 60 * 60 * 1000;
+    if (a.status === 'Due Soon' || (open && dueValid && dueMs < soon)) return 'Due Soon' as const;
+    if (a.status === 'In Progress' || (progress > 0 && a.status !== 'Not Started')) {
+      return 'In Progress' as const;
+    }
+    if (a.status === 'Sent') return 'Sent' as const;
+    if (a.status === 'Not Started') return 'Not Started' as const;
     return 'In Progress' as const;
   });
 
   if (normalized.some((s) => s === 'Overdue')) return 'Overdue';
   if (normalized.some((s) => s === 'Due Soon')) return 'Due Soon';
-  if (normalized.some((s) => s === 'In Progress' || s === 'Sent')) return 'In Progress';
+  if (normalized.some((s) => s === 'Under Review')) return 'Under Review';
+  if (normalized.some((s) => s === 'In Progress')) return 'In Progress';
+  if (normalized.some((s) => s === 'Sent')) return 'Sent';
   if (normalized.every((s) => s === 'Completed')) return 'Completed';
   return normalized[0];
 }

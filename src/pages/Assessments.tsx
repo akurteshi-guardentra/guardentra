@@ -32,16 +32,26 @@ import {
 import { FRAMEWORK_CATALOG } from '../lib/vendor/constants';
 import { packsNeedingUpgradeNotice } from '../lib/vendor/frameworkPacks';
 import { loadOrgFrameworkPackDefaults } from '../lib/vendor/orgFrameworkPacks';
+import { syncVendorAfterAssessmentApprove } from '../lib/vendor/syncVendorAssessment';
 
 const SELECT_CLASS =
   'h-9 rounded-md border border-white/10 bg-slate-950 px-3 text-sm text-white [&>option]:bg-slate-950 [&>option]:text-white';
 
 function frameworkLabel(a: StoredAssessment): string {
-  if (a.frameworkName) return a.frameworkName;
-  if (a.frameworks?.length) {
-    return a.frameworks
-      .map((id) => FRAMEWORK_CATALOG.find((f) => f.id === id)?.name || id)
+  if (a.frameworkName) {
+    // Historical creates may include "Custom Questionnaire" in the joined name — hide the stub.
+    const cleaned = a.frameworkName
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s && !/^custom/i.test(s))
       .join(', ');
+    if (cleaned) return cleaned;
+  }
+  if (a.frameworks?.length) {
+    const names = a.frameworks
+      .filter((id) => id !== 'custom')
+      .map((id) => FRAMEWORK_CATALOG.find((f) => f.id === id)?.name || id);
+    if (names.length) return names.join(', ');
   }
   return 'Assessment';
 }
@@ -52,6 +62,21 @@ function progressOf(a: StoredAssessment): number {
 
 function dueLabel(a: StoredAssessment): string {
   return a.dueDate || (a.dueAt ? a.dueAt.slice(0, 10) : '—');
+}
+
+/** Tracker status aligned with vendor directory chips (due/overdue derivation). */
+function rowStatus(a: StoredAssessment): string {
+  return (
+    deriveStatusFromAssessments([
+      {
+        status: a.status,
+        dueAt: a.dueAt,
+        dueDate: a.dueDate,
+        progressPct: progressOf(a),
+        progress: progressOf(a),
+      },
+    ]) || a.status
+  );
 }
 
 /** answers are string for yesno/single_choice, string[] for multiple_choice. */
@@ -85,6 +110,9 @@ export function Assessments() {
     rating: string;
     recommendation: string;
   } | null>(null);
+  const [reviewAiError, setReviewAiError] = useState('');
+  const [reviewAiLoading, setReviewAiLoading] = useState(false);
+  const [approving, setApproving] = useState(false);
 
   useEffect(() => {
     if (!toast) return;
@@ -199,46 +227,77 @@ export function Assessments() {
   const handleReviewAssessment = async (assessment: StoredAssessment) => {
     setReviewAssessment(assessment);
     setReviewAnalysis(null);
+    setReviewAiError('');
     setIsReviewing(true);
 
-    if (assessment.status === 'Under Review' || assessment.status === 'Completed') {
-      try {
-        const questions = (assessment.questions || []) as { id: string; question?: string }[];
-        const answers = questions
-          .map((q) => `${q.question}: ${formatAssessmentAnswer(assessment.answers?.[q.id])}`)
-          .join('\n');
-        const prompt = `Analyze vendor assessment for "${assessment.vendorName}" against "${frameworkLabel(assessment)}".
+    const answerEntries = Object.entries(assessment.answers || {}).filter(([, v]) =>
+      Array.isArray(v) ? v.length > 0 : Boolean(v)
+    );
+    const hasAnswers = answerEntries.length > 0 || progressOf(assessment) > 0;
+    if (!hasAnswers) {
+      setReviewAiError('Waiting for vendor responses before AI analysis is available.');
+      return;
+    }
+
+    setReviewAiLoading(true);
+    try {
+      const questions = (assessment.questions || []) as { id: string; question?: string }[];
+      const answers = questions
+        .map((q) => `${q.question}: ${formatAssessmentAnswer(assessment.answers?.[q.id])}`)
+        .join('\n');
+      const prompt = `Analyze vendor assessment for "${assessment.vendorName}" against "${frameworkLabel(assessment)}".
         Answers:
         ${answers}
 
         Provide a risk summary, an overall security rating (A-F), and one primary recommendation.
         Return JSON: { "summary": "...", "rating": "...", "recommendation": "..." }`;
 
-        const response = await fetch('/api/ai/generate', {
-          method: 'POST',
-          headers: await authHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({ prompt, responseMimeType: 'application/json' }),
-        });
-        if (!response.ok) throw new Error('AI generation failed');
-        const { text } = await response.json();
-        setReviewAnalysis(JSON.parse(text || '{}'));
-      } catch (e) {
-        console.error('AI Review failed:', e);
-      }
+      const response = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ prompt, responseMimeType: 'application/json' }),
+      });
+      if (!response.ok) throw new Error('AI generation failed');
+      const { text } = await response.json();
+      setReviewAnalysis(JSON.parse(text || '{}'));
+    } catch (e) {
+      console.error('AI Review failed:', e);
+      setReviewAiError('AI analysis failed — you can still review answers and sign off manually.');
+    } finally {
+      setReviewAiLoading(false);
     }
   };
 
   const handleApproveAssessment = async () => {
     if (!reviewAssessment || !orgId) return;
+    const canSignOff =
+      reviewAssessment.status === 'Under Review' ||
+      reviewAssessment.status === 'Completed' ||
+      progressOf(reviewAssessment) > 0;
+    if (!canSignOff) {
+      setToast({
+        tone: 'warn',
+        text: 'Wait for the vendor to submit (or start answering) before signing off.',
+      });
+      return;
+    }
+
+    setApproving(true);
+    const completedAt = new Date().toISOString();
+    const nextReview = new Date();
+    nextReview.setFullYear(nextReview.getFullYear() + 1);
+    const nextReviewAt = nextReview.toISOString();
+    const preferLocal = mode === 'local' || reviewAssessment.id.startsWith('local_');
+
     try {
-      if (mode === 'local' || reviewAssessment.id.startsWith('local_')) {
+      if (preferLocal) {
         upsertLocalAssessment(orgId, {
           ...reviewAssessment,
           status: 'Completed',
           progressPct: 100,
           progress: 100,
           portalOpen: false,
-          completedAt: new Date().toISOString(),
+          completedAt,
         });
         refreshLocal();
       } else {
@@ -246,18 +305,24 @@ export function Assessments() {
           status: 'Completed',
           progress: 100,
           progressPct: 100,
-          // Closes the vendor's portal link and, via isOpenPortalAssessment() in
-          // firestore.rules/storage.rules, revokes the anonymous session's access to
-          // this assessment's docs and evidence. Nothing set this to false before, so
-          // every portal link stayed live forever — see docs/KNOWN_ISSUES.md #1.
-          // Only an org member can write this field (the portal's own allowlist in
-          // firestore.rules deliberately excludes it), so approval is the right place.
+          completedAt,
           portalOpen: false,
         });
       }
+      await syncVendorAfterAssessmentApprove(
+        orgId,
+        reviewAssessment.vendorId,
+        preferLocal,
+        nextReviewAt
+      );
+      setToast({ tone: 'ok', text: 'Assessment signed off. Next review scheduled in 12 months.' });
       setIsReviewing(false);
+      setReviewAssessment(null);
     } catch (e) {
       console.error('Approval failed:', e);
+      setToast({ tone: 'err', text: 'Sign-off failed — try again.' });
+    } finally {
+      setApproving(false);
     }
   };
 
@@ -299,8 +364,8 @@ export function Assessments() {
           onClick={() =>
             navigate(
               vendorFilter !== 'all'
-                ? `/assessments/new?vendorId=${encodeURIComponent(vendorFilter)}`
-                : '/assessments/new'
+                ? `/assessments/triage?vendorId=${encodeURIComponent(vendorFilter)}`
+                : '/assessments/triage'
             )
           }
           className="bg-primary text-white hover:bg-primary/90"
@@ -449,7 +514,7 @@ export function Assessments() {
                       </p>
                       <Button
                         className="bg-primary text-white hover:bg-primary/90"
-                        onClick={() => navigate('/assessments/new')}
+                        onClick={() => navigate('/assessments/triage')}
                       >
                         <Plus className="mr-2 h-4 w-4" />
                         New Assessment
@@ -487,16 +552,22 @@ export function Assessments() {
                         <span
                           className={cn(
                             'rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider',
-                            a.status === 'Sent'
+                            rowStatus(a) === 'Sent'
                               ? 'bg-amber-500/10 text-amber-400'
-                              : a.status === 'In Progress'
+                              : rowStatus(a) === 'In Progress'
                                 ? 'bg-blue-500/10 text-blue-400'
-                                : a.status === 'Completed'
-                                  ? 'bg-emerald-500/10 text-emerald-400'
-                                  : 'bg-slate-500/10 text-slate-400'
+                                : rowStatus(a) === 'Under Review'
+                                  ? 'bg-indigo-500/10 text-indigo-400'
+                                  : rowStatus(a) === 'Completed'
+                                    ? 'bg-emerald-500/10 text-emerald-400'
+                                    : rowStatus(a) === 'Overdue'
+                                      ? 'bg-rose-500/10 text-rose-400'
+                                      : rowStatus(a) === 'Due Soon'
+                                        ? 'bg-orange-500/10 text-orange-400'
+                                        : 'bg-slate-500/10 text-slate-400'
                           )}
                         >
-                          {a.status}
+                          {rowStatus(a)}
                         </span>
                       </td>
                       <td className="px-4 py-4">
@@ -699,8 +770,14 @@ export function Assessments() {
                     <CardContent>
                       {!reviewAnalysis ? (
                         <div className="flex items-center gap-3 py-4 text-xs italic text-slate-500">
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          Analysis available after vendor responds.
+                          {reviewAiLoading ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Running AI analysis…
+                            </>
+                          ) : (
+                            reviewAiError || 'Analysis available after vendor responds.'
+                          )}
                         </div>
                       ) : (
                         <div className="space-y-4 pt-2">
@@ -737,12 +814,30 @@ export function Assessments() {
                     </h4>
                     <div className="space-y-3">
                       <Button
-                        className="w-full bg-emerald-600 font-bold text-white hover:bg-emerald-500"
+                        className="w-full bg-emerald-600 font-bold text-white hover:bg-emerald-500 disabled:opacity-40"
+                        disabled={
+                          approving ||
+                          !reviewAssessment ||
+                          (reviewAssessment.status !== 'Under Review' &&
+                            reviewAssessment.status !== 'Completed' &&
+                            progressOf(reviewAssessment) <= 0)
+                        }
                         onClick={() => void handleApproveAssessment()}
                       >
-                        <CheckCircle2 className="mr-2 h-4 w-4" />
+                        {approving ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="mr-2 h-4 w-4" />
+                        )}
                         Sign Off & Close
                       </Button>
+                      {reviewAssessment &&
+                        reviewAssessment.status !== 'Under Review' &&
+                        progressOf(reviewAssessment) <= 0 && (
+                          <p className="text-[10px] text-slate-500">
+                            Enabled after the vendor starts answering or submits for review.
+                          </p>
+                        )}
                     </div>
                   </div>
                 </div>

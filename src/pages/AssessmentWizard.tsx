@@ -26,6 +26,7 @@ import { createLocalAssessment } from '../lib/vendor/localAssessmentStore';
 import { isFirestoreUnavailableError } from '../lib/vendor/localVendorStore';
 import { syncVendorAfterAssessmentCreate } from '../lib/vendor/syncVendorAssessment';
 import { sendEmailBestEffort } from '../lib/notifications';
+import { parseFrameworksParam } from '../lib/vendor/fastTrackTriage';
 
 export function AssessmentWizard() {
   const { profile } = useAuth();
@@ -33,6 +34,8 @@ export function AssessmentWizard() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const presetVendorId = params.get('vendorId') || '';
+  const presetFrameworks = parseFrameworksParam(params.get('frameworks'));
+  const presetTier = params.get('tier');
   const [packDefaults, setPackDefaults] = useState<Partial<Record<FrameworkId, string>>>({});
 
   useEffect(() => {
@@ -42,10 +45,12 @@ export function AssessmentWizard() {
 
   const { vendors, mode: vendorMode, loading: vendorsLoading } = useOrgVendors(orgId);
 
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2 | 3>(presetVendorId && presetFrameworks.length ? 2 : presetVendorId ? 2 : 1);
   const [search, setSearch] = useState('');
   const [vendorId, setVendorId] = useState(presetVendorId);
-  const [frameworks, setFrameworks] = useState<FrameworkId[]>(['nist_csf_2', 'soc2']);
+  const [frameworks, setFrameworks] = useState<FrameworkId[]>(
+    presetFrameworks.length ? presetFrameworks : ['nist_csf_2', 'soc2']
+  );
   const [frameworkTab, setFrameworkTab] = useState<'recommended' | 'all' | 'industry' | 'custom'>(
     'recommended'
   );
@@ -362,6 +367,15 @@ export function AssessmentWizard() {
                       <p className="text-xs font-bold uppercase tracking-widest text-primary">Selected vendor</p>
                       <h2 className="mt-1 text-lg font-semibold text-white">{selected.name}</h2>
                       <p className="text-sm text-slate-400">{selected.category || 'Uncategorized'}</p>
+                      {presetTier && (
+                        <p className="mt-2 text-xs text-emerald-300/90">
+                          FastTrack recommended <span className="font-semibold">{presetTier}</span>
+                          {' · '}
+                          <Link to={`/assessments/triage?vendorId=${encodeURIComponent(vendorId)}`} className="underline">
+                            Retake triage
+                          </Link>
+                        </p>
+                      )}
                       <p className="mt-2 text-sm text-slate-300">
                         {selected.primaryContactName || 'No contact name'}
                         {selected.primaryContactEmail ? (

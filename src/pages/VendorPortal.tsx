@@ -31,6 +31,7 @@ import {
   type PortalQuestion,
 } from '../lib/vendor/questionBank';
 import { uploadPortalEvidence, type UploadedEvidence } from '../lib/vendor/evidenceUpload';
+import { syncVendorAfterAssessmentProgress } from '../lib/vendor/syncVendorAssessment';
 
 type AnswersMap = Record<string, AnswerValue | string | string[] | undefined>;
 type CommentsMap = Record<string, string>;
@@ -151,16 +152,25 @@ export function VendorPortal() {
       setSaveState('saving');
       try {
         const pct = overallProgressPct(questions, nextAnswers);
+        // Never mark Completed on autosave — Submit moves to Under Review; org signs off.
+        const status = pct > 0 ? 'In Progress' : 'Sent';
         await updateDoc(doc(db, 'assessments', assessmentId), {
           answers: nextAnswers,
           comments: nextComments,
           evidenceByQuestion: nextEvidence,
           progressPct: pct,
           progress: pct,
-          status: pct === 100 ? 'Completed' : 'In Progress',
+          status,
           questions,
           updatedAt: new Date().toISOString(),
         });
+        if (pct > 0 && assessment.vendorId && assessment.organizationId) {
+          void syncVendorAfterAssessmentProgress(
+            assessment.organizationId,
+            assessment.vendorId,
+            false
+          );
+        }
         setSaveState('saved');
       } catch (err) {
         console.error(err);

@@ -59,7 +59,8 @@ const SELECT_CLASS =
 
 function assessmentStatusIcon(status: AssessmentStatus) {
   if (status === 'Completed') return <CheckCircle2 className="h-3.5 w-3.5" />;
-  if (status === 'In Progress' || status === 'Sent') return <Loader2 className="h-3.5 w-3.5" />;
+  if (status === 'In Progress') return <Loader2 className="h-3.5 w-3.5" />;
+  if (status === 'Sent') return <Loader2 className="h-3.5 w-3.5" />;
   if (status === 'Overdue') return <Clock className="h-3.5 w-3.5 text-rose-400" />;
   if (status === 'Due Soon') return <Clock className="h-3.5 w-3.5" />;
   return <Circle className="h-3.5 w-3.5" />;
@@ -163,6 +164,7 @@ export function VendorsDirectory() {
   const bulkFileRef = useRef<HTMLInputElement>(null);
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [menuVendorId, setMenuVendorId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const pageSize = 10;
 
@@ -680,7 +682,7 @@ export function VendorsDirectory() {
                 aria-label="Status"
               >
                 <option value="all">Status</option>
-                {['Not Started', 'In Progress', 'Due Soon', 'Overdue', 'Completed'].map((s) => (
+                {['Not Started', 'Sent', 'In Progress', 'Due Soon', 'Overdue', 'Completed'].map((s) => (
                   <option key={s} value={s}>
                     {s}
                   </option>
@@ -839,14 +841,58 @@ export function VendorsDirectory() {
                             Impact
                           </Link>
                           <Link
-                            to={`/assessments/new?vendorId=${v.id}`}
+                            to={`/assessments/triage?vendorId=${v.id}`}
                             className="mr-2 text-xs font-medium text-primary hover:underline"
                           >
                             Assess
                           </Link>
-                          <button type="button" className="text-slate-400 hover:text-white" aria-label="More">
-                            <MoreVertical className="h-4 w-4" />
-                          </button>
+                          <div className="relative inline-block">
+                            <button
+                              type="button"
+                              className="text-slate-400 hover:text-white"
+                              aria-label="More actions"
+                              aria-expanded={menuVendorId === v.id}
+                              onClick={() =>
+                                setMenuVendorId((id) => (id === v.id ? null : v.id))
+                              }
+                            >
+                              <MoreVertical className="h-4 w-4" />
+                            </button>
+                            {menuVendorId === v.id && (
+                              <div className="absolute right-0 z-20 mt-1 w-48 rounded-lg border border-white/10 bg-slate-950 py-1 shadow-xl">
+                                <button
+                                  type="button"
+                                  className="block w-full px-3 py-2 text-left text-xs text-slate-200 hover:bg-white/5"
+                                  onClick={() => {
+                                    setMenuVendorId(null);
+                                    navigate(`/vendors/${v.id}/impact`);
+                                  }}
+                                >
+                                  Impact assessment
+                                </button>
+                                <button
+                                  type="button"
+                                  className="block w-full px-3 py-2 text-left text-xs text-slate-200 hover:bg-white/5"
+                                  onClick={() => {
+                                    setMenuVendorId(null);
+                                    navigate(`/assessments/triage?vendorId=${v.id}`);
+                                  }}
+                                >
+                                  Start FastTrack
+                                </button>
+                                <button
+                                  type="button"
+                                  className="block w-full px-3 py-2 text-left text-xs text-slate-200 hover:bg-white/5"
+                                  onClick={() => {
+                                    setMenuVendorId(null);
+                                    navigate(`/assessments?vendorId=${encodeURIComponent(v.id)}`);
+                                  }}
+                                >
+                                  View assessments ({linked.length})
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -924,14 +970,14 @@ export function VendorsDirectory() {
               </button>
               <button
                 type="button"
-                onClick={() => navigate('/assessments/new')}
+                onClick={() => navigate('/assessments/triage')}
                 className="flex w-full flex-col items-start gap-0.5 rounded-lg border border-white/10 px-3 py-2 text-left text-sm hover:bg-white/5"
               >
                 <span className="flex items-center gap-2">
                   <UserPlus className="h-4 w-4 text-primary" />
                   Invite to assessment
                 </span>
-                <span className="pl-6 text-xs text-slate-500">Opens wizard · pick vendor &amp; frameworks</span>
+                <span className="pl-6 text-xs text-slate-500">FastTrack triage · then wizard</span>
               </button>
             </div>
           </div>
