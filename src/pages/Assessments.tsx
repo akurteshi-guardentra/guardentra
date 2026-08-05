@@ -11,6 +11,9 @@ import {
   Sparkles,
   X,
   Mail,
+  AlertTriangle,
+  Archive,
+  RefreshCw,
 } from 'lucide-react';
 import { db } from '../firebase';
 import { useAuth } from '../lib/AuthContext';
@@ -31,13 +34,22 @@ import {
 } from '../lib/vendor/localAssessmentStore';
 import { FRAMEWORK_CATALOG } from '../lib/vendor/constants';
 import { packsNeedingUpgradeNotice } from '../lib/vendor/frameworkPacks';
-import { loadOrgFrameworkPackDefaults } from '../lib/vendor/orgFrameworkPacks';
+import {
+  loadOrgFrameworkPackDefaults,
+  type FrameworkPackDefaults,
+} from '../lib/vendor/orgFrameworkPacks';
 import { syncVendorAfterAssessmentApprove } from '../lib/vendor/syncVendorAssessment';
 import {
   exceptionReasonLabel,
   listAssessmentExceptions,
   type DecisionOutcome,
 } from '../lib/vendor/assessmentExceptions';
+import {
+  buildArchiveEmptyAssessmentPatch,
+  buildRecoverEmptyAssessmentPatch,
+  canRecoverEmptyAssessment,
+  hasEmptyQuestionSnapshot,
+} from '../lib/vendor/emptyAssessmentRecovery';
 
 const SELECT_CLASS =
   'h-9 rounded-md border border-white/10 bg-slate-950 px-3 text-sm text-white [&>option]:bg-slate-950 [&>option]:text-white';
@@ -109,6 +121,7 @@ export function Assessments() {
   const [packNotices, setPackNotices] = useState<
     ReturnType<typeof packsNeedingUpgradeNotice>
   >([]);
+  const [orgPackDefaults, setOrgPackDefaults] = useState<FrameworkPackDefaults>({});
   const [toast, setToast] = useState<{ tone: 'ok' | 'warn' | 'err'; text: string } | null>(null);
   const [reviewAnalysis, setReviewAnalysis] = useState<{
     summary: string;
@@ -121,6 +134,9 @@ export function Assessments() {
   const [reviewFilter, setReviewFilter] = useState<'exceptions' | 'all'>('exceptions');
   const [decisionNotes, setDecisionNotes] = useState('');
   const [decisionOutcome, setDecisionOutcome] = useState<DecisionOutcome>('approved');
+  const [archiveReason, setArchiveReason] = useState('');
+  const [recoveringEmpty, setRecoveringEmpty] = useState(false);
+  const [archivingEmpty, setArchivingEmpty] = useState(false);
 
   useEffect(() => {
     if (!toast) return;
@@ -131,6 +147,7 @@ export function Assessments() {
   useEffect(() => {
     if (!orgId) return;
     void loadOrgFrameworkPackDefaults(orgId).then((defaults) => {
+      setOrgPackDefaults(defaults);
       setPackNotices(packsNeedingUpgradeNotice(defaults));
     });
   }, [orgId]);
@@ -239,7 +256,15 @@ export function Assessments() {
     setReviewFilter('exceptions');
     setDecisionNotes('');
     setDecisionOutcome('approved');
+    setArchiveReason('');
     setIsReviewing(true);
+
+    if (hasEmptyQuestionSnapshot(assessment)) {
+      setReviewAiError(
+        'This assessment has no snapshotted questions. Rebuild from framework packs or archive it with a reason.'
+      );
+      return;
+    }
 
     const answerEntries = Object.entries(assessment.answers || {}).filter(([, v]) =>
       Array.isArray(v) ? v.length > 0 : Boolean(v)
@@ -390,6 +415,73 @@ export function Assessments() {
       setToast({ tone: 'err', text: 'Decision failed — try again.' });
     } finally {
       setApproving(false);
+    }
+  };
+
+  const persistAssessmentPatch = async (
+    assessment: StoredAssessment,
+    patch: Record<string, unknown>
+  ) => {
+    const preferLocal = mode === 'local' || assessment.id.startsWith('local_');
+    if (preferLocal) {
+      upsertLocalAssessment(orgId!, { ...assessment, ...patch } as StoredAssessment);
+      refreshLocal();
+    } else {
+      await updateDoc(doc(db, 'assessments', assessment.id), patch);
+    }
+    return preferLocal;
+  };
+
+  const handleRecoverEmptyAssessment = async () => {
+    if (!reviewAssessment || !orgId) return;
+    setRecoveringEmpty(true);
+    try {
+      const patch = buildRecoverEmptyAssessmentPatch(reviewAssessment, orgPackDefaults);
+      await persistAssessmentPatch(reviewAssessment, patch);
+      const next = { ...reviewAssessment, ...patch } as StoredAssessment;
+      setReviewAssessment(next);
+      setArchiveReason('');
+      setToast({
+        tone: 'ok',
+        text: `Questionnaire rebuilt — ${patch.questionCount} questions stamped from framework packs. Portal link is ready.`,
+      });
+      setReviewAiError('Waiting for vendor responses before AI analysis is available.');
+    } catch (e) {
+      console.error('Empty assessment recovery failed:', e);
+      setToast({
+        tone: 'err',
+        text: e instanceof Error ? e.message : 'Could not rebuild questionnaire.',
+      });
+    } finally {
+      setRecoveringEmpty(false);
+    }
+  };
+
+  const handleArchiveEmptyAssessment = async () => {
+    if (!reviewAssessment || !orgId) return;
+    setArchivingEmpty(true);
+    try {
+      const archivedBy = profile?.email || profile?.displayName || 'org-admin';
+      const patch = buildArchiveEmptyAssessmentPatch({
+        reason: archiveReason,
+        archivedBy,
+      });
+      await persistAssessmentPatch(reviewAssessment, patch);
+      setToast({
+        tone: 'ok',
+        text: 'Empty assessment archived. Create a new assessment when you are ready to send a questionnaire.',
+      });
+      setIsReviewing(false);
+      setReviewAssessment(null);
+      setArchiveReason('');
+    } catch (e) {
+      console.error('Empty assessment archive failed:', e);
+      setToast({
+        tone: 'err',
+        text: e instanceof Error ? e.message : 'Could not archive assessment.',
+      });
+    } finally {
+      setArchivingEmpty(false);
     }
   };
 
@@ -604,6 +696,12 @@ export function Assessments() {
                               {a.vendorName || 'Vendor'}
                             </Link>
                             <p className="text-[10px] text-slate-500">Linked vendor</p>
+                            {hasEmptyQuestionSnapshot(a) && a.status !== 'Completed' && (
+                              <p className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-amber-300">
+                                <AlertTriangle className="h-3 w-3" />
+                                Empty questionnaire
+                              </p>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -762,8 +860,11 @@ export function Assessments() {
                 <div className="space-y-8 lg:col-span-2">
                   <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                     <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
-                      Response Intelligence
+                      {hasEmptyQuestionSnapshot(reviewAssessment)
+                        ? 'Empty Snapshot Recovery'
+                        : 'Response Intelligence'}
                     </h3>
+                    {!hasEmptyQuestionSnapshot(reviewAssessment) && (
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-200">
                         {reviewExceptions.length} exception
@@ -796,8 +897,72 @@ export function Assessments() {
                         </button>
                       </div>
                     </div>
+                    )}
                   </div>
-                  {progressOf(reviewAssessment) === 0 &&
+                  {hasEmptyQuestionSnapshot(reviewAssessment) ? (
+                    <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-6 space-y-4">
+                      <div className="flex items-start gap-3">
+                        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
+                        <div>
+                          <p className="text-sm font-medium text-amber-100">
+                            Questionnaire unavailable — empty snapshot
+                          </p>
+                          <p className="mt-1 text-xs text-slate-400">
+                            The portal will not rebuild questions automatically (audit integrity). Rebuild
+                            from the stamped or current framework packs, or archive this row with a
+                            reason and create a new assessment.
+                          </p>
+                        </div>
+                      </div>
+                      {canRecoverEmptyAssessment(reviewAssessment, orgPackDefaults) ? (
+                        <Button
+                          size="sm"
+                          className="bg-primary text-white hover:bg-primary/90"
+                          disabled={recoveringEmpty || archivingEmpty}
+                          onClick={() => void handleRecoverEmptyAssessment()}
+                        >
+                          {recoveringEmpty ? (
+                            <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                          )}
+                          Rebuild from framework packs
+                        </Button>
+                      ) : (
+                        <p className="text-xs text-amber-200/80">
+                          No recoverable packs on this assessment (custom-only or missing frameworks).
+                          Archive it and create a new assessment with a standard framework.
+                        </p>
+                      )}
+                      <div className="space-y-2 border-t border-white/5 pt-4">
+                        <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                          Archive reason
+                        </label>
+                        <Input
+                          value={archiveReason}
+                          onChange={(e) => setArchiveReason(e.target.value)}
+                          placeholder="e.g. Legacy empty create — never sent to vendor"
+                          className="border-white/10 bg-slate-950 text-sm text-white"
+                        />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="border-rose-500/40 text-rose-200 hover:bg-rose-500/10"
+                          disabled={
+                            archivingEmpty || recoveringEmpty || !archiveReason.trim()
+                          }
+                          onClick={() => void handleArchiveEmptyAssessment()}
+                        >
+                          {archivingEmpty ? (
+                            <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Archive className="mr-2 h-3.5 w-3.5" />
+                          )}
+                          Archive empty assessment
+                        </Button>
+                      </div>
+                    </div>
+                  ) : progressOf(reviewAssessment) === 0 &&
                   !Object.keys(reviewAssessment.answers || {}).length ? (
                     <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-6 space-y-3">
                       <p className="text-sm font-medium text-amber-100">
@@ -951,6 +1116,7 @@ export function Assessments() {
                     </CardContent>
                   </Card>
 
+                  {!hasEmptyQuestionSnapshot(reviewAssessment) && (
                   <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-6">
                     <h4 className="mb-4 text-xs font-bold uppercase tracking-widest text-white">
                       Decision Terminal
@@ -1027,6 +1193,7 @@ export function Assessments() {
                         )}
                     </div>
                   </div>
+                  )}
                 </div>
               </div>
             </div>
