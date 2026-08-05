@@ -65,6 +65,30 @@ export async function syncVendorAfterAssessmentProgress(
   }
 }
 
+/** After vendor submits for org review. */
+export async function syncVendorAfterAssessmentSubmit(
+  orgId: string,
+  vendorId: string,
+  preferLocal: boolean
+): Promise<void> {
+  const patch = {
+    assessmentStatus: 'Under Review' as const,
+  };
+
+  if (preferLocal || vendorId.startsWith('local_')) {
+    patchLocalVendor(orgId, vendorId, patch);
+    return;
+  }
+
+  try {
+    await updateDoc(doc(db, 'vendors', vendorId), patch);
+  } catch (err) {
+    if (isFirestoreUnavailableError(err)) {
+      patchLocalVendor(orgId, vendorId, patch);
+    }
+  }
+}
+
 /** After org approves an assessment — close the vendor loop and schedule next review. */
 export async function syncVendorAfterAssessmentApprove(
   orgId: string,

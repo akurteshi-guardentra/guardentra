@@ -31,7 +31,7 @@ import {
   type PortalQuestion,
 } from '../lib/vendor/questionBank';
 import { uploadPortalEvidence, type UploadedEvidence } from '../lib/vendor/evidenceUpload';
-import { syncVendorAfterAssessmentProgress } from '../lib/vendor/syncVendorAssessment';
+import { syncVendorAfterAssessmentProgress, syncVendorAfterAssessmentSubmit } from '../lib/vendor/syncVendorAssessment';
 
 type AnswersMap = Record<string, AnswerValue | string | string[] | undefined>;
 type CommentsMap = Record<string, string>;
@@ -250,6 +250,9 @@ export function VendorPortal() {
         status: 'Under Review',
         completedAt: new Date().toISOString(),
       });
+      if (assessment?.organizationId && assessment?.vendorId) {
+        void syncVendorAfterAssessmentSubmit(assessment.organizationId, assessment.vendorId, false);
+      }
       setIsSuccess(true);
     } catch (err) {
       console.error(err);

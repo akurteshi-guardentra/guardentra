@@ -92,6 +92,9 @@ describe('local assessment store + vendor correlation', () => {
     expect(
       deriveStatusFromAssessments([{ status: 'Sent', progressPct: 0, dueAt: inThreeWeeks }])
     ).toBe('Sent');
+    expect(
+      deriveStatusFromAssessments([{ status: 'Under Review', progressPct: 100 }])
+    ).toBe('Under Review');
   });
 
   it('removeLocalAssessment drops only the promoted row (used when Firestore reconnects)', () => {

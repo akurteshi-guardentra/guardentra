@@ -128,8 +128,9 @@ export function deriveStatusFromAssessments(
       a.status !== 'Under Review' &&
       progress < 100;
 
-    if (a.status === 'Completed' || progress >= 100) return 'Completed' as const;
+    // Under Review wins over progressPct 100 — portal submit sets both intentionally.
     if (a.status === 'Under Review') return 'Under Review' as const;
+    if (a.status === 'Completed' || progress >= 100) return 'Completed' as const;
     if (a.status === 'Overdue' || (open && dueValid && dueMs < Date.now())) return 'Overdue' as const;
     // FastTrack reminder window: flag Due Soon within 7 days of due (Sent or in-progress).
     const soon = Date.now() + 7 * 24 * 60 * 60 * 1000;

@@ -59,6 +59,7 @@ const SELECT_CLASS =
 
 function assessmentStatusIcon(status: AssessmentStatus) {
   if (status === 'Completed') return <CheckCircle2 className="h-3.5 w-3.5" />;
+  if (status === 'Under Review') return <Clock className="h-3.5 w-3.5 text-indigo-400" />;
   if (status === 'In Progress') return <Loader2 className="h-3.5 w-3.5" />;
   if (status === 'Sent') return <Loader2 className="h-3.5 w-3.5" />;
   if (status === 'Overdue') return <Clock className="h-3.5 w-3.5 text-rose-400" />;
@@ -84,7 +85,6 @@ function deriveAssessmentStatus(
     if (fromAsm) return fromAsm;
   }
   if (vendor.assessmentStatus) return vendor.assessmentStatus;
-  if (vendor.lastAssessmentAt) return 'Completed';
   if (vendor.nextReviewAt) {
     const due = new Date(vendor.nextReviewAt).getTime();
     const soon = Date.now() + 14 * 24 * 60 * 60 * 1000;
@@ -682,7 +682,7 @@ export function VendorsDirectory() {
                 aria-label="Status"
               >
                 <option value="all">Status</option>
-                {['Not Started', 'Sent', 'In Progress', 'Due Soon', 'Overdue', 'Completed'].map((s) => (
+                {['Not Started', 'Sent', 'In Progress', 'Under Review', 'Due Soon', 'Overdue', 'Completed'].map((s) => (
                   <option key={s} value={s}>
                     {s}
                   </option>
@@ -803,6 +803,15 @@ export function VendorsDirectory() {
                               'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium',
                               riskBandClasses(level)
                             )}
+                            title={
+                              hasRealRiskScore(v)
+                                ? 'Security residual score'
+                                : v.finalRating
+                                  ? 'Final rating (impact + security)'
+                                  : v.impactLevel
+                                    ? 'From impact assessment'
+                                    : 'From vendor criticality (no security score yet)'
+                            }
                           >
                             {hasRealRiskScore(v) && (
                               <>
@@ -810,7 +819,7 @@ export function VendorsDirectory() {
                                 <span className="opacity-80">·</span>
                               </>
                             )}
-                            {hasRealRiskScore(v) ? level : 'Not assessed'}
+                            {level}
                           </span>
                         </td>
                         <td className="px-4 py-3">
