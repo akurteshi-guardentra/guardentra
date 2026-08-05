@@ -73,6 +73,12 @@ export function Pricing() {
   const [error, setError] = useState<string | null>(null);
 
   const hasActiveSubscription = profile?.subscriptionStatus === 'active';
+  const stripeConfigured = Boolean(
+    import.meta.env.VITE_STRIPE_PRICE_STARTER_MONTHLY &&
+      import.meta.env.VITE_STRIPE_PRICE_STARTER_ANNUAL &&
+      import.meta.env.VITE_STRIPE_PRICE_GROWTH_MONTHLY &&
+      import.meta.env.VITE_STRIPE_PRICE_GROWTH_ANNUAL
+  );
 
   const handleSubscribe = async (priceId: string) => {
     if (priceId === 'contact_sales') {
@@ -80,7 +86,7 @@ export function Pricing() {
       return;
     }
     if (!priceId) {
-      setError('This plan is not available for self-serve checkout yet — contact sales.');
+      setError('Self-serve checkout is not configured yet. Contact sales to subscribe.');
       return;
     }
 
@@ -128,6 +134,13 @@ export function Pricing() {
         <p className="text-lg text-slate-400 max-w-2xl mx-auto">
           {t('pricing.subtitle')}
         </p>
+        {!stripeConfigured && (
+          <p className="mx-auto max-w-xl rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-100/90">
+            Stripe price IDs are not set in this environment. Starter and Growth checkout stay
+            disabled until <code className="font-mono">VITE_STRIPE_PRICE_*</code> is configured.
+            Gov contact sales still works.
+          </p>
+        )}
 
         <div className="flex items-center justify-center gap-3 mt-8">
           <span className={`text-sm ${!isAnnual ? 'text-white' : 'text-slate-400'}`}>{t('pricing.monthly')}</span>
@@ -188,21 +201,35 @@ export function Pricing() {
                 </ul>
               </CardContent>
               <CardFooter>
-                <Button
-                  className={`w-full ${plan.popular ? 'bg-primary hover:bg-primary/90 text-white' : 'bg-white/5 hover:bg-white/10 text-white border border-white/10'} ${hasActiveSubscription ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  onClick={() => handleSubscribe(isAnnual ? plan.priceId.annually : plan.priceId.monthly)}
-                  disabled={loadingPlan === (isAnnual ? plan.priceId.annually : plan.priceId.monthly) || hasActiveSubscription}
-                >
-                  {loadingPlan === (isAnnual ? plan.priceId.annually : plan.priceId.monthly) ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : hasActiveSubscription ? (
-                    t('pricing.current_plan')
-                  ) : plan.id === 'gov' ? (
-                    'Contact Sales'
-                  ) : (
-                    t('pricing.subscribe')
-                  )}
-                </Button>
+                {(() => {
+                  const priceId = isAnnual ? plan.priceId.annually : plan.priceId.monthly;
+                  const checkoutDisabled =
+                    plan.id !== 'gov' &&
+                    (!stripeConfigured || !priceId || hasActiveSubscription);
+                  return (
+                    <Button
+                      className={`w-full ${plan.popular ? 'bg-primary hover:bg-primary/90 text-white' : 'bg-white/5 hover:bg-white/10 text-white border border-white/10'} ${checkoutDisabled && plan.id !== 'gov' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      onClick={() => handleSubscribe(priceId)}
+                      disabled={
+                        loadingPlan === priceId ||
+                        hasActiveSubscription ||
+                        (plan.id !== 'gov' && (!stripeConfigured || !priceId))
+                      }
+                    >
+                      {loadingPlan === priceId ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : hasActiveSubscription ? (
+                        t('pricing.current_plan')
+                      ) : plan.id === 'gov' ? (
+                        'Contact Sales'
+                      ) : !stripeConfigured || !priceId ? (
+                        'Checkout unavailable'
+                      ) : (
+                        t('pricing.subscribe')
+                      )}
+                    </Button>
+                  );
+                })()}
               </CardFooter>
             </Card>
           </motion.div>

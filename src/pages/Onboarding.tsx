@@ -12,34 +12,17 @@ import { useNavigate, Link } from 'react-router-dom';
 import { cn } from '../lib/utils';
 import { seedProfessionalData } from '../lib/seeding';
 import { logOut } from '../lib/firebase-utils';
+import { ONBOARDING_FRAMEWORKS } from '../lib/vendor/constants';
+import type { FrameworkId } from '../lib/vendor/types';
+import { currentDefaultsForFrameworks, saveOrgFrameworkPackDefaults } from '../lib/vendor/orgFrameworkPacks';
 import { isLocallyOnboarded, setLocallyOnboarded } from '../lib/onboardingFlag';
 
-const FRAMEWORKS = [
-  {
-    id: 'iso27001',
-    name: 'ISO 27001:2022',
-    icon: Shield,
-    desc: 'The certification enterprise buyers ask for most often in security reviews.',
-  },
-  {
-    id: 'soc2',
-    name: 'SOC 2 Type II',
-    icon: Target,
-    desc: 'Audited proof of how you handle security, availability and confidentiality over time.',
-  },
-  {
-    id: 'nist',
-    name: 'NIST CSF 2.0',
-    icon: Globe,
-    desc: 'A practical control baseline. Common in US public sector and critical infrastructure.',
-  },
-  {
-    id: 'hipaa',
-    name: 'HIPAA',
-    icon: Shield,
-    desc: 'Required if you or your vendors touch protected health information.',
-  },
-];
+const ONBOARDING_ICONS: Record<string, typeof Shield> = {
+  iso27001: Shield,
+  soc2: Target,
+  nist_csf_2: Globe,
+  hipaa: Shield,
+};
 
 export function Onboarding() {
   const { profile, user, loading } = useAuth();
@@ -48,6 +31,7 @@ export function Onboarding() {
   const [orgName, setOrgName] = useState('');
   const [industry, setIndustry] = useState('');
   const [selectedFrameworks, setSelectedFrameworks] = useState<string[]>([]);
+  const [seedSampleData, setSeedSampleData] = useState(false);
   const [isFinishing, setIsFinishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,7 +42,6 @@ export function Onboarding() {
       navigate('/dashboard');
     }
   }, [profile?.onboarded, loading, user, navigate]);
-
   const handleNext = () => {
     setError(null);
     if (step === 1 && !orgName.trim()) {
@@ -113,13 +96,14 @@ export function Onboarding() {
           console.warn("Onboarding: Organization update failed:", e);
         }
 
-        // 2. Initialize Selected Frameworks
+        // 2. Initialize Selected Frameworks (shared FrameworkIds with vendor catalog)
         if (selectedFrameworks.length > 0) {
           console.log("Onboarding: Initializing frameworks...", selectedFrameworks);
           try {
             await Promise.all(selectedFrameworks.map(async (frameworkId) => {
-              const fw = FRAMEWORKS.find(f => f.id === frameworkId);
+              const fw = ONBOARDING_FRAMEWORKS.find(f => f.id === frameworkId);
               return addDoc(collection(db, 'compliance'), {
+                frameworkId,
                 name: fw?.name || frameworkId,
                 organizationId: activeOrgId,
                 status: 'Active',
@@ -128,22 +112,32 @@ export function Onboarding() {
               });
             }));
             console.log("Onboarding: Frameworks initialized");
+            try {
+              await saveOrgFrameworkPackDefaults(
+                activeOrgId,
+                currentDefaultsForFrameworks(selectedFrameworks as FrameworkId[])
+              );
+            } catch (e: any) {
+              console.warn("Onboarding: Framework pack defaults failed:", e);
+            }
           } catch (e: any) {
             console.warn("Onboarding: Frameworks initialization failed:", e);
           }
         }
 
-        // 3. Seed Professional Data Templates
-        console.log("Onboarding: Seeding professional metrics...");
-        try {
-          await seedProfessionalData({
-            organizationId: activeOrgId,
-            industry: industry || 'SaaS',
-            frameworks: selectedFrameworks
-          });
-          console.log("Onboarding: Seeding completed");
-        } catch (e: any) {
-          console.warn("Onboarding: Seeding failed, proceeding with local fallback:", e);
+        // 3. Optional sample seed (off by default — keeps Dashboard Quick Start honest)
+        if (seedSampleData) {
+          console.log("Onboarding: Seeding professional metrics...");
+          try {
+            await seedProfessionalData({
+              organizationId: activeOrgId,
+              industry: industry || 'SaaS',
+              frameworks: selectedFrameworks
+            });
+            console.log("Onboarding: Seeding completed");
+          } catch (e: any) {
+            console.warn("Onboarding: Seeding failed, proceeding with local fallback:", e);
+          }
         }
       } else {
         console.log("Onboarding: Invited member joining existing org — skipping org update/framework init/seeding");
@@ -258,7 +252,7 @@ export function Onboarding() {
                   <select 
                     value={industry}
                     onChange={(e) => setIndustry(e.target.value)}
-                    className="w-full h-14 px-4 rounded-xl bg-white/5 border border-white/10 text-white text-lg focus:ring-1 focus:ring-primary outline-none"
+                    className="w-full h-14 px-4 rounded-xl bg-slate-950 border border-white/10 text-white text-lg focus:ring-1 focus:ring-primary outline-none [&>option]:bg-slate-950 [&>option]:text-white"
                   >
                     <option value="" disabled>Select industry...</option>
                     <option value="FinTech">Financial services / FinTech</option>
@@ -308,8 +302,8 @@ export function Onboarding() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {FRAMEWORKS.map((fw) => {
-                  const Icon = fw.icon;
+                {ONBOARDING_FRAMEWORKS.map((fw) => {
+                  const Icon = ONBOARDING_ICONS[fw.id] || Shield;
                   const isSelected = selectedFrameworks.includes(fw.id);
                   return (
                     <Card 
@@ -390,6 +384,17 @@ export function Onboarding() {
                     </div>
                   </div>
                 </div>
+                <label className="mt-5 flex items-start gap-3 cursor-pointer border-t border-white/5 pt-4">
+                  <input
+                    type="checkbox"
+                    checked={seedSampleData}
+                    onChange={(e) => setSeedSampleData(e.target.checked)}
+                    className="mt-1 rounded border-white/20 bg-black/40"
+                  />
+                  <span className="text-xs text-slate-400 leading-relaxed">
+                    Load sample demo data (risks, incidents, etc.). Leave unchecked for a clean vendor spine.
+                  </span>
+                </label>
               </Card>
 
               <Button 

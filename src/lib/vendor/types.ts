@@ -79,6 +79,13 @@ export interface VendorAssessment {
   vendorName?: string;
   organizationId: string;
   frameworks: FrameworkId[];
+  /**
+   * Pack pins used when the assessment was created (e.g. iso27001@2022).
+   * Existing assessments keep these forever — never auto-upgrade.
+   */
+  frameworkPackIds?: string[];
+  /** Global bank stamp at create time (see QUESTION_BANK_VERSION). */
+  questionBankVersion?: string;
   status: AssessmentStatus;
   dueAt?: string;
   progressPct: number;
@@ -118,6 +125,8 @@ export interface AssessmentQuestion {
   order: number;
   frameworkIds: FrameworkId[];
   required: boolean;
+  /** Durable control identity when snapshotted from the bank. */
+  controlKey?: string;
 }
 
 export interface AssessmentResponse {

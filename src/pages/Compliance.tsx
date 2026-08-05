@@ -25,10 +25,10 @@ interface Framework {
 const PREBUILT_FRAMEWORKS = [
   { name: 'NYDFS Part 500', description: 'New York Cybersecurity Regulation for Financial Services (Insurance Focus)', progress: 0, status: 'Not Started' },
   { name: 'NAIC Model Law 668', description: 'Data Security Model Law for Insurance Carriers and Producers', progress: 0, status: 'Not Started' },
-  { name: 'ISO/IEC 27001:2022', description: 'International standard for Information Security Management Systems', progress: 0, status: 'Not Started' },
-  { name: 'SOC 2 Type II', description: 'Reporting on controls for Security, Availability, and Confidentiality', progress: 0, status: 'Not Started' },
+  { name: 'ISO/IEC 27001:2022', frameworkId: 'iso27001', description: 'International standard for Information Security Management Systems', progress: 0, status: 'Not Started' },
+  { name: 'SOC 2 Type II', frameworkId: 'soc2', description: 'Reporting on controls for Security, Availability, and Confidentiality', progress: 0, status: 'Not Started' },
   { name: 'Solvency II (Security)', description: 'Operational Risk and Governance for EU/UK Insurance entities', progress: 0, status: 'Not Started' },
-  { name: 'NIST CSF 2.0', description: 'US National Institute of Standards Cybersecurity Framework', progress: 0, status: 'Not Started' },
+  { name: 'NIST CSF 2.0', frameworkId: 'nist_csf_2', description: 'US National Institute of Standards Cybersecurity Framework', progress: 0, status: 'Not Started' },
   { name: 'GDPR (Article 32)', description: 'Security of and Privacy for EU Data Subject Processing', progress: 0, status: 'Not Started' },
   { name: 'DORA', description: 'Digital Operational Resilience Act for EU Financial Entities', progress: 0, status: 'Not Started' },
   { name: 'CCPA / CPRA', description: 'California Privacy Rights for Consumer PII Protection', progress: 0, status: 'Not Started' },
@@ -118,11 +118,14 @@ export function Compliance() {
 
       await addDoc(collection(db, 'compliance'), {
         ...base,
+        frameworkId: base.frameworkId || undefined,
+        name: base.name,
         description: aiResponse.description || base.description,
         progress: 0,
         status: 'In Progress',
         nextAudit: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         organizationId: profile.organizationId,
+        activatedAt: new Date().toISOString(),
         isLibraryItem: true,
         aiMetadata: aiResponse,
         createdAt: new Date().toISOString()

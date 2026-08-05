@@ -174,9 +174,17 @@ export async function seedProfessionalData({ organizationId, industry, framework
 
     // 5. Seed Compliance/Audit Readiness
     for (const frameworkId of frameworks) {
-      const frameworkName = frameworkId.toUpperCase();
+      const frameworkName =
+        frameworkId === 'nist_csf_2'
+          ? 'NIST CSF 2.0'
+          : frameworkId === 'iso27001'
+            ? 'ISO 27001:2022'
+            : frameworkId === 'soc2'
+              ? 'SOC 2 Type II'
+              : String(frameworkId).toUpperCase();
       await addDoc(collection(db, 'audit_readiness'), {
         framework: frameworkName,
+        frameworkId,
         readinessScore: 65 + Math.floor(Math.random() * 20),
         status: "Near Ready",
         redFlags: ["Missing quarterly internal audit", "Policy version drift"],
@@ -230,7 +238,7 @@ export async function seedProfessionalData({ organizationId, industry, framework
     const identities = [
       {
         name: "Devon Lane",
-        email: "devon@nexusgrc.io",
+        email: "devon@guardentra.com",
         device: "MacBook Pro M3",
         accessLevel: 'Global Admin',
         dataSensitivity: 'Level 5 (PII, Financials)',
@@ -241,7 +249,7 @@ export async function seedProfessionalData({ organizationId, industry, framework
       },
       {
         name: "Sarah Chen",
-        email: "sarah@nexusgrc.io",
+        email: "sarah@guardentra.com",
         device: "Windows 11 Surface",
         accessLevel: 'Developer',
         dataSensitivity: 'Level 4 (Source Code)',
@@ -252,7 +260,7 @@ export async function seedProfessionalData({ organizationId, industry, framework
       },
       {
         name: "Marcus Thorne",
-        email: "marcus@nexusgrc.io",
+        email: "marcus@guardentra.com",
         device: "iPhone 15 Pro",
         accessLevel: 'Sales Ops',
         dataSensitivity: 'Level 3 (CRM, Contacts)',

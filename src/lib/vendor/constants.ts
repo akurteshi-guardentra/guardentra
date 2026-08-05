@@ -1,5 +1,6 @@
-import type { FrameworkDefinition, RiskLevel } from './types';
+import type { FrameworkDefinition, FrameworkId, RiskLevel } from './types';
 import { countQuestionsForFramework } from './questionBank';
+import { getCurrentPack } from './frameworkPacks';
 
 export const FRAMEWORK_CATALOG: FrameworkDefinition[] = [
   {
@@ -43,6 +44,34 @@ export const FRAMEWORK_CATALOG: FrameworkDefinition[] = [
     name: 'Custom Questionnaire',
     description: 'Create or upload your own questions',
     questionCount: 0,
+  },
+];
+
+/** Onboarding picks — same FrameworkIds as the vendor catalog (no parallel id system). */
+export const ONBOARDING_FRAMEWORKS: {
+  id: FrameworkId;
+  name: string;
+  desc: string;
+}[] = [
+  {
+    id: 'iso27001',
+    name: getCurrentPack('iso27001')?.displayName || 'ISO 27001:2022',
+    desc: 'The certification enterprise buyers ask for most often in security reviews.',
+  },
+  {
+    id: 'soc2',
+    name: 'SOC 2 Type II',
+    desc: 'Audited proof of how you handle security, availability and confidentiality over time.',
+  },
+  {
+    id: 'nist_csf_2',
+    name: getCurrentPack('nist_csf_2')?.displayName || 'NIST CSF 2.0',
+    desc: 'A practical control baseline. Common in US public sector and critical infrastructure.',
+  },
+  {
+    id: 'hipaa',
+    name: 'HIPAA',
+    desc: 'Required if you or your vendors touch protected health information.',
   },
 ];
 

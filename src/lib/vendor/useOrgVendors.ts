@@ -10,18 +10,21 @@ export const VENDOR_RETRY_INTERVAL_MS = 30000;
 
 /** Write any local-only vendors (created while Firestore was unreachable) for real,
  * then drop them from the local store — otherwise they'd stay invisible to teammates
- * forever even after Firestore reconnects. */
-export async function promoteLocalVendors(orgId: string): Promise<void> {
+ * forever even after Firestore reconnects. Returns map of localVendorId → cloudVendorId. */
+export async function promoteLocalVendors(orgId: string): Promise<Map<string, string>> {
+  const idMap = new Map<string, string>();
   const localOnly = listLocalVendors(orgId).filter((v) => v.id.startsWith('local_'));
   for (const vendor of localOnly) {
     try {
       const { id, ...rest } = vendor;
-      await addDoc(collection(db, 'vendors'), rest);
+      const ref = await addDoc(collection(db, 'vendors'), rest);
+      idMap.set(id, ref.id);
       removeLocalVendor(orgId, id);
     } catch (err) {
       console.warn('useOrgVendors: could not promote local-only vendor, will retry next reconnect', err);
     }
   }
+  return idMap;
 }
 
 /**

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { addDoc, collection } from 'firebase/firestore';
 import { Check, ChevronDown, ChevronRight, Eye, Search, Sparkles } from 'lucide-react';
@@ -12,10 +12,15 @@ import type { FrameworkId } from '../lib/vendor/types';
 import { displayRiskScore, effectiveRiskLevel, hasRealRiskScore, riskBandClasses } from '../lib/vendor/risk';
 import { validateAssessmentWizard } from '../lib/vendor/validators';
 import {
-  buildQuestionsForFrameworks,
   QUESTION_CATEGORIES,
   type PortalQuestion,
 } from '../lib/vendor/questionBank';
+import {
+  buildQuestionsForPackIds,
+  resolvePackIdsForFrameworks,
+  QUESTION_BANK_VERSION,
+} from '../lib/vendor/frameworkPacks';
+import { loadOrgFrameworkPackDefaults } from '../lib/vendor/orgFrameworkPacks';
 import { useOrgVendors } from '../lib/vendor/useOrgVendors';
 import { createLocalAssessment } from '../lib/vendor/localAssessmentStore';
 import { isFirestoreUnavailableError } from '../lib/vendor/localVendorStore';
@@ -28,6 +33,12 @@ export function AssessmentWizard() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const presetVendorId = params.get('vendorId') || '';
+  const [packDefaults, setPackDefaults] = useState<Partial<Record<FrameworkId, string>>>({});
+
+  useEffect(() => {
+    if (!orgId) return;
+    void loadOrgFrameworkPackDefaults(orgId).then(setPackDefaults);
+  }, [orgId]);
 
   const { vendors, mode: vendorMode, loading: vendorsLoading } = useOrgVendors(orgId);
 
@@ -41,6 +52,16 @@ export function AssessmentWizard() {
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+
+  const frameworkPackIds = useMemo(
+    () => resolvePackIdsForFrameworks(frameworks, packDefaults),
+    [frameworks, packDefaults]
+  );
+
+  const previewQuestions = useMemo(
+    () => (frameworkPackIds.length ? buildQuestionsForPackIds(frameworkPackIds) : []),
+    [frameworkPackIds]
+  );
 
   const selected = vendors.find((v) => v.id === vendorId);
   const filtered = useMemo(() => {
@@ -62,11 +83,6 @@ export function AssessmentWizard() {
     }
     return FRAMEWORK_CATALOG.filter((f) => f.id !== 'custom');
   }, [frameworkTab]);
-
-  const previewQuestions = useMemo(
-    () => buildQuestionsForFrameworks(frameworks),
-    [frameworks]
-  );
 
   const questionsByCategory = useMemo(() => {
     const map = Object.fromEntries(QUESTION_CATEGORIES.map((c) => [c, [] as PortalQuestion[]])) as Record<
@@ -96,6 +112,10 @@ export function AssessmentWizard() {
       setError(err);
       return;
     }
+    if (!previewQuestions.length) {
+      setError('No questions available for the selected frameworks. Pick at least one standard framework.');
+      return;
+    }
     setError('');
     const open: Record<string, boolean> = {};
     QUESTION_CATEGORIES.forEach((c) => {
@@ -107,9 +127,13 @@ export function AssessmentWizard() {
 
   const createLocalAndOpen = async () => {
     if (!orgId || !selected) return;
+    if (!previewQuestions.length) {
+      setError('No questions available for the selected frameworks. Pick at least one standard framework.');
+      return;
+    }
     const due = new Date();
     due.setDate(due.getDate() + 14);
-    const questions = buildQuestionsForFrameworks(frameworks);
+    const questions = previewQuestions;
     const frameworkName = frameworks
       .map((id) => FRAMEWORK_CATALOG.find((f) => f.id === id)?.name || id)
       .join(', ');
@@ -117,6 +141,8 @@ export function AssessmentWizard() {
       vendorId,
       vendorName: selected.name,
       frameworks,
+      frameworkPackIds,
+      questionBankVersion: QUESTION_BANK_VERSION,
       frameworkName,
       status: 'Sent',
       dueAt: due.toISOString(),
@@ -135,13 +161,17 @@ export function AssessmentWizard() {
       setError(err);
       return;
     }
+    if (!previewQuestions.length) {
+      setError('No questions available for the selected frameworks. Pick at least one standard framework.');
+      return;
+    }
     if (!orgId || !selected) return;
     setSaving(true);
     setError('');
     try {
       const due = new Date();
       due.setDate(due.getDate() + 14);
-      const questions = buildQuestionsForFrameworks(frameworks);
+      const questions = previewQuestions;
       const frameworkName = frameworks
         .map((id) => FRAMEWORK_CATALOG.find((f) => f.id === id)?.name || id)
         .join(', ');
@@ -165,6 +195,8 @@ export function AssessmentWizard() {
           vendorName: selected.name,
           organizationId: orgId,
           frameworks,
+          frameworkPackIds,
+          questionBankVersion: QUESTION_BANK_VERSION,
           frameworkName,
           status: 'Sent',
           dueAt: due.toISOString(),
@@ -204,7 +236,9 @@ export function AssessmentWizard() {
       // portal, which is an external-facing page with no app navigation, so whoever
       // created the assessment hit a dead end with no way back. The portal link is
       // still one click away from here via "Copy Vendor Portal Link".
-      navigate(`/assessments?vendorId=${encodeURIComponent(vendorId)}`);
+      navigate(
+        `/assessments?vendorId=${encodeURIComponent(vendorId)}&created=${encodeURIComponent(ref.id)}`
+      );
     } catch (ex: unknown) {
       if (isFirestoreUnavailableError(ex)) {
         try {

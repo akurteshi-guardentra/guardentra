@@ -33,6 +33,13 @@ describe('vendor validators', () => {
     expect(validateAssessmentWizard({ vendorId: 'v1', frameworks: ['soc2'] })).toBeNull();
   });
 
+  it('rejects custom-only framework selection', () => {
+    expect(validateAssessmentWizard({ vendorId: 'v1', frameworks: ['custom'] })).toMatch(/custom/i);
+    expect(
+      validateAssessmentWizard({ vendorId: 'v1', frameworks: ['custom', 'soc2'] })
+    ).toBeNull();
+  });
+
   it('rejects oversized evidence', () => {
     const big = new File([new Uint8Array(26 * 1024 * 1024)], 'x.pdf', { type: 'application/pdf' });
     expect(validateEvidenceFile(big)).toMatch(/25MB/i);

@@ -1,4 +1,4 @@
-// NexusGRC Main Server - Deployment Revision 2026-04-29-1952-v3
+// Guardentra Main Server - Deployment Revision 2026-04-29-1952-v3
 // MUST stay first: route modules read process.env at import time, and ESM evaluates
 // imports before any statement below them. See server/loadEnv.ts.
 import "./server/loadEnv.ts";
@@ -36,7 +36,7 @@ export async function createApp() {
 
   // API routes FIRST
   app.get("/api/health", (_req, res) => {
-    res.json({ status: "ok", message: "NexusGRC API is online." });
+    res.json({ status: "ok", message: "Guardentra API is online." });
   });
 
   app.use("/api/ai", requireFirebaseAuth, aiRoutes);

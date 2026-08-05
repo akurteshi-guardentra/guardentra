@@ -134,6 +134,25 @@ describe('promoteLocalAssessments (KI#5)', () => {
 
     expect(listLocalAssessments('org1')).toEqual([expect.objectContaining({ id: a.id })]);
   });
+
+  it('remaps local vendorId onto the cloud vendor id when promoting', async () => {
+    const vendor = createLocalVendor('org1', { name: 'Acme', category: 'SaaS', criticality: 'High' });
+    createLocalAssessment('org1', {
+      vendorId: vendor.id,
+      vendorName: 'Acme',
+      frameworks: ['soc2'],
+    });
+    addDocMock
+      .mockResolvedValueOnce({ id: 'cloud_vendor_1' } as never)
+      .mockResolvedValueOnce({ id: 'cloud_asm_1' } as never);
+
+    await promoteLocalAssessments('org1');
+
+    expect(addDocMock).toHaveBeenCalledTimes(2);
+    const asmPayload = addDocMock.mock.calls[1][1] as { vendorId: string };
+    expect(asmPayload.vendorId).toBe('cloud_vendor_1');
+    expect(listLocalAssessments('org1')).toEqual([]);
+  });
 });
 
 describe('useOrgVendors retry → promote on reconnect (KI#5)', () => {

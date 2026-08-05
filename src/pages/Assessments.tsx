@@ -30,6 +30,8 @@ import {
   type StoredAssessment,
 } from '../lib/vendor/localAssessmentStore';
 import { FRAMEWORK_CATALOG } from '../lib/vendor/constants';
+import { packsNeedingUpgradeNotice } from '../lib/vendor/frameworkPacks';
+import { loadOrgFrameworkPackDefaults } from '../lib/vendor/orgFrameworkPacks';
 
 const SELECT_CLASS =
   'h-9 rounded-md border border-white/10 bg-slate-950 px-3 text-sm text-white [&>option]:bg-slate-950 [&>option]:text-white';
@@ -64,6 +66,7 @@ export function Assessments() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const presetVendorId = params.get('vendorId') || '';
+  const createdId = params.get('created') || '';
 
   const { assessments, mode, loading, refreshLocal } = useOrgAssessments(orgId);
   const { vendors } = useOrgVendors(orgId);
@@ -73,6 +76,10 @@ export function Assessments() {
   const [reviewAssessment, setReviewAssessment] = useState<StoredAssessment | null>(null);
   const [isReviewing, setIsReviewing] = useState(false);
   const [reminderState, setReminderState] = useState<Record<string, 'sending' | 'sent' | 'error'>>({});
+  const [packNotices, setPackNotices] = useState<
+    ReturnType<typeof packsNeedingUpgradeNotice>
+  >([]);
+  const [toast, setToast] = useState<{ tone: 'ok' | 'warn' | 'err'; text: string } | null>(null);
   const [reviewAnalysis, setReviewAnalysis] = useState<{
     summary: string;
     rating: string;
@@ -80,8 +87,84 @@ export function Assessments() {
   } | null>(null);
 
   useEffect(() => {
+    if (!toast) return;
+    const t = window.setTimeout(() => setToast(null), 4000);
+    return () => window.clearTimeout(t);
+  }, [toast]);
+
+  useEffect(() => {
+    if (!orgId) return;
+    void loadOrgFrameworkPackDefaults(orgId).then((defaults) => {
+      setPackNotices(packsNeedingUpgradeNotice(defaults));
+    });
+  }, [orgId]);
+
+  const isLocalAssessment = (a: StoredAssessment) =>
+    a.id.startsWith('local_asm_') || mode === 'local';
+
+  const copyPortalLink = async (a: StoredAssessment) => {
+    if (isLocalAssessment(a)) {
+      setToast({
+        tone: 'warn',
+        text: 'Portal link available after cloud sync — wait for Firestore reconnect, then try again.',
+      });
+      return;
+    }
+    const url = `${window.location.origin}/portal/${a.id}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setToast({ tone: 'ok', text: `Portal link copied: ${url}` });
+    } catch {
+      setToast({ tone: 'err', text: 'Could not copy link — copy it manually from the address bar after opening.' });
+    }
+  };
+
+  const handleSendReminder = async (assessment: StoredAssessment) => {
+    if (isLocalAssessment(assessment)) {
+      setToast({
+        tone: 'warn',
+        text: 'Reminders need a cloud assessment id. Wait for sync, then send again.',
+      });
+      setReminderState((prev) => ({ ...prev, [assessment.id]: 'error' }));
+      return;
+    }
+    const vendor = vendors.find((v) => v.id === assessment.vendorId);
+    if (!vendor?.primaryContactEmail) {
+      setReminderState((prev) => ({ ...prev, [assessment.id]: 'error' }));
+      setToast({ tone: 'err', text: 'Add a primary contact email on the vendor before sending a reminder.' });
+      return;
+    }
+    setReminderState((prev) => ({ ...prev, [assessment.id]: 'sending' }));
+    try {
+      const portalUrl = `${window.location.origin}/portal/${assessment.id}`;
+      const due = assessment.dueAt || assessment.dueDate;
+      await sendEmail({
+        to: vendor.primaryContactEmail,
+        subject: `Reminder: security assessment pending — ${assessment.vendorName || vendor.name}`,
+        text: `Hi${vendor.primaryContactName ? ` ${vendor.primaryContactName}` : ''},\n\nThis is a reminder that a security assessment (${frameworkLabel(assessment)}) is still awaiting your response.\n\nComplete it here: ${portalUrl}\n${due ? `\nDue: ${new Date(due).toLocaleDateString()}\n` : ''}\nYour progress saves automatically.`,
+      });
+      setReminderState((prev) => ({ ...prev, [assessment.id]: 'sent' }));
+      setToast({ tone: 'ok', text: `Reminder sent to ${vendor.primaryContactEmail}` });
+    } catch (e) {
+      console.warn('Send reminder failed', e);
+      setReminderState((prev) => ({ ...prev, [assessment.id]: 'error' }));
+      setToast({ tone: 'err', text: 'Reminder failed — check email delivery (Trigger Email extension) or try again.' });
+    }
+  };
+
+  useEffect(() => {
     if (presetVendorId) setVendorFilter(presetVendorId);
   }, [presetVendorId]);
+
+  useEffect(() => {
+    if (!createdId || createdId.startsWith('local_')) return;
+    const url = `${window.location.origin}/portal/${createdId}`;
+    setToast({ tone: 'ok', text: `Assessment created. Portal link ready — copy from the row actions: ${url}` });
+    // Drop ?created= so refresh doesn't re-toast
+    const next = new URLSearchParams(params);
+    next.delete('created');
+    setParams(next, { replace: true });
+  }, [createdId]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -142,28 +225,6 @@ export function Assessments() {
       } catch (e) {
         console.error('AI Review failed:', e);
       }
-    }
-  };
-
-  const handleSendReminder = async (assessment: StoredAssessment) => {
-    const vendor = vendors.find((v) => v.id === assessment.vendorId);
-    if (!vendor?.primaryContactEmail) {
-      setReminderState((prev) => ({ ...prev, [assessment.id]: 'error' }));
-      return;
-    }
-    setReminderState((prev) => ({ ...prev, [assessment.id]: 'sending' }));
-    try {
-      const portalUrl = `${window.location.origin}/portal/${assessment.id}`;
-      const due = assessment.dueAt || assessment.dueDate;
-      await sendEmail({
-        to: vendor.primaryContactEmail,
-        subject: `Reminder: security assessment pending — ${assessment.vendorName || vendor.name}`,
-        text: `Hi${vendor.primaryContactName ? ` ${vendor.primaryContactName}` : ''},\n\nThis is a reminder that a security assessment (${frameworkLabel(assessment)}) is still awaiting your response.\n\nComplete it here: ${portalUrl}\n${due ? `\nDue: ${new Date(due).toLocaleDateString()}\n` : ''}\nYour progress saves automatically.`,
-      });
-      setReminderState((prev) => ({ ...prev, [assessment.id]: 'sent' }));
-    } catch (e) {
-      console.warn('Send reminder failed', e);
-      setReminderState((prev) => ({ ...prev, [assessment.id]: 'error' }));
     }
   };
 
@@ -248,6 +309,24 @@ export function Assessments() {
           New Assessment
         </Button>
       </div>
+
+      {packNotices.length > 0 && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100/90">
+          <p className="font-medium text-amber-200">
+            Newer framework pack{packNotices.length > 1 ? 's' : ''} available
+          </p>
+          <p className="mt-1 text-xs text-slate-400">
+            {packNotices
+              .map((n) => `${n.pinnedPackId} → ${n.current.packId}`)
+              .join(' · ')}
+            . Existing assessments keep their stamped version. Review and pin defaults in{' '}
+            <Link to="/settings" className="text-primary underline-offset-2 hover:underline">
+              Settings
+            </Link>
+            .
+          </p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
         <Card className="flex flex-col items-center justify-center border-white/5 bg-slate-900/50 p-4 text-center">
@@ -433,12 +512,19 @@ export function Assessments() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="mr-2 h-8 w-8 p-0 text-slate-400 transition-colors hover:text-primary"
-                          onClick={() => {
-                            const url = `${window.location.origin}/portal/${a.id}`;
-                            void navigator.clipboard.writeText(url);
-                          }}
-                          title="Copy Vendor Portal Link"
+                          className={cn(
+                            'mr-2 h-8 w-8 p-0 transition-colors',
+                            isLocalAssessment(a)
+                              ? 'text-slate-600 cursor-not-allowed'
+                              : 'text-slate-400 hover:text-primary'
+                          )}
+                          disabled={isLocalAssessment(a)}
+                          onClick={() => void copyPortalLink(a)}
+                          title={
+                            isLocalAssessment(a)
+                              ? 'Portal link available after cloud sync'
+                              : 'Copy Vendor Portal Link'
+                          }
                         >
                           <ExternalLink className="h-4 w-4" />
                         </Button>
@@ -450,14 +536,16 @@ export function Assessments() {
                               'mr-2 h-8 w-8 p-0 transition-colors',
                               reminderState[a.id] === 'sent'
                                 ? 'text-emerald-400'
-                                : reminderState[a.id] === 'error'
-                                ? 'text-rose-400'
+                                : reminderState[a.id] === 'error' || isLocalAssessment(a)
+                                ? 'text-rose-400/70'
                                 : 'text-slate-400 hover:text-primary'
                             )}
-                            disabled={reminderState[a.id] === 'sending'}
+                            disabled={reminderState[a.id] === 'sending' || isLocalAssessment(a)}
                             onClick={() => void handleSendReminder(a)}
                             title={
-                              reminderState[a.id] === 'sent'
+                              isLocalAssessment(a)
+                                ? 'Reminder available after cloud sync'
+                                : reminderState[a.id] === 'sent'
                                 ? 'Reminder sent'
                                 : reminderState[a.id] === 'error'
                                 ? 'Could not send — check vendor has a contact email'
@@ -492,6 +580,19 @@ export function Assessments() {
         </CardContent>
       </Card>
 
+      {toast && (
+        <div
+          className={cn(
+            'fixed bottom-6 right-6 z-[200] max-w-md rounded-xl border px-4 py-3 text-sm shadow-xl',
+            toast.tone === 'ok' && 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100',
+            toast.tone === 'warn' && 'border-amber-500/30 bg-amber-500/10 text-amber-100',
+            toast.tone === 'err' && 'border-rose-500/30 bg-rose-500/10 text-rose-100'
+          )}
+        >
+          {toast.text}
+        </div>
+      )}
+
       {isReviewing && reviewAssessment && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
           <motion.div
@@ -524,37 +625,65 @@ export function Assessments() {
                   <h3 className="mb-4 text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
                     Response Intelligence
                   </h3>
-                  {((reviewAssessment.questions || []) as { id?: string; question?: string; category?: string }[]).map(
-                    (q, idx) => (
-                      <div key={q.id || idx} className="space-y-3">
-                        <div className="flex gap-4">
-                          <span className="mt-1 font-mono text-xs text-slate-700">0{idx + 1}</span>
-                          <div className="flex-1">
-                            <p className="mb-2 text-sm font-medium text-slate-200">{q.question}</p>
-                            <div className="rounded-xl border border-white/5 bg-white/[0.03] p-4">
-                              <p className="text-sm font-medium text-primary">
-                                {q.id && reviewAssessment.answers?.[q.id]
-                                  ? formatAssessmentAnswer(reviewAssessment.answers[q.id])
-                                  : 'No response provided.'}
-                              </p>
-                            </div>
-                            {q.category && (
-                              <div className="mt-2 flex items-center gap-2">
-                                <Badge
-                                  variant="outline"
-                                  className="border-white/5 px-1 py-0 text-[9px] text-slate-500"
-                                >
-                                  {q.category}
-                                </Badge>
+                  {progressOf(reviewAssessment) === 0 &&
+                  !Object.keys(reviewAssessment.answers || {}).length ? (
+                    <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-6 space-y-3">
+                      <p className="text-sm font-medium text-amber-100">
+                        Vendor has not started this assessment yet.
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        Share the portal link so they can answer. Review will show responses here once
+                        progress moves above 0%.
+                      </p>
+                      {!isLocalAssessment(reviewAssessment) && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="border-amber-500/40 text-amber-100"
+                          onClick={() => void copyPortalLink(reviewAssessment)}
+                        >
+                          <ExternalLink className="mr-2 h-3.5 w-3.5" />
+                          Copy portal link
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      {((reviewAssessment.questions || []) as {
+                        id?: string;
+                        question?: string;
+                        category?: string;
+                      }[]).map((q, idx) => (
+                        <div key={q.id || idx} className="space-y-3">
+                          <div className="flex gap-4">
+                            <span className="mt-1 font-mono text-xs text-slate-700">0{idx + 1}</span>
+                            <div className="flex-1">
+                              <p className="mb-2 text-sm font-medium text-slate-200">{q.question}</p>
+                              <div className="rounded-xl border border-white/5 bg-white/[0.03] p-4">
+                                <p className="text-sm font-medium text-primary">
+                                  {q.id && reviewAssessment.answers?.[q.id]
+                                    ? formatAssessmentAnswer(reviewAssessment.answers[q.id])
+                                    : 'No response provided.'}
+                                </p>
                               </div>
-                            )}
+                              {q.category && (
+                                <div className="mt-2 flex items-center gap-2">
+                                  <Badge
+                                    variant="outline"
+                                    className="border-white/5 px-1 py-0 text-[9px] text-slate-500"
+                                  >
+                                    {q.category}
+                                  </Badge>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    )
-                  )}
-                  {!(reviewAssessment.questions || []).length && (
-                    <p className="text-sm text-slate-500">No question responses yet.</p>
+                      ))}
+                      {!(reviewAssessment.questions || []).length && (
+                        <p className="text-sm text-slate-500">No question responses yet.</p>
+                      )}
+                    </>
                   )}
                 </div>
 
