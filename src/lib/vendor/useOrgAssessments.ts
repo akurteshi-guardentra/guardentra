@@ -74,6 +74,11 @@ function normalizeCloudDoc(id: string, data: Record<string, unknown>): StoredAss
     // is why the org-side review screen always showed "No response provided."
     answers: data.answers as Record<string, string | string[]> | undefined,
     comments: data.comments as Record<string, string> | undefined,
+    evidenceByQuestion: data.evidenceByQuestion as Record<string, unknown[]> | undefined,
+    decisionOutcome: data.decisionOutcome as StoredAssessment['decisionOutcome'] | undefined,
+    decisionNotes: data.decisionNotes as string | undefined,
+    decidedAt: data.decidedAt as string | undefined,
+    decidedBy: data.decidedBy as string | undefined,
   };
 }
 

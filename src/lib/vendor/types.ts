@@ -94,6 +94,11 @@ export interface VendorAssessment {
   createdAt: string;
   sentAt?: string;
   completedAt?: string;
+  /** Org sign-off outcome (FastTrack decision terminal). */
+  decisionOutcome?: 'approved' | 'conditional' | 'remediate' | 'rejected';
+  decisionNotes?: string;
+  decidedAt?: string;
+  decidedBy?: string;
   inviteEmail?: string;
   /** Legacy fields from older VendorRisk UI */
   type?: string;

@@ -13,6 +13,7 @@ export interface StoredAssessment extends VendorAssessment {
    * assessment doc separately from `questions`, which never carries the answer itself. */
   answers?: Record<string, string | string[]>;
   comments?: Record<string, string>;
+  evidenceByQuestion?: Record<string, unknown[]>;
 }
 
 type StoreShape = Record<string, StoredAssessment[]>;

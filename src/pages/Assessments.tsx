@@ -33,6 +33,11 @@ import { FRAMEWORK_CATALOG } from '../lib/vendor/constants';
 import { packsNeedingUpgradeNotice } from '../lib/vendor/frameworkPacks';
 import { loadOrgFrameworkPackDefaults } from '../lib/vendor/orgFrameworkPacks';
 import { syncVendorAfterAssessmentApprove } from '../lib/vendor/syncVendorAssessment';
+import {
+  exceptionReasonLabel,
+  listAssessmentExceptions,
+  type DecisionOutcome,
+} from '../lib/vendor/assessmentExceptions';
 
 const SELECT_CLASS =
   'h-9 rounded-md border border-white/10 bg-slate-950 px-3 text-sm text-white [&>option]:bg-slate-950 [&>option]:text-white';
@@ -113,6 +118,9 @@ export function Assessments() {
   const [reviewAiError, setReviewAiError] = useState('');
   const [reviewAiLoading, setReviewAiLoading] = useState(false);
   const [approving, setApproving] = useState(false);
+  const [reviewFilter, setReviewFilter] = useState<'exceptions' | 'all'>('exceptions');
+  const [decisionNotes, setDecisionNotes] = useState('');
+  const [decisionOutcome, setDecisionOutcome] = useState<DecisionOutcome>('approved');
 
   useEffect(() => {
     if (!toast) return;
@@ -228,6 +236,9 @@ export function Assessments() {
     setReviewAssessment(assessment);
     setReviewAnalysis(null);
     setReviewAiError('');
+    setReviewFilter('exceptions');
+    setDecisionNotes('');
+    setDecisionOutcome('approved');
     setIsReviewing(true);
 
     const answerEntries = Object.entries(assessment.answers || {}).filter(([, v]) =>
@@ -268,7 +279,27 @@ export function Assessments() {
     }
   };
 
-  const handleApproveAssessment = async () => {
+  const reviewExceptions = useMemo(() => {
+    if (!reviewAssessment) return [];
+    const questions = ((reviewAssessment.questions || []) as {
+      id?: string;
+      question?: string;
+      category?: string;
+      required?: boolean;
+    }[]).map((q) => ({
+      id: q.id || '',
+      question: q.question,
+      category: q.category,
+      required: q.required,
+    }));
+    return listAssessmentExceptions({
+      questions,
+      answers: reviewAssessment.answers,
+      evidenceByQuestion: reviewAssessment.evidenceByQuestion,
+    });
+  }, [reviewAssessment]);
+
+  const handleDecideAssessment = async (outcome: DecisionOutcome) => {
     if (!reviewAssessment || !orgId) return;
     const canSignOff =
       reviewAssessment.status === 'Under Review' ||
@@ -281,46 +312,82 @@ export function Assessments() {
       });
       return;
     }
+    if ((outcome === 'conditional' || outcome === 'remediate') && !decisionNotes.trim()) {
+      setToast({
+        tone: 'warn',
+        text: 'Add decision notes / conditions before continuing.',
+      });
+      return;
+    }
 
     setApproving(true);
-    const completedAt = new Date().toISOString();
-    const nextReview = new Date();
-    nextReview.setFullYear(nextReview.getFullYear() + 1);
-    const nextReviewAt = nextReview.toISOString();
+    const decidedAt = new Date().toISOString();
+    const decidedBy = profile?.email || profile?.displayName || 'org-admin';
     const preferLocal = mode === 'local' || reviewAssessment.id.startsWith('local_');
+    const closes =
+      outcome === 'approved' || outcome === 'conditional' || outcome === 'rejected';
+
+    const nextReview = new Date();
+    if (outcome === 'conditional') {
+      nextReview.setMonth(nextReview.getMonth() + 6);
+    } else {
+      nextReview.setFullYear(nextReview.getFullYear() + 1);
+    }
+    const nextReviewAt = nextReview.toISOString();
+
+    const patch: Partial<StoredAssessment> & {
+      decisionOutcome: DecisionOutcome;
+      decidedAt: string;
+      decidedBy: string;
+      decisionNotes?: string;
+    } = {
+      decisionOutcome: outcome,
+      decisionNotes: decisionNotes.trim() || undefined,
+      decidedAt,
+      decidedBy,
+    };
+
+    if (closes) {
+      patch.status = 'Completed';
+      patch.progressPct = 100;
+      patch.progress = 100;
+      patch.portalOpen = false;
+      patch.completedAt = decidedAt;
+    } else {
+      // Remediate: keep open for vendor follow-up
+      patch.status = 'Under Review';
+      patch.portalOpen = true;
+    }
 
     try {
       if (preferLocal) {
-        upsertLocalAssessment(orgId, {
-          ...reviewAssessment,
-          status: 'Completed',
-          progressPct: 100,
-          progress: 100,
-          portalOpen: false,
-          completedAt,
-        });
+        upsertLocalAssessment(orgId, { ...reviewAssessment, ...patch });
         refreshLocal();
       } else {
-        await updateDoc(doc(db, 'assessments', reviewAssessment.id), {
-          status: 'Completed',
-          progress: 100,
-          progressPct: 100,
-          completedAt,
-          portalOpen: false,
-        });
+        await updateDoc(doc(db, 'assessments', reviewAssessment.id), { ...patch });
       }
-      await syncVendorAfterAssessmentApprove(
-        orgId,
-        reviewAssessment.vendorId,
-        preferLocal,
-        nextReviewAt
-      );
-      setToast({ tone: 'ok', text: 'Assessment signed off. Next review scheduled in 12 months.' });
+
+      if (closes) {
+        await syncVendorAfterAssessmentApprove(
+          orgId,
+          reviewAssessment.vendorId,
+          preferLocal,
+          nextReviewAt
+        );
+      }
+
+      const messages: Record<DecisionOutcome, string> = {
+        approved: 'Approved. Next review scheduled in 12 months.',
+        conditional: 'Conditionally approved. Next review in 6 months.',
+        remediate: 'Remediation recorded. Assessment stays open for follow-up.',
+        rejected: 'Rejected. Portal closed and vendor assessment marked complete.',
+      };
+      setToast({ tone: 'ok', text: messages[outcome] });
       setIsReviewing(false);
       setReviewAssessment(null);
     } catch (e) {
-      console.error('Approval failed:', e);
-      setToast({ tone: 'err', text: 'Sign-off failed — try again.' });
+      console.error('Decision failed:', e);
+      setToast({ tone: 'err', text: 'Decision failed — try again.' });
     } finally {
       setApproving(false);
     }
@@ -693,9 +760,43 @@ export function Assessments() {
             <div className="custom-scrollbar flex-1 overflow-y-auto p-8">
               <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
                 <div className="space-y-8 lg:col-span-2">
-                  <h3 className="mb-4 text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
-                    Response Intelligence
-                  </h3>
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
+                      Response Intelligence
+                    </h3>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-200">
+                        {reviewExceptions.length} exception
+                        {reviewExceptions.length === 1 ? '' : 's'}
+                      </span>
+                      <div className="inline-flex rounded-lg border border-white/10 p-0.5">
+                        <button
+                          type="button"
+                          className={cn(
+                            'rounded-md px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide',
+                            reviewFilter === 'exceptions'
+                              ? 'bg-primary/20 text-primary'
+                              : 'text-slate-500 hover:text-slate-300'
+                          )}
+                          onClick={() => setReviewFilter('exceptions')}
+                        >
+                          Exceptions
+                        </button>
+                        <button
+                          type="button"
+                          className={cn(
+                            'rounded-md px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide',
+                            reviewFilter === 'all'
+                              ? 'bg-primary/20 text-primary'
+                              : 'text-slate-500 hover:text-slate-300'
+                          )}
+                          onClick={() => setReviewFilter('all')}
+                        >
+                          All answers
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                   {progressOf(reviewAssessment) === 0 &&
                   !Object.keys(reviewAssessment.answers || {}).length ? (
                     <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-6 space-y-3">
@@ -718,6 +819,46 @@ export function Assessments() {
                         </Button>
                       )}
                     </div>
+                  ) : reviewFilter === 'exceptions' ? (
+                    <>
+                      {reviewExceptions.length === 0 ? (
+                        <p className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-sm text-emerald-200">
+                          No exceptions flagged — answers look complete. Switch to All answers for a
+                          full walkthrough.
+                        </p>
+                      ) : (
+                        reviewExceptions.map((ex, idx) => (
+                          <div key={`${ex.id}-${ex.reason}`} className="space-y-3">
+                            <div className="flex gap-4">
+                              <span className="mt-1 font-mono text-xs text-slate-700">
+                                {String(idx + 1).padStart(2, '0')}
+                              </span>
+                              <div className="flex-1">
+                                <p className="mb-2 text-sm font-medium text-slate-200">{ex.question}</p>
+                                <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+                                  <p className="text-sm font-medium text-amber-100">
+                                    {ex.reason === 'unanswered'
+                                      ? 'No response provided.'
+                                      : formatAssessmentAnswer(ex.answer)}
+                                  </p>
+                                  <p className="mt-1 text-[10px] uppercase tracking-wide text-amber-400/80">
+                                    {exceptionReasonLabel(ex.reason)}
+                                  </p>
+                                </div>
+                                <div className="mt-2 flex items-center gap-2">
+                                  <Badge
+                                    variant="outline"
+                                    className="border-white/5 px-1 py-0 text-[9px] text-slate-500"
+                                  >
+                                    {ex.category}
+                                  </Badge>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </>
                   ) : (
                     <>
                       {((reviewAssessment.questions || []) as {
@@ -727,7 +868,9 @@ export function Assessments() {
                       }[]).map((q, idx) => (
                         <div key={q.id || idx} className="space-y-3">
                           <div className="flex gap-4">
-                            <span className="mt-1 font-mono text-xs text-slate-700">0{idx + 1}</span>
+                            <span className="mt-1 font-mono text-xs text-slate-700">
+                              {String(idx + 1).padStart(2, '0')}
+                            </span>
                             <div className="flex-1">
                               <p className="mb-2 text-sm font-medium text-slate-200">{q.question}</p>
                               <div className="rounded-xl border border-white/5 bg-white/[0.03] p-4">
@@ -812,9 +955,50 @@ export function Assessments() {
                     <h4 className="mb-4 text-xs font-bold uppercase tracking-widest text-white">
                       Decision Terminal
                     </h4>
+                    <div className="mb-3 grid grid-cols-2 gap-2">
+                      {(
+                        [
+                          ['approved', 'Approve'],
+                          ['conditional', 'Conditional'],
+                          ['remediate', 'Remediate'],
+                          ['rejected', 'Reject'],
+                        ] as const
+                      ).map(([id, label]) => (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => setDecisionOutcome(id)}
+                          className={cn(
+                            'rounded-lg border px-2 py-2 text-[11px] font-bold uppercase tracking-wide',
+                            decisionOutcome === id
+                              ? 'border-primary bg-primary/20 text-primary'
+                              : 'border-white/10 text-slate-400 hover:bg-white/5'
+                          )}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <textarea
+                      value={decisionNotes}
+                      onChange={(e) => setDecisionNotes(e.target.value)}
+                      placeholder={
+                        decisionOutcome === 'conditional' || decisionOutcome === 'remediate'
+                          ? 'Required: conditions / remediation notes…'
+                          : 'Optional notes for the audit trail…'
+                      }
+                      className="mb-3 min-h-[72px] w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-xs text-slate-200 placeholder:text-slate-600"
+                    />
                     <div className="space-y-3">
                       <Button
-                        className="w-full bg-emerald-600 font-bold text-white hover:bg-emerald-500 disabled:opacity-40"
+                        className={cn(
+                          'w-full font-bold text-white disabled:opacity-40',
+                          decisionOutcome === 'rejected'
+                            ? 'bg-rose-600 hover:bg-rose-500'
+                            : decisionOutcome === 'remediate'
+                              ? 'bg-amber-600 hover:bg-amber-500'
+                              : 'bg-emerald-600 hover:bg-emerald-500'
+                        )}
                         disabled={
                           approving ||
                           !reviewAssessment ||
@@ -822,14 +1006,17 @@ export function Assessments() {
                             reviewAssessment.status !== 'Completed' &&
                             progressOf(reviewAssessment) <= 0)
                         }
-                        onClick={() => void handleApproveAssessment()}
+                        onClick={() => void handleDecideAssessment(decisionOutcome)}
                       >
                         {approving ? (
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         ) : (
                           <CheckCircle2 className="mr-2 h-4 w-4" />
                         )}
-                        Sign Off & Close
+                        {decisionOutcome === 'approved' && 'Approve & close'}
+                        {decisionOutcome === 'conditional' && 'Conditional approve'}
+                        {decisionOutcome === 'remediate' && 'Record remediation'}
+                        {decisionOutcome === 'rejected' && 'Reject & close'}
                       </Button>
                       {reviewAssessment &&
                         reviewAssessment.status !== 'Under Review' &&

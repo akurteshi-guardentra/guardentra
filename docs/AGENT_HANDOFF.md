@@ -4,17 +4,19 @@ Living status for parallel Claude + Cursor sessions. Update and **push** at the 
 
 ---
 
-- **Last-Updated:** 2026-08-05T14:35:00Z
+- **Last-Updated:** 2026-08-05T16:20:00Z
 - **Agent:** Cursor
-- **Branch / SHA:** `dev` merged with `main` @ `61a0941` (merge commit next)
-- **Doing now:** Idle after merging main → dig.
+- **Branch / SHA:** `main` (local) — FastTrack triage + exceptions review
+- **Doing now:** Idle after exceptions-first review + decision terminal.
 - **Done this session:**
-  - Merged `origin/main` into `dev` (spine UX + framework packs + Pricing/Docs)
-  - Kept dig onboarding-shell work (per-uid flag, ProtectedRoute/Login redirects, orgBootstrap invite harden)
+  - FastTrack triage (`/assessments/triage`) → Lite/Standard/Enhanced → wizard prefills
+  - Vendor/assessment status chips: Sent until answers; Back hidden on primary nav
+  - Exceptions-first review drawer + Approve / Conditional / Remediate / Reject decisions
 - **Blocked / next:**
   - **Manual (user):** Firebase Console Support email → `support@guardentra.com`
   - **Manual:** Trigger Email extension for real vendor mail; `VITE_STRIPE_PRICE_*` if checkout needed
-  - Post-ship E2E smoke on guardentra.com (vendor → assessment → portal incognito → review)
+  - Post-ship E2E smoke: vendor → triage → assessment → portal → submit → exceptions review → decide
+  - Later FastTrack: AI evidence citations, scheduled reminders, PDF report polish
 - **Do not touch:**
   - `.env.local` / secrets (never commit)
   - KI#12 unless explicitly un-parked
@@ -22,8 +24,8 @@ Living status for parallel Claude + Cursor sessions. Update and **push** at the 
 ## Follow-ups (remaining)
 
 1. Firebase Support email in Console
-2. Smoke: create vendor → assessment → copy portal → incognito answers → Review
-3. Assessment residuals backlog (overdue from dueAt, completedAt/sentAt, charter)
+2. Smoke: create vendor → FastTrack triage → assessment → portal → Review → decision
+3. Assessment residuals (completedAt/sentAt display, charter)
 
 ## Protocol
 
