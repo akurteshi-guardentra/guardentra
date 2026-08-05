@@ -108,6 +108,7 @@ export function AssessmentWizard() {
   const uniqueQuestions = previewQuestions.length;
 
   const toggleFramework = (id: FrameworkId) => {
+    if (id === 'custom') return;
     setFrameworks((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
@@ -446,23 +447,30 @@ export function AssessmentWizard() {
                 </div>
 
                 {frameworkTab === 'custom' && (
-                  <p className="mt-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-slate-400">
-                    Custom questionnaires are coming later — you can still select the stub below; preview uses
-                    the shared question bank when other frameworks are also selected.
+                  <p className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100/90">
+                    Custom questionnaires are not available yet. Use Recommended / Industry frameworks —
+                    selecting Custom alone is blocked because it produces an empty questionnaire.
                   </p>
                 )}
 
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   {catalogByTab.map((f) => {
                     const on = frameworks.includes(f.id);
+                    const disabled = f.id === 'custom';
                     return (
                       <button
                         key={f.id}
                         type="button"
-                        onClick={() => toggleFramework(f.id)}
+                        disabled={disabled}
+                        onClick={() => {
+                          if (disabled) return;
+                          toggleFramework(f.id);
+                        }}
                         className={cn(
                           'rounded-xl border p-4 text-left',
-                          on ? 'border-primary bg-primary/15' : 'border-white/10 bg-black/20 hover:bg-white/5'
+                          disabled && 'cursor-not-allowed opacity-50',
+                          !disabled && on && 'border-primary bg-primary/15',
+                          !disabled && !on && 'border-white/10 bg-black/20 hover:bg-white/5'
                         )}
                       >
                         <div className="flex items-start justify-between gap-2">
@@ -470,13 +478,13 @@ export function AssessmentWizard() {
                           <span
                             className={cn(
                               'mt-0.5 h-4 w-4 shrink-0 rounded border',
-                              on ? 'border-primary bg-primary' : 'border-white/20'
+                              on && !disabled ? 'border-primary bg-primary' : 'border-white/20'
                             )}
                           />
                         </div>
                         <p className="mt-1 text-sm text-slate-400">{f.description}</p>
                         <p className="mt-2 text-xs text-primary">
-                          {f.questionCount ? `${f.questionCount} questions` : 'Custom'}
+                          {f.questionCount ? `${f.questionCount} questions` : 'Coming later'}
                         </p>
                       </button>
                     );

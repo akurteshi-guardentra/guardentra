@@ -4,19 +4,19 @@ Living status for parallel Claude + Cursor sessions. Update and **push** at the 
 
 ---
 
-- **Last-Updated:** 2026-08-05T16:20:00Z
+- **Last-Updated:** 2026-08-05T16:25:00Z
 - **Agent:** Cursor
-- **Branch / SHA:** `main` (local) — FastTrack triage + exceptions review
-- **Doing now:** Idle after exceptions-first review + decision terminal.
+- **Branch / SHA:** `main` @ `7a50b34`+ (correlation + Under Review)
+- **Doing now:** Idle after vendor↔assessment correlation hardening.
 - **Done this session:**
-  - FastTrack triage (`/assessments/triage`) → Lite/Standard/Enhanced → wizard prefills
-  - Vendor/assessment status chips: Sent until answers; Back hidden on primary nav
-  - Exceptions-first review drawer + Approve / Conditional / Remediate / Reject decisions
+  - FastTrack triage + exceptions review + decision terminal
+  - Status chips: Sent → In Progress → Under Review (not Completed on submit); risk chip matches filter
+  - Custom questionnaire tab disabled until real editor exists
 - **Blocked / next:**
   - **Manual (user):** Firebase Console Support email → `support@guardentra.com`
   - **Manual:** Trigger Email extension for real vendor mail; `VITE_STRIPE_PRICE_*` if checkout needed
   - Post-ship E2E smoke: vendor → triage → assessment → portal → submit → exceptions review → decide
-  - Later FastTrack: AI evidence citations, scheduled reminders, PDF report polish
+  - Later: custom questionnaires, AI evidence citations, scheduled reminders, PDF polish, legacy empty-assessment recovery
 - **Do not touch:**
   - `.env.local` / secrets (never commit)
   - KI#12 unless explicitly un-parked
