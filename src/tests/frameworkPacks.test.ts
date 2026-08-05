@@ -80,12 +80,14 @@ describe('framework packs', () => {
 
   it('remaps comments and evidence onto new question ids by controlKey', () => {
     const oldQs = buildQuestionsForPackIds(['iso27001@2013']);
-    expect(oldQs[0]).toBeTruthy();
-    const oldId = oldQs[0].id;
-    const controlKey = oldQs[0].controlKey;
+    expect(oldQs.length).toBeGreaterThan(1);
+    // Use only the last question so its old q_* id differs from the rebuilt pack order.
+    const oldQ = oldQs[oldQs.length - 1];
+    const oldId = oldQ.id;
+    const controlKey = oldQ.controlKey;
 
     const result = rebaselineAssessment({
-      questions: oldQs.map((q) => ({ id: q.id, controlKey: q.controlKey, question: q.question })),
+      questions: [{ id: oldId, controlKey, question: oldQ.question }],
       answers: { [oldId]: 'Yes' },
       comments: { [oldId]: 'via SSO' },
       evidenceByQuestion: {
@@ -96,12 +98,14 @@ describe('framework packs', () => {
 
     const carried = result.questions.find((q) => q.controlKey === controlKey);
     expect(carried).toBeTruthy();
+    expect(carried!.id).not.toBe(oldId);
     expect(result.carriedAnswers[carried!.id]).toBe('Yes');
     expect(result.carriedComments[carried!.id]).toBe('via SSO');
     expect(result.carriedEvidence[carried!.id]).toEqual([
       { fileName: 'policy.pdf', questionId: carried!.id },
     ]);
     expect(result.carriedComments[oldId]).toBeUndefined();
+    expect(result.carriedEvidence[oldId]).toBeUndefined();
     expect(overallProgressPct(result.questions, result.carriedAnswers)).toBeGreaterThan(0);
   });
 
