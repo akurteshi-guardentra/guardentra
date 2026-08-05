@@ -76,7 +76,12 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   }
 
   // If user is authenticated but not onboarded, and not already on onboarding page
-  if (profile && !profile.onboarded && !isLocallyOnboarded(user.uid) && window.location.pathname !== '/onboarding' && window.location.pathname !== '/login') {
+  if (
+    (!profile || !profile.onboarded) &&
+    !isLocallyOnboarded(user.uid) &&
+    window.location.pathname !== '/onboarding' &&
+    window.location.pathname !== '/login'
+  ) {
     console.log("ProtectedRoute: User not onboarded, redirecting to /onboarding from", window.location.pathname);
     return <Navigate to="/onboarding" />;
   }
@@ -87,7 +92,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 };
 
 const Login = () => {
-  const { user } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -97,8 +102,17 @@ const Login = () => {
   const [resetMessage, setResetMessage] = useState('');
   const isInIframe = window.self !== window.top;
 
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <Loader2 className="h-8 w-8 text-indigo-500 animate-spin" />
+      </div>
+    );
+  }
+
   if (user) {
-    return <Navigate to="/dashboard" />;
+    const done = profile?.onboarded || isLocallyOnboarded(user.uid);
+    return <Navigate to={done ? '/dashboard' : '/onboarding'} replace />;
   }
 
   const handleSubmit = async (e: React.FormEvent) => {

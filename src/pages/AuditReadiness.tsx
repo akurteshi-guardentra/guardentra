@@ -472,7 +472,7 @@ Call out TPRM and incident-response gaps when relevant.`;
           <select
             value={selectedFramework}
             onChange={(e) => setSelectedFramework(e.target.value)}
-            className="h-9 w-full rounded-lg border border-white/10 bg-black/30 px-3 text-sm text-white"
+            className="h-9 w-full rounded-lg border border-white/10 bg-slate-950 px-3 text-sm text-white [&>option]:bg-slate-950 [&>option]:text-white"
           >
             {frameworkOptions.map((name) => (
               <option key={name} value={name}>

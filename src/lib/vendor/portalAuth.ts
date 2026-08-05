@@ -1,10 +1,13 @@
 import { initializeApp, getApp, getApps, type FirebaseOptions } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import demoConfig from '../../firebase-applet-config.json';
+import { getAuth, type Auth } from 'firebase/auth';
+import demoConfig from '../../../firebase-applet-config.json';
 
 /**
  * Secondary Firebase Auth for the vendor portal.
  * Portal custom tokens must not replace the org user's session on the default `auth`.
+ *
+ * Lazy-init so importing `isPortalUid` (e.g. from AuthContext) does not spin up a
+ * second Firebase app during app boot or unit tests that never open the portal.
  */
 function isUsableWebApiKey(key: unknown): key is string {
   return typeof key === 'string' && key.startsWith('AIza') && key.length > 20;
@@ -38,7 +41,14 @@ function getPortalApp() {
   }
 }
 
-export const portalAuth = getAuth(getPortalApp());
+let portalAuthInstance: Auth | null = null;
+
+export function getPortalAuth(): Auth {
+  if (!portalAuthInstance) {
+    portalAuthInstance = getAuth(getPortalApp());
+  }
+  return portalAuthInstance;
+}
 
 export function isPortalUid(uid: string | null | undefined): boolean {
   return Boolean(uid && uid.startsWith('portal_'));
