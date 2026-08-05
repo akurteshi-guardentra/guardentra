@@ -10,46 +10,263 @@ import {
   listLocalVendors,
   replaceLocalVendors,
 } from '../lib/vendor/localVendorStore';
-import { deriveStatusFromAssessments } from '../lib/vendor/localAssessmentStore';
+import {
+  createLocalAssessment,
+  deriveStatusFromAssessments,
+  listLocalAssessments,
+  listLocalAssessmentsForVendor,
+  replaceLocalAssessments,
+  upsertLocalAssessment,
+} from '../lib/vendor/localAssessmentStore';
 import {
   buildArchiveEmptyAssessmentPatch,
   buildRecoverEmptyAssessmentPatch,
 } from '../lib/vendor/emptyAssessmentRecovery';
+import {
+  buildCreateAssessmentFields,
+  buildOrgDecisionPatch,
+  buildPortalAutosavePatch,
+  buildPortalSubmitPatch,
+  canSignOffAssessment,
+  decisionRequiresNotes,
+  nextReviewAtForDecision,
+} from '../lib/vendor/assessmentLifecycle';
+import {
+  buildQuestionsForPackIds,
+  resolvePackIdsForFrameworks,
+} from '../lib/vendor/frameworkPacks';
+import { assessmentStatusClasses } from '../lib/vendor/risk';
+import type { PortalQuestion } from '../lib/vendor/questionBank';
 
 /**
- * Local-prefer lifecycle coverage for the audit residuals that aren't full
- * portal/tracker UI integration tests: create → progress → submit → decide,
- * plus empty-snapshot recovery/archive patches composing cleanly with status chips.
+ * Portal ↔ tracker integration-style coverage (no live Firebase):
+ * wizard create helpers → local row → autosave In Progress → submit Under Review
+ * (not Completed) → org Approve / Remediate / Reject chips + vendor sync.
  */
-describe('vendor assessment status lifecycle (local prefer)', () => {
+describe('vendor assessment portal/tracker lifecycle', () => {
   const orgId = 'org-lifecycle';
 
   beforeEach(() => {
     replaceLocalVendors(orgId, []);
+    replaceLocalAssessments(orgId, []);
   });
 
-  it('moves vendor chip Sent → In Progress → Under Review → Completed', async () => {
+  function seedVendorAndAssessment(questions?: PortalQuestion[]) {
     const vendor = createLocalVendor(orgId, {
       name: 'Lifecycle Co',
       category: 'SaaS',
       criticality: 'High',
     });
+    const packIds = resolvePackIdsForFrameworks(['soc2']);
+    const qs = questions ?? buildQuestionsForPackIds(packIds).slice(0, 3);
+    const dueAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+    const fields = buildCreateAssessmentFields({
+      vendorId: vendor.id,
+      vendorName: vendor.name,
+      organizationId: orgId,
+      frameworks: ['soc2'],
+      frameworkPackIds: packIds,
+      frameworkName: 'SOC 2',
+      questions: qs,
+      sourceQuestionCount: qs.length,
+      dueAt,
+      nowIso: '2026-08-05T12:00:00.000Z',
+    });
+    const assessment = createLocalAssessment(orgId, {
+      vendorId: fields.vendorId,
+      vendorName: fields.vendorName,
+      frameworks: fields.frameworks,
+      frameworkPackIds: fields.frameworkPackIds,
+      questionBankVersion: fields.questionBankVersion,
+      frameworkName: fields.frameworkName,
+      status: fields.status,
+      dueAt: fields.dueAt,
+      questionCount: fields.questionCount,
+      sourceQuestionCount: fields.sourceQuestionCount,
+      questions: fields.questions,
+    });
+    return { vendor, assessment, questions: qs, fields };
+  }
+
+  it('create fields stamp Sent + portalOpen + zero progress (wizard/cloud shape)', () => {
+    const packIds = resolvePackIdsForFrameworks(['soc2']);
+    const questions = buildQuestionsForPackIds(packIds).slice(0, 2);
+    const fields = buildCreateAssessmentFields({
+      vendorId: 'v1',
+      vendorName: 'Acme',
+      organizationId: orgId,
+      frameworks: ['soc2'],
+      frameworkPackIds: packIds,
+      frameworkName: 'SOC 2',
+      questions,
+      dueAt: '2026-08-19T12:00:00.000Z',
+      nowIso: '2026-08-05T12:00:00.000Z',
+    });
+    expect(fields.status).toBe('Sent');
+    expect(fields.portalOpen).toBe(true);
+    expect(fields.progressPct).toBe(0);
+    expect(fields.questionCount).toBe(2);
+    expect(fields.dueDate).toBe('2026-08-19');
+    expect(fields.questions).toHaveLength(2);
+  });
+
+  it('runs create → autosave → submit → approve with matching tracker + vendor chips', async () => {
+    const { vendor, assessment, questions } = seedVendorAndAssessment();
 
     await syncVendorAfterAssessmentCreate(orgId, vendor.id, true);
     expect(listLocalVendors(orgId)[0]?.assessmentStatus).toBe('Sent');
+    expect(assessment.status).toBe('Sent');
+    expect(assessment.portalOpen).toBe(true);
+    expect(canSignOffAssessment(assessment)).toBe(false);
 
+    // Autosave first answer — In Progress, never Completed / Under Review
+    const draft = buildPortalAutosavePatch({
+      questions,
+      answers: { [questions[0].id]: 'Yes' },
+      comments: {},
+      evidenceByQuestion: {},
+      nowIso: '2026-08-05T12:05:00.000Z',
+    });
+    expect(draft.status).toBe('In Progress');
+    expect(draft.progressPct).toBeGreaterThan(0);
+    expect(draft.status).not.toBe('Completed' as never);
+
+    const inProgress = upsertLocalAssessment(orgId, {
+      ...assessment,
+      ...draft,
+      questions,
+    });
     await syncVendorAfterAssessmentProgress(orgId, vendor.id, true);
     expect(listLocalVendors(orgId)[0]?.assessmentStatus).toBe('In Progress');
+    expect(
+      deriveStatusFromAssessments([
+        { status: inProgress.status, progressPct: inProgress.progressPct },
+      ])
+    ).toBe('In Progress');
+    expect(canSignOffAssessment(inProgress)).toBe(true);
 
+    // Answer remaining required questions and submit
+    const allYes = Object.fromEntries(questions.map((q) => [q.id, 'Yes']));
+    const submit = buildPortalSubmitPatch({
+      answers: allYes,
+      comments: {},
+      evidenceByQuestion: {},
+      nowIso: '2026-08-05T13:00:00.000Z',
+    });
+    expect(submit.status).toBe('Under Review');
+    expect(submit.progressPct).toBe(100);
+    expect(submit.status).not.toBe('Completed' as never);
+
+    const underReview = upsertLocalAssessment(orgId, {
+      ...inProgress,
+      ...submit,
+      questions,
+    });
     await syncVendorAfterAssessmentSubmit(orgId, vendor.id, true);
     expect(listLocalVendors(orgId)[0]?.assessmentStatus).toBe('Under Review');
+    expect(
+      deriveStatusFromAssessments([
+        { status: underReview.status, progressPct: underReview.progressPct },
+      ])
+    ).toBe('Under Review');
+    expect(assessmentStatusClasses('Under Review')).toMatch(/indigo/);
 
-    const nextReview = new Date();
-    nextReview.setFullYear(nextReview.getFullYear() + 1);
-    await syncVendorAfterAssessmentApprove(orgId, vendor.id, true, nextReview.toISOString());
-    const closed = listLocalVendors(orgId)[0];
-    expect(closed?.assessmentStatus).toBe('Completed');
-    expect(closed?.nextReviewAt).toBe(nextReview.toISOString());
+    // Org approve closes portal + vendor Completed
+    const decision = buildOrgDecisionPatch({
+      outcome: 'approved',
+      decidedBy: 'admin@example.com',
+      nowIso: '2026-08-05T14:00:00.000Z',
+    });
+    expect(decision.status).toBe('Completed');
+    expect(decision.portalOpen).toBe(false);
+    expect(decision.decisionOutcome).toBe('approved');
+
+    const closed = upsertLocalAssessment(orgId, { ...underReview, ...decision });
+    const nextReview = nextReviewAtForDecision('approved', new Date('2026-08-05T14:00:00.000Z'));
+    await syncVendorAfterAssessmentApprove(orgId, vendor.id, true, nextReview);
+
+    expect(closed.status).toBe('Completed');
+    expect(closed.portalOpen).toBe(false);
+    expect(listLocalVendors(orgId)[0]?.assessmentStatus).toBe('Completed');
+    expect(listLocalVendors(orgId)[0]?.nextReviewAt).toBe(nextReview);
+    expect(listLocalAssessmentsForVendor(orgId, vendor.id)).toHaveLength(1);
+    expect(listLocalAssessments(orgId)[0]?.decisionOutcome).toBe('approved');
+  });
+
+  it('autosave with zero answers stays Sent (no premature In Progress)', () => {
+    const questions = buildQuestionsForPackIds(resolvePackIdsForFrameworks(['soc2'])).slice(0, 2);
+    const draft = buildPortalAutosavePatch({
+      questions,
+      answers: {},
+      comments: {},
+      evidenceByQuestion: {},
+    });
+    expect(draft.status).toBe('Sent');
+    expect(draft.progressPct).toBe(0);
+  });
+
+  it('remediate keeps Under Review + portal open; reject closes like approve', async () => {
+    const { vendor, assessment, questions } = seedVendorAndAssessment();
+    await syncVendorAfterAssessmentCreate(orgId, vendor.id, true);
+
+    const submitted = upsertLocalAssessment(orgId, {
+      ...assessment,
+      ...buildPortalSubmitPatch({
+        answers: Object.fromEntries(questions.map((q) => [q.id, 'No'])),
+        comments: {},
+        evidenceByQuestion: {},
+      }),
+      questions,
+    });
+    await syncVendorAfterAssessmentSubmit(orgId, vendor.id, true);
+
+    expect(decisionRequiresNotes('remediate')).toBe(true);
+    expect(decisionRequiresNotes('approved')).toBe(false);
+
+    const remediate = buildOrgDecisionPatch({
+      outcome: 'remediate',
+      decidedBy: 'admin@example.com',
+      decisionNotes: 'Fix MFA gaps',
+      nowIso: '2026-08-05T15:00:00.000Z',
+    });
+    expect(remediate.status).toBe('Under Review');
+    expect(remediate.portalOpen).toBe(true);
+    expect(remediate.decisionOutcome).toBe('remediate');
+
+    const remRow = upsertLocalAssessment(orgId, { ...submitted, ...remediate });
+    // Vendor chip stays Under Review — approve sync is only for closing outcomes
+    expect(listLocalVendors(orgId)[0]?.assessmentStatus).toBe('Under Review');
+    expect(
+      deriveStatusFromAssessments([
+        { status: remRow.status, progressPct: remRow.progressPct ?? 100 },
+      ])
+    ).toBe('Under Review');
+
+    const rejected = buildOrgDecisionPatch({
+      outcome: 'rejected',
+      decidedBy: 'admin@example.com',
+      nowIso: '2026-08-05T16:00:00.000Z',
+    });
+    expect(rejected.status).toBe('Completed');
+    expect(rejected.portalOpen).toBe(false);
+    expect(rejected.decisionOutcome).toBe('rejected');
+
+    upsertLocalAssessment(orgId, { ...remRow, ...rejected });
+    await syncVendorAfterAssessmentApprove(
+      orgId,
+      vendor.id,
+      true,
+      nextReviewAtForDecision('rejected')
+    );
+    expect(listLocalVendors(orgId)[0]?.assessmentStatus).toBe('Completed');
+  });
+
+  it('conditional approval schedules a 6-month next review', () => {
+    const from = new Date('2026-08-05T12:00:00.000Z');
+    const next = new Date(nextReviewAtForDecision('conditional', from));
+    expect(next.getUTCMonth()).toBe((from.getUTCMonth() + 6) % 12);
+    const annual = new Date(nextReviewAtForDecision('approved', from));
+    expect(annual.getUTCFullYear()).toBe(from.getUTCFullYear() + 1);
   });
 
   it('keeps Under Review badge when progress is 100 (portal submit shape)', () => {
@@ -65,8 +282,6 @@ describe('vendor assessment status lifecycle (local prefer)', () => {
     });
     expect(recovered.questions.length).toBeGreaterThan(0);
     expect(recovered.portalOpen).toBe(true);
-    // After rebuild the row stays Sent/In Progress from its prior status; chip
-    // derivation should not treat empty progress as Completed.
     expect(
       deriveStatusFromAssessments([{ status: 'Sent', progressPct: recovered.progressPct }])
     ).toBe('Sent');

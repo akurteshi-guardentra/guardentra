@@ -45,6 +45,13 @@ import {
   type DecisionOutcome,
 } from '../lib/vendor/assessmentExceptions';
 import {
+  buildOrgDecisionPatch,
+  canSignOffAssessment,
+  decisionClosesPortal,
+  decisionRequiresNotes,
+  nextReviewAtForDecision,
+} from '../lib/vendor/assessmentLifecycle';
+import {
   buildArchiveEmptyAssessmentPatch,
   buildRecoverEmptyAssessmentPatch,
   canRecoverEmptyAssessment,
@@ -326,18 +333,14 @@ export function Assessments() {
 
   const handleDecideAssessment = async (outcome: DecisionOutcome) => {
     if (!reviewAssessment || !orgId) return;
-    const canSignOff =
-      reviewAssessment.status === 'Under Review' ||
-      reviewAssessment.status === 'Completed' ||
-      progressOf(reviewAssessment) > 0;
-    if (!canSignOff) {
+    if (!canSignOffAssessment(reviewAssessment)) {
       setToast({
         tone: 'warn',
         text: 'Wait for the vendor to submit (or start answering) before signing off.',
       });
       return;
     }
-    if ((outcome === 'conditional' || outcome === 'remediate') && !decisionNotes.trim()) {
+    if (decisionRequiresNotes(outcome) && !decisionNotes.trim()) {
       setToast({
         tone: 'warn',
         text: 'Add decision notes / conditions before continuing.',
@@ -346,43 +349,15 @@ export function Assessments() {
     }
 
     setApproving(true);
-    const decidedAt = new Date().toISOString();
     const decidedBy = profile?.email || profile?.displayName || 'org-admin';
     const preferLocal = mode === 'local' || reviewAssessment.id.startsWith('local_');
-    const closes =
-      outcome === 'approved' || outcome === 'conditional' || outcome === 'rejected';
-
-    const nextReview = new Date();
-    if (outcome === 'conditional') {
-      nextReview.setMonth(nextReview.getMonth() + 6);
-    } else {
-      nextReview.setFullYear(nextReview.getFullYear() + 1);
-    }
-    const nextReviewAt = nextReview.toISOString();
-
-    const patch: Partial<StoredAssessment> & {
-      decisionOutcome: DecisionOutcome;
-      decidedAt: string;
-      decidedBy: string;
-      decisionNotes?: string;
-    } = {
-      decisionOutcome: outcome,
-      decisionNotes: decisionNotes.trim() || undefined,
-      decidedAt,
+    const patch = buildOrgDecisionPatch({
+      outcome,
       decidedBy,
-    };
-
-    if (closes) {
-      patch.status = 'Completed';
-      patch.progressPct = 100;
-      patch.progress = 100;
-      patch.portalOpen = false;
-      patch.completedAt = decidedAt;
-    } else {
-      // Remediate: keep open for vendor follow-up
-      patch.status = 'Under Review';
-      patch.portalOpen = true;
-    }
+      decisionNotes: decisionNotes.trim() || undefined,
+    });
+    const closes = decisionClosesPortal(outcome);
+    const nextReviewAt = nextReviewAtForDecision(outcome);
 
     try {
       if (preferLocal) {

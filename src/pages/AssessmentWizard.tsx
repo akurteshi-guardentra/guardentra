@@ -18,13 +18,13 @@ import {
 import {
   buildQuestionsForPackIds,
   resolvePackIdsForFrameworks,
-  QUESTION_BANK_VERSION,
 } from '../lib/vendor/frameworkPacks';
 import { loadOrgFrameworkPackDefaults } from '../lib/vendor/orgFrameworkPacks';
 import { useOrgVendors } from '../lib/vendor/useOrgVendors';
 import { createLocalAssessment } from '../lib/vendor/localAssessmentStore';
 import { isFirestoreUnavailableError } from '../lib/vendor/localVendorStore';
 import { syncVendorAfterAssessmentCreate } from '../lib/vendor/syncVendorAssessment';
+import { buildCreateAssessmentFields } from '../lib/vendor/assessmentLifecycle';
 import { sendEmailBestEffort } from '../lib/notifications';
 import { parseFrameworksParam } from '../lib/vendor/fastTrackTriage';
 
@@ -139,22 +139,32 @@ export function AssessmentWizard() {
     }
     const due = new Date();
     due.setDate(due.getDate() + 14);
-    const questions = previewQuestions;
     const frameworkName = frameworks
       .map((id) => FRAMEWORK_CATALOG.find((f) => f.id === id)?.name || id)
       .join(', ');
-    const local = createLocalAssessment(orgId, {
+    const fields = buildCreateAssessmentFields({
       vendorId,
       vendorName: selected.name,
+      organizationId: orgId,
       frameworks,
       frameworkPackIds,
-      questionBankVersion: QUESTION_BANK_VERSION,
       frameworkName,
-      status: 'Sent',
-      dueAt: due.toISOString(),
-      questionCount: questions.length,
+      questions: previewQuestions,
       sourceQuestionCount: sourceQuestions,
-      questions,
+      dueAt: due.toISOString(),
+    });
+    const local = createLocalAssessment(orgId, {
+      vendorId: fields.vendorId,
+      vendorName: fields.vendorName,
+      frameworks: fields.frameworks,
+      frameworkPackIds: fields.frameworkPackIds,
+      questionBankVersion: fields.questionBankVersion,
+      frameworkName: fields.frameworkName,
+      status: fields.status,
+      dueAt: fields.dueAt,
+      questionCount: fields.questionCount,
+      sourceQuestionCount: fields.sourceQuestionCount,
+      questions: fields.questions,
     });
     await syncVendorAfterAssessmentCreate(orgId, vendorId, true);
     navigate(`/assessments?vendorId=${encodeURIComponent(vendorId)}`);
@@ -177,7 +187,6 @@ export function AssessmentWizard() {
     try {
       const due = new Date();
       due.setDate(due.getDate() + 14);
-      const questions = previewQuestions;
       const frameworkName = frameworks
         .map((id) => FRAMEWORK_CATALOG.find((f) => f.id === id)?.name || id)
         .join(', ');
@@ -195,26 +204,20 @@ export function AssessmentWizard() {
         }, 4000);
       });
 
+      const fields = buildCreateAssessmentFields({
+        vendorId,
+        vendorName: selected.name,
+        organizationId: orgId,
+        frameworks,
+        frameworkPackIds,
+        frameworkName,
+        questions: previewQuestions,
+        sourceQuestionCount: sourceQuestions,
+        dueAt: due.toISOString(),
+      });
+
       const ref = await Promise.race([
-        addDoc(collection(db, 'assessments'), {
-          vendorId,
-          vendorName: selected.name,
-          organizationId: orgId,
-          frameworks,
-          frameworkPackIds,
-          questionBankVersion: QUESTION_BANK_VERSION,
-          frameworkName,
-          status: 'Sent',
-          dueAt: due.toISOString(),
-          dueDate: due.toISOString().slice(0, 10),
-          progressPct: 0,
-          progress: 0,
-          questionCount: questions.length,
-          sourceQuestionCount: sourceQuestions,
-          questions,
-          portalOpen: true,
-          createdAt: new Date().toISOString(),
-        }),
+        addDoc(collection(db, 'assessments'), fields),
         writeTimeout,
       ]);
 

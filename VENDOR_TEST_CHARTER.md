@@ -35,3 +35,7 @@
 - Real CSV bulk import
 - Playwright E2E happy path
 - Invite colleague on portal
+
+## Automated lifecycle (Vitest, no live Firebase)
+
+`src/tests/vendorAssessmentLifecycle.test.ts` covers create helpers → local assessment → autosave In Progress → submit Under Review (not Completed) → org Approve / Remediate / Reject with vendor chip sync via `assessmentLifecycle.ts` + local stores.

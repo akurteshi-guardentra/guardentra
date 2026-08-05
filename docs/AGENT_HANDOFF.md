@@ -4,22 +4,21 @@ Living status for parallel Claude + Cursor sessions. Update and **push** at the 
 
 ---
 
-- **Last-Updated:** 2026-08-05T18:45:00Z
+- **Last-Updated:** 2026-08-05T18:55:00Z
 - **Agent:** Cursor
-- **Branch / SHA:** `main` @ `d7d9ae4` (empty-assessment recovery)
-- **Doing now:** Idle after admin recovery for legacy empty assessments.
+- **Branch / SHA:** `main` @ (pending commit — portal/tracker lifecycle tests)
+- **Doing now:** Idle after portal/tracker lifecycle integration tests.
 - **Done this session:**
-  - FastTrack triage + exceptions review + decision terminal
-  - Status chips: Sent → In Progress → Under Review (not Completed on submit); risk chip matches filter
-  - Custom questionnaire tab disabled until real editor exists
-  - **Admin recovery for empty snapshots:** Review modal → Rebuild from packs OR Archive with reason (`emptyAssessmentRecovery.ts`); portal still refuses silent rebuild
-  - Synced `VENDOR_TEST_CHARTER.md` (tracker redirect + scoped custom tokens)
+  - Extracted pure `assessmentLifecycle.ts` helpers (create / autosave / submit / org decision)
+  - Wired AssessmentWizard, VendorPortal, Assessments to those helpers
+  - Vitest integration-style coverage: create → autosave In Progress → submit Under Review (not Completed) → Approve / Remediate / Reject + vendor chips
+  - Prior: empty-assessment recovery, FastTrack triage, exceptions, status chips, custom stub disabled
 - **Blocked / next:**
   - **Manual (user):** Firebase Console Support email → `support@guardentra.com`
   - **Manual:** Trigger Email extension for real vendor mail; `VITE_STRIPE_PRICE_*` if checkout needed
   - Post-ship E2E smoke: vendor → triage → assessment → portal → submit → exceptions review → decide
   - Later: custom questionnaires, AI evidence citations, scheduled reminders, PDF polish
-  - Still open: stronger portal/tracker integration-style tests (cloud create helpers, autosave/submit status, Under Review badges, org decision) beyond unit helpers
+  - Assessment residuals (completedAt/sentAt display) if still needed
 - **Do not touch:**
   - `.env.local` / secrets (never commit)
   - KI#12 unless explicitly un-parked
@@ -28,8 +27,8 @@ Living status for parallel Claude + Cursor sessions. Update and **push** at the 
 
 1. Firebase Support email in Console
 2. Smoke: create vendor → FastTrack triage → assessment → portal → Review → decision
-3. Portal/tracker lifecycle integration tests (audit residual)
-4. Assessment residuals (completedAt/sentAt display)
+3. Assessment residuals (completedAt/sentAt display)
+4. Push `main` when ready (local ahead of origin)
 
 ## Protocol
 
