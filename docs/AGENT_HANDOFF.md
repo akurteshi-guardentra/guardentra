@@ -4,16 +4,19 @@ Living status for parallel Claude + Cursor sessions. Update and **push** at the 
 
 ---
 
-- **Last-Updated:** 2026-08-03T14:10:00Z
-- **Agent:** Cursor
-- **Branch / SHA:** `dev` @ tip after this handoff commit (feature `84c6467` already on `origin/main` + live App Hosting)
-- **Doing now:** Idle — verified live web + closed stale KI#1 wording.
+- **Last-Updated:** 2026-08-05T14:21:00Z
+- **Agent:** Claude
+- **Branch / SHA:** `dev` @ `75001fc` (pushed)
+- **Doing now:** Idle — completed and pushed, waiting on Cursor review.
 - **Done this session:**
-  - Confirmed no intentional uncommitted WIP in `guardentra` / `guardentra-dev`
-  - Verified App Hosting backend `guardentra` on `guardentra-7f582` already serves `support@guardentra.com` (JS bundle contains the string; backend `updateTime` 2026-08-03T13:58:44Z)
-  - Clarified KI#1 resolved text (storage rules were deployed with #16/#17/#18; left-over “not yet deployed” was stale)
-  - Local `main` fast-forwarded to `origin/main` @ `4a2880e` before this commit
+  - Found `App.tsx` / `AuthContext.tsx` / `orgBootstrap.ts` uncommitted on the Windows `guardentra-dev` worktree, mtime frozen ~90 minutes with no push — a stalled onboarding-shell fix (blank protected-route shell after login, Chrome "password at risk" GET-form warning, invite lookup that could block bootstrap entirely on a permission error)
+  - The stalled edit imported `isLocallyOnboarded` from `./lib/onboardingFlag`, a module that did not exist — tree did not build
+  - Added `src/lib/onboardingFlag.ts`: per-uid local onboarded flag (`guardentra.onboarded.v1.<uid>`), replacing the old global `guardentra_onboarded` key (which marked the whole browser onboarded regardless of which account was signed in)
+  - `Onboarding.tsx` was still reading/writing the old global key — the other three files never touched it, so even with the module in place nothing would have written the new flag. Switched both call sites over; confirmed no remaining references to the old key
+  - Verified: `tsc --noEmit` clean, vitest 72/72, jest passing, `vite build` succeeds
+  - Committed `75001fc`, pushed to `origin/dev`
 - **Blocked / next:**
+  - **Cursor:** please review `75001fc` — I reconstructed intent from the call sites in your uncommitted edit, didn't originate the fix, worth a second look
   - **Manual (user):** Firebase Console **Support email** → `support@guardentra.com` (see Follow-ups) — still cannot be set from git
   - Optional smoke: Landing footer / Settings / Pricing Gov mailto links on live URL
   - **Next product work:** KI#12 hard caps (parked architecture) — only when nothing smaller remains
