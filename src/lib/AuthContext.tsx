@@ -87,16 +87,23 @@ function writeLocalProfile(uid: string, profile: UserProfile) {
   localStorage.setItem(`${LOCAL_PROFILE_KEY}.${uid}`, JSON.stringify(profile));
 }
 
-function buildLocalProfile(currentUser: User): UserProfile {
+function buildLocalProfile(currentUser: User, opts?: { onboarded?: boolean }): UserProfile {
   const existing = readLocalProfile(currentUser.uid);
-  if (existing?.organizationId) return { ...existing, onboarded: true };
+  if (existing?.organizationId) {
+    // Preserve prior local onboarded state; never force-skip the wizard for a
+    // first-run user just because Firestore fell back to local.
+    return {
+      ...existing,
+      onboarded: opts?.onboarded ?? existing.onboarded ?? false,
+    };
+  }
   const profile: UserProfile = {
     email: currentUser.email || 'local@guardentra.dev',
     displayName: currentUser.displayName || 'Local User',
     role: 'admin',
     organizationId: `local_org_${currentUser.uid.slice(0, 8)}`,
     organizationName: 'Local Dev Organization',
-    onboarded: true,
+    onboarded: opts?.onboarded ?? false,
   };
   writeLocalProfile(currentUser.uid, profile);
   return profile;
@@ -182,6 +189,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     displayName: currentUser.displayName || 'New User',
                   });
                   console.log('AuthContext: Auto-created/joined organization + user profile successfully');
+                  // onSnapshot should re-fire with the new doc; if it does not
+                  // (offline race), do not leave the shell spinning forever.
+                  setLoading(false);
                 } catch (initErr: any) {
                   console.error('AuthContext: Auto-initialization failed:', initErr);
                   if (initErr?.code === 'permission-denied') {
@@ -195,10 +205,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                       /* logged above; intentionally not re-thrown */
                     }
                   }
-                  if (isDbMissingError(initErr) || initErr?.code === 'permission-denied') {
-                    const local = buildLocalProfile(currentUser);
-                    setProfile(local);
-                  }
+                  // Any bootstrap failure still needs a usable session so Login can
+                  // forward into /onboarding instead of a blank protected shell.
+                  const local = buildLocalProfile(currentUser, { onboarded: false });
+                  setProfile(local);
                   setLoading(false);
                 }
               }

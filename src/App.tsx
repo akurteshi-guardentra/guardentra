@@ -41,6 +41,7 @@ import { db } from './firebase';
 import { cn } from './lib/utils';
 import { ComingLater } from './pages/ComingLater';
 import { isFeatureEnabled, type FeatureKey } from './lib/featureFlags';
+import { isLocallyOnboarded } from './lib/onboardingFlag';
 
 function FeatureGate({ flag, children }: { flag: FeatureKey; children: React.ReactNode }) {
   return <>{isFeatureEnabled(flag) ? children : <ComingLater />}</>;
@@ -74,10 +75,15 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
     return <Navigate to="/login" />;
   }
 
-  // If user is authenticated but not onboarded, and not already on onboarding page
-  if (profile && !profile.onboarded && localStorage.getItem('guardentra_onboarded') !== 'true' && window.location.pathname !== '/onboarding' && window.location.pathname !== '/login') {
+  const needsOnboarding =
+    (!profile || !profile.onboarded) &&
+    !isLocallyOnboarded(user.uid) &&
+    window.location.pathname !== '/onboarding' &&
+    window.location.pathname !== '/login';
+
+  if (needsOnboarding) {
     console.log("ProtectedRoute: User not onboarded, redirecting to /onboarding from", window.location.pathname);
-    return <Navigate to="/onboarding" />;
+    return <Navigate to="/onboarding" replace />;
   }
 
   console.log("ProtectedRoute: Access granted. Profile onboarded:", profile?.onboarded);
@@ -86,7 +92,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 };
 
 const Login = () => {
-  const { user } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -96,13 +102,23 @@ const Login = () => {
   const [resetMessage, setResetMessage] = useState('');
   const isInIframe = window.self !== window.top;
 
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <Loader2 className="h-8 w-8 text-indigo-500 animate-spin" />
+      </div>
+    );
+  }
+
   if (user) {
-    return <Navigate to="/dashboard" />;
+    const done = profile?.onboarded || isLocallyOnboarded(user.uid);
+    return <Navigate to={done ? '/dashboard' : '/onboarding'} replace />;
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setResetMessage('');
     
     // Validation
     if (!email.trim()) {
@@ -135,24 +151,27 @@ const Login = () => {
 
     try {
       if (isSignUp) {
-        await signUpWithEmail(email, password, name);
+        await signUpWithEmail(email.trim(), password, name.trim());
       } else {
-        await signInWithEmail(email, password);
+        await signInWithEmail(email.trim(), password);
       }
     } catch (err: any) {
       console.error("Auth Error:", err);
-      if (err.code === 'auth/invalid-credential') {
+      const code = err?.code || '';
+      if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found' || code === 'auth/invalid-email') {
         setError('Invalid email or password.');
-      } else if (err.code === 'auth/email-already-in-use') {
-        setError('An account with this email already exists.');
-      } else if (err.code === 'auth/weak-password') {
+      } else if (code === 'auth/email-already-in-use') {
+        setError('An account with this email already exists. Sign in instead, or use Forgot password.');
+      } else if (code === 'auth/weak-password') {
         setError('Password should be at least 6 characters.');
-      } else if (err.code === 'auth/operation-not-allowed') {
-        setError('Email/Password sign-in is not enabled in your Firebase Console.');
-      } else if (err.code === 'auth/network-request-failed' || err.message?.includes('popup-closed-by-user') === false) {
-        setError('Action Required: If the login popup didn\'t appear, please open this app in a new tab using the external link icon (top right) to bypass iframe security restrictions.');
+      } else if (code === 'auth/operation-not-allowed') {
+        setError('Email/password sign-in is not enabled for this project. Enable it in Firebase Console → Authentication → Sign-in method.');
+      } else if (code === 'auth/too-many-requests') {
+        setError('Too many attempts. Please wait a moment and try again.');
+      } else if (code === 'auth/network-request-failed') {
+        setError('Network error. Check your connection and try again.');
       } else {
-        setError(`${err.message} (Code: ${err.code || 'unknown'})`);
+        setError(err?.message || 'Sign-in failed. Please try again.');
       }
     } finally {
       setIsLoading(false);
@@ -169,9 +188,9 @@ const Login = () => {
     } catch (err: any) {
       console.error("Google Auth Error:", err);
       if (err.message?.includes('popup') || err.code?.includes('popup')) {
-        setError('Login popup blocked. Please click the "External Link" icon in the top-right corner of the screen to open the app in a new tab.');
+        setError('Login popup blocked. Please allow popups for this site, or open the app in a new tab.');
       } else {
-        setError('Google Sign-In Error. Please ensure popups are allowed or try opening the app in a new tab to bypass iframe restrictions.');
+        setError(err?.message || 'Google Sign-In failed. Please try again.');
       }
     } finally {
       setIsLoading(false);
@@ -187,7 +206,7 @@ const Login = () => {
     }
     setIsLoading(true);
     try {
-      await resetPassword(email);
+      await resetPassword(email.trim());
       setResetMessage('Password reset email sent — check your inbox.');
     } catch (err: any) {
       if (err.code === 'auth/user-not-found') {
@@ -237,17 +256,27 @@ const Login = () => {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4 mb-6">
+        {/* method="post" + autocomplete/name attrs: Chrome treats password GET forms
+            (the HTML default) as insecure and shows "Your password is at risk". */}
+        <form
+          method="post"
+          action="/login"
+          onSubmit={handleSubmit}
+          className="space-y-4 mb-6"
+          autoComplete="on"
+        >
           {isSignUp && (
             <div className="relative">
               <User className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
               <Input 
                 type="text" 
+                name="name"
+                autoComplete="name"
                 placeholder="Full Name" 
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 className="pl-10 bg-black/20 border-white/10 text-white"
-                required
+                required={isSignUp}
               />
             </div>
           )}
@@ -255,6 +284,9 @@ const Login = () => {
             <Mail className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
             <Input 
               type="email" 
+              name="username"
+              autoComplete="username"
+              inputMode="email"
               placeholder="Email Address" 
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -266,6 +298,8 @@ const Login = () => {
             <Lock className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
             <Input 
               type="password" 
+              name="password"
+              autoComplete={isSignUp ? 'new-password' : 'current-password'}
               placeholder="Password" 
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -321,9 +355,11 @@ const Login = () => {
         <p className="text-slate-400 text-sm">
           {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}
           <button 
+            type="button"
             onClick={() => {
               setIsSignUp(!isSignUp);
               setError('');
+              setResetMessage('');
             }} 
             className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
           >
@@ -344,46 +380,55 @@ function App() {
             <Route path="/" element={<Landing />} />
             <Route path="/login" element={<Login />} />
             <Route path="/portal/:assessmentId" element={<VendorPortal />} />
-            <Route path="/*" element={
-              <ProtectedRoute>
-                <Routes>
-                  <Route path="/onboarding" element={<Onboarding />} />
-                  <Route path="/*" element={
-                    <Layout>
-                      <Routes>
-                        <Route path="/dashboard" element={<FeatureGate flag="dashboard"><Dashboard /></FeatureGate>} />
-                        <Route path="/gov-intel" element={<FeatureGate flag="govIntel"><GovIntelSuite /></FeatureGate>} />
-                        <Route path="/trust-intelligence" element={<FeatureGate flag="trustIntelligence"><TrustIntelligence /></FeatureGate>} />
-                        <Route path="/risks" element={<FeatureGate flag="risks"><RiskManagement /></FeatureGate>} />
-                        <Route path="/compliance" element={<FeatureGate flag="compliance"><Compliance /></FeatureGate>} />
-                        <Route path="/incidents" element={<FeatureGate flag="incidents"><Incidents /></FeatureGate>} />
-                        <Route path="/devices" element={<FeatureGate flag="identitySurface"><IdentityAccess /></FeatureGate>} />
-                        <Route path="/trust-vault" element={<FeatureGate flag="trustVault"><TrustVault /></FeatureGate>} />
-                        <Route path="/contract-negotiator" element={<FeatureGate flag="contractAudit"><ContractNegotiator /></FeatureGate>} />
-                        <Route path="/connectors" element={<FeatureGate flag="connectors"><Connectors /></FeatureGate>} />
-                        <Route path="/gmail-audit" element={<FeatureGate flag="gmailAudit"><GmailAudit /></FeatureGate>} />
-                        <Route path="/policies" element={<FeatureGate flag="policies"><Policies /></FeatureGate>} />
-                        <Route path="/policies/draftsman" element={<FeatureGate flag="policies"><PolicyDraftsman /></FeatureGate>} />
-                        <Route path="/vendors" element={<FeatureGate flag="vendorSpine"><VendorsDirectory /></FeatureGate>} />
-                        <Route path="/vendors/legacy" element={<FeatureGate flag="vendorsLegacy"><VendorRisk /></FeatureGate>} />
-                        <Route path="/vendors/:vendorId/impact" element={<FeatureGate flag="vendorSpine"><ImpactAssessment /></FeatureGate>} />
-                        <Route path="/assessments" element={<FeatureGate flag="assessments"><Assessments /></FeatureGate>} />
-                        <Route path="/assessments/new" element={<FeatureGate flag="assessments"><AssessmentWizard /></FeatureGate>} />
-                        <Route path="/audit-readiness" element={<FeatureGate flag="auditReadiness"><AuditReadiness /></FeatureGate>} />
-                        <Route path="/calendar" element={<FeatureGate flag="auditCalendar"><AuditCalendar /></FeatureGate>} />
-                        <Route path="/executive-reports" element={<FeatureGate flag="executiveReports"><ExecutiveReports /></FeatureGate>} />
-                        <Route path="/health" element={<FeatureGate flag="healthLab"><SystemHealth /></FeatureGate>} />
-                        <Route path="/settings" element={<FeatureGate flag="settings"><Settings /></FeatureGate>} />
-                        <Route path="/pricing" element={<FeatureGate flag="pricing"><Pricing /></FeatureGate>} />
-                        <Route path="/docs" element={<FeatureGate flag="docs"><Documentation /></FeatureGate>} />
-                        <Route path="/ai-assistant" element={<FeatureGate flag="voiceStudio"><LiveAssistant /></FeatureGate>} />
-                        <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                      </Routes>
-                    </Layout>
-                  } />
-                </Routes>
-              </ProtectedRoute>
-            } />
+            {/* Onboarding is a top-level protected route (not under the Layout
+                splat) so a failed nested match cannot render an empty shell. */}
+            <Route
+              path="/onboarding"
+              element={
+                <ProtectedRoute>
+                  <Onboarding />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/*"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <Routes>
+                      <Route path="/dashboard" element={<FeatureGate flag="dashboard"><Dashboard /></FeatureGate>} />
+                      <Route path="/gov-intel" element={<FeatureGate flag="govIntel"><GovIntelSuite /></FeatureGate>} />
+                      <Route path="/trust-intelligence" element={<FeatureGate flag="trustIntelligence"><TrustIntelligence /></FeatureGate>} />
+                      <Route path="/risks" element={<FeatureGate flag="risks"><RiskManagement /></FeatureGate>} />
+                      <Route path="/compliance" element={<FeatureGate flag="compliance"><Compliance /></FeatureGate>} />
+                      <Route path="/incidents" element={<FeatureGate flag="incidents"><Incidents /></FeatureGate>} />
+                      <Route path="/devices" element={<FeatureGate flag="identitySurface"><IdentityAccess /></FeatureGate>} />
+                      <Route path="/trust-vault" element={<FeatureGate flag="trustVault"><TrustVault /></FeatureGate>} />
+                      <Route path="/contract-negotiator" element={<FeatureGate flag="contractAudit"><ContractNegotiator /></FeatureGate>} />
+                      <Route path="/connectors" element={<FeatureGate flag="connectors"><Connectors /></FeatureGate>} />
+                      <Route path="/gmail-audit" element={<FeatureGate flag="gmailAudit"><GmailAudit /></FeatureGate>} />
+                      <Route path="/policies" element={<FeatureGate flag="policies"><Policies /></FeatureGate>} />
+                      <Route path="/policies/draftsman" element={<FeatureGate flag="policies"><PolicyDraftsman /></FeatureGate>} />
+                      <Route path="/vendors" element={<FeatureGate flag="vendorSpine"><VendorsDirectory /></FeatureGate>} />
+                      <Route path="/vendors/legacy" element={<FeatureGate flag="vendorsLegacy"><VendorRisk /></FeatureGate>} />
+                      <Route path="/vendors/:vendorId/impact" element={<FeatureGate flag="vendorSpine"><ImpactAssessment /></FeatureGate>} />
+                      <Route path="/assessments" element={<FeatureGate flag="assessments"><Assessments /></FeatureGate>} />
+                      <Route path="/assessments/new" element={<FeatureGate flag="assessments"><AssessmentWizard /></FeatureGate>} />
+                      <Route path="/audit-readiness" element={<FeatureGate flag="auditReadiness"><AuditReadiness /></FeatureGate>} />
+                      <Route path="/calendar" element={<FeatureGate flag="auditCalendar"><AuditCalendar /></FeatureGate>} />
+                      <Route path="/executive-reports" element={<FeatureGate flag="executiveReports"><ExecutiveReports /></FeatureGate>} />
+                      <Route path="/health" element={<FeatureGate flag="healthLab"><SystemHealth /></FeatureGate>} />
+                      <Route path="/settings" element={<FeatureGate flag="settings"><Settings /></FeatureGate>} />
+                      <Route path="/pricing" element={<FeatureGate flag="pricing"><Pricing /></FeatureGate>} />
+                      <Route path="/docs" element={<FeatureGate flag="docs"><Documentation /></FeatureGate>} />
+                      <Route path="/ai-assistant" element={<FeatureGate flag="voiceStudio"><LiveAssistant /></FeatureGate>} />
+                      <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                    </Routes>
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
           </Routes>
         </Router>
       </DemoProvider>

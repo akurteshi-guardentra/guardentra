@@ -12,6 +12,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { cn } from '../lib/utils';
 import { seedProfessionalData } from '../lib/seeding';
 import { logOut } from '../lib/firebase-utils';
+import { isLocallyOnboarded, setLocallyOnboarded } from '../lib/onboardingFlag';
 
 const FRAMEWORKS = [
   {
@@ -52,11 +53,11 @@ export function Onboarding() {
 
   // Redirect if already onboarded
   React.useEffect(() => {
-    if (!loading && (profile?.onboarded || localStorage.getItem('guardentra_onboarded') === 'true')) {
+    if (!loading && (profile?.onboarded || (user && isLocallyOnboarded(user.uid)))) {
       console.log("Onboarding: User already onboarded in profile state, redirecting to dashboard");
       navigate('/dashboard');
     }
-  }, [profile?.onboarded, loading, navigate]);
+  }, [profile?.onboarded, loading, user, navigate]);
 
   const handleNext = () => {
     setError(null);
@@ -92,7 +93,7 @@ export function Onboarding() {
     const isOrgCreator = profile?.role !== 'member';
 
     // Set immediate client-side onboarding state so they are never locked out
-    localStorage.setItem('guardentra_onboarded', 'true');
+    setLocallyOnboarded(user.uid);
     localStorage.setItem('guardentra_fallback_org_id', activeOrgId);
 
     try {

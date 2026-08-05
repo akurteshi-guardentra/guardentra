@@ -40,17 +40,26 @@ export async function bootstrapUserProfile(uid: string, fields: NewProfileFields
 
   let pendingInvite: { id: string; organizationId: string; role?: string } | null = null;
   if (email) {
-    const invitesQuery = query(
-      collection(db, 'org_invites'),
-      where('email', '==', email),
-      where('status', '==', 'pending'),
-      limit(1)
-    );
-    const inviteSnap = await getDocs(invitesQuery);
-    if (!inviteSnap.empty) {
-      const inviteDoc = inviteSnap.docs[0];
-      const data = inviteDoc.data() as { organizationId: string; role?: string };
-      pendingInvite = { id: inviteDoc.id, organizationId: data.organizationId, role: data.role };
+    // Invite lookup must never block account creation. Rules require the query
+    // email to equal request.auth.token.email exactly — casing mismatches or
+    // transient permission errors used to reject the entire bootstrap and leave
+    // first-run users on a local-only profile (blank/skipped onboarding).
+    try {
+      const invitesQuery = query(
+        collection(db, 'org_invites'),
+        where('email', '==', email),
+        where('status', '==', 'pending'),
+        limit(1)
+      );
+      const inviteSnap = await getDocs(invitesQuery);
+      if (!inviteSnap.empty) {
+        const inviteDoc = inviteSnap.docs[0];
+        const data = inviteDoc.data() as { organizationId: string; role?: string };
+        pendingInvite = { id: inviteDoc.id, organizationId: data.organizationId, role: data.role };
+      }
+    } catch (inviteErr) {
+      console.warn('orgBootstrap: pending-invite lookup failed; creating a new org instead', inviteErr);
+      pendingInvite = null;
     }
   }
 
