@@ -33,11 +33,32 @@ whose `apiKey` is intentionally empty). Because `AuthProvider`/`db` are imported
   (valid format only) so the SPA boots and renders the public Landing (`/`) and Login
   (`/login`) pages during sandbox work. `.env.local` is gitignored (`.env.*` except
   `.env.example`) and is NOT recreated by the update script, so recreate it if absent.
-- The placeholder is **not** a working key: Firebase Auth/Firestore/Storage network
-  calls fail, so login/sign-up and any auth-gated route (`/dashboard`, `/vendors`,
-  `/assessments`, etc.) cannot complete. To exercise those flows you need a **real**
+- The placeholder is **not** a working key. To exercise auth-gated routes
+  (`/dashboard`, `/vendors`, `/assessments`, etc.) you need a **real**
   `VITE_FIREBASE_API_KEY` from a Firebase project with Auth enabled (put it in
   `.env.local`; restart `npm run dev` because Vite reads `VITE_*` at server start).
+  `VITE_FIREBASE_API_KEY` is provided as a Cursor secret and is injected into new VMs,
+  but `.env.local` is gitignored/not recreated by the update script — recreate it from
+  the env var if absent, e.g. `printf 'APP_ENV=development\nPORT=8080\nVITE_FIREBASE_API_KEY=%s\n' "$VITE_FIREBASE_API_KEY" > .env.local`.
+
+### Firebase project runs in local-fallback mode (expected here)
+
+With the real key, **Auth (email/password sign-up + sign-in) works**, but the demo
+Firebase project's **Firestore/Storage security rules deny writes** for normal app
+users, so the app runs on its built-in local fallbacks. This is expected in this
+environment, not a bug you introduced:
+- Sign-up/onboarding still completes: `Onboarding.handleFinish` sets a
+  `guardentra_onboarded` localStorage flag and navigates to `/dashboard` even when the
+  Firestore writes are permission-denied.
+- Vendors/assessments fall back to browser-local stores (`src/lib/vendor/localVendorStore.ts`)
+  — the Vendors page shows a "Local store" / "Local vendor mode" amber banner and
+  add/import still work (persisted locally, not to Firestore).
+- Console shows repeated `Missing or insufficient permissions` Firestore errors — expected.
+- Known quirk: right after clicking **Create Account**, the app can show a brief blank
+  screen; a single page refresh lands you on `/onboarding`. Subsequent logins for an
+  already-onboarded user go straight to the dashboard.
+- To make Firestore writes actually persist, deploy `firestore.rules`/`storage.rules`
+  to a project you control and sign in as an allowed user; not required just to run/demo.
 
 ### Dev-mode conveniences worth knowing
 
