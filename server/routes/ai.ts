@@ -334,11 +334,13 @@ Never invent controlKey values that are not in the added list.`;
       },
     });
     const parsed = JSON.parse(result.text || '{}');
+    const aiMappings = Array.isArray(parsed.mappings) ? parsed.mappings : null;
+    const useAi = Boolean(aiMappings && aiMappings.length > 0);
     return res.json({
       fromPackId,
       toPackId,
-      mappings: Array.isArray(parsed.mappings) ? parsed.mappings : heuristicMappings,
-      source: 'ai',
+      mappings: useAi ? aiMappings : heuristicMappings,
+      source: useAi ? 'ai' : 'heuristic',
     });
   } catch (err) {
     console.warn('framework-map Error (heuristic fallback):', err);

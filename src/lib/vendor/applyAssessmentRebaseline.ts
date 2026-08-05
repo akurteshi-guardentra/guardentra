@@ -4,6 +4,7 @@
  */
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { overallProgressPct } from './questionBank';
 import { rebaselineAssessment } from './frameworkPacks';
 
 export async function applyAssessmentRebaseline(opts: {
@@ -15,6 +16,8 @@ export async function applyAssessmentRebaseline(opts: {
   const data = snap.data() as {
     questions?: Array<{ id: string; controlKey?: string; question?: string }>;
     answers?: Record<string, string | string[]>;
+    comments?: Record<string, string>;
+    evidenceByQuestion?: Record<string, unknown[]>;
     status?: string;
   };
   if (data.status === 'Completed' || data.status === 'Under Review') {
@@ -23,16 +26,21 @@ export async function applyAssessmentRebaseline(opts: {
   const result = rebaselineAssessment({
     questions: data.questions || [],
     answers: data.answers,
+    comments: data.comments,
+    evidenceByQuestion: data.evidenceByQuestion,
     targetPackIds: opts.targetPackIds,
   });
+  const progressPct = overallProgressPct(result.questions, result.carriedAnswers);
   await updateDoc(doc(db, 'assessments', opts.assessmentId), {
     questions: result.questions,
     answers: result.carriedAnswers,
+    comments: result.carriedComments,
+    evidenceByQuestion: result.carriedEvidence,
     frameworkPackIds: result.frameworkPackIds,
     questionBankVersion: result.questionBankVersion,
     questionCount: result.questions.length,
-    progressPct: 0,
-    progress: 0,
+    progressPct,
+    progress: progressPct,
     rebaselinedAt: new Date().toISOString(),
     unmatchedAnswersOnRebaseline: result.unmatchedAnswers,
   });

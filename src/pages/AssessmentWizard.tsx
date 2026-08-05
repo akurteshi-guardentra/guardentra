@@ -112,6 +112,10 @@ export function AssessmentWizard() {
       setError(err);
       return;
     }
+    if (!previewQuestions.length) {
+      setError('No questions available for the selected frameworks. Pick at least one standard framework.');
+      return;
+    }
     setError('');
     const open: Record<string, boolean> = {};
     QUESTION_CATEGORIES.forEach((c) => {
@@ -151,6 +155,10 @@ export function AssessmentWizard() {
     const err = validateAssessmentWizard({ vendorId, frameworks });
     if (err) {
       setError(err);
+      return;
+    }
+    if (!previewQuestions.length) {
+      setError('No questions available for the selected frameworks. Pick at least one standard framework.');
       return;
     }
     if (!orgId || !selected) return;

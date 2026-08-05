@@ -40,6 +40,10 @@ export function validateAssessmentWizard(input: {
 }): string | null {
   if (!input.vendorId) return 'Select a vendor to continue.';
   if (!input.frameworks?.length) return 'Select at least one framework.';
+  // Custom is a stub with no pack — solo-custom would create a zero-question assessment.
+  if (input.frameworks.every((id) => id === 'custom')) {
+    return "Custom questionnaires aren't available yet — select at least one standard framework.";
+  }
   return null;
 }
 
