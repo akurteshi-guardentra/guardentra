@@ -6,7 +6,7 @@ Living status for parallel Claude + Cursor sessions. Update and **push** at the 
 
 - **Last-Updated:** 2026-08-05T18:45:00Z
 - **Agent:** Cursor
-- **Branch / SHA:** `main` @ pending (empty-assessment recovery)
+- **Branch / SHA:** `main` @ `d7d9ae4` (empty-assessment recovery)
 - **Doing now:** Idle after admin recovery for legacy empty assessments.
 - **Done this session:**
   - FastTrack triage + exceptions review + decision terminal
