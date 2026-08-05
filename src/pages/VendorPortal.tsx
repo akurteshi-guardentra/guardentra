@@ -17,7 +17,8 @@ import {
   Clock,
   Download,
 } from 'lucide-react';
-import { auth, db } from '../firebase';
+import { db } from '../firebase';
+import { portalAuth } from '../lib/vendor/portalAuth';
 import { Button } from '../components/ui/button';
 import { cn } from '../lib/utils';
 import type { AnswerValue } from '../lib/vendor/types';
@@ -79,7 +80,7 @@ export function VendorPortal() {
       }
       const { token } = (await res.json()) as { token?: string };
       if (!token) throw new Error('Portal session response contained no token');
-      await signInWithCustomToken(auth, token);
+      await signInWithCustomToken(portalAuth, token);
     };
 
     const fetchAssessment = async () => {

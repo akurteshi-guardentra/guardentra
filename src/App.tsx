@@ -41,6 +41,7 @@ import { db } from './firebase';
 import { cn } from './lib/utils';
 import { ComingLater } from './pages/ComingLater';
 import { isFeatureEnabled, type FeatureKey } from './lib/featureFlags';
+import { isLocallyOnboarded } from './lib/onboardingFlag';
 
 function FeatureGate({ flag, children }: { flag: FeatureKey; children: React.ReactNode }) {
   return <>{isFeatureEnabled(flag) ? children : <ComingLater />}</>;
@@ -75,7 +76,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   }
 
   // If user is authenticated but not onboarded, and not already on onboarding page
-  if (profile && !profile.onboarded && localStorage.getItem('guardentra_onboarded') !== 'true' && window.location.pathname !== '/onboarding' && window.location.pathname !== '/login') {
+  if (profile && !profile.onboarded && !isLocallyOnboarded(user.uid) && window.location.pathname !== '/onboarding' && window.location.pathname !== '/login') {
     console.log("ProtectedRoute: User not onboarded, redirecting to /onboarding from", window.location.pathname);
     return <Navigate to="/onboarding" />;
   }

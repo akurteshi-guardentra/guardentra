@@ -127,6 +127,10 @@ export function AssessmentWizard() {
 
   const createLocalAndOpen = async () => {
     if (!orgId || !selected) return;
+    if (!previewQuestions.length) {
+      setError('No questions available for the selected frameworks. Pick at least one standard framework.');
+      return;
+    }
     const due = new Date();
     due.setDate(due.getDate() + 14);
     const questions = previewQuestions;

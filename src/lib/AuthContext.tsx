@@ -3,6 +3,7 @@ import { auth, db } from '../firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { bootstrapUserProfile } from './orgBootstrap';
+import { isPortalUid } from './vendor/portalAuth';
 
 interface UserProfile {
   email: string;
@@ -138,6 +139,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       setUser(currentUser);
       if (currentUser) {
+        // Vendor portal sessions use uid portal_* (and ideally a secondary Auth app).
+        // Never bootstrap an org profile for them — that hijacks / pollutes org tenancy.
+        if (isPortalUid(currentUser.uid)) {
+          setProfile(null);
+          setLoading(false);
+          return;
+        }
         try {
           // Don't hang forever if Firestore never responds (missing DB).
           timeoutId = setTimeout(() => {

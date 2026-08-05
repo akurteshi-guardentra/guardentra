@@ -15,6 +15,7 @@ import { logOut } from '../lib/firebase-utils';
 import { ONBOARDING_FRAMEWORKS } from '../lib/vendor/constants';
 import type { FrameworkId } from '../lib/vendor/types';
 import { currentDefaultsForFrameworks, saveOrgFrameworkPackDefaults } from '../lib/vendor/orgFrameworkPacks';
+import { isLocallyOnboarded, setLocallyOnboarded } from '../lib/onboardingFlag';
 
 const ONBOARDING_ICONS: Record<string, typeof Shield> = {
   iso27001: Shield,
@@ -35,11 +36,11 @@ export function Onboarding() {
 
   // Redirect if already onboarded
   React.useEffect(() => {
-    if (!loading && (profile?.onboarded || localStorage.getItem('guardentra_onboarded') === 'true')) {
+    if (!loading && (profile?.onboarded || (user && isLocallyOnboarded(user.uid)))) {
       console.log("Onboarding: User already onboarded in profile state, redirecting to dashboard");
       navigate('/dashboard');
     }
-  }, [profile?.onboarded, loading, navigate]);
+  }, [profile?.onboarded, loading, navigate, user]);
 
   const handleNext = () => {
     setError(null);
@@ -75,7 +76,7 @@ export function Onboarding() {
     const isOrgCreator = profile?.role !== 'member';
 
     // Set immediate client-side onboarding state so they are never locked out
-    localStorage.setItem('guardentra_onboarded', 'true');
+    setLocallyOnboarded(user.uid);
     localStorage.setItem('guardentra_fallback_org_id', activeOrgId);
 
     try {
