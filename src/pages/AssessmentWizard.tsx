@@ -236,7 +236,9 @@ export function AssessmentWizard() {
       // portal, which is an external-facing page with no app navigation, so whoever
       // created the assessment hit a dead end with no way back. The portal link is
       // still one click away from here via "Copy Vendor Portal Link".
-      navigate(`/assessments?vendorId=${encodeURIComponent(vendorId)}`);
+      navigate(
+        `/assessments?vendorId=${encodeURIComponent(vendorId)}&created=${encodeURIComponent(ref.id)}`
+      );
     } catch (ex: unknown) {
       if (isFirestoreUnavailableError(ex)) {
         try {

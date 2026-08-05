@@ -66,6 +66,7 @@ export function Assessments() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const presetVendorId = params.get('vendorId') || '';
+  const createdId = params.get('created') || '';
 
   const { assessments, mode, loading, refreshLocal } = useOrgAssessments(orgId);
   const { vendors } = useOrgVendors(orgId);
@@ -154,6 +155,16 @@ export function Assessments() {
   useEffect(() => {
     if (presetVendorId) setVendorFilter(presetVendorId);
   }, [presetVendorId]);
+
+  useEffect(() => {
+    if (!createdId || createdId.startsWith('local_')) return;
+    const url = `${window.location.origin}/portal/${createdId}`;
+    setToast({ tone: 'ok', text: `Assessment created. Portal link ready — copy from the row actions: ${url}` });
+    // Drop ?created= so refresh doesn't re-toast
+    const next = new URLSearchParams(params);
+    next.delete('created');
+    setParams(next, { replace: true });
+  }, [createdId]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

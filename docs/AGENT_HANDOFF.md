@@ -4,33 +4,34 @@ Living status for parallel Claude + Cursor sessions. Update and **push** at the 
 
 ---
 
-- **Last-Updated:** 2026-08-04T10:45:00Z
+- **Last-Updated:** 2026-08-05T14:30:00Z
 - **Agent:** Cursor
-- **Branch / SHA:** local worktree (framework pack versioning — commit when asked)
-- **Doing now:** Idle after framework version management implementation.
+- **Branch / SHA:** `main` (commit after this handoff)
+- **Doing now:** Idle after spine UX + framework packs ship.
 - **Done this session:**
-  - Framework version management (Phases 0–4):
-    - Unified onboarding FrameworkIds with vendor catalog (`nist_csf_2`, etc.); `frameworkId` on compliance docs; org `frameworkPackDefaults`
-    - Durable `controlKey` on bank + snapshots; assessments stamp `frameworkPackIds` + `questionBankVersion`
-    - Portal no longer rebuilds from live bank when snapshot missing
-    - `FRAMEWORK_PACKS` with NIST 1.1/2.0 and ISO 2013/2022 side-by-side
-    - Settings `FrameworkPacksCard` + Assessments upgrade banner; rebaseline helper; `/api/ai/framework-map`
-  - Docs: `ARCHITECTURE_FOUNDATION.md`, `PRODUCT_FOCUS.md`, `PRODUCT_ROADMAP_2026.md`, this handoff
+  - Framework packs already on main (`db30a76`…)
+  - Spine UX Phase A–C:
+    - Portal secondary Auth (`portalAuth`) + AuthContext skip `portal_*` bootstrap
+    - Assessments: block Copy/Remind for `local_asm_*`, toasts, review empty-state, create toast
+    - Promote remaps `vendorId` local → cloud
+    - Slim Dashboard (vendors / pending assessments / Audit Lab; Quick Start when vendorCount === 0)
+    - Onboarding: per-uid flag + opt-in sample seed
+    - Audit Lab / Settings select contrast; Settings honesty; Pricing Stripe env gate; Docs spine CTAs
 - **Blocked / next:**
   - **Manual (user):** Firebase Console Support email → `support@guardentra.com`
-  - Spine UX plan (portal auth / dashboard slim) still separate if not yet shipped
-  - Optional: commit + push this framework pack work
+  - **Manual:** Trigger Email extension for real vendor mail; `VITE_STRIPE_PRICE_*` if checkout needed
+  - Post-ship E2E smoke on guardentra.com (vendor → assessment → portal incognito → review)
 - **Do not touch:**
   - `.env.local` / secrets (never commit)
   - KI#12 unless explicitly un-parked
 
 ## Follow-ups (remaining)
 
-1. **Firebase project Support email (Console only)** — for each Firebase project you use (`guardentra-7f582` demo, plus `guardentra-dev` / staging / prod when live):
-   - Firebase Console → ⚙️ **Project settings** → **General** → **Public settings** → **Support email** → set to `support@guardentra.com`
-2. Optional smoke: create assessment → confirm `frameworkPackIds` on doc → Settings pack pins → portal uses snapshotted `controlKey`s
+1. Firebase Support email in Console
+2. Smoke: create vendor → assessment → copy portal → incognito answers → Review
+3. Assessment residuals backlog (overdue from dueAt, completedAt/sentAt, charter)
 
 ## Protocol
 
-1. End of chunk → rewrite the fields above → commit on `dev` → `git push origin HEAD`.
+1. End of chunk → rewrite the fields above → commit on `dev`/`main` → `git push origin HEAD`.
 2. Other agent → `git fetch` → read this file → continue **Blocked / next**.
