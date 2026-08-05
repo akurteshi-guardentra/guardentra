@@ -58,6 +58,8 @@ export function createLocalAssessment(
     vendorId: string;
     vendorName: string;
     frameworks: FrameworkId[];
+    frameworkPackIds?: string[];
+    questionBankVersion?: string;
     frameworkName?: string;
     status?: AssessmentStatus;
     dueAt?: string;
@@ -73,6 +75,8 @@ export function createLocalAssessment(
     vendorName: input.vendorName,
     organizationId: orgId,
     frameworks: input.frameworks,
+    frameworkPackIds: input.frameworkPackIds,
+    questionBankVersion: input.questionBankVersion,
     frameworkName: input.frameworkName,
     status: input.status || 'Sent',
     dueAt,

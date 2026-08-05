@@ -30,6 +30,8 @@ import {
   type StoredAssessment,
 } from '../lib/vendor/localAssessmentStore';
 import { FRAMEWORK_CATALOG } from '../lib/vendor/constants';
+import { packsNeedingUpgradeNotice } from '../lib/vendor/frameworkPacks';
+import { loadOrgFrameworkPackDefaults } from '../lib/vendor/orgFrameworkPacks';
 
 const SELECT_CLASS =
   'h-9 rounded-md border border-white/10 bg-slate-950 px-3 text-sm text-white [&>option]:bg-slate-950 [&>option]:text-white';
@@ -73,11 +75,21 @@ export function Assessments() {
   const [reviewAssessment, setReviewAssessment] = useState<StoredAssessment | null>(null);
   const [isReviewing, setIsReviewing] = useState(false);
   const [reminderState, setReminderState] = useState<Record<string, 'sending' | 'sent' | 'error'>>({});
+  const [packNotices, setPackNotices] = useState<
+    ReturnType<typeof packsNeedingUpgradeNotice>
+  >([]);
   const [reviewAnalysis, setReviewAnalysis] = useState<{
     summary: string;
     rating: string;
     recommendation: string;
   } | null>(null);
+
+  useEffect(() => {
+    if (!orgId) return;
+    void loadOrgFrameworkPackDefaults(orgId).then((defaults) => {
+      setPackNotices(packsNeedingUpgradeNotice(defaults));
+    });
+  }, [orgId]);
 
   useEffect(() => {
     if (presetVendorId) setVendorFilter(presetVendorId);
@@ -248,6 +260,24 @@ export function Assessments() {
           New Assessment
         </Button>
       </div>
+
+      {packNotices.length > 0 && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100/90">
+          <p className="font-medium text-amber-200">
+            Newer framework pack{packNotices.length > 1 ? 's' : ''} available
+          </p>
+          <p className="mt-1 text-xs text-slate-400">
+            {packNotices
+              .map((n) => `${n.pinnedPackId} → ${n.current.packId}`)
+              .join(' · ')}
+            . Existing assessments keep their stamped version. Review and pin defaults in{' '}
+            <Link to="/settings" className="text-primary underline-offset-2 hover:underline">
+              Settings
+            </Link>
+            .
+          </p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
         <Card className="flex flex-col items-center justify-center border-white/5 bg-slate-900/50 p-4 text-center">

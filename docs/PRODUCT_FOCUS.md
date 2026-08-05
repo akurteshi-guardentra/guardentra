@@ -30,6 +30,7 @@ Re-enable with `VITE_FEATURE_<KEY>=true` (see `featureFlags.ts`).
 
 - Directory: KPIs, filters, bulk CSV, assessment chips, local fallback
 - Wizard: vendor picker, frameworks, preview, create + status sync
+- Framework packs: versioned templates (`frameworkPacks.ts`), org pin defaults in Settings, assessment stamp (`frameworkPackIds` / `controlKey`); no auto-download of standards
 - Portal: Yes/No/Partial/N/A, autosave, evidence upload path
 - Correlation: `useOrgVendors` / `useOrgAssessments`, local stores
 

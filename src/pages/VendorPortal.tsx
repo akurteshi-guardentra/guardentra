@@ -23,7 +23,6 @@ import { cn } from '../lib/utils';
 import type { AnswerValue } from '../lib/vendor/types';
 import { CheckSquare, Square } from 'lucide-react';
 import {
-  buildQuestionsForFrameworks,
   categoryProgress,
   isAnswered,
   overallProgressPct,
@@ -106,15 +105,20 @@ export function VendorPortal() {
         const data = { id: snap.id, ...snap.data() } as any;
         setAssessment(data);
 
-        let qs: PortalQuestion[] = Array.isArray(data.questions) && data.questions.length
-          ? data.questions.map((q: any, i: number) => ({
-              id: q.id || `q_${i + 1}`,
-              category: q.category || 'Company Profile',
-              question: q.question || q.text || 'Untitled question',
-              options: (q.options as AnswerValue[]) || ['Yes', 'No', 'Partially', 'Not Applicable'],
-              required: q.required !== false,
-            }))
-          : buildQuestionsForFrameworks(data.frameworks || []);
+        let qs: PortalQuestion[] = [];
+        if (Array.isArray(data.questions) && data.questions.length) {
+          qs = data.questions.map((q: any, i: number) => ({
+            id: q.id || `q_${i + 1}`,
+            controlKey: q.controlKey || q.id || `legacy_q_${i + 1}`,
+            category: q.category || 'Company Profile',
+            question: q.question || q.text || 'Untitled question',
+            type: (q.type as PortalQuestion['type']) || 'yesno',
+            options: (q.options as AnswerValue[]) || ['Yes', 'No', 'Partially', 'Not Applicable'],
+            required: q.required !== false,
+          }));
+        }
+        // Do not rebuild from the live bank — empty snapshot means a broken/legacy
+        // assessment; silent rebuild would mutate historical question identity.
 
         setQuestions(qs);
         if (data.answers) setAnswers(data.answers);
@@ -295,6 +299,23 @@ export function VendorPortal() {
               </p>
             </>
           )}
+        </div>
+      </div>
+    );
+  }
+
+  if (!questions.length) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
+        <div className="max-w-lg w-full rounded-2xl border border-white/10 bg-slate-900/50 p-8 text-center">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-amber-500/10">
+            <AlertTriangle className="h-7 w-7 text-amber-400" />
+          </div>
+          <h1 className="text-2xl font-semibold text-white">Questionnaire unavailable</h1>
+          <p className="mt-2 text-sm text-slate-400">
+            This assessment has no snapshotted questions. Ask the requesting organization to
+            recreate it so the framework pack is stamped correctly.
+          </p>
         </div>
       </div>
     );

@@ -131,9 +131,12 @@ Spine-aligned surfaces today: Assessment Wizard + Vendor Portal (answers + evide
 | Phase | Work |
 |-------|------|
 | Spine (current) | Harden evidence + readiness as the validation MVP |
-| After billing | Optional control catalog versioning (framework pack versions on assessments) |
-| Later upsell | Unfreeze Policies / Compliance; link policy docs → controls → evidence |
-| Avoid | Parallel “policy product” that duplicates Audit Lab + portal |
+| Framework packs (shipped) | Versioned `FRAMEWORK_PACKS` in `src/lib/vendor/frameworkPacks.ts`; assessments stamp `frameworkPackIds` + `questionBankVersion` + `controlKey` on each question; org pins in Settings; no auto-download of SDO standards; existing assessments never auto-upgrade |
+| After billing | Optional Firestore-hosted pack hotfixes (same schema); richer email notify on new pack publish |
+| Later upsell | Unfreeze Policies / Compliance; link policy docs → controls → evidence via `controlKey` |
+| Avoid | Parallel “policy product” that duplicates Audit Lab + portal; client scraping of NIST/ISO sites |
+
+**Framework update model:** Guardentra content team edits the question bank / packs and ships a release. Admins see newer versions in Settings / Assessments, review the changelog/diff, and pin defaults for *new* assessments. Optional rebaseline (`rebaselineAssessment` / `applyAssessmentRebaseline`) copies answers by `controlKey`. AI `/api/ai/framework-map` suggests mappings but never auto-applies.
 
 ---
 
@@ -346,7 +349,7 @@ Every `assessments` doc is scoped to exactly one `organizationId` + one `vendorI
 ### Design
 
 - **Vendor needs a real identity**, independent of any customer org — a new `vendor_accounts/{id}` keyed by email/domain, with actual sign-in (not anonymous), separate from any one customer's `vendors/{vendorId}` record.
-- **Stable control keys.** Sprint 1's question bank (`src/lib/vendor/questionBank.ts`) dedupes within one assessment by array membership, not a stable identifier — reusing an answer *across* different customers' framework selections needs each `BankItem` to carry a durable `controlKey` so "did this vendor already answer the MFA-for-privileged-accounts control for anyone?" is a real lookup, not a text match.
+- **Stable control keys.** Each `BankItem` / snapshotted portal question carries a durable `controlKey` (`src/lib/vendor/questionBank.ts`). Framework pack versions (`src/lib/vendor/frameworkPacks.ts`) stamp assessments with `frameworkPackIds` so historical questionnaires stay pinned. Remaining trust-exchange work is vendor identity + consent + cross-org rules — not inventing control identity.
 - **Consent is mandatory, not automatic.** A vendor's answers may include specifics they don't want shared with everyone who asks — every reuse needs an explicit per-customer consent step, not silent auto-fill. Sketch: `vendor_answers/{vendorAccountId}_{controlKey}` (canonical answer + evidence), `vendor_shares/{id}` (which org, which controlKeys, consented when, expires when).
 - **Cross-org Firestore rules.** Today's rules assume a doc belongs to exactly one org. A shared vendor answer needs to be readable by *multiple* customer orgs once consented — a genuinely different security model than the strict single-org scoping everywhere else in `firestore.rules`, and worth getting a second pair of eyes on before shipping.
 
@@ -355,7 +358,7 @@ Every `assessments` doc is scoped to exactly one `organizationId` + one `vendorI
 | Phase | Work |
 |-------|------|
 | Now | Design only |
-| Precursor work (own effort, sequenced first) | Real vendor accounts/auth; stable `controlKey` on the question bank; a consent UI |
+| Precursor work (own effort, sequenced first) | Real vendor accounts/auth; consent UI (`controlKey` on the bank is already shipped) |
 | Then | `vendor_answers`/`vendor_shares` collections + rules; wire consent into the Assessment Wizard's create flow (pre-fill overlapping controls, vendor confirms per new customer) |
 | Not attempted now | Any of the above — this is a multi-sprint effort in its own right once the precursors land, not a single pass |
 

@@ -237,6 +237,121 @@ router.post('/generate', async (req, res) => {
 });
 
 /**
+ * Suggest controlKey mappings when upgrading between framework pack versions.
+ * Never auto-applies — clients must confirm before rebaseline.
+ */
+router.post('/framework-map', async (req, res) => {
+  const { fromPackId, toPackId, removed, added } = req.body || {};
+  if (typeof fromPackId !== 'string' || typeof toPackId !== 'string') {
+    return res.status(400).json({ error: 'fromPackId and toPackId are required' });
+  }
+  const removedList = Array.isArray(removed) ? removed.slice(0, 80) : [];
+  const addedList = Array.isArray(added) ? added.slice(0, 80) : [];
+
+  const heuristicMappings = removedList.map((r: { controlKey?: string; text?: string }) => {
+    const fromKey = typeof r?.controlKey === 'string' ? r.controlKey : '';
+    const fromText = (typeof r?.text === 'string' ? r.text : '').toLowerCase();
+    let best: { controlKey: string; text: string } | null = null;
+    let bestScore = 0;
+    for (const a of addedList as { controlKey?: string; text?: string }[]) {
+      const toKey = typeof a?.controlKey === 'string' ? a.controlKey : '';
+      const toText = (typeof a?.text === 'string' ? a.text : '').toLowerCase();
+      if (!toKey) continue;
+      const words = fromText.split(/\W+/).filter((w) => w.length > 4);
+      const score = words.reduce((n, w) => n + (toText.includes(w) ? 1 : 0), 0);
+      if (score > bestScore) {
+        bestScore = score;
+        best = { controlKey: toKey, text: a.text || toKey };
+      }
+    }
+    return {
+      fromControlKey: fromKey,
+      toControlKey: bestScore >= 2 ? best?.controlKey ?? null : null,
+      confidence: bestScore >= 2 ? Math.min(0.9, 0.4 + bestScore * 0.1) : 0.2,
+      rationale:
+        bestScore >= 2
+          ? `Lexical overlap with "${best?.text || ''}"`
+          : 'No confident match — needs human review',
+      needsReview: bestScore < 2,
+    };
+  });
+
+  if (!hasAIApi) {
+    return res.json({
+      fromPackId,
+      toPackId,
+      mappings: heuristicMappings,
+      source: 'heuristic',
+    });
+  }
+
+  try {
+    const prompt = `You map vendor assessment controls between framework pack versions.
+From pack: ${fromPackId}
+To pack: ${toPackId}
+
+Removed controls (JSON):
+${JSON.stringify(removedList)}
+
+Added controls (JSON):
+${JSON.stringify(addedList)}
+
+Return JSON with key "mappings": array of {
+  fromControlKey: string,
+  toControlKey: string | null,
+  confidence: number 0-1,
+  rationale: string,
+  needsReview: boolean
+}
+Only map when the control intent clearly matches. Prefer null + needsReview=true over a weak guess.
+Never invent controlKey values that are not in the added list.`;
+
+    const result = await ai!.models.generateContent({
+      model: resolveModel(undefined),
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            mappings: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  fromControlKey: { type: Type.STRING },
+                  toControlKey: { type: Type.STRING, nullable: true },
+                  confidence: { type: Type.NUMBER },
+                  rationale: { type: Type.STRING },
+                  needsReview: { type: Type.BOOLEAN },
+                },
+                required: ['fromControlKey', 'confidence', 'rationale', 'needsReview'],
+              },
+            },
+          },
+          required: ['mappings'],
+        },
+      },
+    });
+    const parsed = JSON.parse(result.text || '{}');
+    return res.json({
+      fromPackId,
+      toPackId,
+      mappings: Array.isArray(parsed.mappings) ? parsed.mappings : heuristicMappings,
+      source: 'ai',
+    });
+  } catch (err) {
+    console.warn('framework-map Error (heuristic fallback):', err);
+    return res.json({
+      fromPackId,
+      toPackId,
+      mappings: heuristicMappings,
+      source: 'heuristic',
+    });
+  }
+});
+
+/**
  * Map an upstream failure to something a caller can act on.
  *
  * Everything used to collapse into a flat 502 "AI generation failed", so an exhausted

@@ -15,6 +15,9 @@ describe('question bank', () => {
     expect(qs[0].options).toEqual(['Yes', 'No', 'Partially', 'Not Applicable']);
     const ids = new Set(qs.map((q) => q.id));
     expect(ids.size).toBe(qs.length);
+    const keys = new Set(qs.map((q) => q.controlKey));
+    expect(keys.size).toBe(qs.length);
+    expect(qs.every((q) => q.controlKey.length > 0)).toBe(true);
   });
 
   it('tracks category and overall progress', () => {

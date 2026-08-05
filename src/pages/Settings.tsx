@@ -29,6 +29,7 @@ import {
   type OrgInviteRow,
 } from '../lib/orgInvites';
 import { SUPPORT_EMAIL, SUPPORT_MAILTO } from '../lib/brand';
+import { FrameworkPacksCard } from '../components/FrameworkPacksCard';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -317,6 +318,8 @@ export function Settings() {
               </p>
             </CardContent>
           </Card>
+
+          <FrameworkPacksCard />
 
           <TeamMembersCard />
         </div>

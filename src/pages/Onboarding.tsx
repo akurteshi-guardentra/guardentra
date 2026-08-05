@@ -12,33 +12,16 @@ import { useNavigate, Link } from 'react-router-dom';
 import { cn } from '../lib/utils';
 import { seedProfessionalData } from '../lib/seeding';
 import { logOut } from '../lib/firebase-utils';
+import { ONBOARDING_FRAMEWORKS } from '../lib/vendor/constants';
+import type { FrameworkId } from '../lib/vendor/types';
+import { currentDefaultsForFrameworks, saveOrgFrameworkPackDefaults } from '../lib/vendor/orgFrameworkPacks';
 
-const FRAMEWORKS = [
-  {
-    id: 'iso27001',
-    name: 'ISO 27001:2022',
-    icon: Shield,
-    desc: 'The certification enterprise buyers ask for most often in security reviews.',
-  },
-  {
-    id: 'soc2',
-    name: 'SOC 2 Type II',
-    icon: Target,
-    desc: 'Audited proof of how you handle security, availability and confidentiality over time.',
-  },
-  {
-    id: 'nist',
-    name: 'NIST CSF 2.0',
-    icon: Globe,
-    desc: 'A practical control baseline. Common in US public sector and critical infrastructure.',
-  },
-  {
-    id: 'hipaa',
-    name: 'HIPAA',
-    icon: Shield,
-    desc: 'Required if you or your vendors touch protected health information.',
-  },
-];
+const ONBOARDING_ICONS: Record<string, typeof Shield> = {
+  iso27001: Shield,
+  soc2: Target,
+  nist_csf_2: Globe,
+  hipaa: Shield,
+};
 
 export function Onboarding() {
   const { profile, user, loading } = useAuth();
@@ -112,13 +95,14 @@ export function Onboarding() {
           console.warn("Onboarding: Organization update failed:", e);
         }
 
-        // 2. Initialize Selected Frameworks
+        // 2. Initialize Selected Frameworks (shared FrameworkIds with vendor catalog)
         if (selectedFrameworks.length > 0) {
           console.log("Onboarding: Initializing frameworks...", selectedFrameworks);
           try {
             await Promise.all(selectedFrameworks.map(async (frameworkId) => {
-              const fw = FRAMEWORKS.find(f => f.id === frameworkId);
+              const fw = ONBOARDING_FRAMEWORKS.find(f => f.id === frameworkId);
               return addDoc(collection(db, 'compliance'), {
+                frameworkId,
                 name: fw?.name || frameworkId,
                 organizationId: activeOrgId,
                 status: 'Active',
@@ -127,6 +111,14 @@ export function Onboarding() {
               });
             }));
             console.log("Onboarding: Frameworks initialized");
+            try {
+              await saveOrgFrameworkPackDefaults(
+                activeOrgId,
+                currentDefaultsForFrameworks(selectedFrameworks as FrameworkId[])
+              );
+            } catch (e: any) {
+              console.warn("Onboarding: Framework pack defaults failed:", e);
+            }
           } catch (e: any) {
             console.warn("Onboarding: Frameworks initialization failed:", e);
           }
@@ -307,8 +299,8 @@ export function Onboarding() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {FRAMEWORKS.map((fw) => {
-                  const Icon = fw.icon;
+                {ONBOARDING_FRAMEWORKS.map((fw) => {
+                  const Icon = ONBOARDING_ICONS[fw.id] || Shield;
                   const isSelected = selectedFrameworks.includes(fw.id);
                   return (
                     <Card 
