@@ -4,21 +4,19 @@ Living status for parallel Claude + Cursor sessions. Update and **push** at the 
 
 ---
 
-- **Last-Updated:** 2026-08-05T18:56:00Z
+- **Last-Updated:** 2026-08-05T19:05:00Z
 - **Agent:** Cursor
-- **Branch / SHA:** `main` @ `b422592` (portal/tracker lifecycle tests)
-- **Doing now:** Idle after portal/tracker lifecycle integration tests.
+- **Branch / SHA:** `main` @ tip after residuals + push
+- **Doing now:** Idle after residuals display + production build verify.
 - **Done this session:**
-  - Extracted pure `assessmentLifecycle.ts` helpers (create / autosave / submit / org decision)
-  - Wired AssessmentWizard, VendorPortal, Assessments to those helpers
-  - Vitest integration-style coverage: create → autosave In Progress → submit Under Review (not Completed) → Approve / Remediate / Reject + vendor chips
-  - Prior: empty-assessment recovery, FastTrack triage, exceptions, status chips, custom stub disabled
+  - Assessment tracker/review shows `sentAt` / `completedAt` timeline under Due
+  - `npm run lint` clean; vitest **104/104**; `npm run build` succeeds (client + `dist/server.cjs`)
+  - Pushed unpushed main commits (lifecycle, empty recovery, exceptions, etc.)
 - **Blocked / next:**
   - **Manual (user):** Firebase Console Support email → `support@guardentra.com`
   - **Manual:** Trigger Email extension for real vendor mail; `VITE_STRIPE_PRICE_*` if checkout needed
-  - Post-ship E2E smoke: vendor → triage → assessment → portal → submit → exceptions review → decide
+  - Post-ship E2E smoke: vendor → FastTrack triage → assessment → portal (incognito) → Review → decision
   - Later: custom questionnaires, AI evidence citations, scheduled reminders, PDF polish
-  - Assessment residuals (completedAt/sentAt display) if still needed
 - **Do not touch:**
   - `.env.local` / secrets (never commit)
   - KI#12 unless explicitly un-parked
@@ -26,9 +24,8 @@ Living status for parallel Claude + Cursor sessions. Update and **push** at the 
 ## Follow-ups (remaining)
 
 1. Firebase Support email in Console
-2. Smoke: create vendor → FastTrack triage → assessment → portal → Review → decision
-3. Assessment residuals (completedAt/sentAt display)
-4. Push `main` when ready (local ahead of origin)
+2. Smoke on guardentra.com after App Hosting rolls
+3. Ops: Trigger Email + Stripe price env
 
 ## Protocol
 

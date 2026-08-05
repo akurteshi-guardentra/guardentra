@@ -88,6 +88,21 @@ function dueLabel(a: StoredAssessment): string {
   return a.dueDate || (a.dueAt ? a.dueAt.slice(0, 10) : '—');
 }
 
+/** Short calendar date for tracker/review metadata (UTC date portion). */
+function shortDate(iso?: string): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function lifecycleDatesLabel(a: StoredAssessment): string {
+  const parts: string[] = [];
+  if (a.sentAt) parts.push(`Sent ${shortDate(a.sentAt)}`);
+  if (a.completedAt) parts.push(`Done ${shortDate(a.completedAt)}`);
+  return parts.join(' · ') || '—';
+}
+
 /** Tracker status aligned with vendor directory chips (due/overdue derivation). */
 function rowStatus(a: StoredAssessment): string {
   return (
@@ -623,7 +638,7 @@ export function Assessments() {
                     Progress
                   </th>
                   <th className="px-4 py-4 text-xs font-bold uppercase tracking-widest text-slate-500">
-                    Due Date
+                    Due / Timeline
                   </th>
                   <th className="px-4 py-4 text-right text-xs font-bold uppercase tracking-widest text-slate-500">
                     Actions
@@ -718,7 +733,12 @@ export function Assessments() {
                           <span className="font-mono text-[10px] text-slate-500">{progressOf(a)}%</span>
                         </div>
                       </td>
-                      <td className="px-4 py-4 font-mono text-xs italic text-slate-500">{dueLabel(a)}</td>
+                      <td className="px-4 py-4 font-mono text-xs text-slate-500">
+                        <div className="italic">Due {dueLabel(a)}</div>
+                        <div className="mt-0.5 text-[10px] not-italic text-slate-600">
+                          {lifecycleDatesLabel(a)}
+                        </div>
+                      </td>
                       <td className="px-4 py-4 text-right">
                         <Button
                           variant="ghost"
@@ -818,6 +838,13 @@ export function Assessments() {
                 </h2>
                 <p className="font-mono text-[10px] uppercase tracking-widest text-slate-500">
                   {frameworkLabel(reviewAssessment)} Review
+                </p>
+                <p className="mt-2 text-[11px] text-slate-500">
+                  Due {dueLabel(reviewAssessment)}
+                  {reviewAssessment.sentAt ? ` · Sent ${shortDate(reviewAssessment.sentAt)}` : ''}
+                  {reviewAssessment.completedAt
+                    ? ` · Completed ${shortDate(reviewAssessment.completedAt)}`
+                    : ''}
                 </p>
               </div>
               <Button
