@@ -1,4 +1,5 @@
 import React from 'react';
+import '../i18n';
 import { Link, useLocation } from 'react-router-dom';
 import {
   Shield,

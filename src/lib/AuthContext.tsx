@@ -98,6 +98,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setLoading(false);
           return;
         }
+        // User just signed in (or switched accounts). Keep loading=true until the
+        // profile snapshot arrives — otherwise Login/ProtectedRoute see
+        // user && !profile && !loading and flash /onboarding for already-onboarded users.
+        setProfile(null);
+        setLoading(true);
         try {
           // Don't hang forever if Firestore never responds (missing DB).
           timeoutId = setTimeout(() => {
@@ -142,9 +147,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     displayName: currentUser.displayName || 'New User',
                   });
                   console.log('AuthContext: Auto-created/joined organization + user profile successfully');
-                  // onSnapshot should re-fire with the new doc; if it does not
-                  // (offline race), do not leave the shell spinning forever.
-                  setLoading(false);
+                  // Keep loading=true — onSnapshot will re-fire with the new doc.
+                  // The 4s timeout above covers the offline case where it never does.
                 } catch (initErr: any) {
                   console.error('AuthContext: Auto-initialization failed:', initErr);
                   if (initErr?.code === 'permission-denied') {

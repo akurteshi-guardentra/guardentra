@@ -22,7 +22,9 @@ runConfig:
   # configured max. Keeping maxInstances low bounds that drift until it moves to a
   # shared store (already flagged in that file).
   maxInstances: 2
-  minInstances: 0
+  # Keep one warm instance so guardentra.com doesn't pay a multi-second Cloud Run
+  # cold start on the first visit after idle (minInstances: 0 was dominating TTFB).
+  minInstances: 1
   concurrency: 80
 
 env:

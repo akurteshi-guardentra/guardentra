@@ -57,13 +57,32 @@ export async function createApp() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("/", (_req, res) => {
+    // Vite hashed assets under /assets — cache forever; index.html stays no-cache below.
+    app.use(
+      "/assets",
+      express.static(path.join(distPath, "assets"), {
+        maxAge: "1y",
+        immutable: true,
+        setHeaders(res) {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        },
+      })
+    );
+    app.use(
+      express.static(distPath, {
+        setHeaders(res, filePath) {
+          if (filePath.endsWith("index.html")) {
+            res.setHeader("Cache-Control", "no-cache");
+          }
+        },
+      })
+    );
+    const sendIndex = (_req: express.Request, res: express.Response) => {
+      res.setHeader("Cache-Control", "no-cache");
       res.sendFile(path.join(distPath, "index.html"));
-    });
-    app.get("*all", (_req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
+    };
+    app.get("/", sendIndex);
+    app.get("*all", sendIndex);
   }
 
   return app;
