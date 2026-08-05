@@ -1,7 +1,7 @@
-# NexusGRC Test Plan & Strategy (ISTQB Compliant)
+# Guardentra Test Plan & Strategy (ISTQB Compliant)
 
 ## 1. Introduction
-This document outlines the testing strategy for NexusGRC, ensuring a high-quality, secure, and reliable AI-driven GRC platform.
+This document outlines the testing strategy for Guardentra, ensuring a high-quality, secure, and reliable AI-driven GRC platform.
 
 ## 2. Test Objectives
 - Verify all core GRC modules (Risks, Compliance, Incidents, Policies, Vendors, Audit) function as specified.
