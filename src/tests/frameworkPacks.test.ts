@@ -8,7 +8,7 @@ import {
   rebaselineAssessment,
   resolvePackIdsForFrameworks,
 } from '../lib/vendor/frameworkPacks';
-import { QUESTION_BANK_VERSION } from '../lib/vendor/questionBank';
+import { overallProgressPct, QUESTION_BANK_VERSION } from '../lib/vendor/questionBank';
 
 describe('framework packs', () => {
   it('ships side-by-side NIST and ISO versions with a single current pack each', () => {
@@ -76,5 +76,47 @@ describe('framework packs', () => {
       expect(carried && result.carriedAnswers[carried.id]).toBe('Yes');
     }
     expect(result.unmatchedAnswers.some((u) => u.controlKey === 'gone_control_key')).toBe(true);
+  });
+
+  it('remaps comments and evidence onto new question ids by controlKey', () => {
+    const oldQs = buildQuestionsForPackIds(['iso27001@2013']);
+    expect(oldQs[0]).toBeTruthy();
+    const oldId = oldQs[0].id;
+    const controlKey = oldQs[0].controlKey;
+
+    const result = rebaselineAssessment({
+      questions: oldQs.map((q) => ({ id: q.id, controlKey: q.controlKey, question: q.question })),
+      answers: { [oldId]: 'Yes' },
+      comments: { [oldId]: 'via SSO' },
+      evidenceByQuestion: {
+        [oldId]: [{ fileName: 'policy.pdf', questionId: oldId }],
+      },
+      targetPackIds: ['iso27001@2022'],
+    });
+
+    const carried = result.questions.find((q) => q.controlKey === controlKey);
+    expect(carried).toBeTruthy();
+    expect(result.carriedAnswers[carried!.id]).toBe('Yes');
+    expect(result.carriedComments[carried!.id]).toBe('via SSO');
+    expect(result.carriedEvidence[carried!.id]).toEqual([
+      { fileName: 'policy.pdf', questionId: carried!.id },
+    ]);
+    expect(result.carriedComments[oldId]).toBeUndefined();
+    expect(overallProgressPct(result.questions, result.carriedAnswers)).toBeGreaterThan(0);
+  });
+
+  it('records answers without controlKey in unmatchedAnswers instead of dropping them', () => {
+    const result = rebaselineAssessment({
+      questions: [{ id: 'legacy_q', question: 'Legacy freeform question' }],
+      answers: { legacy_q: 'Partially' },
+      comments: { legacy_q: 'needs follow-up' },
+      targetPackIds: ['soc2@current'],
+    });
+
+    expect(result.unmatchedAnswers).toEqual([
+      { controlKey: '', questionId: 'legacy_q', answer: 'Partially' },
+    ]);
+    expect(result.carriedAnswers).toEqual({});
+    expect(result.carriedComments.legacy_q).toBe('needs follow-up');
   });
 });
