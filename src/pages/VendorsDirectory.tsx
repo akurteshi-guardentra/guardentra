@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
   collection,
   onSnapshot,
@@ -10,20 +10,13 @@ import {
   runTransaction,
 } from 'firebase/firestore';
 import {
-  Upload,
-  Plus,
-  Download,
   Building2,
-  UserPlus,
-  Sparkles,
   ShieldAlert,
   CalendarClock,
   AlertTriangle,
-  Mail,
 } from 'lucide-react';
 import { db } from '../firebase';
 import { useAuth } from '../lib/AuthContext';
-import { Button } from '../components/ui/button';
 import { PageBand } from '../components/spine/PageShell';
 import { VendorsPageHeader, VendorsStatsGrid } from '../components/vendor/VendorsPageHeader';
 import { VendorsFiltersBar } from '../components/vendor/VendorsFiltersBar';
@@ -527,6 +520,10 @@ export function VendorsDirectory() {
         setFormError('');
         setShowAdd(true);
       }}
+      onOpenInvite={() => {
+        setInviteError('');
+        setShowInvite(true);
+      }}
     >
       {dataError && (
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
@@ -537,133 +534,45 @@ export function VendorsDirectory() {
         </div>
       )}
 
-      <div className="flex flex-col gap-6 xl:flex-row">
-        <div className="min-w-0 flex-1 space-y-6">
-          <VendorsStatsGrid cards={vendorStatCards} />
+      <div className="space-y-4">
+        <VendorsStatsGrid cards={vendorStatCards} />
 
-          <PageBand className="overflow-hidden p-0">
-            <VendorsFiltersBar
-              search={search}
-              setSearch={setSearch}
-              riskFilter={riskFilter}
-              setRiskFilter={setRiskFilter}
-              categoryFilter={categoryFilter}
-              setCategoryFilter={setCategoryFilter}
-              statusFilter={statusFilter}
-              setStatusFilter={setStatusFilter}
-              ownerFilter={ownerFilter}
-              setOwnerFilter={setOwnerFilter}
-              showMoreFilters={showMoreFilters}
-              setShowMoreFilters={setShowMoreFilters}
-              owners={owners}
-              filteredCount={filtered.length}
-              totalCount={vendors.length}
-              clearFilters={clearFilters}
-              onExport={() => downloadVendorRegisterReport(filtered)}
-            />
+        <PageBand>
+          <VendorsFiltersBar
+            search={search}
+            setSearch={setSearch}
+            riskFilter={riskFilter}
+            setRiskFilter={setRiskFilter}
+            categoryFilter={categoryFilter}
+            setCategoryFilter={setCategoryFilter}
+            statusFilter={statusFilter}
+            setStatusFilter={setStatusFilter}
+            ownerFilter={ownerFilter}
+            setOwnerFilter={setOwnerFilter}
+            showMoreFilters={showMoreFilters}
+            setShowMoreFilters={setShowMoreFilters}
+            owners={owners}
+            filteredCount={filtered.length}
+            totalCount={vendors.length}
+            clearFilters={clearFilters}
+            onExport={() => downloadVendorRegisterReport(filtered)}
+          />
 
-            <VendorTable
-              loading={loading}
-              pageRows={pageRows}
-              vendorsTotal={vendors.length}
-              filteredCount={filtered.length}
-              page={page}
-              pageSize={pageSize}
-              totalPages={totalPages}
-              setPage={setPage}
-              menuVendorId={menuVendorId}
-              setMenuVendorId={setMenuVendorId}
-              assessmentsByVendor={assessmentsByVendor}
-              onNavigate={navigate}
-            />
-          </PageBand>
-        </div>
-
-        <aside className="w-full shrink-0 space-y-4 lg:w-72">
-          <div className="rounded-xl border border-white/5 bg-slate-900/50 p-4">
-            <h2 className="text-sm font-semibold text-white">Quick Actions</h2>
-            <div className="mt-3 space-y-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setFormError('');
-                  setShowAdd(true);
-                }}
-                className="flex w-full items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-left text-sm hover:bg-white/5"
-              >
-                <Plus className="h-4 w-4 text-primary" />
-                Add One Vendor
-              </button>
-              <button
-                type="button"
-                onClick={openBulkModal}
-                className="flex w-full items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-left text-sm hover:bg-white/5"
-              >
-                <Upload className="h-4 w-4 text-primary" />
-                Bulk Upload Vendors
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setInviteError('');
-                  setShowInvite(true);
-                }}
-                className="flex w-full flex-col items-start gap-0.5 rounded-lg border border-white/10 px-3 py-2 text-left text-sm hover:bg-white/5"
-              >
-                <span className="flex items-center gap-2">
-                  <Mail className="h-4 w-4 text-primary" />
-                  Invite Vendor
-                </span>
-                <span className="pl-6 text-xs text-slate-500">Add vendor &amp; send a welcome email</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate('/assessments/triage')}
-                className="flex w-full flex-col items-start gap-0.5 rounded-lg border border-white/10 px-3 py-2 text-left text-sm hover:bg-white/5"
-              >
-                <span className="flex items-center gap-2">
-                  <UserPlus className="h-4 w-4 text-primary" />
-                  Invite to assessment
-                </span>
-                <span className="pl-6 text-xs text-slate-500">FastTrack triage · then wizard</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-white/5 bg-slate-900/50 p-4">
-            <h2 className="text-sm font-semibold text-white">Bulk Upload in 3 Steps</h2>
-            <ol className="mt-3 space-y-2 text-sm text-slate-400">
-              <li>
-                <span className="font-medium text-slate-200">1.</span> Download Template
-              </li>
-              <li>
-                <span className="font-medium text-slate-200">2.</span> Upload CSV (not .xlsx)
-              </li>
-              <li>
-                <span className="font-medium text-slate-200">3.</span> Review & Import
-              </li>
-            </ol>
-            <Button
-              variant="outline"
-              className="mt-3 w-full border-white/10 text-white"
-              onClick={() => downloadVendorCsvTemplate()}
-            >
-              <Download className="mr-2 h-4 w-4" />
-              Download CSV template
-            </Button>
-            <p className="mt-4 flex gap-2 rounded-lg bg-primary/10 p-3 text-xs text-primary">
-              <Sparkles className="h-4 w-4 shrink-0" />
-              Import flags duplicate names in-file and against your existing register.
-            </p>
-          </div>
-
-          <Link
-            to="/vendors/legacy"
-            className="block text-center text-xs text-slate-400 hover:text-slate-300"
-          >
-            Open classic vendor workspace
-          </Link>
-        </aside>
+          <VendorTable
+            loading={loading}
+            pageRows={pageRows}
+            vendorsTotal={vendors.length}
+            filteredCount={filtered.length}
+            page={page}
+            pageSize={pageSize}
+            totalPages={totalPages}
+            setPage={setPage}
+            menuVendorId={menuVendorId}
+            setMenuVendorId={setMenuVendorId}
+            assessmentsByVendor={assessmentsByVendor}
+            onNavigate={navigate}
+          />
+        </PageBand>
       </div>
 
       {showAdd && (

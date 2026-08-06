@@ -75,9 +75,9 @@ export function VendorTable({
 }: VendorTableProps) {
   return (
     <>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[900px] text-left text-sm">
-          <thead className="bg-white/[0.03] text-xs uppercase tracking-wide text-slate-500">
+      <div className="max-h-[min(70vh,40rem)] overflow-auto">
+        <table className="w-full min-w-[900px] text-left text-sm text-slate-200">
+          <thead className="sticky top-0 z-10 border-b border-white/5 bg-slate-950 text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-3 font-medium">Vendor</th>
               <th className="px-4 py-3 font-medium">Category</th>

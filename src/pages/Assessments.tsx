@@ -4,7 +4,6 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { Loader2 } from 'lucide-react';
 import { db } from '../firebase';
 import { useAuth } from '../lib/AuthContext';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { PageBand } from '../components/spine/PageShell';
 import { AssessmentsPageHeader, AssessmentsStatsGrid } from '../components/assessments/AssessmentsTop';
 import { AssessmentTrackerTable } from '../components/assessments/AssessmentTrackerTable';
@@ -491,37 +490,29 @@ export function Assessments() {
         </div>
       )}
 
-      <AssessmentsStatsGrid stats={statCards} />
+      <div className="space-y-4">
+        <AssessmentsStatsGrid stats={statCards} />
 
-      <PageBand className="overflow-hidden p-0">
-        <Card className="border-0 bg-transparent shadow-none">
-          <CardHeader>
-            <CardTitle className="text-white">Assessment Tracker</CardTitle>
-            <CardDescription className="text-slate-500">
-              Monitor vendor response status — filter by vendor to see the correlation.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <AssessmentTrackerTable
-              search={search}
-              onSearchChange={setSearch}
-              vendorFilter={vendorFilter}
-              onVendorFilterChange={handleVendorFilterChange}
-              vendorOptions={vendorOptions}
-              onClearVendorFilter={clearVendorFilter}
-              loading={loading}
-              filtered={filtered}
-              assessmentsCount={assessments.length}
-              reminderState={reminderState}
-              isLocalAssessment={isLocalAssessment}
-              onCopyPortalLink={copyPortalLink}
-              onSendReminder={handleSendReminder}
-              onReview={handleReviewAssessment}
-              onCreateNew={() => navigate('/assessments/triage')}
-            />
-          </CardContent>
-        </Card>
-      </PageBand>
+        <PageBand>
+          <AssessmentTrackerTable
+            search={search}
+            onSearchChange={setSearch}
+            vendorFilter={vendorFilter}
+            onVendorFilterChange={handleVendorFilterChange}
+            vendorOptions={vendorOptions}
+            onClearVendorFilter={clearVendorFilter}
+            loading={loading}
+            filtered={filtered}
+            assessmentsCount={assessments.length}
+            reminderState={reminderState}
+            isLocalAssessment={isLocalAssessment}
+            onCopyPortalLink={copyPortalLink}
+            onSendReminder={handleSendReminder}
+            onReview={handleReviewAssessment}
+            onCreateNew={() => navigate('/assessments/triage')}
+          />
+        </PageBand>
+      </div>
 
       {toast && (
         <div

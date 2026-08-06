@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Check, Sparkles } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
@@ -28,9 +28,14 @@ export function FastTrackTriage() {
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<TriageAnswers>({ ...EMPTY_TRIAGE_ANSWERS });
 
+  // Keep local vendor selection in sync when arriving from Vendors “Assess” links.
+  useEffect(() => {
+    if (presetVendorId) setVendorId(presetVendorId);
+  }, [presetVendorId]);
+
   const selected = vendors.find((v) => v.id === vendorId);
   const recommendation = useMemo(() => recommendFromTriage(answers), [answers]);
-  const question = TRIAGE_QUESTIONS[step];
+  const question = step < TRIAGE_QUESTIONS.length ? TRIAGE_QUESTIONS[step] : null;
   const showingResult = step >= TRIAGE_QUESTIONS.length;
 
   const toggleMulti = (field: 'dataExposure' | 'requirements', value: string) => {
@@ -109,7 +114,7 @@ export function FastTrackTriage() {
         </Link>
       </div>
 
-      {!presetVendorId && (
+      {(!presetVendorId || !vendorId) && (
         <div className="rounded-xl border border-white/10 bg-black/20 p-4">
           <label className="text-xs font-bold uppercase tracking-widest text-slate-500">Vendor</label>
           {loading ? (
@@ -131,21 +136,43 @@ export function FastTrackTriage() {
         </div>
       )}
 
+      {presetVendorId && loading && (
+        <p className="text-sm text-slate-500">Loading vendor…</p>
+      )}
+
+      {presetVendorId && !loading && !selected && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+          <p className="font-medium text-amber-200">Vendor not found in this organization</p>
+          <p className="mt-1 text-amber-100/80">
+            The link may be stale, or the vendor belongs to another workspace. Pick a vendor below or
+            return to the register.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button type="button" variant="outline" className="border-white/10" onClick={() => navigate('/vendors')}>
+              Back to Vendors
+            </Button>
+            <Button type="button" variant="ghost" className="text-slate-300" onClick={() => setVendorId('')}>
+              Choose another vendor
+            </Button>
+          </div>
+        </div>
+      )}
+
       {selected && (
         <div className="rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-slate-200">
-          Triaging <span className="font-medium text-white">{selected.name}</span>
+          Triaging <span className="font-medium text-slate-50">{selected.name}</span>
           {selected.category ? ` · ${selected.category}` : ''}
         </div>
       )}
 
       {!vendorId ? (
         <p className="text-sm text-slate-500">Select a vendor to start triage.</p>
-      ) : showingResult && recommendation ? (
+      ) : presetVendorId && !loading && !selected ? null : showingResult && recommendation ? (
         <div className="space-y-5 rounded-2xl border border-white/10 bg-slate-900/50 p-6">
           <div className="flex items-start gap-3">
             <Sparkles className="mt-0.5 h-5 w-5 text-primary" />
             <div>
-              <h2 className="text-lg font-semibold text-white">
+              <h2 className="text-lg font-semibold text-slate-50">
                 Recommended: {recommendation.tier}
               </h2>
               <p className="mt-1 text-sm text-slate-400">
@@ -198,8 +225,16 @@ export function FastTrackTriage() {
             </Button>
           </div>
         </div>
-      ) : (
-        question && (
+      ) : showingResult && !recommendation ? (
+        <div className="space-y-4 rounded-2xl border border-white/10 bg-slate-900/50 p-6">
+          <p className="text-sm text-slate-400">
+            Could not build a recommendation yet. Go back and finish every question.
+          </p>
+          <Button type="button" onClick={() => setStep(Math.max(0, TRIAGE_QUESTIONS.length - 1))}>
+            Resume triage
+          </Button>
+        </div>
+      ) : question ? (
           <div className="space-y-5 rounded-2xl border border-white/10 bg-slate-900/50 p-6">
             <div className="flex items-center justify-between gap-3 text-xs text-slate-500">
               <span>
@@ -215,7 +250,7 @@ export function FastTrackTriage() {
             </div>
 
             <div>
-              <h2 className="text-lg font-medium text-white">{question.title}</h2>
+              <h2 className="text-lg font-medium text-slate-50">{question.title}</h2>
               <p className="mt-1 text-sm text-slate-400">{question.hint}</p>
             </div>
 
@@ -241,7 +276,7 @@ export function FastTrackTriage() {
                     className={cn(
                       'flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm transition-colors',
                       selectedOpt
-                        ? 'border-primary bg-primary/15 text-white'
+                        ? 'border-primary bg-primary/15 text-slate-50'
                         : 'border-white/10 bg-black/20 text-slate-300 hover:bg-white/5'
                     )}
                   >
@@ -280,7 +315,8 @@ export function FastTrackTriage() {
               <p className="text-xs text-slate-500">Answer every question to generate a recommendation.</p>
             )}
           </div>
-        )
+      ) : (
+        <p className="text-sm text-slate-500">Preparing triage…</p>
       )}
     </PageShell>
   );

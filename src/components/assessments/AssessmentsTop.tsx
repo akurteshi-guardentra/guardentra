@@ -1,8 +1,6 @@
 import React from 'react';
 import { Plus } from 'lucide-react';
 import { Button } from '../ui/button';
-import { Badge } from '../ui/badge';
-import { Card } from '../ui/card';
 import { PageShell } from '../spine/PageShell';
 
 export function AssessmentsPageHeader({
@@ -40,23 +38,22 @@ export function AssessmentsPageHeader({
   );
 }
 
+/** Compact horizontal stat strip matching Vendors. */
 export function AssessmentsStatsGrid({
   stats,
 }: {
-  stats: { label: string; value: string | number; tone: string }[];
+  stats: { label: string; value: string | number; tone?: string }[];
 }) {
   return (
-    <section className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+    <section className="flex flex-wrap items-stretch gap-px overflow-hidden rounded-xl border border-white/8 bg-white/5">
       {stats.map((stat) => (
-        <Card
+        <div
           key={stat.label}
-          className="flex flex-col items-center justify-center border-white/8 bg-slate-900/45 p-5 text-center"
+          className="flex min-w-[9rem] flex-1 flex-col justify-center bg-slate-950/60 px-4 py-3"
         >
-          <Badge variant="outline" className={stat.tone}>
-            {stat.label}
-          </Badge>
-          <div className="mt-3 text-3xl font-bold text-white">{stat.value}</div>
-        </Card>
+          <p className="truncate text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{stat.label}</p>
+          <p className="mt-1 font-display text-xl font-bold tabular-nums text-slate-100">{stat.value}</p>
+        </div>
       ))}
     </section>
   );

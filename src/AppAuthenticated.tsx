@@ -1,9 +1,17 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense, lazy, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/AuthContext';
 import { ComingLater } from './pages/ComingLater';
+import { RouteErrorBoundary } from './components/spine/RouteErrorBoundary';
 import { isFeatureEnabled, type FeatureKey } from './lib/featureFlags';
 import { isLocallyOnboarded } from './lib/onboardingFlag';
+// Spine pages: eager so Vendor → Assess / Impact / triage never white-screens
+// on a stale lazy chunk after deploy.
+import { VendorsDirectory } from './pages/VendorsDirectory';
+import { FastTrackTriage } from './pages/FastTrackTriage';
+import { AssessmentWizard } from './pages/AssessmentWizard';
+import { ImpactAssessment } from './pages/ImpactAssessment';
+import { Assessments } from './pages/Assessments';
 
 const Layout = lazy(() => import('./components/Layout').then((m) => ({ default: m.Layout })));
 const Dashboard = lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Dashboard })));
@@ -13,11 +21,6 @@ const Incidents = lazy(() => import('./pages/Incidents').then((m) => ({ default:
 const Connectors = lazy(() => import('./pages/Connectors').then((m) => ({ default: m.Connectors })));
 const Policies = lazy(() => import('./pages/Policies').then((m) => ({ default: m.Policies })));
 const VendorRisk = lazy(() => import('./pages/VendorRisk').then((m) => ({ default: m.VendorRisk })));
-const VendorsDirectory = lazy(() => import('./pages/VendorsDirectory').then((m) => ({ default: m.VendorsDirectory })));
-const AssessmentWizard = lazy(() => import('./pages/AssessmentWizard').then((m) => ({ default: m.AssessmentWizard })));
-const FastTrackTriage = lazy(() => import('./pages/FastTrackTriage').then((m) => ({ default: m.FastTrackTriage })));
-const ImpactAssessment = lazy(() => import('./pages/ImpactAssessment').then((m) => ({ default: m.ImpactAssessment })));
-const Assessments = lazy(() => import('./pages/Assessments').then((m) => ({ default: m.Assessments })));
 const VendorPortal = lazy(() => import('./pages/VendorPortal').then((m) => ({ default: m.VendorPortal })));
 const AuditReadiness = lazy(() => import('./pages/AuditReadiness').then((m) => ({ default: m.AuditReadiness })));
 const SystemHealth = lazy(() => import('./pages/SystemHealth').then((m) => ({ default: m.SystemHealth })));
@@ -80,10 +83,22 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function ClearChunkReloadFlag() {
+  useEffect(() => {
+    try {
+      sessionStorage.removeItem('guardentra_chunk_reload');
+    } catch {
+      /* private mode */
+    }
+  }, []);
+  return null;
+}
+
 /** Authenticated (and login/portal) shell — Firebase loads only when this chunk loads. */
 export default function AppAuthenticated() {
   return (
     <AuthProvider>
+      <ClearChunkReloadFlag />
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/login" element={<Login />} />
@@ -101,6 +116,7 @@ export default function AppAuthenticated() {
             element={
               <ProtectedRoute>
                 <Layout>
+                  <RouteErrorBoundary label="This view">
                   <Suspense fallback={<RouteFallback />}>
                     <Routes>
                       <Route path="/dashboard" element={<FeatureGate flag="dashboard"><Dashboard /></FeatureGate>} />
@@ -232,6 +248,7 @@ export default function AppAuthenticated() {
                       <Route path="*" element={<Navigate to="/dashboard" replace />} />
                     </Routes>
                   </Suspense>
+                  </RouteErrorBoundary>
                 </Layout>
               </ProtectedRoute>
             }

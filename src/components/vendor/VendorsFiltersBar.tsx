@@ -148,7 +148,7 @@ export function VendorsFiltersBar({
             <X className="mr-1 h-3.5 w-3.5" />
             Clear filters
           </Button>
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-slate-500" aria-live="polite">
             Showing {filteredCount} of {totalCount}
           </span>
         </div>
