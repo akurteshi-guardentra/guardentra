@@ -16,11 +16,19 @@ const args = process.argv.slice(2);
 const baseIdx = args.indexOf('--base');
 const BASE = (baseIdx >= 0 ? args[baseIdx + 1] : null) || process.env.GUARDENTRA_LIVE_URL || 'https://guardentra.com';
 
-/** Unique markers from the spine polish / Suspense-fix commits. */
+/**
+ * Spine pages are eager inside AppAuthenticated (triage blank-page fix).
+ * Dialogs may still be separate lazy chunks.
+ */
 const MARKERS = {
-  vendors: ['Vendor Register'],
-  assessments: ['Assessment Tracker', 'Opening review'],
-  authGraph: ['PageShell-', 'VendorsDirectory-', 'Assessments-', 'AddVendorDialog-'],
+  authInline: [
+    'Vendor Register',
+    'Assessment Tracker',
+    'Risk triage',
+    'Vendor not found in this organization',
+    'Opening review',
+  ],
+  optionalLazyHints: ['AddVendorDialog-', 'PageShell-'],
 };
 
 async function fetchText(url) {
@@ -35,10 +43,6 @@ async function fetchText(url) {
 function firstMatch(text, re) {
   const m = text.match(re);
   return m ? m[0] : null;
-}
-
-function allMatches(text, re) {
-  return [...text.matchAll(re)].map((m) => m[0]);
 }
 
 function fail(msg) {
@@ -64,8 +68,9 @@ async function main() {
   ok(`entry ${entry}`);
 
   const indexJs = await fetchText(`${BASE}${entry}`);
-  const authChunk = firstMatch(indexJs, /\/assets\/AppAuthenticated-[^"'\\\s>]+\.js/)
-    || firstMatch(indexJs, /assets\/AppAuthenticated-[^"'\\\s>]+\.js/);
+  const authChunk =
+    firstMatch(indexJs, /\/assets\/AppAuthenticated-[^"'\\\s>]+\.js/) ||
+    firstMatch(indexJs, /assets\/AppAuthenticated-[^"'\\\s>]+\.js/);
   if (!authChunk) {
     fail('AppAuthenticated chunk not referenced from entry');
     return;
@@ -74,39 +79,30 @@ async function main() {
   ok(`auth  ${authChunk}`);
 
   const authJs = await fetchText(authUrl);
-  for (const needle of MARKERS.authGraph) {
-    if (!authJs.includes(needle)) fail(`auth graph missing chunk hint: ${needle}`);
-    else ok(`auth graph has ${needle}*`);
+
+  // Eager spine: triage must not be a separate lazy chunk anymore.
+  if (/assets\/FastTrackTriage-[^"'\\\s>]+\.js/.test(authJs)) {
+    fail('FastTrackTriage is still a separate lazy chunk (blank-page regression risk)');
+  } else {
+    ok('FastTrackTriage is eager (no separate lazy chunk)');
   }
 
-  const vendorsRel = firstMatch(authJs, /assets\/VendorsDirectory-[^"'\\\s>]+\.js/);
-  const assessRel = firstMatch(authJs, /assets\/Assessments-[^"'\\\s>]+\.js/);
-  if (!vendorsRel) fail('VendorsDirectory chunk missing from auth graph');
-  if (!assessRel) fail('Assessments chunk missing from auth graph');
-  if (!vendorsRel || !assessRel) return;
-
-  const vendorsJs = await fetchText(`${BASE}/${vendorsRel}`);
-  const assessJs = await fetchText(`${BASE}/${assessRel}`);
-
-  for (const m of MARKERS.vendors) {
-    if (!vendorsJs.includes(m)) fail(`VendorsDirectory missing "${m}"`);
-    else ok(`vendors contains "${m}"`);
-  }
-  for (const m of MARKERS.assessments) {
-    if (!assessJs.includes(m)) fail(`Assessments missing "${m}"`);
-    else ok(`assessments contains "${m}"`);
+  for (const needle of MARKERS.authInline) {
+    if (!authJs.includes(needle)) fail(`auth bundle missing "${needle}"`);
+    else ok(`auth contains "${needle}"`);
   }
 
-  const pageShell = allMatches(authJs, /assets\/PageShell-[^"'\\\s>]+\.js/g);
-  if (pageShell.length) ok(`PageShell chunk ${pageShell[0]}`);
-  else fail('PageShell chunk not in auth graph');
+  for (const hint of MARKERS.optionalLazyHints) {
+    if (authJs.includes(hint)) ok(`auth graph has ${hint}*`);
+    else ok(`note: ${hint}* not separate (may be inlined)`);
+  }
 
   console.log('');
   if (process.exitCode) {
     console.error('Verdict: LIVE BUNDLE LOOKS STALE OR INCOMPLETE vs expected markers.');
     console.error('Check Firebase Console → App Hosting → backend guardentra → latest rollout.');
   } else {
-    console.log('Verdict: live CDN serves expected polish markers (deploy looks current).');
+    console.log('Verdict: live CDN serves expected triage + spine markers (deploy looks current).');
   }
 }
 
