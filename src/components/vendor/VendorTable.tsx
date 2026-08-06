@@ -113,21 +113,27 @@ export function VendorTable({
               return (
                 <tr key={v.id} className="border-t border-white/5 hover:bg-white/[0.03]">
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 text-xs font-semibold text-slate-300">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/10 text-xs font-semibold text-slate-300">
                         {v.name.slice(0, 2).toUpperCase()}
                       </div>
                       <button
                         type="button"
-                        className="font-medium text-white hover:text-primary"
+                        className="min-w-0 truncate text-left font-medium text-slate-100 hover:text-primary"
+                        title={v.name}
                         onClick={() => onNavigate(`/vendors/${v.id}/impact`)}
                       >
                         {v.name}
                       </button>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-slate-400">{v.category || '—'}</td>
-                  <td className="px-4 py-3 text-slate-400">
+                  <td className="max-w-[10rem] truncate px-4 py-3 text-slate-400" title={v.category || undefined}>
+                    {v.category || '—'}
+                  </td>
+                  <td
+                    className="max-w-[12rem] truncate px-4 py-3 text-slate-400"
+                    title={v.primaryContactName || v.primaryContactEmail || undefined}
+                  >
                     {v.primaryContactName || v.primaryContactEmail || '—'}
                   </td>
                   <td className="px-4 py-3">
@@ -173,8 +179,12 @@ export function VendorTable({
                       {linked.length > 0 ? ` · ${linked.length}` : ''}
                     </Link>
                   </td>
-                  <td className="px-4 py-3 text-slate-400">{v.ownerName || '—'}</td>
-                  <td className="px-4 py-3 text-slate-400">{formatDate(v.nextReviewAt)}</td>
+                  <td className="max-w-[9rem] truncate px-4 py-3 text-slate-400" title={v.ownerName || undefined}>
+                    {v.ownerName || '—'}
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums text-slate-400">
+                    {formatDate(v.nextReviewAt)}
+                  </td>
                   <td className="px-4 py-3 text-right">
                     <Link
                       to={`/vendors/${v.id}/impact`}

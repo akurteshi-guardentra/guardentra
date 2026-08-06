@@ -210,14 +210,15 @@ export function AssessmentTrackerTable({
               filtered.map((a) => (
                 <tr key={a.id} className="group transition-colors hover:bg-white/[0.02]">
                   <td className="px-4 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="rounded-lg border border-white/10 bg-white/5 p-2">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="shrink-0 rounded-lg border border-white/10 bg-white/5 p-2">
                         <FileText className="h-4 w-4 text-slate-400" />
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <Link
                           to={`/vendors/${a.vendorId}/impact`}
-                          className="text-sm font-bold text-white hover:text-primary hover:underline"
+                          className="block truncate text-sm font-bold text-slate-100 hover:text-primary hover:underline"
+                          title={a.vendorName || 'Vendor'}
                         >
                           {a.vendorName || 'Vendor'}
                         </Link>
@@ -266,7 +267,9 @@ export function AssessmentTrackerTable({
                       <div className="h-1.5 max-w-[60px] flex-1 overflow-hidden rounded-full bg-white/5">
                         <div className="h-full bg-primary" style={{ width: `${progressOf(a)}%` }} />
                       </div>
-                      <span className="font-mono text-[10px] text-slate-500">{progressOf(a)}%</span>
+                      <span className="font-mono text-[10px] tabular-nums text-slate-500">
+                        {progressOf(a)}%
+                      </span>
                     </div>
                   </td>
                   <td className="px-4 py-4 font-mono text-xs text-slate-500">

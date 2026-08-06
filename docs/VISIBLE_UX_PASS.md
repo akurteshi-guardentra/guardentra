@@ -23,6 +23,15 @@ density, hierarchy, empty states, and one primary action path.
 | Assessments | Tracker works but still feels utility-dense | Tracker-first with calmer filters; review stays a focused overlay |
 | Shared shell | PageShell header is easy to miss | Stronger title hierarchy, less nested card-on-card |
 
+## Table ergonomics (light pass)
+
+Folded from the enterprise-dashboard brief — only what helps the live spine:
+
+- `min-w-0` + `truncate` on vendor/name cells (prevent flex overflow)
+- `tabular-nums` on scores, dates, progress
+- Soft slate text in dense rows (avoid pure white glow in tables)
+- Defer: subgrid rewrite, virtualization, full APCA token system
+
 ## Concrete changes (implementation order)
 
 1. **Vendors density**

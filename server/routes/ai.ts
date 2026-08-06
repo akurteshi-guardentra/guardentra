@@ -183,6 +183,8 @@ router.post('/analyze', async (req, res) => {
 const MAX_PROMPT_LENGTH = 20_000; // generous for any legitimate wizard/copilot prompt
 
 const DEFAULT_MODEL = 'gemini-3.5-flash';
+/** Prefer 3.5; if the API rejects it, try the newer flash id once. */
+const FALLBACK_MODELS = ['gemini-3.6-flash', 'gemini-2.5-flash'] as const;
 
 /**
  * Models this server will actually forward. Everything else falls back to the default.
@@ -199,7 +201,7 @@ const DEFAULT_MODEL = 'gemini-3.5-flash';
  *
  * Adding a model here is a one-line change once it's been verified against the key.
  */
-const ALLOWED_MODELS = new Set([DEFAULT_MODEL]);
+const ALLOWED_MODELS = new Set<string>([DEFAULT_MODEL, ...FALLBACK_MODELS]);
 
 function resolveModel(requested: unknown): string {
   if (typeof requested !== 'string' || !requested.trim()) return DEFAULT_MODEL;
@@ -207,6 +209,37 @@ function resolveModel(requested: unknown): string {
   if (ALLOWED_MODELS.has(name)) return name;
   console.warn(`[ai] Ignoring unsupported model "${name}", using ${DEFAULT_MODEL}`);
   return DEFAULT_MODEL;
+}
+
+function isModelUnavailableError(err: unknown): boolean {
+  const status = (err as { status?: number })?.status;
+  if (status === 404) return true;
+  const msg = String((err as { message?: string })?.message || err || '').toLowerCase();
+  return msg.includes('not found') || msg.includes('is not found') || msg.includes('unsupported model');
+}
+
+async function generateWithModelFallback(args: {
+  prompt: string;
+  config?: Record<string, unknown>;
+  preferred?: string;
+}) {
+  const primary = resolveModel(args.preferred);
+  const chain = [primary, ...FALLBACK_MODELS.filter((m) => m !== primary)];
+  let lastErr: unknown;
+  for (const model of chain) {
+    try {
+      return await ai!.models.generateContent({
+        model,
+        contents: args.prompt,
+        config: args.config && Object.keys(args.config).length ? args.config : undefined,
+      });
+    } catch (err) {
+      lastErr = err;
+      if (!isModelUnavailableError(err)) throw err;
+      console.warn(`[ai] Model ${model} unavailable, trying next fallback`);
+    }
+  }
+  throw lastErr;
 }
 
 router.post('/generate', async (req, res) => {
@@ -224,10 +257,10 @@ router.post('/generate', async (req, res) => {
     const config: Record<string, unknown> = {};
     if (responseMimeType) config.responseMimeType = responseMimeType;
     if (responseSchema) config.responseSchema = responseSchema;
-    const result = await ai!.models.generateContent({
-      model: resolveModel(model),
-      contents: prompt,
-      config: Object.keys(config).length ? config : undefined,
+    const result = await generateWithModelFallback({
+      prompt,
+      config,
+      preferred: model,
     });
     return res.json({ text: result.text || '' });
   } catch (err) {
