@@ -94,11 +94,16 @@ export const signInWithEmail = async (email: string, password: string) => {
   }
 };
 
-export const logOut = async () => {
+export const logOut = async (redirectTo: string = '/') => {
   try {
     await signOut(auth);
   } catch (error) {
-    console.error("Error signing out", error);
+    console.error('Error signing out', error);
+  } finally {
+    // Hard navigate so we leave AppAuthenticated (ProtectedRoute would otherwise
+    // send an unauthenticated user to /login). Default is the public home page.
+    // Do not use /dashboard here — it is auth-gated and redirects to /login.
+    window.location.assign(redirectTo);
   }
 };
 

@@ -12,6 +12,8 @@
     "test:vitest": "vitest run",
     "test:storage-rules": "firebase emulators:exec --only firestore,storage --project demo-guardentra-storage-rules \"node src/tests/storage.rules.test.mjs\"",
     "smoke:portal": "node src/tests/portal.smoke.mjs",
+    "verify:live": "node scripts/verify-live-deploy.mjs",
+    "firebase:reauth": "node scripts/firebase-reauth.mjs",
     "test:firestore-rules": "firebase emulators:exec --only firestore --project demo-guardentra-firestore-rules \"node src/tests/firestore.rules.test.mjs\"",
     "start": "node dist/server.cjs",
     "preview": "vite preview"

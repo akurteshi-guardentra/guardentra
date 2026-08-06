@@ -66,6 +66,38 @@ firebase apphosting:secrets:set STRIPE_WEBHOOK_SECRET --project guardentra-7f582
 
 After that, pushing to the connected branch builds and deploys automatically.
 
+### Verifying a live App Hosting rollout
+
+Firebase CLI rollout commands need a fresh login. If you see
+`Authentication Error: … firebase login --reauth`, restore CLI first:
+
+```bash
+npm run firebase:reauth
+# or: npx firebase-tools login --reauth
+npx firebase-tools projects:list
+npx firebase-tools apphosting:rollouts:list --backend guardentra --project guardentra-7f582
+```
+
+**Do not wait on CLI to know if guardentra.com updated.** After every `main` push, run
+the CDN string probe (no Firebase auth required):
+
+```bash
+npm run verify:live
+# optional: node scripts/verify-live-deploy.mjs --base https://guardentra.com
+```
+
+What it checks:
+
+1. Homepage HTML → hashed `/assets/index-*.js`
+2. Entry → `AppAuthenticated-*.js` graph includes `PageShell`, `VendorsDirectory`, `Assessments`, `AddVendorDialog` chunks
+3. Page chunks contain expected polish markers (`Vendor Register`, `Assessment Tracker`, `Opening review`)
+
+Exit `0` = live bundle looks current. Exit `1` = stale or incomplete vs markers — then open
+Firebase Console → App Hosting → backend `guardentra` and compare rollout commit to
+`origin/main`.
+
+Human backup: hard-refresh `/vendors` and confirm the **Vendor Register** eyebrow header.
+
 ### Two prerequisites that fail silently if missed
 
 1. **Grant the backend's service account `roles/iam.serviceAccountTokenCreator`.**

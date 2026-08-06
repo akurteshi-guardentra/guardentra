@@ -254,7 +254,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   />
                 </div>
                 <button
-                  onClick={logOut}
+                  onClick={() => void logOut('/')}
                   className="ml-2 p-2 text-slate-400 transition-colors hover:text-rose-400"
                   title="Log out"
                 >

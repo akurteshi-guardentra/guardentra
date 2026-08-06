@@ -4,30 +4,33 @@ Living status for parallel Claude + Cursor sessions. Update and **push** at the 
 
 ---
 
-- **Last-Updated:** 2026-08-05T19:05:00Z
+- **Last-Updated:** 2026-08-06T13:30:00Z
 - **Agent:** Cursor
-- **Branch / SHA:** `main` @ tip after residuals + push
-- **Doing now:** Idle after residuals display + production build verify.
+- **Branch / SHA:** `main` @ `1ff0faa` (+ local verify scripts pending commit)
+- **Doing now:** App Hosting verify playbook landed (`npm run verify:live`).
 - **Done this session:**
-  - Assessment tracker/review shows `sentAt` / `completedAt` timeline under Due
-  - `npm run lint` clean; vitest **104/104**; `npm run build` succeeds (client + `dist/server.cjs`)
-  - Pushed unpushed main commits (lifecycle, empty recovery, exceptions, etc.)
+  - Confirmed polish is **live** on guardentra.com via CDN string probe
+  - Added `scripts/verify-live-deploy.mjs`, `npm run verify:live`, `npm run firebase:reauth`
+  - Documented verify steps in `docs/ENVIRONMENTS.md`
+  - Drafted next visible UX work in `docs/VISIBLE_UX_PASS.md`
 - **Blocked / next:**
+  - **Manual (user):** `npm run firebase:reauth` once (browser) so CLI rollout list works again
   - **Manual (user):** Firebase Console Support email → `support@guardentra.com`
-  - **Manual:** Trigger Email extension for real vendor mail; `VITE_STRIPE_PRICE_*` if checkout needed
-  - Post-ship E2E smoke: vendor → FastTrack triage → assessment → portal (incognito) → Review → decision
-  - Later: custom questionnaires, AI evidence citations, scheduled reminders, PDF polish
+  - Next product: visible Vendors/Assessments UX pass (`docs/VISIBLE_UX_PASS.md`)
+  - Manual: Trigger Email extension; `VITE_STRIPE_PRICE_*` if checkout needed
 - **Do not touch:**
   - `.env.local` / secrets (never commit)
   - KI#12 unless explicitly un-parked
 
 ## Follow-ups (remaining)
 
-1. Firebase Support email in Console
-2. Smoke on guardentra.com after App Hosting rolls
-3. Ops: Trigger Email + Stripe price env
+1. `npm run firebase:reauth` (interactive, once)
+2. Visible UX pass per `docs/VISIBLE_UX_PASS.md`
+3. Firebase Support email in Console
+4. Ops: Trigger Email + Stripe price env
 
 ## Protocol
 
 1. End of chunk → rewrite the fields above → commit on `dev`/`main` → `git push origin HEAD`.
 2. Other agent → `git fetch` → read this file → continue **Blocked / next**.
+3. After every `main` push → `npm run verify:live` (do not rely on expired Firebase CLI).

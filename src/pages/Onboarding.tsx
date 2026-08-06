@@ -184,7 +184,7 @@ export function Onboarding() {
           <ArrowLeft className="h-4 w-4" />
           <span className="text-xs font-bold uppercase tracking-widest">Back to Landing</span>
         </Link>
-        <Button variant="ghost" onClick={logOut} className="text-slate-500 hover:text-rose-400">
+        <Button variant="ghost" onClick={() => void logOut('/')} className="text-slate-500 hover:text-rose-400">
           <LogOut className="h-4 w-4 mr-2" />
           Sign Out
         </Button>
