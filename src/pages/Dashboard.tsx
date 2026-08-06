@@ -83,7 +83,7 @@ export function Dashboard() {
   const showQuickStart = stats.vendorCount === 0;
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="mx-auto max-w-6xl space-y-8 animate-in fade-in duration-500">
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 className="font-display text-3xl font-bold tracking-tight text-white">

@@ -154,7 +154,7 @@ function TeamMembersCard() {
 
 export function Settings() {
   return (
-    <div className="max-w-[1000px] mx-auto space-y-8 animate-in fade-in duration-700">
+    <div className="mx-auto max-w-5xl space-y-8 animate-in fade-in duration-700">
       <div>
         <h1 className="text-4xl font-bold text-white tracking-tight font-display mb-2 flex items-center gap-3">
           <SettingsIcon className="h-10 w-10 text-primary" />
@@ -191,11 +191,11 @@ export function Settings() {
           </CardContent>
         </Card>
 
-        <Card className="bg-slate-900/30 border-white/5">
+        <Card className="bg-slate-900/20 border-dashed border-white/10">
           <CardContent className="p-5 text-xs text-slate-500 leading-relaxed">
-            AI Copilot tuning, MFA, storage quotas, and notification engine controls are not
-            persisted yet — they will return when those modules ship. Use Team Members and
-            Framework pack versions above for live workspace settings.
+            Coming later: AI Copilot tuning, MFA, storage quotas, and notification engine
+            controls are not persisted yet — they will return when those modules ship. Use
+            Team Members and Framework pack versions above for live workspace settings.
           </CardContent>
         </Card>
       </div>

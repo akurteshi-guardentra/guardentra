@@ -5,6 +5,7 @@ import { ArrowLeft, CheckCircle2, FileDown, Loader2, Paperclip, Sparkles, Trash2
 import { db } from '../firebase';
 import { useAuth } from '../lib/AuthContext';
 import { Button } from '../components/ui/button';
+import { PageShell } from '../components/spine/PageShell';
 import { cn } from '../lib/utils';
 import { RISK_LEVELS } from '../lib/vendor/constants';
 import type { RiskLevel, Vendor } from '../lib/vendor/types';
@@ -225,34 +226,35 @@ security gap or high business impact). Return JSON: { "summary": "..." }`;
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 p-6 md:p-8">
-      <div>
-        <Link to="/vendors" className="mb-4 inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white">
-          <ArrowLeft className="h-4 w-4" /> Vendors
-        </Link>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold text-white">Impact Assessment</h1>
-            <p className="mt-1 text-slate-400">
-              Business impact for <span className="text-white">{vendor.name}</span>. Combined with the security
-              questionnaire to produce a final vendor rating.
-            </p>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              try {
-                openVendorReportForPrint({ vendor, impactLevel, notes, attachments });
-              } catch (e: any) {
-                setError(e?.message || 'Could not open the report window.');
-              }
-            }}
-          >
-            <FileDown className="mr-2 h-4 w-4" /> Report
-          </Button>
-        </div>
-      </div>
+    <PageShell
+      eyebrow="Impact Review"
+      title="Impact Assessment"
+      description={
+        <span>
+          Business impact for <span className="text-white">{vendor.name}</span>. Combine operational impact
+          with the security questionnaire to produce the final vendor rating.
+        </span>
+      }
+      className="max-w-4xl"
+      actions={
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            try {
+              openVendorReportForPrint({ vendor, impactLevel, notes, attachments });
+            } catch (e: any) {
+              setError(e?.message || 'Could not open the report window.');
+            }
+          }}
+        >
+          <FileDown className="mr-2 h-4 w-4" /> Report
+        </Button>
+      }
+    >
+      <Link to="/vendors" className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white">
+        <ArrowLeft className="h-4 w-4" /> Vendors
+      </Link>
 
       <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
         <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">Guidance</h2>
@@ -423,6 +425,6 @@ security gap or high business impact). Return JSON: { "summary": "..." }`;
           Continue to FastTrack triage
         </Button>
       </div>
-    </div>
+    </PageShell>
   );
 }

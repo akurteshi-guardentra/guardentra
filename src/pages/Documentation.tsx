@@ -46,7 +46,7 @@ const LIVE = [
 
 export function Documentation() {
   return (
-    <div className="max-w-[1000px] mx-auto space-y-10 animate-in fade-in duration-700 pb-20">
+    <div className="mx-auto max-w-5xl space-y-8 animate-in fade-in duration-700 pb-20">
       <div className="text-center space-y-4">
         <div className="flex justify-center mb-4">
           <div className="p-4 bg-primary/10 rounded-2xl border border-primary/20">

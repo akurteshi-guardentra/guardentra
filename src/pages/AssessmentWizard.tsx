@@ -6,6 +6,7 @@ import { db } from '../firebase';
 import { useAuth } from '../lib/AuthContext';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
+import { PageShell } from '../components/spine/PageShell';
 import { cn } from '../lib/utils';
 import { FRAMEWORK_CATALOG } from '../lib/vendor/constants';
 import type { FrameworkId } from '../lib/vendor/types';
@@ -273,22 +274,20 @@ export function AssessmentWizard() {
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700">
-      <div className="mb-6 flex items-center justify-between gap-4">
-        <div>
-          <Link to="/vendors" className="text-sm text-primary hover:underline">
-            ← Back to Vendors
-          </Link>
-          <h1 className="mt-2 font-display text-3xl font-bold text-white text-glow">New assessment</h1>
-          <p className="text-sm text-slate-400">
-            Select a vendor, choose frameworks, then preview questions before sending.
-            {vendorMode === 'local' && (
-              <span className="ml-2 rounded-full border border-amber-500/30 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300">
-                Local vendors
-              </span>
-            )}
-          </p>
-        </div>
+    <PageShell
+      eyebrow="Assessment Builder"
+      title="New assessment"
+      description={
+        <>
+          Select a vendor, choose frameworks, then preview the questionnaire before sending.
+          {vendorMode === 'local' ? (
+            <span className="ml-2 inline-flex rounded-full border border-amber-500/30 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300">
+              Local vendors
+            </span>
+          ) : null}
+        </>
+      }
+      actions={
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span
             className={cn(
@@ -307,9 +306,13 @@ export function AssessmentWizard() {
             2. Preview
           </span>
         </div>
-      </div>
+      }
+    >
+      <Link to="/vendors" className="text-sm text-primary hover:underline">
+        ← Back to Vendors
+      </Link>
 
-      {error && <p className="mb-4 text-sm text-rose-400">{error}</p>}
+      {error && <p className="text-sm text-rose-400">{error}</p>}
 
       {step < 3 && (
         <div className="space-y-4">
@@ -603,6 +606,6 @@ export function AssessmentWizard() {
           </div>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

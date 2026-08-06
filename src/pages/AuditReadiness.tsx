@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { Suspense, useState, useEffect, useMemo } from 'react';
 import {
   collection,
   query,
@@ -31,7 +31,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/src/lib/utils';
 import ReactMarkdown from 'react-markdown';
 import { RemediationService } from '../services/RemediationService';
-import { RemediationBoard } from '../components/RemediationBoard';
+
+const RemediationBoard = React.lazy(() =>
+  import('../components/RemediationBoard').then((m) => ({ default: m.RemediationBoard }))
+);
 
 interface ControlCoverageItem {
   id: string;
@@ -590,10 +593,19 @@ Call out TPRM and incident-response gaps when relevant.`;
               exit={{ opacity: 0, y: -10 }}
               className="flex flex-1 flex-col overflow-hidden"
             >
-              <RemediationBoard
-                organizationId={profile?.organizationId || ''}
-                canDelete={profile?.role === 'admin'}
-              />
+              <Suspense
+                fallback={
+                  <div className="flex flex-1 items-center justify-center gap-2 py-24 text-slate-400">
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    Loading remediation board…
+                  </div>
+                }
+              >
+                <RemediationBoard
+                  organizationId={profile?.organizationId || ''}
+                  canDelete={profile?.role === 'admin'}
+                />
+              </Suspense>
             </motion.div>
           ) : selectedAudit ? (
             <motion.div

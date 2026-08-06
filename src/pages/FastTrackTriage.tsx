@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Check, Sparkles } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import { Button } from '../components/ui/button';
+import { PageShell } from '../components/spine/PageShell';
 import { cn } from '../lib/utils';
 import { FRAMEWORK_CATALOG } from '../lib/vendor/constants';
 import { useOrgVendors } from '../lib/vendor/useOrgVendors';
@@ -93,7 +94,12 @@ export function FastTrackTriage() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 p-6 md:p-8">
+    <PageShell
+      eyebrow="FastTrack"
+      title="Risk triage"
+      description="Answer five relationship questions so Guardentra can recommend Lite, Standard, or Enhanced scope in about 60 seconds."
+      className="max-w-4xl"
+    >
       <div className="flex items-center gap-3">
         <Link
           to={vendorId ? `/vendors/${vendorId}/impact` : '/vendors'}
@@ -101,15 +107,6 @@ export function FastTrackTriage() {
         >
           <ArrowLeft className="h-4 w-4" /> Back
         </Link>
-      </div>
-
-      <div>
-        <p className="text-xs font-bold uppercase tracking-widest text-primary">FastTrack</p>
-        <h1 className="mt-1 text-2xl font-semibold text-white">Risk triage</h1>
-        <p className="mt-2 text-sm text-slate-400">
-          Answer five relationship questions so Guardentra can recommend Lite, Standard, or Enhanced
-          scope — about 60 seconds.
-        </p>
       </div>
 
       {!presetVendorId && (
@@ -285,6 +282,6 @@ export function FastTrackTriage() {
           </div>
         )
       )}
-    </div>
+    </PageShell>
   );
 }

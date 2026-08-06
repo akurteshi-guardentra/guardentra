@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, Sparkles, Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '@/src/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/src/components/ui/card';
@@ -110,24 +109,13 @@ export function Pricing() {
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="space-y-8 max-w-6xl mx-auto relative h-full"
-    >
-      <AnimatePresence>
-        {error && (
-          <motion.div
-            initial={{ opacity: 0, y: -20, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -20, scale: 0.95 }}
-            className="fixed top-24 right-6 z-50 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-semibold shadow-2xl backdrop-blur-md flex items-center gap-2 max-w-sm"
-          >
-            <AlertCircle className="h-4 w-4 text-rose-400 shrink-0" />
-            {error}
-          </motion.div>
-        )}
-      </AnimatePresence>
+    <div className="relative mx-auto h-full max-w-5xl space-y-8">
+      {error && (
+        <div className="fixed top-24 right-6 z-50 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-semibold shadow-2xl backdrop-blur-md flex items-center gap-2 max-w-sm">
+          <AlertCircle className="h-4 w-4 text-rose-400 shrink-0" />
+          {error}
+        </div>
+      )}
 
       <div className="text-center space-y-4">
         <h1 className="text-4xl font-bold tracking-tight text-white font-display">{t('pricing.title')}</h1>
@@ -158,14 +146,8 @@ export function Pricing() {
       </div>
 
       <div className="grid md:grid-cols-3 gap-8 mt-12">
-        {plans.map((plan, index) => (
-          <motion.div
-            key={plan.id}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.1 }}
-            className="relative"
-          >
+        {plans.map((plan) => (
+          <div key={plan.id} className="relative">
             {plan.popular && (
               <div className="absolute -top-4 left-0 right-0 flex justify-center z-10">
                 <span className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1 shadow-[0_0_15px_rgba(99,102,241,0.5)]">
@@ -232,9 +214,9 @@ export function Pricing() {
                 })()}
               </CardFooter>
             </Card>
-          </motion.div>
+          </div>
         ))}
       </div>
-    </motion.div>
+    </div>
   );
 }
