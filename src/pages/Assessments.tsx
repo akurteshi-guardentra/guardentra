@@ -539,8 +539,26 @@ export function Assessments() {
       {isReviewing && reviewAssessment && (
         <Suspense
           fallback={
-            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <div
+              className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4"
+              role="dialog"
+              aria-label="Loading assessment review"
+              onClick={() => setIsReviewing(false)}
+            >
+              <div
+                className="flex flex-col items-center gap-3 rounded-2xl border border-white/10 bg-slate-900 px-6 py-5"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <p className="text-sm text-slate-300">Opening review…</p>
+                <button
+                  type="button"
+                  className="text-xs text-slate-400 underline-offset-2 hover:text-white hover:underline"
+                  onClick={() => setIsReviewing(false)}
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           }
         >

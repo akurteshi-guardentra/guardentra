@@ -667,7 +667,13 @@ export function VendorsDirectory() {
       </div>
 
       {showAdd && (
-        <Suspense fallback={null}>
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 text-sm text-slate-300">
+              Opening…
+            </div>
+          }
+        >
           <AddVendorDialog
             formError={formError}
             saving={saving}
@@ -678,7 +684,13 @@ export function VendorsDirectory() {
       )}
 
       {showInvite && (
-        <Suspense fallback={null}>
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 text-sm text-slate-300">
+              Opening…
+            </div>
+          }
+        >
           <InviteVendorDialog
             inviteError={inviteError}
             inviteSaving={inviteSaving}
@@ -689,7 +701,13 @@ export function VendorsDirectory() {
       )}
 
       {showBulk && (
-        <Suspense fallback={null}>
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 text-sm text-slate-300">
+              Opening…
+            </div>
+          }
+        >
           <BulkImportPanel
             bulkFileRef={bulkFileRef}
             bulkFileName={bulkFileName}
