@@ -43,7 +43,7 @@ import {
   type ParsedBulkVendor,
 } from '../lib/vendor/csvBulk';
 import { downloadVendorRegisterReport } from '../lib/vendor/reportExport';
-import { sendEmailBestEffort } from '../lib/notifications';
+import { sendEmail } from '../lib/notifications';
 import {
   createLocalVendor,
   isFirestoreUnavailableError,
@@ -108,6 +108,7 @@ export function VendorsDirectory() {
   const [showInvite, setShowInvite] = useState(false);
   const [inviteError, setInviteError] = useState('');
   const [inviteSaving, setInviteSaving] = useState(false);
+  const [inviteBanner, setInviteBanner] = useState<{ tone: 'ok' | 'warn'; text: string } | null>(null);
   const [showBulk, setShowBulk] = useState(false);
   const [bulkRows, setBulkRows] = useState<ParsedBulkVendor[]>([]);
   const [bulkErrors, setBulkErrors] = useState<string[]>([]);
@@ -362,8 +363,23 @@ export function VendorsDirectory() {
     }
     setInviteSaving(true);
     setInviteError('');
+    setInviteBanner(null);
     try {
       await createVendor(input);
+
+      let emailQueued = false;
+      let emailQueueError = '';
+      try {
+        await sendEmail({
+          to: input.primaryContactEmail,
+          subject: `You've been added as a vendor in Guardentra`,
+          text: `Hi${input.primaryContactName ? ` ${input.primaryContactName}` : ''},\n\n${input.name} has been added to Guardentra's vendor register${profile?.displayName ? ` by ${profile.displayName}` : ''}. A security assessment questionnaire will follow separately.\n\nNo action is needed from you yet.`,
+        });
+        emailQueued = true;
+      } catch (mailEx: any) {
+        emailQueueError = mailEx?.message || 'Could not queue email';
+        console.warn('Invite vendor: email queue failed', mailEx);
+      }
 
       if (orgId) {
         try {
@@ -372,7 +388,8 @@ export function VendorsDirectory() {
             vendorName: input.name,
             vendorEmail: input.primaryContactEmail,
             invitedByEmail: profile?.email || null,
-            status: 'sent',
+            status: emailQueued ? 'email_queued' : 'vendor_created_email_failed',
+            emailError: emailQueued ? null : emailQueueError,
             createdAt: new Date().toISOString(),
           });
         } catch (invEx) {
@@ -380,13 +397,18 @@ export function VendorsDirectory() {
         }
       }
 
-      void sendEmailBestEffort({
-        to: input.primaryContactEmail,
-        subject: `You've been added as a vendor in Guardentra`,
-        text: `Hi${input.primaryContactName ? ` ${input.primaryContactName}` : ''},\n\n${input.name} has been added to Guardentra's vendor register${profile?.displayName ? ` by ${profile.displayName}` : ''}. A security assessment questionnaire will follow separately.\n\nNo action is needed from you yet.`,
-      });
-
       setShowInvite(false);
+      if (emailQueued) {
+        setInviteBanner({
+          tone: 'ok',
+          text: `Welcome email queued to ${input.primaryContactEmail}. Delivery needs the Trigger Email extension + SMTP.`,
+        });
+      } else {
+        setInviteBanner({
+          tone: 'warn',
+          text: `Vendor saved; email could not be queued to ${input.primaryContactEmail} — check Trigger Email / SMTP${emailQueueError ? ` (${emailQueueError})` : ''}.`,
+        });
+      }
     } catch (ex: any) {
       setInviteError(ex?.message || 'Failed to invite vendor.');
     } finally {
@@ -531,6 +553,29 @@ export function VendorsDirectory() {
             {dataMode === 'local' ? 'Local vendor mode' : 'Vendors data warning'}
           </p>
           <p className="mt-1 text-amber-100/80">{dataError}</p>
+        </div>
+      )}
+
+      {inviteBanner && (
+        <div
+          className={
+            inviteBanner.tone === 'ok'
+              ? 'rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100'
+              : 'rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100'
+          }
+          role="status"
+          aria-live="polite"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <p>{inviteBanner.text}</p>
+            <button
+              type="button"
+              className="shrink-0 text-xs uppercase tracking-wide opacity-70 hover:opacity-100"
+              onClick={() => setInviteBanner(null)}
+            >
+              Dismiss
+            </button>
+          </div>
         </div>
       )}
 

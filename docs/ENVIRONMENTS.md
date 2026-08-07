@@ -139,4 +139,34 @@ See **[`docs/SECRETS.md`](./SECRETS.md)** for the full policy:
 4. Confirm production rules have **no** personal email bypass (`isAtIdhee` removed).
 5. Point App Hosting / Cloud Run `main` at `guardentra-prod` only.
 6. Keep `GEMINI_API_KEY` server-only (not in client production bundles).
-7. **Install the "Trigger Email from Firestore" extension** (Console → Extensions → search "firestore-send-email") in each project, configured with a real SMTP or SendGrid provider. `server/routes/notify.ts` (`POST /api/notify/mail`) already writes correctly-shaped docs to the `mail` collection — without this extension installed, those writes succeed but no email is ever actually sent. This is the one piece of Sprint 6 (notifications) that can't be done from code.
+7. **Install and verify the "Trigger Email from Firestore" extension** (required for Invite Vendor / reminders to reach inboxes such as `akurteshi@guardentra.com`).
+
+### Trigger Email (`firestore-send-email`) — ops checklist
+
+App code path (already implemented):
+
+1. **Invite Vendor** → `POST /api/notify/mail` (auth + rate limit) → Admin SDK writes `mail/{id}` with `{ to, message: { subject, text, html? }, createdAt }`.
+2. Firestore rules deny all client access to `mail` — only the server route can queue.
+3. The UI now **awaits** queue success for Invite Vendor and shows a banner: queued OK, or “Vendor saved; email could not be queued…”.
+
+What code cannot do: deliver the message. That requires the extension + SMTP/SendGrid.
+
+**Install (each Firebase project that sends mail, including live `guardentra-7f582`):**
+
+1. Firebase Console → **Extensions** → search **Trigger Email from Firestore** (`firebase/firestore-send-email`).
+2. Collection: `mail` (must match `server/routes/notify.ts`).
+3. Configure SMTP **or** SendGrid. Prefer From: `support@guardentra.com` (or another address on a verified domain).
+4. Deploy/enable the extension; wait until status is **Active**.
+
+**Diagnose after Invite Vendor to `akurteshi@guardentra.com`:**
+
+| Observation | Likely cause | Next step |
+|---|---|---|
+| UI banner: email could not be queued | `/api/notify/mail` auth/Admin/rate-limit failure | App Hosting logs for `[notify] failed to queue email` |
+| UI banner: Welcome email queued, but inbox empty | Extension missing, misconfigured, or SMTP rejected | Console → Extensions; Firestore → `mail` docs for `delivery` / error fields |
+| `mail` doc has `delivery.state: SUCCESS` | Delivered (check spam) | Confirm From domain / spam filters |
+| `mail` doc has error / PENDING forever | SMTP credentials, From not allowed, or extension down | Fix SMTP / SendGrid; re-invite |
+
+**Retest:** Vendors → Invite → contact `akurteshi@guardentra.com` → expect queue banner within seconds and inbox (or spam) within a few minutes once the extension is healthy.
+
+CLI note: listing extensions needs a valid Firebase login (`npm run firebase:reauth` in a local interactive terminal). Agent shells cannot complete browser OAuth.

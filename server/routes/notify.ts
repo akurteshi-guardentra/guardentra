@@ -44,7 +44,7 @@ router.post('/mail', async (req, res) => {
   try {
     ensureAdmin();
     const db = getAdminDb();
-    await db.collection('mail').add({
+    const ref = await db.collection('mail').add({
       to: [to],
       message: {
         subject,
@@ -53,7 +53,7 @@ router.post('/mail', async (req, res) => {
       },
       createdAt: new Date().toISOString(),
     });
-    return res.json({ queued: true });
+    return res.json({ queued: true, id: ref.id });
   } catch (err) {
     console.error('[notify] failed to queue email', err);
     return res.status(502).json({ error: 'Could not queue email' });
