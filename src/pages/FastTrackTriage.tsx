@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { doc, updateDoc } from 'firebase/firestore';
 import { ArrowLeft, Check, Sparkles } from 'lucide-react';
+import { db } from '../firebase';
 import { useAuth } from '../lib/AuthContext';
 import { Button } from '../components/ui/button';
 import { PageShell } from '../components/spine/PageShell';
@@ -12,12 +14,15 @@ import {
   TRIAGE_QUESTIONS,
   frameworksToParam,
   isTriageComplete,
+  nextReviewAtFromCadence,
   recommendFromTriage,
   type TriageAnswers,
 } from '../lib/vendor/fastTrackTriage';
+import { saveVendorTriage } from '../lib/vendor/vendorTriageStore';
+import { emitAuditBestEffort } from '../lib/auditClient';
 
 export function FastTrackTriage() {
-  const { profile } = useAuth();
+  const { user, profile } = useAuth();
   const orgId = profile?.organizationId;
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -27,6 +32,8 @@ export function FastTrackTriage() {
   const [vendorId, setVendorId] = useState(presetVendorId);
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<TriageAnswers>({ ...EMPTY_TRIAGE_ANSWERS });
+  const [accepting, setAccepting] = useState(false);
+  const [acceptError, setAcceptError] = useState('');
 
   // Keep local vendor selection in sync when arriving from Vendors “Assess” links.
   useEffect(() => {
@@ -83,14 +90,64 @@ export function FastTrackTriage() {
     setStep(TRIAGE_QUESTIONS.length);
   };
 
-  const acceptRecommendation = () => {
-    if (!vendorId || !recommendation) return;
-    const qs = new URLSearchParams({
-      vendorId,
-      frameworks: frameworksToParam(recommendation.frameworks),
-      tier: recommendation.tier,
-    });
-    navigate(`/assessments/new?${qs.toString()}`);
+  const acceptRecommendation = async () => {
+    if (!vendorId || !recommendation || !orgId) return;
+    setAccepting(true);
+    setAcceptError('');
+    const completedAt = new Date().toISOString();
+    try {
+      await saveVendorTriage({
+        organizationId: orgId,
+        vendorId,
+        answers,
+        tier: recommendation.tier,
+        frameworks: recommendation.frameworks,
+        rationale: recommendation.rationale,
+        questionTarget: recommendation.questionTarget,
+        vendorTimeTarget: recommendation.vendorTimeTarget,
+        reviewCadence: answers.reviewCadence,
+        completedAt,
+        completedBy: user?.uid || null,
+      });
+
+      const nextReviewAt = nextReviewAtFromCadence(answers.reviewCadence);
+      if (nextReviewAt && !vendorId.startsWith('local_')) {
+        try {
+          await updateDoc(doc(db, 'vendors', vendorId), { nextReviewAt });
+        } catch {
+          /* local / offline vendors skip cloud stamp */
+        }
+      }
+
+      void emitAuditBestEffort({
+        tenantId: orgId,
+        eventType: 'triage.completed',
+        actorId: user?.uid || null,
+        objectType: 'vendor',
+        objectId: vendorId,
+        payload: {
+          tier: recommendation.tier,
+          frameworks: recommendation.frameworks,
+          rationale: recommendation.rationale,
+          reviewCadence: answers.reviewCadence,
+          dataExposure: answers.dataExposure,
+          accessLevel: answers.accessLevel,
+          businessCriticality: answers.businessCriticality,
+          requirements: answers.requirements,
+        },
+      });
+
+      const qs = new URLSearchParams({
+        vendorId,
+        frameworks: frameworksToParam(recommendation.frameworks),
+        tier: recommendation.tier,
+      });
+      navigate(`/assessments/new?${qs.toString()}`);
+    } catch (ex: unknown) {
+      setAcceptError(ex instanceof Error ? ex.message : 'Failed to save triage.');
+    } finally {
+      setAccepting(false);
+    }
   };
 
   const openAdvanced = () => {
@@ -209,8 +266,8 @@ export function FastTrackTriage() {
           </div>
 
           <div className="flex flex-wrap gap-3 pt-2">
-            <Button type="button" onClick={acceptRecommendation}>
-              Use this assessment
+            <Button type="button" disabled={accepting} onClick={() => void acceptRecommendation()}>
+              {accepting ? 'Saving…' : 'Use this assessment'}
             </Button>
             <Button type="button" variant="outline" className="border-white/10" onClick={openAdvanced}>
               Advanced frameworks
@@ -224,6 +281,7 @@ export function FastTrackTriage() {
               Retake triage
             </Button>
           </div>
+          {acceptError ? <p className="text-sm text-rose-300">{acceptError}</p> : null}
         </div>
       ) : showingResult && !recommendation ? (
         <div className="space-y-4 rounded-2xl border border-white/10 bg-slate-900/50 p-6">

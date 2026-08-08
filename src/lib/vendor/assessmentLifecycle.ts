@@ -35,6 +35,11 @@ export function buildCreateAssessmentFields(input: {
   sourceQuestionCount?: number;
   dueAt: string;
   nowIso?: string;
+  triageTier?: string | null;
+  reviewCadence?: string | null;
+  reminderScheduleId?: string | null;
+  reminderSchedule?: Record<string, unknown> | null;
+  inviteEmail?: string | null;
 }): {
   vendorId: string;
   vendorName: string;
@@ -54,6 +59,12 @@ export function buildCreateAssessmentFields(input: {
   portalOpen: true;
   createdAt: string;
   sentAt: string;
+  triageTier?: string;
+  reviewCadence?: string;
+  reminderScheduleId?: string;
+  reminderSchedule?: Record<string, unknown>;
+  inviteEmail?: string;
+  versionLocked: true;
 } {
   const now = input.nowIso || new Date().toISOString();
   return {
@@ -75,6 +86,12 @@ export function buildCreateAssessmentFields(input: {
     portalOpen: true,
     createdAt: now,
     sentAt: now,
+    versionLocked: true,
+    ...(input.triageTier ? { triageTier: input.triageTier } : {}),
+    ...(input.reviewCadence ? { reviewCadence: input.reviewCadence } : {}),
+    ...(input.reminderScheduleId ? { reminderScheduleId: input.reminderScheduleId } : {}),
+    ...(input.reminderSchedule ? { reminderSchedule: input.reminderSchedule } : {}),
+    ...(input.inviteEmail ? { inviteEmail: input.inviteEmail } : {}),
   };
 }
 
@@ -118,6 +135,8 @@ export function buildPortalSubmitPatch(input: {
   comments: PortalCommentsMap;
   evidenceByQuestion: PortalEvidenceMap;
   nowIso?: string;
+  attestations?: Record<string, unknown>;
+  answerProposals?: Record<string, unknown>;
 }): {
   answers: PortalAnswersMap;
   comments: PortalCommentsMap;
@@ -126,6 +145,9 @@ export function buildPortalSubmitPatch(input: {
   progress: 100;
   status: 'Under Review';
   completedAt: string;
+  attestations?: Record<string, unknown>;
+  answerProposals?: Record<string, unknown>;
+  versionLocked: true;
 } {
   const now = input.nowIso || new Date().toISOString();
   return {
@@ -136,6 +158,9 @@ export function buildPortalSubmitPatch(input: {
     progress: 100,
     status: 'Under Review',
     completedAt: now,
+    versionLocked: true,
+    ...(input.attestations ? { attestations: input.attestations } : {}),
+    ...(input.answerProposals ? { answerProposals: input.answerProposals } : {}),
   };
 }
 

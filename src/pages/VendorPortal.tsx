@@ -36,6 +36,14 @@ import {
   buildPortalAutosavePatch,
   buildPortalSubmitPatch,
 } from '../lib/vendor/assessmentLifecycle';
+import {
+  attestationsComplete,
+  effectiveAnswersForProgress,
+  type AnswerProposal,
+  type PortalAttestations,
+} from '../lib/vendor/portalProposals';
+import { emitAuditBestEffort } from '../lib/auditClient';
+import { authHeaders } from '../lib/authHeaders';
 
 type AnswersMap = Record<string, AnswerValue | string | string[] | undefined>;
 type CommentsMap = Record<string, string>;
@@ -57,6 +65,13 @@ export function VendorPortal() {
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [uploadError, setUploadError] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [proposing, setProposing] = useState(false);
+  const [proposals, setProposals] = useState<Record<string, AnswerProposal>>({});
+  const [attestations, setAttestations] = useState<PortalAttestations>({
+    accuracy: false,
+    authority: false,
+  });
+  const [attestedByName, setAttestedByName] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -130,6 +145,18 @@ export function VendorPortal() {
         if (data.answers) setAnswers(data.answers);
         if (data.comments) setComments(data.comments);
         if (data.evidenceByQuestion) setEvidence(data.evidenceByQuestion);
+        if (data.answerProposals && typeof data.answerProposals === 'object') {
+          setProposals(data.answerProposals as Record<string, AnswerProposal>);
+        }
+        if (data.attestations && typeof data.attestations === 'object') {
+          setAttestations({
+            accuracy: Boolean(data.attestations.accuracy),
+            authority: Boolean(data.attestations.authority),
+            attestedAt: data.attestations.attestedAt,
+            attestedByName: data.attestations.attestedByName,
+          });
+          if (data.attestations.attestedByName) setAttestedByName(String(data.attestations.attestedByName));
+        }
         if (data.progressPct > 0 || data.progress > 0) setStarted(true);
         if (qs.length) setActiveCategory(qs[0].category);
       } catch (err) {
@@ -147,22 +174,36 @@ export function VendorPortal() {
   );
 
   const currentQuestion = categoryQs[questionIndex] || categoryQs[0];
-  const progress = overallProgressPct(questions, answers);
-  const catStats = categoryProgress(questions, answers);
+  const progressAnswers = useMemo(
+    () => effectiveAnswersForProgress(answers, proposals),
+    [answers, proposals]
+  );
+  const progress = overallProgressPct(questions, progressAnswers);
+  const catStats = categoryProgress(questions, progressAnswers);
 
   const persistDraft = useCallback(
-    async (nextAnswers: AnswersMap, nextComments: CommentsMap, nextEvidence: EvidenceMap) => {
+    async (
+      nextAnswers: AnswersMap,
+      nextComments: CommentsMap,
+      nextEvidence: EvidenceMap,
+      nextProposals?: Record<string, AnswerProposal>
+    ) => {
       if (!assessmentId || !assessment) return;
       setSaveState('saving');
       try {
-        // Never mark Completed on autosave — Submit moves to Under Review; org signs off.
+        const props = nextProposals || proposals;
+        const effective = effectiveAnswersForProgress(nextAnswers, props);
         const patch = buildPortalAutosavePatch({
           questions,
-          answers: nextAnswers,
+          answers: effective,
           comments: nextComments,
           evidenceByQuestion: nextEvidence,
         });
-        await updateDoc(doc(db, 'assessments', assessmentId), patch);
+        await updateDoc(doc(db, 'assessments', assessmentId), {
+          ...patch,
+          answers: nextAnswers,
+          answerProposals: props,
+        });
         if (patch.progressPct > 0 && assessment.vendorId && assessment.organizationId) {
           void syncVendorAfterAssessmentProgress(
             assessment.organizationId,
@@ -176,14 +217,19 @@ export function VendorPortal() {
         setSaveState('error');
       }
     },
-    [assessmentId, assessment, questions]
+    [assessmentId, assessment, questions, proposals]
   );
 
   const scheduleSave = useCallback(
-    (nextAnswers: AnswersMap, nextComments: CommentsMap, nextEvidence: EvidenceMap) => {
+    (
+      nextAnswers: AnswersMap,
+      nextComments: CommentsMap,
+      nextEvidence: EvidenceMap,
+      nextProposals?: Record<string, AnswerProposal>
+    ) => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {
-        void persistDraft(nextAnswers, nextComments, nextEvidence);
+        void persistDraft(nextAnswers, nextComments, nextEvidence, nextProposals);
       }, 600);
     },
     [persistDraft]
@@ -224,6 +270,19 @@ export function VendorPortal() {
       const next = { ...evidence, [currentQuestion.id]: list };
       setEvidence(next);
       scheduleSave(answers, comments, next);
+      if (assessment?.organizationId) {
+        void emitAuditBestEffort({
+          tenantId: assessment.organizationId,
+          eventType: 'evidence.uploaded',
+          objectType: 'assessment',
+          objectId: assessmentId,
+          payload: {
+            questionId: currentQuestion.id,
+            fileName: uploaded.fileName,
+            contentType: uploaded.contentType,
+          },
+        });
+      }
     } catch (err: any) {
       setUploadError(err?.message || 'Upload failed. Check Storage rules / anonymous auth.');
     } finally {
@@ -231,23 +290,150 @@ export function VendorPortal() {
     }
   };
 
+  const proposeFromEvidence = async () => {
+    if (!currentQuestion || !assessmentId) return;
+    const files = (evidence[currentQuestion.id] || []).map((f) => f.fileName);
+    if (!files.length) {
+      setUploadError('Upload evidence first, then ask AI to propose an answer.');
+      return;
+    }
+    setProposing(true);
+    setUploadError('');
+    try {
+      const res = await fetch('/api/ai/propose-answers', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          vendorName: assessment?.vendorName,
+          evidenceFileNames: files,
+          questions: [
+            {
+              id: currentQuestion.id,
+              question: currentQuestion.question,
+              options: currentQuestion.options,
+            },
+          ],
+        }),
+      });
+      const body = (await res.json()) as {
+        proposals?: Array<{
+          questionId: string;
+          proposedAnswer: string | string[];
+          citation?: string;
+          confidence?: number;
+          sourceFileName?: string;
+        }>;
+      };
+      const raw = body.proposals?.[0];
+      if (!raw) throw new Error('No proposal returned');
+      const proposal: AnswerProposal = {
+        questionId: currentQuestion.id,
+        proposedAnswer: raw.proposedAnswer,
+        citation: raw.citation,
+        confidence: raw.confidence,
+        sourceFileName: raw.sourceFileName || files[0],
+        status: 'proposed',
+        proposedAt: new Date().toISOString(),
+      };
+      const nextProps = { ...proposals, [currentQuestion.id]: proposal };
+      setProposals(nextProps);
+      scheduleSave(answers, comments, evidence, nextProps);
+      if (assessment?.organizationId) {
+        void emitAuditBestEffort({
+          tenantId: assessment.organizationId,
+          eventType: 'answer.proposed',
+          objectType: 'assessment',
+          objectId: assessmentId,
+          payload: {
+            questionId: currentQuestion.id,
+            confidence: proposal.confidence,
+            sourceFileName: proposal.sourceFileName,
+          },
+        });
+      }
+    } catch (err: any) {
+      setUploadError(err?.message || 'Could not propose answers from evidence.');
+    } finally {
+      setProposing(false);
+    }
+  };
+
+  const confirmProposal = (status: 'accepted' | 'edited' | 'rejected', editedAnswer?: string) => {
+    if (!currentQuestion) return;
+    const existing = proposals[currentQuestion.id];
+    if (!existing) return;
+    const nextProp: AnswerProposal = {
+      ...existing,
+      status,
+      confirmedAt: new Date().toISOString(),
+      proposedAnswer: status === 'edited' && editedAnswer ? editedAnswer : existing.proposedAnswer,
+    };
+    const nextProps = { ...proposals, [currentQuestion.id]: nextProp };
+    setProposals(nextProps);
+    let nextAnswers = { ...answers };
+    if (status === 'accepted' || status === 'edited') {
+      nextAnswers = {
+        ...answers,
+        [currentQuestion.id]: nextProp.proposedAnswer,
+      };
+      setAnswers(nextAnswers);
+    }
+    scheduleSave(nextAnswers, comments, evidence, nextProps);
+    if (assessment?.organizationId && assessmentId) {
+      void emitAuditBestEffort({
+        tenantId: assessment.organizationId,
+        eventType: status === 'rejected' ? 'answer.saved' : 'answer.confirmed',
+        objectType: 'assessment',
+        objectId: assessmentId,
+        payload: { questionId: currentQuestion.id, status },
+      });
+    }
+  };
+
   const handleSubmit = async () => {
     if (!assessmentId) return;
-    const missing = questions.filter((q) => q.required && !isAnswered(answers[q.id]));
+    const effective = effectiveAnswersForProgress(answers, proposals);
+    const missing = questions.filter((q) => q.required && !isAnswered(effective[q.id]));
     if (missing.length) {
-      setUploadError(`Answer all required questions (${missing.length} remaining).`);
+      setUploadError(
+        `Answer all required questions (${missing.length} remaining). Unconfirmed AI proposals do not count.`
+      );
+      return;
+    }
+    if (!attestationsComplete(attestations) || !attestedByName.trim()) {
+      setUploadError('Confirm both attestations and enter your name before submit.');
       return;
     }
     setIsSubmitting(true);
     try {
+      const attestationPayload = {
+        ...attestations,
+        accuracy: true,
+        authority: true,
+        attestedAt: new Date().toISOString(),
+        attestedByName: attestedByName.trim(),
+      };
       const patch = buildPortalSubmitPatch({
-        answers,
+        answers: effective,
         comments,
         evidenceByQuestion: evidence,
+        attestations: attestationPayload,
+        answerProposals: proposals,
       });
       await updateDoc(doc(db, 'assessments', assessmentId), patch);
       if (assessment?.organizationId && assessment?.vendorId) {
         void syncVendorAfterAssessmentSubmit(assessment.organizationId, assessment.vendorId, false);
+        void emitAuditBestEffort({
+          tenantId: assessment.organizationId,
+          eventType: 'assessment.submitted',
+          objectType: 'assessment',
+          objectId: assessmentId,
+          payload: {
+            vendorId: assessment.vendorId,
+            questionCount: questions.length,
+            attestedByName: attestedByName.trim(),
+          },
+        });
       }
       setIsSuccess(true);
     } catch (err) {
@@ -653,7 +839,82 @@ export function VendorPortal() {
                   </div>
                 ))}
                 {uploadError && <p className="mt-2 text-sm text-rose-400">{uploadError}</p>}
+                <button
+                  type="button"
+                  disabled={proposing || !(evidence[currentQuestion.id] || []).length}
+                  onClick={() => void proposeFromEvidence()}
+                  className="mt-3 text-xs font-medium text-primary hover:underline disabled:text-slate-600"
+                >
+                  {proposing ? 'Proposing from evidence…' : 'AI propose answer from uploaded evidence'}
+                </button>
+                {proposals[currentQuestion.id]?.status === 'proposed' && (
+                  <div className="mt-3 rounded-lg border border-sky-500/30 bg-sky-500/10 p-3 text-xs text-sky-100">
+                    <p className="font-medium">AI proposal (not counted until confirmed)</p>
+                    <p className="mt-1">
+                      Answer: <span className="text-white">{String(proposals[currentQuestion.id].proposedAnswer)}</span>
+                    </p>
+                    {proposals[currentQuestion.id].citation && (
+                      <p className="mt-1 text-sky-200/80">{proposals[currentQuestion.id].citation}</p>
+                    )}
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-8 bg-emerald-600 text-white"
+                        onClick={() => confirmProposal('accepted')}
+                      >
+                        Accept
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-8 border-white/10"
+                        onClick={() => confirmProposal('rejected')}
+                      >
+                        Reject
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
+
+              {globalIndex >= questions.length - 1 && (
+                <div className="mt-6 space-y-3 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+                  <p className="text-sm font-medium text-amber-100">Attestations required to submit</p>
+                  <label className="flex items-start gap-2 text-sm text-slate-300">
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={attestations.accuracy}
+                      onChange={(e) =>
+                        setAttestations((a) => ({ ...a, accuracy: e.target.checked }))
+                      }
+                    />
+                    I attest that the answers and evidence provided are accurate to the best of my knowledge.
+                  </label>
+                  <label className="flex items-start gap-2 text-sm text-slate-300">
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={attestations.authority}
+                      onChange={(e) =>
+                        setAttestations((a) => ({ ...a, authority: e.target.checked }))
+                      }
+                    />
+                    I attest that I am authorized to respond on behalf of this vendor.
+                  </label>
+                  <label className="block text-sm text-slate-400">
+                    Full name
+                    <input
+                      value={attestedByName}
+                      onChange={(e) => setAttestedByName(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-white"
+                      placeholder="Your name"
+                    />
+                  </label>
+                </div>
+              )}
 
               <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-white/5 pt-4">
                 <Button
@@ -688,7 +949,11 @@ export function VendorPortal() {
                   {globalIndex >= questions.length - 1 ? (
                     <Button
                       className="bg-emerald-600 text-white hover:bg-emerald-500"
-                      disabled={isSubmitting}
+                      disabled={
+                        isSubmitting ||
+                        !attestationsComplete(attestations) ||
+                        !attestedByName.trim()
+                      }
                       onClick={() => void handleSubmit()}
                     >
                       {isSubmitting ? (
@@ -699,7 +964,21 @@ export function VendorPortal() {
                       Submit
                     </Button>
                   ) : (
-                    <Button className="bg-primary text-white hover:bg-primary/90" onClick={goNext}>
+                    <Button
+                      className="bg-primary text-white hover:bg-primary/90"
+                      onClick={() => {
+                        if (assessment?.organizationId && assessmentId && currentQuestion) {
+                          void emitAuditBestEffort({
+                            tenantId: assessment.organizationId,
+                            eventType: 'answer.saved',
+                            objectType: 'assessment',
+                            objectId: assessmentId,
+                            payload: { questionId: currentQuestion.id },
+                          });
+                        }
+                        goNext();
+                      }}
+                    >
                       Next Question
                     </Button>
                   )}
@@ -708,7 +987,7 @@ export function VendorPortal() {
             </div>
           )}
           <p className="text-center text-xs text-slate-400">
-            Progress saves automatically · Your responses are encrypted in transit
+            Progress saves automatically · Unconfirmed AI proposals do not count as complete
           </p>
         </main>
       </div>

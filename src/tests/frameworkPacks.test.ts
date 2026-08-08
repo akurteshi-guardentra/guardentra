@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   FRAMEWORK_PACKS,
+  applyTierQuestionCap,
   buildQuestionsForPackIds,
   currentPackId,
   diffPacks,
@@ -122,5 +123,18 @@ describe('framework packs', () => {
     ]);
     expect(result.carriedAnswers).toEqual({});
     expect(result.carriedComments.legacy_q).toBe('needs follow-up');
+  });
+
+  it('applies Lite/Standard/Enhanced question caps so Lite is smaller than Enhanced', () => {
+    const full = buildQuestionsForPackIds(['nist_csf_2@2.0', 'soc2@current', 'iso27001@2022']);
+    expect(full.length).toBeGreaterThan(20);
+    const lite = applyTierQuestionCap(full, 'Lite');
+    const standard = applyTierQuestionCap(full, 'Standard');
+    const enhanced = applyTierQuestionCap(full, 'Enhanced');
+    expect(lite.length).toBeLessThanOrEqual(20);
+    expect(standard.length).toBeLessThanOrEqual(50);
+    expect(enhanced.length).toBeLessThanOrEqual(100);
+    expect(lite.length).toBeLessThan(enhanced.length);
+    expect(lite.every((q, i) => q.controlKey === full[i].controlKey)).toBe(true);
   });
 });

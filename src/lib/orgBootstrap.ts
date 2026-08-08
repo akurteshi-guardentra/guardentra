@@ -87,6 +87,8 @@ export async function bootstrapUserProfile(uid: string, fields: NewProfileFields
       name: `${fields.displayName || 'User'}'s Organization`,
       createdAt: new Date().toISOString(),
       autoCreated: true,
+      // P2B: pin residency at create. Dual Firebase wiring comes later; field is immutable.
+      dataRegion: 'us',
       // The creator occupies the first seat.
       seatCount: 1,
       seatCap: DEFAULT_SEAT_CAP,

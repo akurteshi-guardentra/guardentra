@@ -191,6 +191,22 @@ export function buildQuestionsForPackIds(packIds: string[]): PortalQuestion[] {
   return buildQuestionsFromControlKeys([...keySet]);
 }
 
+/**
+ * Enforce FastTrack Lite / Standard / Enhanced scope. Preserves bank order
+ * (core Company Profile / Access Control first) and truncates to the tier max.
+ */
+export function applyTierQuestionCap(
+  questions: PortalQuestion[],
+  tier: string | null | undefined,
+  maxByTier: Partial<Record<string, number>> = { Lite: 20, Standard: 50, Enhanced: 100 }
+): PortalQuestion[] {
+  if (!tier) return questions;
+  const max = maxByTier[tier];
+  if (typeof max !== 'number' || max < 1) return questions;
+  if (questions.length <= max) return questions;
+  return questions.slice(0, max);
+}
+
 export interface PackControlDiff {
   added: { controlKey: string; text: string }[];
   removed: { controlKey: string; text: string }[];

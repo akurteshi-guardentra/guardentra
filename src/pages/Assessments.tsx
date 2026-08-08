@@ -46,6 +46,8 @@ import {
   buildRecoverEmptyAssessmentPatch,
   hasEmptyQuestionSnapshot,
 } from '../lib/vendor/emptyAssessmentRecovery';
+import { emitAuditBestEffort } from '../lib/auditClient';
+import { openDecisionPacketForPrint } from '../lib/vendor/reportExport';
 
 function frameworkLabel(a: StoredAssessment): string {
   if (a.frameworkName) {
@@ -77,7 +79,7 @@ function formatAssessmentAnswer(value: string | string[] | undefined): string {
 }
 
 export function Assessments() {
-  const { profile, loading: authLoading } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const orgId = profile?.organizationId;
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
@@ -106,6 +108,7 @@ export function Assessments() {
   const [reviewAiLoading, setReviewAiLoading] = useState(false);
   const [approving, setApproving] = useState(false);
   const [reviewFilter, setReviewFilter] = useState<'exceptions' | 'all'>('exceptions');
+  const [openConditionsOnly, setOpenConditionsOnly] = useState(false);
   const [decisionNotes, setDecisionNotes] = useState('');
   const [decisionOutcome, setDecisionOutcome] = useState<DecisionOutcome>('approved');
   const [archiveReason, setArchiveReason] = useState('');
@@ -197,11 +200,15 @@ export function Assessments() {
     const q = search.trim().toLowerCase();
     return assessments.filter((a) => {
       if (vendorFilter !== 'all' && a.vendorId !== vendorFilter) return false;
+      if (openConditionsOnly) {
+        const outcome = a.decisionOutcome;
+        if (outcome !== 'conditional' && outcome !== 'remediate') return false;
+      }
       if (!q) return true;
-      const hay = `${a.vendorName || ''} ${frameworkLabel(a)} ${a.status || ''}`.toLowerCase();
+      const hay = `${a.vendorName || ''} ${frameworkLabel(a)} ${a.status || ''} ${a.decisionOutcome || ''}`.toLowerCase();
       return hay.includes(q);
     });
-  }, [assessments, search, vendorFilter]);
+  }, [assessments, search, vendorFilter, openConditionsOnly]);
 
   const vendorOptions = useMemo(() => {
     const fromAsm = assessments.map((a) => ({ id: a.vendorId, name: a.vendorName || a.vendorId }));
@@ -352,6 +359,41 @@ export function Assessments() {
         );
       }
 
+      const exceptions = listAssessmentExceptions({
+        questions: (reviewAssessment.questions || []) as any,
+        answers: reviewAssessment.answers,
+        evidenceByQuestion: reviewAssessment.evidenceByQuestion as any,
+      });
+      void emitAuditBestEffort({
+        tenantId: orgId,
+        eventType: 'decision.finalized',
+        actorId: user?.uid || null,
+        objectType: 'assessment',
+        objectId: reviewAssessment.id,
+        payload: {
+          outcome,
+          vendorId: reviewAssessment.vendorId,
+          closesPortal: closes,
+          nextReviewAt: closes ? nextReviewAt : null,
+          exceptionCount: exceptions.length,
+          hasNotes: Boolean(decisionNotes.trim()),
+        },
+      });
+      if (exceptions.length) {
+        void emitAuditBestEffort({
+          tenantId: orgId,
+          eventType: 'exception.reviewed',
+          actorId: user?.uid || null,
+          objectType: 'assessment',
+          objectId: reviewAssessment.id,
+          payload: {
+            outcome,
+            exceptionIds: exceptions.slice(0, 40).map((e) => e.id),
+            reasons: exceptions.slice(0, 40).map((e) => e.reason),
+          },
+        });
+      }
+
       const messages: Record<DecisionOutcome, string> = {
         approved: 'Approved. Next review scheduled in 12 months.',
         conditional: 'Conditionally approved. Next review in 6 months.',
@@ -494,6 +536,16 @@ export function Assessments() {
         <AssessmentsStatsGrid stats={statCards} />
 
         <PageBand>
+          <div className="mb-3 flex flex-wrap items-center gap-3">
+            <label className="inline-flex items-center gap-2 text-xs text-slate-400">
+              <input
+                type="checkbox"
+                checked={openConditionsOnly}
+                onChange={(e) => setOpenConditionsOnly(e.target.checked)}
+              />
+              Open conditions only (conditional / remediate)
+            </label>
+          </div>
           <AssessmentTrackerTable
             search={search}
             onSearchChange={setSearch}
@@ -577,6 +629,40 @@ export function Assessments() {
             onRecoverEmpty={() => void handleRecoverEmptyAssessment()}
             onArchiveEmpty={() => void handleArchiveEmptyAssessment()}
             onDecide={(outcome) => void handleDecideAssessment(outcome)}
+            onDownloadDecisionPacket={() => {
+              if (!reviewAssessment) return;
+              try {
+                openDecisionPacketForPrint({
+                  vendorName: reviewAssessment.vendorName || 'Vendor',
+                  assessmentId: reviewAssessment.id,
+                  frameworksLabel: frameworkLabel(reviewAssessment),
+                  outcome: decisionOutcome,
+                  decisionNotes: decisionNotes.trim() || undefined,
+                  decidedBy: profile?.email || profile?.displayName || undefined,
+                  decidedAt: new Date().toISOString(),
+                  nextReviewAt: nextReviewAtForDecision(decisionOutcome),
+                  exceptions: reviewExceptions.map((e) => ({
+                    question: e.question,
+                    reason: e.reason,
+                    answer: Array.isArray(e.answer) ? e.answer.join(', ') : e.answer,
+                  })),
+                  triageTier: (reviewAssessment as { triageTier?: string }).triageTier,
+                  reviewCadence: (reviewAssessment as { reviewCadence?: string }).reviewCadence,
+                });
+                if (orgId) {
+                  void emitAuditBestEffort({
+                    tenantId: orgId,
+                    eventType: 'report.exported',
+                    actorId: user?.uid || null,
+                    objectType: 'assessment',
+                    objectId: reviewAssessment.id,
+                    payload: { kind: 'decision_packet' },
+                  });
+                }
+              } catch (err: any) {
+                setToast({ tone: 'err', text: err?.message || 'Could not open decision packet.' });
+              }
+            }}
           />
         </Suspense>
       )}

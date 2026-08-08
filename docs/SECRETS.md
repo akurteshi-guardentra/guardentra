@@ -79,6 +79,8 @@ into an issue.
 | Secret | Local | Hosted (App Hosting / Cloud Run) |
 |--------|--------|-----------------------------------|
 | `GEMINI_API_KEY` | `.env.local` (gitignored) or 1Password Developer Environments mount | App Hosting / Cloud Run secret env |
+| `AUDIT_DATABASE_URL` | `.env.local` when `AUDIT_SPINE_ENABLED=true` | App Hosting / Cloud SQL connection (app role, insert-only) |
+| `AUDIT_DATABASE_URL_MIGRATOR` | `.env.local` for `npm run migrate:audit` only | Never ship migrator creds to the app runtime |
 | `STRIPE_SECRET_KEY` | Same — prefer **restricted** key (`rk_…`), test mode for local/staging | Same; live keys only on prod |
 | `STRIPE_WEBHOOK_SECRET` | Same | Per-endpoint webhook signing secret |
 | Firebase client `VITE_FIREBASE_*` | **Required locally:** `.env.local` (or 1Password mount). Demo JSON has project IDs only — **no** committed Web API key | Build-time / hosting env (`VITE_FIREBASE_API_KEY` etc.) — never service accounts in the browser |

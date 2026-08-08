@@ -1170,4 +1170,58 @@ router.post('/analyze-emails', async (req, res) => {
   }
 });
 
+/**
+ * Evidence-assisted answer proposals for Vendor Portal.
+ * Returns suggested Yes/No/Partially/N/A with a citation; vendor must Accept/Edit/Reject.
+ */
+router.post('/propose-answers', async (req, res) => {
+  const { questions, evidenceFileNames, vendorName } = req.body || {};
+  const qList = Array.isArray(questions) ? questions.slice(0, 40) : [];
+  const files = Array.isArray(evidenceFileNames)
+    ? evidenceFileNames.map((f: unknown) => String(f)).slice(0, 20)
+    : [];
+  const citation =
+    files[0] || 'Uploaded evidence (vendor to confirm page/section)';
+
+  const mockProposals = qList.map((q: { id?: string; question?: string; options?: string[] }) => ({
+    questionId: q.id || '',
+    proposedAnswer: Array.isArray(q.options) && q.options.includes('Yes') ? 'Yes' : q.options?.[0] || 'Yes',
+    citation: `${citation} — supports: ${(q.question || '').slice(0, 80)}`,
+    confidence: 0.55,
+    sourceFileName: files[0] || null,
+  }));
+
+  try {
+    if (!hasAIApi || !qList.length) {
+      return res.json({ proposals: mockProposals });
+    }
+
+    const prompt = `You are Guardentra assisting a vendor completing a security questionnaire for ${vendorName || 'a customer'}.
+Given evidence file names: ${JSON.stringify(files)}
+And questions (id + text + options): ${JSON.stringify(qList.map((q: any) => ({ id: q.id, question: q.question, options: q.options })))}
+
+Propose answers ONLY when evidence filenames make a Yes/compliant answer plausible; otherwise prefer "Partially" with low confidence.
+Return JSON { "proposals": [ { "questionId", "proposedAnswer", "citation", "confidence" (0-1), "sourceFileName" } ] }.
+proposedAnswer must be one of each question's options. citation must mention a file name and brief reason.`;
+
+    const response = await ai!.models.generateContent({
+      model: 'gemini-2.0-flash',
+      contents: prompt,
+      config: { responseMimeType: 'application/json' },
+    });
+    try {
+      const parsed = JSON.parse(response.text || '{}');
+      if (Array.isArray(parsed.proposals) && parsed.proposals.length) {
+        return res.json({ proposals: parsed.proposals });
+      }
+    } catch {
+      /* fall through */
+    }
+    return res.json({ proposals: mockProposals });
+  } catch (err) {
+    console.warn('[ai] propose-answers fallback', err);
+    return res.json({ proposals: mockProposals });
+  }
+});
+
 export default router;

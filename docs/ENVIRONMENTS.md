@@ -40,6 +40,21 @@ Replace placeholder IDs in `.firebaserc` once projects exist (`guardentra-dev`, 
 - Per-env secrets: `GEMINI_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`.
 - Staging Stripe = test mode; prod Stripe = live mode.
 
+## Phase 2 audit spine (optional Postgres)
+
+Default **off** so App Hosting boots without Cloud SQL. Local:
+
+```bash
+docker compose -f docker-compose.audit.yml up -d
+# .env.local — see .env.example
+AUDIT_SPINE_ENABLED=true
+AUDIT_DATABASE_URL=postgres://audit_app:audit_app@localhost:5433/guardentra_audit
+AUDIT_DATABASE_URL_MIGRATOR=postgres://audit_migrator:audit_migrator@localhost:5433/guardentra_audit
+npm run migrate:audit
+```
+
+Details: [`docs/FASTTRACK_PHASE2.md`](./FASTTRACK_PHASE2.md). Prod later attaches Cloud SQL and sets the same env vars as App Hosting secrets.
+
 ## Deploying the app (Firebase App Hosting)
 
 [`apphosting.yaml`](../apphosting.yaml) is the deploy config. App Hosting runs

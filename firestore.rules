@@ -152,6 +152,12 @@ service cloud.firestore {
         .hasOnly(['seatCount', 'vendorCount']);
     }
 
+    // P2B: dataRegion ('eu'|'us') is immutable after first set.
+    function orgDataRegionPreserved() {
+      return !('dataRegion' in resource.data)
+        || request.resource.data.dataRegion == resource.data.dataRegion;
+    }
+
     // Organizations Collection
     match /organizations/{orgId} {
       allow read: if isAuthenticated() && isOrgMember(orgId);
@@ -164,8 +170,8 @@ service cloud.firestore {
       // batch legitimately increments seatCount, and VendorsDirectory's cap-check
       // transaction increments vendorCount from any member's session — both must keep
       // working. So: admins may change anything; everyone else is limited to exactly
-      // the two counters.
-      allow update: if isAuthenticated() && isOrgMember(orgId) &&
+      // the two counters. dataRegion is always immutable once set (admins included).
+      allow update: if isAuthenticated() && isOrgMember(orgId) && orgDataRegionPreserved() &&
         (isAdmin() || onlyMemberWritableOrgFieldsChanged());
     }
 
@@ -281,6 +287,17 @@ service cloud.firestore {
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
+    // FastTrack triage persistence (answers + Lite/Standard/Enhanced recommendation).
+    // Doc id = vendorId; org members may create/update their org's triage docs.
+    match /vendor_triage/{vendorId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg();
+      allow update: if isDocOrgMember()
+        && request.resource.data.organizationId == resource.data.organizationId
+        && request.resource.data.vendorId == resource.data.vendorId;
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
     // Vendor Assessments Collections (handle both names)
     match /vendor_assessments/{assessmentId} {
       allow read: if isDocOrgMember();
@@ -307,7 +324,36 @@ service cloud.firestore {
     // vendorId, frameworks, dueAt/dueDate, or the portalOpen flag itself.
     function onlyPortalAssessmentFieldsChanged() {
       return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['answers', 'comments', 'evidenceByQuestion', 'progressPct', 'progress', 'status', 'questions', 'updatedAt', 'completedAt']);
+        .hasOnly(['answers', 'comments', 'evidenceByQuestion', 'progressPct', 'progress', 'status', 'questions', 'updatedAt', 'completedAt', 'attestations', 'answerProposals', 'confirmedAnswerIds']);
+    }
+
+    // After send, org members cannot silently rewrite the questionnaire snapshot
+    // (questions / packs / frameworks). Empty snapshots may still be recovered.
+    function orgPreservesSentSnapshot() {
+      return !('sentAt' in resource.data)
+        || !('versionLocked' in resource.data)
+        || resource.data.versionLocked != true
+        || !(resource.data.keys().hasAll(['questions']))
+        || resource.data.questions.size() == 0
+        || (
+          !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['questions', 'frameworkPackIds', 'frameworks', 'questionBankVersion', 'versionLocked'])
+        );
+    }
+
+    // Finalized decisions stay locked.
+    function orgPreservesFinalDecision() {
+      return !('decidedAt' in resource.data)
+        || !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['decisionOutcome', 'decisionNotes', 'decidedAt', 'decidedBy']);
+    }
+
+    match /assessments/{assessmentId} {
+      allow read: if isDocOrgMember() || (isPortalSessionFor(assessmentId) && isOpenPortalAssessment());
+      allow create: if isCreatingForOwnOrg();
+      allow update: if (isDocOrgMember() && orgPreservesSentSnapshot() && orgPreservesFinalDecision()) ||
+        (isPortalSessionFor(assessmentId) && isOpenPortalAssessment() && onlyPortalAssessmentFieldsChanged());
+      allow delete: if isDocOrgMember() && isAdmin();
     }
 
     // assessment_responses has no current writer in the app, but keep the same
@@ -315,16 +361,6 @@ service cloud.firestore {
     function onlyPortalResponseFieldsChanged() {
       return request.resource.data.diff(resource.data).affectedKeys()
         .hasOnly(['answer', 'comment', 'evidenceFileIds', 'updatedAt']);
-    }
-
-    match /assessments/{assessmentId} {
-      allow read: if isDocOrgMember() || (isPortalSessionFor(assessmentId) && isOpenPortalAssessment());
-      allow create: if isCreatingForOwnOrg();
-      // Org members can update fully; a vendor portal session only for answer/progress
-      // fields, and only on the assessment its own link was issued for.
-      allow update: if isDocOrgMember() ||
-        (isPortalSessionFor(assessmentId) && isOpenPortalAssessment() && onlyPortalAssessmentFieldsChanged());
-      allow delete: if isDocOrgMember() && isAdmin();
     }
 
     // Still has no writer in the app (see above), but kept in step with /assessments

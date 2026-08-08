@@ -19,6 +19,8 @@ import {
 } from '../lib/orgInvites';
 import { SUPPORT_EMAIL, SUPPORT_MAILTO } from '../lib/brand';
 import { FrameworkPacksCard } from '../components/FrameworkPacksCard';
+import { AuditSpineCard } from '../components/AuditSpineCard';
+import { DataRegionCard } from '../components/DataRegionCard';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -167,6 +169,8 @@ export function Settings() {
 
       <div className="space-y-6 max-w-3xl">
         <FrameworkPacksCard />
+        <DataRegionCard />
+        <AuditSpineCard />
         <TeamMembersCard />
 
         <Card className="bg-slate-900/50 border-white/10 backdrop-blur-xl">

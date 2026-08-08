@@ -90,6 +90,7 @@ export type AssessmentReviewPanelProps = {
   onRecoverEmpty: () => void;
   onArchiveEmpty: () => void;
   onDecide: (outcome: DecisionOutcome) => void;
+  onDownloadDecisionPacket?: () => void;
 };
 
 export function AssessmentReviewPanel({
@@ -116,6 +117,7 @@ export function AssessmentReviewPanel({
   onRecoverEmpty,
   onArchiveEmpty,
   onDecide,
+  onDownloadDecisionPacket,
 }: AssessmentReviewPanelProps) {
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
@@ -418,6 +420,7 @@ export function AssessmentReviewPanel({
                   approving={approving}
                   assessment={reviewAssessment}
                   onDecide={onDecide}
+                  onDownloadDecisionPacket={onDownloadDecisionPacket}
                 />
               )}
             </div>
@@ -436,6 +439,7 @@ function AssessmentDecisionBar({
   approving,
   assessment,
   onDecide,
+  onDownloadDecisionPacket,
 }: {
   decisionOutcome: DecisionOutcome;
   onDecisionOutcomeChange: (outcome: DecisionOutcome) => void;
@@ -444,6 +448,7 @@ function AssessmentDecisionBar({
   approving: boolean;
   assessment: StoredAssessment;
   onDecide: (outcome: DecisionOutcome) => void;
+  onDownloadDecisionPacket?: () => void;
 }) {
   return (
     <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-6">
@@ -512,6 +517,16 @@ function AssessmentDecisionBar({
           {decisionOutcome === 'remediate' && 'Record remediation'}
           {decisionOutcome === 'rejected' && 'Reject & close'}
         </Button>
+        {onDownloadDecisionPacket && (
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full border-white/10 text-slate-200"
+            onClick={onDownloadDecisionPacket}
+          >
+            Download decision PDF
+          </Button>
+        )}
         {assessment.status !== 'Under Review' && progressOf(assessment) <= 0 && (
           <p className="text-[10px] text-slate-500">
             Enabled after the vendor starts answering or submits for review.

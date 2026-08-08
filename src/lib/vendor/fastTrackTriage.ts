@@ -142,6 +142,32 @@ const TIER_META: Record<
   },
 };
 
+/** Hard unique-question caps enforced when building the questionnaire (not advisory). */
+export const TIER_QUESTION_MAX: Record<TriageTier, number> = {
+  Lite: 20,
+  Standard: 50,
+  Enhanced: 100,
+};
+
+export function isTriageTier(value: string | null | undefined): value is TriageTier {
+  return value === 'Lite' || value === 'Standard' || value === 'Enhanced';
+}
+
+/** Map FastTrack review cadence to a next-review ISO date. */
+export function nextReviewAtFromCadence(
+  cadence: TriageAnswers['reviewCadence'],
+  from: Date = new Date()
+): string | null {
+  if (!cadence) return null;
+  const d = new Date(from.getTime());
+  if (cadence === 'annual') d.setMonth(d.getMonth() + 12);
+  else if (cadence === 'semi_annual') d.setMonth(d.getMonth() + 6);
+  else if (cadence === 'quarterly') d.setMonth(d.getMonth() + 3);
+  else if (cadence === 'continuous') d.setMonth(d.getMonth() + 1);
+  else return null;
+  return d.toISOString();
+}
+
 export function isTriageComplete(answers: TriageAnswers): boolean {
   return (
     answers.dataExposure.length > 0 &&

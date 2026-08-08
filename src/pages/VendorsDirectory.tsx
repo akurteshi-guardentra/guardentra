@@ -36,6 +36,7 @@ import type { RiskLevel, Vendor } from '../lib/vendor/types';
 import { RISK_LEVELS } from '../lib/vendor/constants';
 import { effectiveRiskLevel } from '../lib/vendor/risk';
 import { validateVendorForm } from '../lib/vendor/validators';
+import { emitAuditBestEffort } from '../lib/auditClient';
 import {
   downloadVendorCsvTemplate,
   findExistingDuplicates,
@@ -78,7 +79,7 @@ function vendorPayload(
 }
 
 export function VendorsDirectory() {
-  const { profile } = useAuth();
+  const { user, profile } = useAuth();
   const navigate = useNavigate();
   const orgId = profile?.organizationId;
   const { assessments: orgAssessments } = useOrgAssessments(orgId);
@@ -256,20 +257,31 @@ export function VendorsDirectory() {
     criticality: RiskLevel;
     primaryContactName?: string;
     primaryContactEmail?: string;
-  }) => {
+    source?: 'create' | 'import';
+  }): Promise<string | null> => {
     if (!orgId) throw new Error('No organization on your profile — cannot save vendors.');
     const ownerName = profile?.displayName || profile?.email || 'Unassigned';
     const payload = vendorPayload(orgId, { ...input, ownerName });
+    const eventType = input.source === 'import' ? 'vendor.imported' : 'vendor.created';
 
     const saveLocal = () => {
-      createLocalVendor(orgId, { ...input, ownerName });
+      const local = createLocalVendor(orgId, { ...input, ownerName });
       refreshLocal(orgId);
+      return local.id as string;
     };
 
     // Once local mode is active, never block the UI on a hanging Firestore write.
     if (dataModeRef.current === 'local') {
-      saveLocal();
-      return;
+      const id = saveLocal();
+      void emitAuditBestEffort({
+        tenantId: orgId,
+        eventType,
+        actorId: user?.uid || null,
+        objectType: 'vendor',
+        objectId: id,
+        payload: { name: input.name, category: input.category, criticality: input.criticality, local: true },
+      });
+      return id;
     }
 
     try {
@@ -286,6 +298,7 @@ export function VendorsDirectory() {
       // normal over-cap growth through the app, but doesn't prevent a client bypassing
       // the increment via direct Firestore access — see firestore.rules' orgField()
       // comment and docs/KNOWN_ISSUES.md.
+      let createdId = '';
       const write = runTransaction(db, async (tx) => {
         const orgRef = doc(db, 'organizations', orgId);
         const orgSnap = await tx.get(orgRef);
@@ -296,17 +309,35 @@ export function VendorsDirectory() {
           throw new Error(`Vendor limit reached (${cap} on your plan). Upgrade to add more vendors.`);
         }
         const vendorRef = doc(collection(db, 'vendors'));
+        createdId = vendorRef.id;
         tx.set(vendorRef, payload);
         tx.set(orgRef, { vendorCount: count + 1 }, { merge: true });
       });
       await Promise.race([write, writeTimeout]);
+      void emitAuditBestEffort({
+        tenantId: orgId,
+        eventType,
+        actorId: user?.uid || null,
+        objectType: 'vendor',
+        objectId: createdId,
+        payload: { name: input.name, category: input.category, criticality: input.criticality },
+      });
+      return createdId;
     } catch (ex) {
       if (isFirestoreUnavailableError(ex)) {
         setDataError(
           'Cloud Firestore write failed. Switched to local browser storage for this session.'
         );
-        saveLocal();
-        return;
+        const id = saveLocal();
+        void emitAuditBestEffort({
+          tenantId: orgId,
+          eventType,
+          actorId: user?.uid || null,
+          objectType: 'vendor',
+          objectId: id,
+          payload: { name: input.name, category: input.category, criticality: input.criticality, local: true },
+        });
+        return id;
       }
       throw ex;
     }
@@ -330,8 +361,11 @@ export function VendorsDirectory() {
     setSaving(true);
     setFormError('');
     try {
-      await createVendor(input);
+      const id = await createVendor(input);
       setShowAdd(false);
+      if (id) {
+        navigate(`/assessments/triage?vendorId=${encodeURIComponent(id)}`);
+      }
     } catch (ex: any) {
       setFormError(ex?.message || 'Failed to create vendor.');
     } finally {
@@ -365,7 +399,7 @@ export function VendorsDirectory() {
     setInviteError('');
     setInviteBanner(null);
     try {
-      await createVendor(input);
+      const vendorId = await createVendor(input);
 
       let emailQueued = false;
       let emailQueueError = '';
@@ -395,6 +429,18 @@ export function VendorsDirectory() {
         } catch (invEx) {
           console.warn('Could not record vendor_invites audit entry', invEx);
         }
+        void emitAuditBestEffort({
+          tenantId: orgId,
+          eventType: 'vendor.invite_queued',
+          actorId: user?.uid || null,
+          objectType: 'vendor',
+          objectId: vendorId,
+          payload: {
+            vendorName: input.name,
+            emailQueued,
+            toDomain: input.primaryContactEmail.split('@')[1] || null,
+          },
+        });
       }
 
       setShowInvite(false);
@@ -408,6 +454,9 @@ export function VendorsDirectory() {
           tone: 'warn',
           text: `Vendor saved; email could not be queued to ${input.primaryContactEmail} — check Trigger Email / SMTP${emailQueueError ? ` (${emailQueueError})` : ''}.`,
         });
+      }
+      if (vendorId) {
+        // Invite stays on register with banner; assessment send is a separate FastTrack step.
       }
     } catch (ex: any) {
       setInviteError(ex?.message || 'Failed to invite vendor.');
@@ -502,6 +551,7 @@ export function VendorsDirectory() {
             criticality,
             primaryContactName: row.primaryContactName?.trim() || '',
             primaryContactEmail: row.primaryContactEmail?.trim() || '',
+            source: 'import',
           });
           existing.add(name.toLowerCase());
           imported += 1;

@@ -19,6 +19,7 @@ import {
 import {
   buildQuestionsForPackIds,
   resolvePackIdsForFrameworks,
+  applyTierQuestionCap,
 } from '../lib/vendor/frameworkPacks';
 import { loadOrgFrameworkPackDefaults } from '../lib/vendor/orgFrameworkPacks';
 import { useOrgVendors } from '../lib/vendor/useOrgVendors';
@@ -26,11 +27,18 @@ import { createLocalAssessment } from '../lib/vendor/localAssessmentStore';
 import { isFirestoreUnavailableError } from '../lib/vendor/localVendorStore';
 import { syncVendorAfterAssessmentCreate } from '../lib/vendor/syncVendorAssessment';
 import { buildCreateAssessmentFields } from '../lib/vendor/assessmentLifecycle';
-import { sendEmailBestEffort } from '../lib/notifications';
-import { parseFrameworksParam } from '../lib/vendor/fastTrackTriage';
+import { sendEmail } from '../lib/notifications';
+import { isTriageTier, parseFrameworksParam } from '../lib/vendor/fastTrackTriage';
+import { loadVendorTriage } from '../lib/vendor/vendorTriageStore';
+import { emitAuditBestEffort } from '../lib/auditClient';
+import {
+  REMINDER_SCHEDULES,
+  reminderScheduleById,
+  type ReminderScheduleId,
+} from '../lib/vendor/reminderSchedule';
 
 export function AssessmentWizard() {
-  const { profile } = useAuth();
+  const { user, profile } = useAuth();
   const orgId = profile?.organizationId;
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -38,15 +46,29 @@ export function AssessmentWizard() {
   const presetFrameworks = parseFrameworksParam(params.get('frameworks'));
   const presetTier = params.get('tier');
   const [packDefaults, setPackDefaults] = useState<Partial<Record<FrameworkId, string>>>({});
+  const [activeTier, setActiveTier] = useState<string | null>(
+    isTriageTier(presetTier) ? presetTier : null
+  );
+  const [reviewCadence, setReviewCadence] = useState<string | null>(null);
+  const [dueInDays, setDueInDays] = useState(14);
+  const [reminderId, setReminderId] = useState<ReminderScheduleId>('before_and_due');
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [sendBanner, setSendBanner] = useState<{ tone: 'ok' | 'warn'; text: string } | null>(null);
 
   useEffect(() => {
     if (!orgId) return;
     void loadOrgFrameworkPackDefaults(orgId).then(setPackDefaults);
   }, [orgId]);
 
+  useEffect(() => {
+    if (isTriageTier(presetTier)) setActiveTier(presetTier);
+  }, [presetTier]);
+
   const { vendors, mode: vendorMode, loading: vendorsLoading } = useOrgVendors(orgId);
 
-  const [step, setStep] = useState<1 | 2 | 3>(presetVendorId && presetFrameworks.length ? 2 : presetVendorId ? 2 : 1);
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(
+    presetVendorId && presetFrameworks.length ? 2 : presetVendorId ? 2 : 1
+  );
   const [search, setSearch] = useState('');
   const [vendorId, setVendorId] = useState(presetVendorId);
   const [frameworks, setFrameworks] = useState<FrameworkId[]>(
@@ -59,17 +81,45 @@ export function AssessmentWizard() {
   const [saving, setSaving] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
+  useEffect(() => {
+    if (!orgId || !vendorId || vendorId.startsWith('local_')) return;
+    let cancelled = false;
+    void loadVendorTriage(vendorId, orgId).then((triage) => {
+      if (cancelled || !triage) return;
+      if (!isTriageTier(presetTier)) setActiveTier(triage.tier);
+      setReviewCadence(triage.reviewCadence);
+      if (!presetFrameworks.length && triage.frameworks?.length) {
+        setFrameworks((prev) => (prev.length ? prev : triage.frameworks));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId, vendorId, presetTier, presetFrameworks.length]);
+
   const frameworkPackIds = useMemo(
     () => resolvePackIdsForFrameworks(frameworks, packDefaults),
     [frameworks, packDefaults]
   );
 
-  const previewQuestions = useMemo(
+  const uncappedQuestions = useMemo(
     () => (frameworkPackIds.length ? buildQuestionsForPackIds(frameworkPackIds) : []),
     [frameworkPackIds]
   );
 
+  const previewQuestions = useMemo(
+    () => applyTierQuestionCap(uncappedQuestions, activeTier),
+    [uncappedQuestions, activeTier]
+  );
+
   const selected = vendors.find((v) => v.id === vendorId);
+
+  useEffect(() => {
+    if (selected?.primaryContactEmail && !inviteEmail) {
+      setInviteEmail(selected.primaryContactEmail);
+    }
+  }, [selected?.primaryContactEmail, inviteEmail]);
+
   const filtered = useMemo(() => {
     const s = search.toLowerCase();
     return vendors.filter((v) => !s || v.name.toLowerCase().includes(s));
@@ -139,7 +189,8 @@ export function AssessmentWizard() {
       return;
     }
     const due = new Date();
-    due.setDate(due.getDate() + 14);
+    due.setDate(due.getDate() + dueInDays);
+    const schedule = reminderScheduleById(reminderId);
     const frameworkName = frameworks
       .map((id) => FRAMEWORK_CATALOG.find((f) => f.id === id)?.name || id)
       .join(', ');
@@ -153,6 +204,16 @@ export function AssessmentWizard() {
       questions: previewQuestions,
       sourceQuestionCount: sourceQuestions,
       dueAt: due.toISOString(),
+      triageTier: activeTier,
+      reviewCadence,
+      reminderScheduleId: schedule.id,
+      reminderSchedule: {
+        daysBeforeDue: schedule.daysBeforeDue,
+        onDue: schedule.onDue,
+        daysAfterDue: schedule.daysAfterDue,
+        label: schedule.label,
+      },
+      inviteEmail: inviteEmail || selected.primaryContactEmail || null,
     });
     const local = createLocalAssessment(orgId, {
       vendorId: fields.vendorId,
@@ -168,6 +229,20 @@ export function AssessmentWizard() {
       questions: fields.questions,
     });
     await syncVendorAfterAssessmentCreate(orgId, vendorId, true);
+    void emitAuditBestEffort({
+      tenantId: orgId,
+      eventType: 'assessment.created',
+      actorId: user?.uid || null,
+      objectType: 'assessment',
+      objectId: local.id,
+      payload: {
+        vendorId,
+        frameworks,
+        triageTier: activeTier,
+        questionCount: fields.questionCount,
+        local: true,
+      },
+    });
     navigate(`/assessments?vendorId=${encodeURIComponent(vendorId)}`);
     return local.id;
   };
@@ -185,9 +260,11 @@ export function AssessmentWizard() {
     if (!orgId || !selected) return;
     setSaving(true);
     setError('');
+    setSendBanner(null);
     try {
       const due = new Date();
-      due.setDate(due.getDate() + 14);
+      due.setDate(due.getDate() + dueInDays);
+      const schedule = reminderScheduleById(reminderId);
       const frameworkName = frameworks
         .map((id) => FRAMEWORK_CATALOG.find((f) => f.id === id)?.name || id)
         .join(', ');
@@ -215,6 +292,16 @@ export function AssessmentWizard() {
         questions: previewQuestions,
         sourceQuestionCount: sourceQuestions,
         dueAt: due.toISOString(),
+        triageTier: activeTier,
+        reviewCadence,
+        reminderScheduleId: schedule.id,
+        reminderSchedule: {
+          daysBeforeDue: schedule.daysBeforeDue,
+          onDue: schedule.onDue,
+          daysAfterDue: schedule.daysAfterDue,
+          label: schedule.label,
+        },
+        inviteEmail: inviteEmail || selected.primaryContactEmail || null,
       });
 
       const ref = await Promise.race([
@@ -222,30 +309,56 @@ export function AssessmentWizard() {
         writeTimeout,
       ]);
 
-      // `assessments` (above) is the sole source of truth for the active app. The old
-      // best-effort dual-write to `vendor_assessments` was silently inconsistent — any
-      // assessment whose legacy write failed was invisible on /vendors/legacy while
-      // showing correctly everywhere else. Removed; /vendors/legacy is frozen behind the
-      // `vendorsLegacy` flag today. If it's ever re-enabled, migrate VendorRisk.tsx's
-      // assessment-history query to read `assessments` (where vendorId + orderBy createdAt)
-      // instead of resurrecting this write.
-
       await syncVendorAfterAssessmentCreate(orgId, vendorId, false);
 
-      if (selected.primaryContactEmail) {
+      void emitAuditBestEffort({
+        tenantId: orgId,
+        eventType: 'assessment.created',
+        actorId: user?.uid || null,
+        objectType: 'assessment',
+        objectId: ref.id,
+        payload: {
+          vendorId,
+          frameworks,
+          triageTier: activeTier,
+          questionCount: fields.questionCount,
+        },
+      });
+      void emitAuditBestEffort({
+        tenantId: orgId,
+        eventType: 'assessment.sent',
+        actorId: user?.uid || null,
+        objectType: 'assessment',
+        objectId: ref.id,
+        payload: {
+          vendorId,
+          dueAt: fields.dueAt,
+          reminderScheduleId: schedule.id,
+          inviteEmail: Boolean(inviteEmail || selected.primaryContactEmail),
+        },
+      });
+
+      const to = (inviteEmail || selected.primaryContactEmail || '').trim();
+      if (to) {
         const portalUrl = `${window.location.origin}/portal/${ref.id}`;
-        void sendEmailBestEffort({
-          to: selected.primaryContactEmail,
-          subject: `Security assessment request — ${selected.name}`,
-          text: `Hi${selected.primaryContactName ? ` ${selected.primaryContactName}` : ''},\n\n${selected.name} has been asked to complete a security assessment (${frameworkName}).\n\nComplete it here: ${portalUrl}\n\nDue: ${due.toLocaleDateString()}\n\nYour progress saves automatically and this link stays valid until the assessment is complete.`,
-        });
+        try {
+          await sendEmail({
+            to,
+            subject: `Security assessment request — ${selected.name}`,
+            text: `Hi${selected.primaryContactName ? ` ${selected.primaryContactName}` : ''},\n\n${selected.name} has been asked to complete a security assessment (${frameworkName}).\n\nComplete it here: ${portalUrl}\n\nDue: ${due.toLocaleDateString()}\nReminders: ${schedule.label}\n\nYour progress saves automatically and this link stays valid until the assessment is complete.`,
+          });
+          setSendBanner({
+            tone: 'ok',
+            text: `Assessment sent. Invite queued to ${to} (needs Trigger Email + SMTP to deliver).`,
+          });
+        } catch (mailEx: unknown) {
+          setSendBanner({
+            tone: 'warn',
+            text: `Assessment created; email could not be queued${mailEx instanceof Error ? ` (${mailEx.message})` : ''}.`,
+          });
+        }
       }
 
-      // Land on the org-side tracker, filtered to this vendor — the same place the
-      // local-fallback path above already goes. This previously jumped to the vendor
-      // portal, which is an external-facing page with no app navigation, so whoever
-      // created the assessment hit a dead end with no way back. The portal link is
-      // still one click away from here via "Copy Vendor Portal Link".
       navigate(
         `/assessments?vendorId=${encodeURIComponent(vendorId)}&created=${encodeURIComponent(ref.id)}`
       );
@@ -374,9 +487,11 @@ export function AssessmentWizard() {
                       <p className="text-xs font-bold uppercase tracking-widest text-primary">Selected vendor</p>
                       <h2 className="mt-1 text-lg font-semibold text-white">{selected.name}</h2>
                       <p className="text-sm text-slate-400">{selected.category || 'Uncategorized'}</p>
-                      {presetTier && (
+                      {activeTier && (
                         <p className="mt-2 text-xs text-emerald-300/90">
-                          FastTrack recommended <span className="font-semibold">{presetTier}</span>
+                          FastTrack <span className="font-semibold">{activeTier}</span> scope
+                          (max {activeTier === 'Lite' ? 20 : activeTier === 'Standard' ? 50 : 100}{' '}
+                          unique questions)
                           {' · '}
                           <Link to={`/assessments/triage?vendorId=${encodeURIComponent(vendorId)}`} className="underline">
                             Retake triage
@@ -507,8 +622,10 @@ export function AssessmentWizard() {
                 <p className="font-medium text-sky-100">Smart dedupe across frameworks</p>
                 <p className="text-slate-400">
                   Estimated unique set: <strong className="text-white">{uniqueQuestions}</strong> questions
-                  (from {sourceQuestions} source questions across {frameworks.length} framework
-                  {frameworks.length === 1 ? '' : 's'}).
+                  {activeTier && uncappedQuestions.length > uniqueQuestions
+                    ? ` (capped from ${uncappedQuestions.length} for ${activeTier})`
+                    : ` (from ${sourceQuestions} source questions across ${frameworks.length} framework${frameworks.length === 1 ? '' : 's'})`}
+                  .
                 </p>
               </div>
             </div>
@@ -593,15 +710,107 @@ export function AssessmentWizard() {
           </div>
 
           <div className="flex gap-2">
-            <Button variant="outline" className="border-white/10" onClick={() => setStep(1)}>
+            <Button variant="outline" className="border-white/10" onClick={() => setStep(2)}>
               Back
+            </Button>
+            <Button
+              className="bg-primary text-white hover:bg-primary/90"
+              onClick={() => {
+                setError('');
+                setStep(4);
+              }}
+            >
+              Continue to Send
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {step === 4 && selected && (
+        <div className="space-y-6">
+          <div>
+            <h2 className="text-lg font-semibold text-white">Send assessment</h2>
+            <p className="text-sm text-slate-400">
+              Confirm recipient, due date, and reminder schedule. Sending locks the question snapshot.
+            </p>
+          </div>
+
+          <div className="grid gap-4 rounded-xl border border-white/10 bg-slate-900/50 p-5 sm:grid-cols-2">
+            <label className="block text-sm">
+              <span className="text-xs font-bold uppercase tracking-widest text-slate-500">Recipient email</span>
+              <Input
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                placeholder="vendor@example.com"
+                className="mt-2 border-white/10 bg-black/20 text-white"
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="text-xs font-bold uppercase tracking-widest text-slate-500">Due in (days)</span>
+              <Input
+                type="number"
+                min={1}
+                max={180}
+                value={dueInDays}
+                onChange={(e) => setDueInDays(Math.max(1, Number(e.target.value) || 14))}
+                className="mt-2 border-white/10 bg-black/20 text-white"
+              />
+            </label>
+            <label className="block text-sm sm:col-span-2">
+              <span className="text-xs font-bold uppercase tracking-widest text-slate-500">Reminder schedule</span>
+              <select
+                value={reminderId}
+                onChange={(e) => setReminderId(e.target.value as ReminderScheduleId)}
+                className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-black/40 px-4 text-sm text-slate-200"
+              >
+                {REMINDER_SCHEDULES.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-slate-500">
+                Automatic reminders need Trigger Email + SMTP (see docs/ENVIRONMENTS.md). Manual reminders still work from the tracker.
+              </p>
+            </label>
+          </div>
+
+          <div className="rounded-xl border border-white/10 bg-black/20 p-4 text-sm text-slate-300">
+            <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Email preview</p>
+            <p className="mt-2 font-medium text-slate-100">
+              Security assessment request — {selected.name}
+            </p>
+            <p className="mt-2 whitespace-pre-wrap text-slate-400">
+              {`${selected.name} has been asked to complete a security assessment (${frameworks
+                .map((id) => FRAMEWORK_CATALOG.find((f) => f.id === id)?.name || id)
+                .join(', ')}).\n\nDue in ${dueInDays} day(s). Reminders: ${reminderScheduleById(reminderId).label}.\n\nPortal link will be included on send.`}
+            </p>
+            <p className="mt-3 text-xs text-slate-500">
+              {uniqueQuestions} questions locked on send · {activeTier || 'Custom'} scope
+            </p>
+          </div>
+
+          {sendBanner && (
+            <p
+              className={
+                sendBanner.tone === 'ok' ? 'text-sm text-emerald-300' : 'text-sm text-amber-200'
+              }
+            >
+              {sendBanner.text}
+            </p>
+          )}
+          {error && <p className="text-sm text-rose-300">{error}</p>}
+
+          <div className="flex gap-2">
+            <Button variant="outline" className="border-white/10" onClick={() => setStep(3)}>
+              Back to review
             </Button>
             <Button
               className="bg-primary text-white hover:bg-primary/90"
               disabled={saving}
               onClick={() => void createAssessment()}
             >
-              {saving ? 'Creating…' : 'Create assessment'}
+              {saving ? 'Sending…' : 'Send assessment'}
             </Button>
           </div>
         </div>

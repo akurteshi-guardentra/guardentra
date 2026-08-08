@@ -175,4 +175,5 @@ export const COLLECTIONS = {
   assessmentResponses: 'assessment_responses',
   evidence: 'evidence',
   vendorInvites: 'vendor_invites',
+  vendorTriage: 'vendor_triage',
 } as const;

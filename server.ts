@@ -11,7 +11,11 @@ import aiRoutes from "./server/routes/ai.ts";
 import stripeRoutes from "./server/routes/stripe.ts";
 import notifyRoutes from "./server/routes/notify.ts";
 import portalRoutes from "./server/routes/portal.ts";
+import auditRoutes from "./server/routes/audit.ts";
 import { requireFirebaseAuth } from "./server/middleware/requireFirebaseAuth.ts";
+import { startAuditWorker } from "./server/lib/audit/worker.ts";
+import { closeAuditPool } from "./server/lib/audit/pool.ts";
+import { startAssessmentReminderWorker } from "./server/lib/reminders/worker.ts";
 
 /** Cloud Run / Firebase App Hosting: always prefer process.env.PORT, fallback 8080. */
 export function resolvePort(): number {
@@ -41,6 +45,7 @@ export async function createApp() {
 
   app.use("/api/ai", requireFirebaseAuth, aiRoutes);
   app.use("/api/notify", requireFirebaseAuth, notifyRoutes);
+  app.use("/api/audit", requireFirebaseAuth, auditRoutes);
   app.use("/api/stripe", stripeRoutes);
   // Intentionally NOT behind requireFirebaseAuth — this endpoint is what mints the
   // vendor portal's session, so requiring one would be circular. It rate-limits and
@@ -99,9 +104,16 @@ export async function startServer(): Promise<Server> {
   return await new Promise<Server>((resolve, reject) => {
     const server = app.listen(PORT, "0.0.0.0", () => {
       console.log(`Server running on http://0.0.0.0:${PORT}`);
+      startAuditWorker();
+      startAssessmentReminderWorker();
       resolve(server);
     });
     server.on("error", reject);
+    const shutdown = () => {
+      void closeAuditPool();
+    };
+    process.once("SIGTERM", shutdown);
+    process.once("SIGINT", shutdown);
   });
 }
 
