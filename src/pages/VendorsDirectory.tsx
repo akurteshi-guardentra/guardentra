@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   collection,
   onSnapshot,
@@ -7,6 +7,7 @@ import {
   where,
   addDoc,
   doc,
+  getDoc,
   runTransaction,
 } from 'firebase/firestore';
 import {
@@ -51,6 +52,7 @@ import {
   listLocalVendors,
 } from '../lib/vendor/localVendorStore';
 import { useOrgAssessments } from '../lib/vendor/useOrgAssessments';
+import { DEFAULT_VENDOR_CAP, getPlan } from '../lib/plans';
 
 function vendorPayload(
   orgId: string,
@@ -126,6 +128,11 @@ export function VendorsDirectory() {
   const [menuVendorId, setMenuVendorId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const pageSize = 10;
+  const [planMeter, setPlanMeter] = useState<{
+    planName: string;
+    vendorCount: number;
+    vendorCap: number;
+  } | null>(null);
 
   const refreshLocal = (id: string) => {
     setVendors(listLocalVendors(id));
@@ -133,6 +140,29 @@ export function VendorsDirectory() {
     setDataMode('local');
     setLoading(false);
   };
+
+  useEffect(() => {
+    if (!orgId) {
+      setPlanMeter(null);
+      return;
+    }
+    let cancelled = false;
+    void getDoc(doc(db, 'organizations', orgId)).then((snap) => {
+      if (cancelled) return;
+      const data = snap.data() || {};
+      const vendorCap =
+        typeof data.vendorCap === 'number' ? data.vendorCap : DEFAULT_VENDOR_CAP;
+      const vendorCount = typeof data.vendorCount === 'number' ? data.vendorCount : 0;
+      setPlanMeter({
+        planName: getPlan(data.planId).name,
+        vendorCount,
+        vendorCap,
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId, vendors.length]);
 
   useEffect(() => {
     if (!orgId) {
@@ -304,9 +334,13 @@ export function VendorsDirectory() {
         const orgSnap = await tx.get(orgRef);
         const orgData = orgSnap.data() || {};
         const count = typeof orgData.vendorCount === 'number' ? orgData.vendorCount : 0;
-        const cap = typeof orgData.vendorCap === 'number' ? orgData.vendorCap : 25;
+        const cap =
+          typeof orgData.vendorCap === 'number' ? orgData.vendorCap : DEFAULT_VENDOR_CAP;
         if (count >= cap) {
-          throw new Error(`Vendor limit reached (${cap} on your plan). Upgrade to add more vendors.`);
+          const planName = getPlan(orgData.planId).name;
+          throw new Error(
+            `Vendor limit reached (${cap} on ${planName}). Upgrade your plan to add more vendors.`
+          );
         }
         const vendorRef = doc(collection(db, 'vendors'));
         createdId = vendorRef.id;
@@ -630,6 +664,30 @@ export function VendorsDirectory() {
       )}
 
       <div className="space-y-4">
+        {planMeter ? (
+          <div
+            className={
+              planMeter.vendorCount >= planMeter.vendorCap
+                ? 'flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100'
+                : 'flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300'
+            }
+          >
+            <p>
+              <span className="font-medium text-white">{planMeter.planName}</span>
+              {' · '}
+              {planMeter.vendorCount} / {planMeter.vendorCap} vendors on your plan
+              {planMeter.vendorCount >= planMeter.vendorCap
+                ? ' — limit reached'
+                : ''}
+            </p>
+            <Link
+              to="/pricing"
+              className="text-xs font-semibold uppercase tracking-wide text-primary hover:underline"
+            >
+              {planMeter.vendorCount >= planMeter.vendorCap ? 'Upgrade plan' : 'View plans'}
+            </Link>
+          </div>
+        ) : null}
         <VendorsStatsGrid cards={vendorStatCards} />
 
         <PageBand>

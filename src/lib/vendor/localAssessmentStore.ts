@@ -67,6 +67,8 @@ export function createLocalAssessment(
     questionCount?: number;
     sourceQuestionCount?: number;
     questions?: unknown[];
+    requesterOrgName?: string | null;
+    requesterLogoUrl?: string | null;
   }
 ): StoredAssessment {
   const dueAt = input.dueAt || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
@@ -90,6 +92,8 @@ export function createLocalAssessment(
     portalOpen: true,
     createdAt: new Date().toISOString(),
     sentAt: new Date().toISOString(),
+    ...(input.requesterOrgName ? { requesterOrgName: input.requesterOrgName } : {}),
+    ...(input.requesterLogoUrl ? { requesterLogoUrl: input.requesterLogoUrl } : {}),
   };
   return upsertLocalAssessment(orgId, assessment);
 }

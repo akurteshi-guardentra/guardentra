@@ -21,6 +21,8 @@ import { SUPPORT_EMAIL, SUPPORT_MAILTO } from '../lib/brand';
 import { FrameworkPacksCard } from '../components/FrameworkPacksCard';
 import { AuditSpineCard } from '../components/AuditSpineCard';
 import { DataRegionCard } from '../components/DataRegionCard';
+import { OrgBrandingCard } from '../components/OrgBrandingCard';
+import { PlanUsageCard } from '../components/PlanUsageCard';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -163,11 +165,13 @@ export function Settings() {
           Settings
         </h1>
         <p className="text-slate-400 text-lg">
-          Team access, framework pack defaults, and product support.
+          Company brand, subscription plan, team access, and product support.
         </p>
       </div>
 
       <div className="space-y-6 max-w-3xl">
+        <OrgBrandingCard />
+        <PlanUsageCard />
         <FrameworkPacksCard />
         <DataRegionCard />
         <AuditSpineCard />

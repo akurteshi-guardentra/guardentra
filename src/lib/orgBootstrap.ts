@@ -10,9 +10,10 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { db } from '../firebase';
+import { DEFAULT_PLAN_ID, DEFAULT_SEAT_CAP, DEFAULT_VENDOR_CAP, PLANS } from './plans';
 
-/** Starter-tier seat allowance (docs/ARCHITECTURE_FOUNDATION.md §4). Growth raises it to 10. */
-export const DEFAULT_SEAT_CAP = 3;
+/** @deprecated Prefer DEFAULT_SEAT_CAP from `./plans`. Re-exported for existing imports. */
+export { DEFAULT_SEAT_CAP };
 
 interface NewProfileFields {
   email: string | null;
@@ -83,15 +84,21 @@ export async function bootstrapUserProfile(uid: string, fields: NewProfileFields
     // below. Putting it here broke joining entirely.
   } else {
     const orgRef = doc(collection(db, 'organizations'));
+    const starter = PLANS[DEFAULT_PLAN_ID];
     batch.set(orgRef, {
       name: `${fields.displayName || 'User'}'s Organization`,
       createdAt: new Date().toISOString(),
       autoCreated: true,
       // P2B: pin residency at create. Dual Firebase wiring comes later; field is immutable.
       dataRegion: 'us',
+      // SaaS Starter defaults — Stripe webhook raises planId + caps on paid upgrade.
+      planId: starter.id,
+      vendorCount: 0,
+      vendorCap: DEFAULT_VENDOR_CAP,
       // The creator occupies the first seat.
       seatCount: 1,
       seatCap: DEFAULT_SEAT_CAP,
+      subscriptionStatus: 'none',
     });
     batch.set(userRef, {
       email: fields.email,

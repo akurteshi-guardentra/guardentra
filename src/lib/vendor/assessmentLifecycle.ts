@@ -40,6 +40,8 @@ export function buildCreateAssessmentFields(input: {
   reminderScheduleId?: string | null;
   reminderSchedule?: Record<string, unknown> | null;
   inviteEmail?: string | null;
+  requesterOrgName?: string | null;
+  requesterLogoUrl?: string | null;
 }): {
   vendorId: string;
   vendorName: string;
@@ -65,6 +67,8 @@ export function buildCreateAssessmentFields(input: {
   reminderSchedule?: Record<string, unknown>;
   inviteEmail?: string;
   versionLocked: true;
+  requesterOrgName?: string;
+  requesterLogoUrl?: string;
 } {
   const now = input.nowIso || new Date().toISOString();
   return {
@@ -92,6 +96,8 @@ export function buildCreateAssessmentFields(input: {
     ...(input.reminderScheduleId ? { reminderScheduleId: input.reminderScheduleId } : {}),
     ...(input.reminderSchedule ? { reminderSchedule: input.reminderSchedule } : {}),
     ...(input.inviteEmail ? { inviteEmail: input.inviteEmail } : {}),
+    ...(input.requesterOrgName ? { requesterOrgName: input.requesterOrgName } : {}),
+    ...(input.requesterLogoUrl ? { requesterLogoUrl: input.requesterLogoUrl } : {}),
   };
 }
 

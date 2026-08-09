@@ -49,6 +49,46 @@ type AnswersMap = Record<string, AnswerValue | string | string[] | undefined>;
 type CommentsMap = Record<string, string>;
 type EvidenceMap = Record<string, UploadedEvidence[]>;
 
+type PortalBranding = {
+  requesterOrgName: string;
+  requesterLogoUrl: string | null;
+};
+
+function PortalBrandMark({ branding, subtitle }: { branding: PortalBranding; subtitle?: string }) {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg border border-primary/30 bg-primary/10">
+        {branding.requesterLogoUrl ? (
+          <img
+            src={branding.requesterLogoUrl}
+            alt=""
+            className="h-full w-full object-contain"
+          />
+        ) : (
+          <Shield className="h-5 w-5 text-primary" />
+        )}
+      </div>
+      <div>
+        <p className="font-semibold text-white">{branding.requesterOrgName}</p>
+        <p className="text-xs text-slate-500">{subtitle || 'Vendor security assessment'}</p>
+      </div>
+    </div>
+  );
+}
+
+function isReceiptMode(data: {
+  status?: string;
+  decisionOutcome?: string;
+  completedAt?: string;
+  portalOpen?: boolean;
+}): boolean {
+  // Remediation reopen: org re-opens the portal; vendor should edit again.
+  if (data.decisionOutcome === 'remediate' && data.portalOpen === true) return false;
+  if (data.status === 'Completed' || data.status === 'Under Review') return true;
+  if (data.completedAt) return true;
+  return false;
+}
+
 export function VendorPortal() {
   const { assessmentId } = useParams();
   const [assessment, setAssessment] = useState<any>(null);
@@ -63,6 +103,7 @@ export function VendorPortal() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [started, setStarted] = useState(false);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [showSavingLabel, setShowSavingLabel] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [uploading, setUploading] = useState(false);
   const [proposing, setProposing] = useState(false);
@@ -72,8 +113,14 @@ export function VendorPortal() {
     authority: false,
   });
   const [attestedByName, setAttestedByName] = useState('');
+  const [branding, setBranding] = useState<PortalBranding>({
+    requesterOrgName: 'Requesting organization',
+    requesterLogoUrl: null,
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savingLabelTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savedClearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     /**
@@ -98,9 +145,23 @@ export function VendorPortal() {
       if (!res.ok) {
         throw new Error(`Portal session request failed (${res.status})`);
       }
-      const { token } = (await res.json()) as { token?: string };
-      if (!token) throw new Error('Portal session response contained no token');
-      await signInWithCustomToken(getPortalAuth(), token);
+      const body = (await res.json()) as {
+        token?: string;
+        branding?: {
+          requesterOrgName?: string;
+          requesterLogoUrl?: string | null;
+          submitted?: boolean;
+        };
+      };
+      if (!body.token) throw new Error('Portal session response contained no token');
+      if (body.branding?.requesterOrgName) {
+        setBranding({
+          requesterOrgName: body.branding.requesterOrgName,
+          requesterLogoUrl: body.branding.requesterLogoUrl || null,
+        });
+      }
+      await signInWithCustomToken(getPortalAuth(), body.token);
+      return body.branding;
     };
 
     const fetchAssessment = async () => {
@@ -125,6 +186,13 @@ export function VendorPortal() {
         }
         const data = { id: snap.id, ...snap.data() } as any;
         setAssessment(data);
+        if (typeof data.requesterOrgName === 'string' && data.requesterOrgName) {
+          setBranding((b) => ({
+            requesterOrgName: data.requesterOrgName,
+            requesterLogoUrl:
+              typeof data.requesterLogoUrl === 'string' ? data.requesterLogoUrl : b.requesterLogoUrl,
+          }));
+        }
 
         let qs: PortalQuestion[] = [];
         if (Array.isArray(data.questions) && data.questions.length) {
@@ -138,8 +206,6 @@ export function VendorPortal() {
             required: q.required !== false,
           }));
         }
-        // Do not rebuild from the live bank — empty snapshot means a broken/legacy
-        // assessment; silent rebuild would mutate historical question identity.
 
         setQuestions(qs);
         if (data.answers) setAnswers(data.answers);
@@ -157,7 +223,11 @@ export function VendorPortal() {
           });
           if (data.attestations.attestedByName) setAttestedByName(String(data.attestations.attestedByName));
         }
-        if (data.progressPct > 0 || data.progress > 0) setStarted(true);
+        if (isReceiptMode(data)) {
+          setIsSuccess(true);
+        } else if (data.progressPct > 0 || data.progress > 0) {
+          setStarted(true);
+        }
         if (qs.length) setActiveCategory(qs[0].category);
       } catch (err) {
         console.error('Failed to load assessment', err);
@@ -166,6 +236,11 @@ export function VendorPortal() {
       }
     };
     fetchAssessment();
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      if (savingLabelTimer.current) clearTimeout(savingLabelTimer.current);
+      if (savedClearTimer.current) clearTimeout(savedClearTimer.current);
+    };
   }, [assessmentId]);
 
   const categoryQs = useMemo(
@@ -189,6 +264,10 @@ export function VendorPortal() {
       nextProposals?: Record<string, AnswerProposal>
     ) => {
       if (!assessmentId || !assessment) return;
+      if (savingLabelTimer.current) clearTimeout(savingLabelTimer.current);
+      // Only show "Saving…" if the write takes longer than a short beat — avoids
+      // flashing the label on every answer click.
+      savingLabelTimer.current = setTimeout(() => setShowSavingLabel(true), 700);
       setSaveState('saving');
       try {
         const props = nextProposals || proposals;
@@ -211,9 +290,15 @@ export function VendorPortal() {
             false
           );
         }
+        if (savingLabelTimer.current) clearTimeout(savingLabelTimer.current);
+        setShowSavingLabel(false);
         setSaveState('saved');
+        if (savedClearTimer.current) clearTimeout(savedClearTimer.current);
+        savedClearTimer.current = setTimeout(() => setSaveState('idle'), 1600);
       } catch (err) {
         console.error(err);
+        if (savingLabelTimer.current) clearTimeout(savingLabelTimer.current);
+        setShowSavingLabel(false);
         setSaveState('error');
       }
     },
@@ -228,9 +313,10 @@ export function VendorPortal() {
       nextProposals?: Record<string, AnswerProposal>
     ) => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
+      // Longer debounce so rapid answer changes coalesce into one write.
       saveTimer.current = setTimeout(() => {
         void persistDraft(nextAnswers, nextComments, nextEvidence, nextProposals);
-      }, 600);
+      }, 1200);
     },
     [persistDraft]
   );
@@ -470,31 +556,92 @@ export function VendorPortal() {
   }
 
   if (!assessment || isSuccess) {
+    const downloadReceipt = () => {
+      const submittedAt =
+        (assessment?.completedAt && String(assessment.completedAt)) || new Date().toISOString();
+      const body = [
+        'Guardentra vendor assessment — submission receipt',
+        '',
+        `Requesting organization: ${branding.requesterOrgName}`,
+        `Vendor: ${assessment?.vendorName || 'Vendor'}`,
+        `Assessment reference: ${assessmentId}`,
+        `Submitted at (UTC): ${submittedAt}`,
+        `Status: ${assessment?.status || 'Under Review'}`,
+        '',
+        'Your responses were received. The requesting organization will review them.',
+        'You do not need a Guardentra account. Keep this receipt for your records.',
+        'If they ask for more information, they will send you a new portal link.',
+      ].join('\n');
+      const blob = new Blob([body], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `assessment-receipt-${assessmentId || 'unknown'}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
-        <div className="max-w-lg w-full rounded-2xl border border-white/10 bg-slate-900/50 p-8 text-center">
-          {isSuccess ? (
-            <>
-              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10">
-                <CheckCircle2 className="h-7 w-7 text-emerald-400" />
+      <div className="min-h-screen bg-slate-950 flex flex-col">
+        <header className="border-b border-white/5 bg-black/40 px-6 py-4">
+          <div className="mx-auto flex max-w-lg items-center justify-between gap-4">
+            <PortalBrandMark branding={branding} subtitle="Vendor assessment portal" />
+            <p className="text-[10px] uppercase tracking-widest text-slate-600">Powered by Guardentra</p>
+          </div>
+        </header>
+        <div className="flex flex-1 items-center justify-center p-6">
+          <div className="max-w-lg w-full rounded-2xl border border-white/10 bg-slate-900/50 p-8 text-center">
+            {isSuccess ? (
+              <>
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10">
+                  <CheckCircle2 className="h-7 w-7 text-emerald-400" />
                 </div>
-              <h1 className="text-2xl font-semibold text-white">Submission received</h1>
-              <p className="mt-2 text-sm text-slate-400">
-                Thank you. Your security assessment was submitted for review.
-              </p>
-              <p className="mt-4 font-mono text-xs text-slate-400">Ref: {assessmentId}</p>
-            </>
-          ) : (
-            <>
-              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-rose-500/10">
-                <AlertTriangle className="h-7 w-7 text-rose-400" />
+                <h1 className="text-2xl font-semibold text-white">Submission received</h1>
+                <p className="mt-2 text-sm text-slate-400">
+                  Thank you. Your responses were sent to{' '}
+                  <span className="text-slate-200">{branding.requesterOrgName}</span> for review.
+                </p>
+                <p className="mt-4 font-mono text-xs text-slate-400">Ref: {assessmentId}</p>
+                <p className="mt-6 text-sm text-slate-400">
+                  You can close this window. This link stays available as a receipt — there is no
+                  vendor dashboard to return to.
+                </p>
+                <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="border-white/10 text-slate-200"
+                    onClick={downloadReceipt}
+                  >
+                    <Download className="mr-2 h-4 w-4" />
+                    Download receipt
+                  </Button>
+                  <Button
+                    type="button"
+                    className="bg-primary text-white hover:bg-primary/90"
+                    onClick={() => window.close()}
+                  >
+                    Close window
+                  </Button>
                 </div>
-              <h1 className="text-2xl font-semibold text-white">Portal link invalid</h1>
-              <p className="mt-2 text-sm text-slate-400">
-                This assessment could not be found or the link has expired.
-              </p>
-            </>
-          )}
+                <p className="mt-4 text-xs text-slate-500">
+                  If review needs more detail, {branding.requesterOrgName} will email you a new
+                  link.
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-rose-500/10">
+                  <AlertTriangle className="h-7 w-7 text-rose-400" />
+                </div>
+                <h1 className="text-2xl font-semibold text-white">Portal link invalid</h1>
+                <p className="mt-2 text-sm text-slate-400">
+                  This assessment could not be found or the link has expired. Ask the requesting
+                  organization for a new invite.
+                </p>
+              </>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -548,25 +695,22 @@ export function VendorPortal() {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100">
         <header className="border-b border-white/5 bg-black/40 backdrop-blur-xl px-6 py-4">
-          <div className="mx-auto flex max-w-5xl items-center gap-3">
-            <div className="rounded-lg bg-primary/20 border border-primary/40 p-2">
-              <Shield className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <p className="font-semibold text-white">GuardEntra Vendor Portal</p>
-              <p className="text-xs text-slate-500">Encrypted questionnaire</p>
-            </div>
+          <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
+            <PortalBrandMark branding={branding} subtitle="Encrypted vendor questionnaire" />
+            <p className="text-[10px] uppercase tracking-widest text-slate-600">Powered by Guardentra</p>
           </div>
         </header>
         <main className="mx-auto max-w-5xl p-6 lg:p-10">
           <div className="grid gap-6 rounded-2xl border border-white/10 bg-slate-900/50 p-8 lg:grid-cols-[1fr_auto] lg:items-center">
             <div>
-              <p className="text-sm text-slate-500">Security &amp; Compliance Assessment</p>
+              <p className="text-sm text-slate-500">
+                Security assessment from {branding.requesterOrgName}
+              </p>
               <h1 className="mt-2 font-display text-3xl font-bold text-white text-glow">
                 {assessment.vendorName || 'Vendor'} questionnaire
               </h1>
               <p className="mt-2 text-sm text-slate-400">
-                Requested for your organization · {questions.length} unique questions
+                Requested by {branding.requesterOrgName} · {questions.length} unique questions
                 {assessment.sourceQuestionCount
                   ? ` (deduplicated from ${assessment.sourceQuestionCount} source questions)`
                   : ''}
@@ -641,14 +785,11 @@ export function VendorPortal() {
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <header className="sticky top-0 z-40 border-b border-white/5 bg-black/40 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
-          <div className="flex items-center gap-3">
-            <Shield className="h-5 w-5 text-primary" />
-            <div>
-              <p className="text-sm font-semibold text-white">{assessment.vendorName || 'Vendor'} assessment</p>
-              <p className="text-xs font-medium tabular-nums text-slate-400">
-                Question {Math.max(1, globalIndex + 1)} of {questions.length}
-              </p>
-            </div>
+          <div className="min-w-0">
+            <PortalBrandMark
+              branding={branding}
+              subtitle={`${assessment.vendorName || 'Vendor'} · Q${Math.max(1, globalIndex + 1)} of ${questions.length}`}
+            />
           </div>
           <div className="flex items-center gap-4">
             <div className="hidden w-40 sm:block">
@@ -660,13 +801,20 @@ export function VendorPortal() {
                 <div className="h-full bg-primary transition-all" style={{ width: `${progress}%` }} />
               </div>
             </div>
-            <span className="text-xs text-slate-500">
-              {saveState === 'saving' && 'Saving…'}
+            <span
+              className={cn(
+                'text-xs tabular-nums',
+                saveState === 'error' ? 'text-rose-400' : 'text-slate-500'
+              )}
+              aria-live="polite"
+            >
+              {saveState === 'saving' && showSavingLabel && 'Saving…'}
               {saveState === 'saved' && 'Saved'}
-              {saveState === 'error' && 'Save failed'}
-              {saveState === 'idle' && (
-                <span className="inline-flex items-center gap-1">
-                  <Save className="h-3 w-3" /> Autosave on
+              {saveState === 'error' && 'Save failed — retrying on next change'}
+              {(saveState === 'idle' || (saveState === 'saving' && !showSavingLabel)) && (
+                <span className="inline-flex items-center gap-1 opacity-70">
+                  <Save className="h-3 w-3" />
+                  Autosaved
                 </span>
               )}
             </span>

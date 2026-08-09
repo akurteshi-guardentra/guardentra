@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { addDoc, collection } from 'firebase/firestore';
+import { addDoc, collection, doc, getDoc } from 'firebase/firestore';
 import { Check, ChevronDown, ChevronRight, Eye, Search, Sparkles } from 'lucide-react';
 import { db } from '../firebase';
 import { useAuth } from '../lib/AuthContext';
@@ -54,10 +54,26 @@ export function AssessmentWizard() {
   const [reminderId, setReminderId] = useState<ReminderScheduleId>('before_and_due');
   const [inviteEmail, setInviteEmail] = useState('');
   const [sendBanner, setSendBanner] = useState<{ tone: 'ok' | 'warn'; text: string } | null>(null);
+  const [requesterOrgName, setRequesterOrgName] = useState('');
+  const [requesterLogoUrl, setRequesterLogoUrl] = useState('');
 
   useEffect(() => {
     if (!orgId) return;
     void loadOrgFrameworkPackDefaults(orgId).then(setPackDefaults);
+  }, [orgId]);
+
+  useEffect(() => {
+    if (!orgId) return;
+    let cancelled = false;
+    void getDoc(doc(db, 'organizations', orgId)).then((snap) => {
+      if (cancelled || !snap.exists()) return;
+      const data = snap.data() || {};
+      if (typeof data.name === 'string') setRequesterOrgName(data.name);
+      if (typeof data.logoUrl === 'string') setRequesterLogoUrl(data.logoUrl);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [orgId]);
 
   useEffect(() => {
@@ -214,6 +230,8 @@ export function AssessmentWizard() {
         label: schedule.label,
       },
       inviteEmail: inviteEmail || selected.primaryContactEmail || null,
+      requesterOrgName: requesterOrgName || null,
+      requesterLogoUrl: requesterLogoUrl || null,
     });
     const local = createLocalAssessment(orgId, {
       vendorId: fields.vendorId,
@@ -227,6 +245,8 @@ export function AssessmentWizard() {
       questionCount: fields.questionCount,
       sourceQuestionCount: fields.sourceQuestionCount,
       questions: fields.questions,
+      requesterOrgName: fields.requesterOrgName,
+      requesterLogoUrl: fields.requesterLogoUrl,
     });
     await syncVendorAfterAssessmentCreate(orgId, vendorId, true);
     void emitAuditBestEffort({
@@ -302,6 +322,8 @@ export function AssessmentWizard() {
           label: schedule.label,
         },
         inviteEmail: inviteEmail || selected.primaryContactEmail || null,
+        requesterOrgName: requesterOrgName || null,
+        requesterLogoUrl: requesterLogoUrl || null,
       });
 
       const ref = await Promise.race([

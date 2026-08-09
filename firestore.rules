@@ -310,6 +310,17 @@ service cloud.firestore {
       return isAuthenticated() && resource.data.portalOpen == true;
     }
 
+    // Vendors may re-open the link after submit to see a receipt (read-only).
+    // Writes still require portalOpen via isOpenPortalAssessment().
+    function isPortalReadableAssessment() {
+      return isAuthenticated() && (
+        resource.data.portalOpen == true ||
+        resource.data.status == 'Under Review' ||
+        resource.data.status == 'Completed' ||
+        resource.data.keys().hasAny(['completedAt'])
+      );
+    }
+
     // Binds a portal session to the ONE assessment its link was minted for.
     // server/routes/portal.ts puts this claim on the custom token; without it, a
     // session authenticated for assessment A could reach every other open assessment
@@ -349,7 +360,7 @@ service cloud.firestore {
     }
 
     match /assessments/{assessmentId} {
-      allow read: if isDocOrgMember() || (isPortalSessionFor(assessmentId) && isOpenPortalAssessment());
+      allow read: if isDocOrgMember() || (isPortalSessionFor(assessmentId) && isPortalReadableAssessment());
       allow create: if isCreatingForOwnOrg();
       allow update: if (isDocOrgMember() && orgPreservesSentSnapshot() && orgPreservesFinalDecision()) ||
         (isPortalSessionFor(assessmentId) && isOpenPortalAssessment() && onlyPortalAssessmentFieldsChanged());

@@ -28,6 +28,16 @@ describe('local assessment store + vendor correlation', () => {
       category: 'SaaS',
       criticality: 'High',
     });
+    const branded = createLocalAssessment(orgId, {
+      vendorId: vendor.id,
+      vendorName: vendor.name,
+      frameworks: ['soc2'],
+      requesterOrgName: 'Acme Buyer',
+      requesterLogoUrl: 'https://cdn.example.com/logo.png',
+    });
+    expect(branded.requesterOrgName).toBe('Acme Buyer');
+    expect(branded.requesterLogoUrl).toBe('https://cdn.example.com/logo.png');
+
     const asm = createLocalAssessment(orgId, {
       vendorId: vendor.id,
       vendorName: vendor.name,
@@ -35,8 +45,8 @@ describe('local assessment store + vendor correlation', () => {
       frameworkName: 'SOC 2',
     });
     expect(asm.vendorId).toBe(vendor.id);
-    expect(listLocalAssessments(orgId)).toHaveLength(1);
-    expect(listLocalAssessmentsForVendor(orgId, vendor.id)).toHaveLength(1);
+    expect(listLocalAssessments(orgId)).toHaveLength(2);
+    expect(listLocalAssessmentsForVendor(orgId, vendor.id)).toHaveLength(2);
   });
 
   it('marks vendor assessment status when assessment is sent', () => {

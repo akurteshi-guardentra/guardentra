@@ -6,18 +6,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { useAuth } from '../lib/AuthContext';
 import { authHeaders } from '../lib/authHeaders';
 import { SUPPORT_MAILTO } from '../lib/brand';
+import { PLANS } from '../lib/plans';
 
-// Tier sketch per docs/ARCHITECTURE_FOUNDATION.md §4 — Vendor TPRM spine framing,
-// not a generic GRC suite. List prices are Guardentra starter proposals.
+// Caps/labels from src/lib/plans.ts (ARCHITECTURE_FOUNDATION.md §4).
 const plans = [
   {
-    id: 'starter',
-    name: 'Starter',
-    description: 'The vendor TPRM spine for teams getting off spreadsheets.',
-    price: { monthly: 149, annually: 1490 },
+    id: 'starter' as const,
+    name: PLANS.starter.name,
+    description: PLANS.starter.description,
+    price: { monthly: 149, annual: 1490 },
     features: [
-      'Up to 25 vendors',
-      '3 seats',
+      `Up to ${PLANS.starter.vendorCap} vendors`,
+      `${PLANS.starter.seatCap} seats`,
       'Vendor questionnaire portal + evidence',
       'Audit Lab (1 framework pack)',
       'Markdown TPRM register export',
@@ -28,14 +28,14 @@ const plans = [
     },
   },
   {
-    id: 'growth',
-    name: 'Growth',
-    description: 'More vendors, more frameworks, more seats.',
-    price: { monthly: 399, annually: 3990 },
+    id: 'growth' as const,
+    name: PLANS.growth.name,
+    description: PLANS.growth.description,
+    price: { monthly: 399, annual: 3990 },
     popular: true,
     features: [
-      'Up to 150 vendors',
-      '10 seats',
+      `Up to ${PLANS.growth.vendorCap} vendors`,
+      `${PLANS.growth.seatCap} seats`,
       'Multi-framework packs + bulk CSV',
       'Priority email support',
       'AI review assists (soft usage cap)',
@@ -46,10 +46,10 @@ const plans = [
     },
   },
   {
-    id: 'gov',
-    name: 'Gov',
-    description: 'Higher volume, SSO/SAML, dedicated staging, BAA/DPA process.',
-    price: { monthly: 'Custom', annually: 'Custom' },
+    id: 'gov' as const,
+    name: PLANS.gov.name,
+    description: PLANS.gov.description,
+    price: { monthly: 'Custom' as const, annual: 'Custom' as const },
     features: [
       'Higher/unlimited vendors',
       'SSO / SAML',
@@ -167,7 +167,7 @@ export function Pricing() {
                 <div className="mb-6">
                   <span className="text-4xl font-bold text-white">
                     {typeof plan.price.monthly === 'number' ? '$' : ''}
-                    {isAnnual ? plan.price.annually : plan.price.monthly}
+                    {isAnnual ? plan.price.annual : plan.price.monthly}
                   </span>
                   {typeof plan.price.monthly === 'number' && (
                     <span className="text-slate-400 ml-2">/{isAnnual ? 'year' : 'month'}</span>
@@ -190,7 +190,7 @@ export function Pricing() {
                     (!stripeConfigured || !priceId || hasActiveSubscription);
                   return (
                     <Button
-                      className={`w-full ${plan.popular ? 'bg-primary hover:bg-primary/90 text-white' : 'bg-white/5 hover:bg-white/10 text-white border border-white/10'} ${checkoutDisabled && plan.id !== 'gov' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      className={`w-full ${plan.popular ? 'bg-primary hover:bg-primary/90 text-white' : 'bg-white/5 hover:bg-white/10 text-white border border-white/10'} ${checkoutDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                       onClick={() => handleSubscribe(priceId)}
                       disabled={
                         loadingPlan === priceId ||

@@ -100,6 +100,9 @@ export interface VendorAssessment {
   decidedAt?: string;
   decidedBy?: string;
   inviteEmail?: string;
+  /** SaaS tenant brand stamped at invite (vendor portal chrome). */
+  requesterOrgName?: string;
+  requesterLogoUrl?: string;
   /** Legacy fields from older VendorRisk UI */
   type?: string;
   summary?: string;
