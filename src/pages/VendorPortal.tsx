@@ -739,7 +739,8 @@ export function VendorPortal() {
                 </Button>
               </div>
               <p className="mt-3 text-xs text-slate-500">
-                Save and return anytime · Upload supporting evidence · Invite a colleague (soon)
+                Save and return anytime · Upload supporting evidence · This is FastTrack step 4
+                (vendor completion)
               </p>
             </div>
             <div className="flex flex-col items-center justify-center">

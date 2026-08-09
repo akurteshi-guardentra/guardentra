@@ -1,5 +1,6 @@
 import React from 'react';
 import { cn } from '../../lib/utils';
+import { FastTrackStageBar, type FastTrackStageId } from './FastTrackStageBar';
 
 export function PageShell({
   eyebrow,
@@ -8,6 +9,9 @@ export function PageShell({
   actions,
   children,
   className,
+  fastTrackStage,
+  fastTrackVendorId,
+  showFastTrack = false,
 }: {
   eyebrow?: string;
   title: string;
@@ -15,9 +19,16 @@ export function PageShell({
   actions?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
+  /** Explicit stage; otherwise inferred from the route when showFastTrack. */
+  fastTrackStage?: FastTrackStageId;
+  fastTrackVendorId?: string;
+  showFastTrack?: boolean;
 }) {
   return (
     <div className={cn('mx-auto max-w-6xl space-y-6 animate-in fade-in duration-500', className)}>
+      {showFastTrack || fastTrackStage ? (
+        <FastTrackStageBar current={fastTrackStage} vendorId={fastTrackVendorId} />
+      ) : null}
       <header className="flex flex-col gap-4 border-b border-white/8 pb-6 lg:flex-row lg:items-end lg:justify-between">
         <div className="max-w-3xl space-y-2">
           {eyebrow ? (

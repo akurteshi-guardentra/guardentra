@@ -4,7 +4,8 @@ import { emitAuditIntent } from '../lib/audit/emitIntent.ts';
 import { isAuditSpineEnabled } from '../lib/audit/pool.ts';
 import { verifyTenantChain } from '../lib/audit/verify.ts';
 import { exportTenantAudit } from '../lib/audit/export.ts';
-import type { AuditEmitEnvelope } from '../lib/audit/types.ts';
+import { parseAuditEmitBody } from '../lib/audit/emitValidation.ts';
+import { AUDIT_RETENTION_YEARS } from '../lib/audit/retention.ts';
 
 const router = Router();
 router.use(createRateLimiter({ windowMs: 60_000, max: 60 }));
@@ -19,12 +20,13 @@ function spineDisabled(res: import('express').Response) {
 router.post('/emit', async (req, res) => {
   if (!isAuditSpineEnabled()) return spineDisabled(res);
   try {
-    const body = (req.body || {}) as AuditEmitEnvelope;
+    const parsed = parseAuditEmitBody(req.body);
+    if (!parsed.ok) return res.status(400).json({ error: parsed.error });
     const user = (req as { user?: { uid?: string } }).user;
     const result = await emitAuditIntent({
-      ...body,
-      actorId: body.actorId || user?.uid || null,
-      actorType: body.actorType || 'user',
+      ...parsed.value,
+      actorId: parsed.value.actorId || user?.uid || null,
+      actorType: parsed.value.actorType || 'user',
     });
     return res.json(result);
   } catch (err: any) {
@@ -39,7 +41,7 @@ router.get('/verify', async (req, res) => {
   if (!tenantId) return res.status(400).json({ error: 'tenantId required' });
   try {
     const result = await verifyTenantChain(tenantId);
-    return res.json(result);
+    return res.json({ ...result, retentionYears: AUDIT_RETENTION_YEARS });
   } catch (err: any) {
     console.error('[audit] verify failed', err);
     return res.status(502).json({ error: err?.message || 'Verify failed' });

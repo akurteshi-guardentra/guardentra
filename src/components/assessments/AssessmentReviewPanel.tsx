@@ -132,7 +132,7 @@ export function AssessmentReviewPanel({
               {reviewAssessment.vendorName}
             </h2>
             <p className="font-mono text-[10px] uppercase tracking-widest text-slate-500">
-              {frameworkLabel(reviewAssessment)} Review
+              {frameworkLabel(reviewAssessment)} · Exceptions-first review
             </p>
             <p className="mt-2 text-[11px] text-slate-500">
               Due {dueLabel(reviewAssessment)}

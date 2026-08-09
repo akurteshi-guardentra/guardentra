@@ -15,6 +15,7 @@
     "verify:live": "node scripts/verify-live-deploy.mjs",
     "firebase:reauth": "node scripts/firebase-reauth.mjs",
     "migrate:audit": "node scripts/migrate-audit.mjs",
+    "verify:audit-spine": "node scripts/verify-audit-spine.mjs",
     "test:e2e-gate": "node scripts/e2e-fasttrack-gate.mjs",
     "test:firestore-rules": "firebase emulators:exec --only firestore --project demo-guardentra-firestore-rules \"node src/tests/firestore.rules.test.mjs\"",
     "start": "node dist/server.cjs",

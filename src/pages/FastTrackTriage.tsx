@@ -157,9 +157,12 @@ export function FastTrackTriage() {
 
   return (
     <PageShell
-      eyebrow="FastTrack"
+      eyebrow="FastTrack · Triage"
       title="Risk triage"
-      description="Answer five relationship questions so Guardentra can recommend Lite, Standard, or Enhanced scope in about 60 seconds."
+      showFastTrack
+      fastTrackStage="triage"
+      fastTrackVendorId={vendorId || undefined}
+      description="Answer five relationship questions so Guardentra can recommend Lite, Standard, or Enhanced scope (depth caps 20 / 50 / 100)."
       className="max-w-4xl"
     >
       <div className="flex items-center gap-3">
@@ -236,6 +239,28 @@ export function FastTrackTriage() {
                 About {recommendation.questionTarget} unique questions · vendor target{' '}
                 {recommendation.vendorTimeTarget}
               </p>
+              <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                {(
+                  [
+                    { tier: 'Lite', cap: 20 },
+                    { tier: 'Standard', cap: 50 },
+                    { tier: 'Enhanced', cap: 100 },
+                  ] as const
+                ).map((row) => (
+                  <div
+                    key={row.tier}
+                    className={cn(
+                      'rounded-lg border px-3 py-2 text-center text-xs',
+                      recommendation.tier === row.tier
+                        ? 'border-primary/50 bg-primary/15 text-white'
+                        : 'border-white/10 bg-black/20 text-slate-500'
+                    )}
+                  >
+                    <p className="font-semibold">{row.tier}</p>
+                    <p className="mt-0.5 tabular-nums">≤ {row.cap} questions</p>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 

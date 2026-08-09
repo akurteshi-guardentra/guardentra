@@ -410,11 +410,14 @@ export function AssessmentWizard() {
 
   return (
     <PageShell
-      eyebrow="Assessment Builder"
+      eyebrow="FastTrack · Build & send"
       title="New assessment"
+      showFastTrack
+      fastTrackStage="wizard"
+      fastTrackVendorId={vendorId || undefined}
       description={
         <>
-          Select a vendor, choose frameworks, then preview the questionnaire before sending.
+          Pick frameworks, preview the questionnaire, then send with a due date and reminders.
           {vendorMode === 'local' ? (
             <span className="ml-2 inline-flex rounded-full border border-amber-500/30 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300">
               Local vendors
@@ -430,7 +433,7 @@ export function AssessmentWizard() {
               step < 3 ? 'bg-primary text-white' : 'bg-white/10 text-slate-300'
             )}
           >
-            1. Vendor &amp; frameworks
+            1. Scope
           </span>
           <span
             className={cn(
@@ -438,7 +441,7 @@ export function AssessmentWizard() {
               step === 3 ? 'bg-primary text-white' : 'bg-white/10 text-slate-300'
             )}
           >
-            2. Preview
+            2. Preview &amp; send
           </span>
         </div>
       }

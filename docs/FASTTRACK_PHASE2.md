@@ -78,6 +78,11 @@ Preparatory work is in-repo; dual Firebase projects are still required before li
 
 Env (when dual projects exist): `FIREBASE_PROJECT_ID_EU`, `FIREBASE_PROJECT_ID_US`, `FIREBASE_STORAGE_BUCKET_EU`, `FIREBASE_STORAGE_BUCKET_US`.
 
+## Retention & CMEK (Track B notes)
+
+- **Retention:** interim **7 years** (`server/lib/audit/retention.ts`) until legal confirms.
+- **CMEK evaluation:** prefer Cloud SQL CMEK + Secret Manager CMEK once EU staging Terraform applies Cloud SQL (`infra/modules/cloud-sql`). Document key ring + rotation cadence in the DoD evidence pack before prod spine enablement. No production CMEK toggle ships until that review.
+
 ## E2E gate checklist
 
 Automated (local):

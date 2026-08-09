@@ -4,10 +4,21 @@ import { createRateLimiter } from '../middleware/rateLimit';
 
 const router = Router();
 
-// Every route in this file is an LLM call — cap frequency per user so one account
-// can't drive unbounded Gemini spend or hammer the endpoint. 20/min is generous for
-// interactive use (Copilot chat, wizard previews) but bounds scripted abuse.
-router.use(createRateLimiter({ windowMs: 60_000, max: 20 }));
+// Cap AI spend per organization (header X-Org-Id or body.organizationId), not only per user.
+// Falls back to uid/IP when org is unknown so unauthenticated probes are still bounded.
+router.use(
+  createRateLimiter({
+    windowMs: 60_000,
+    max: 30,
+    errorMessage: 'Too many AI requests for this organization, please slow down.',
+    keyFn: (req) => {
+      const headerOrg = String(req.header('x-org-id') || '').trim();
+      const bodyOrg = String((req.body && (req.body as { organizationId?: string }).organizationId) || '').trim();
+      const org = headerOrg || bodyOrg;
+      return org ? `org:${org}` : '';
+    },
+  })
+);
 
 const isPlaceholderKey = (key?: string) => {
   if (!key) return true;

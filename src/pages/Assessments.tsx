@@ -85,6 +85,7 @@ export function Assessments() {
   const [params, setParams] = useSearchParams();
   const presetVendorId = params.get('vendorId') || '';
   const createdId = params.get('created') || '';
+  const monitorFocus = params.get('focus') === 'monitor';
 
   const { assessments, mode, loading, refreshLocal } = useOrgAssessments(orgId);
   const { vendors } = useOrgVendors(orgId);
@@ -108,7 +109,7 @@ export function Assessments() {
   const [reviewAiLoading, setReviewAiLoading] = useState(false);
   const [approving, setApproving] = useState(false);
   const [reviewFilter, setReviewFilter] = useState<'exceptions' | 'all'>('exceptions');
-  const [openConditionsOnly, setOpenConditionsOnly] = useState(false);
+  const [openConditionsOnly, setOpenConditionsOnly] = useState(monitorFocus);
   const [decisionNotes, setDecisionNotes] = useState('');
   const [decisionOutcome, setDecisionOutcome] = useState<DecisionOutcome>('approved');
   const [archiveReason, setArchiveReason] = useState('');
@@ -280,7 +281,10 @@ export function Assessments() {
 
       const response = await fetch('/api/ai/generate', {
         method: 'POST',
-        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        headers: await authHeaders(
+          { 'Content-Type': 'application/json' },
+          { organizationId: orgId }
+        ),
         body: JSON.stringify({ prompt, responseMimeType: 'application/json' }),
       });
       if (!response.ok) throw new Error('AI generation failed');
@@ -506,6 +510,7 @@ export function Assessments() {
   return (
     <AssessmentsPageHeader
       mode={mode}
+      fastTrackStage={monitorFocus || openConditionsOnly ? 'monitor' : 'review'}
       onCreate={() =>
         navigate(
           vendorFilter !== 'all'
@@ -536,15 +541,24 @@ export function Assessments() {
         <AssessmentsStatsGrid stats={statCards} />
 
         <PageBand>
-          <div className="mb-3 flex flex-wrap items-center gap-3">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <label className="inline-flex items-center gap-2 text-xs text-slate-400">
               <input
                 type="checkbox"
                 checked={openConditionsOnly}
-                onChange={(e) => setOpenConditionsOnly(e.target.checked)}
+                onChange={(e) => {
+                  setOpenConditionsOnly(e.target.checked);
+                  const next = new URLSearchParams(params);
+                  if (e.target.checked) next.set('focus', 'monitor');
+                  else next.delete('focus');
+                  setParams(next, { replace: true });
+                }}
               />
               Open conditions only (conditional / remediate)
             </label>
+            <Link to="/settings" className="text-xs text-primary hover:underline">
+              Verify audit chain (Settings)
+            </Link>
           </div>
           <AssessmentTrackerTable
             search={search}

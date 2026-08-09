@@ -7,18 +7,24 @@ export function AssessmentsPageHeader({
   mode,
   onCreate,
   children,
+  fastTrackStage = 'review',
 }: {
   mode: 'firestore' | 'local';
   onCreate: () => void;
   children?: React.ReactNode;
+  fastTrackStage?: 'review' | 'monitor';
 }) {
   return (
     <PageShell
-      eyebrow="Assessment Tracker"
-      title="Structured Assessments"
+      eyebrow={fastTrackStage === 'monitor' ? 'FastTrack · Monitor' : 'FastTrack · Review & decide'}
+      title="Assessments"
+      showFastTrack
+      fastTrackStage={fastTrackStage}
       description={
         <>
-          Run framework questionnaires, share the vendor portal, and review vendor responses in one tracker.
+          {fastTrackStage === 'monitor'
+            ? 'Track open conditions, remediation, and next-review dates after decisions.'
+            : 'Track questionnaires, review exceptions, and record decisions.'}{' '}
           {mode === 'local' ? (
             <span className="ml-2 inline-flex rounded-full border border-amber-500/30 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300">
               Local store

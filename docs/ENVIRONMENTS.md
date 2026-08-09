@@ -55,6 +55,19 @@ npm run migrate:audit
 
 Details: [`docs/FASTTRACK_PHASE2.md`](./FASTTRACK_PHASE2.md). Prod later attaches Cloud SQL and sets the same env vars as App Hosting secrets.
 
+Week 0 runbook + Terraform: [`docs/PHASE2_WEEK0_START_HERE.md`](./PHASE2_WEEK0_START_HERE.md), [`infra/`](../infra/).
+
+## Dual Firebase residency (Phase 2 Week 1 — not live yet)
+
+`organizations.dataRegion` (`eu`|`us`) and [`server/lib/regionRouter.ts`](../server/lib/regionRouter.ts) are ready. Live isolation still needs two Firebase projects, e.g.:
+
+| Region | Suggested project | Storage bucket env |
+|--------|-------------------|--------------------|
+| US | `guardentra-us` (or staging/prod aliases) | `FIREBASE_PROJECT_ID_US`, `FIREBASE_STORAGE_BUCKET_US` |
+| EU | `guardentra-eu` | `FIREBASE_PROJECT_ID_EU`, `FIREBASE_STORAGE_BUCKET_EU` |
+
+Until both projects exist, keep a single demo/staging project and treat dual routing as prep-only.
+
 ## Deploying the app (Firebase App Hosting)
 
 [`apphosting.yaml`](../apphosting.yaml) is the deploy config. App Hosting runs

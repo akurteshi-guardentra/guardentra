@@ -18,11 +18,13 @@ export function VendorsPageHeader({
 }) {
   return (
     <PageShell
-      eyebrow="Vendor Register"
+      eyebrow="FastTrack · Add vendor"
       title="Vendors"
+      showFastTrack
+      fastTrackStage="vendors"
       description={
         <>
-          Manage third parties, run impact and assessment workflows, and keep the active TPRM spine in one place.
+          Register third parties, then triage and send assessments along the FastTrack spine.
           {dataMode === 'local' ? (
             <span className="ml-2 inline-flex rounded-full border border-amber-500/30 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300">
               Local store
@@ -32,17 +34,23 @@ export function VendorsPageHeader({
       }
       actions={
         <>
-          <Button variant="outline" className="border-white/10 text-slate-300 hover:bg-white/5" onClick={onOpenBulk}>
-            <Upload className="mr-2 h-4 w-4" />
-            Bulk upload
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-white/10 text-slate-400 hover:bg-white/5"
+            onClick={onOpenBulk}
+          >
+            <Upload className="mr-2 h-3.5 w-3.5" />
+            Bulk
           </Button>
           {onOpenInvite ? (
             <Button
               variant="outline"
-              className="border-white/10 text-slate-300 hover:bg-white/5"
+              size="sm"
+              className="border-white/10 text-slate-400 hover:bg-white/5"
               onClick={onOpenInvite}
             >
-              <Mail className="mr-2 h-4 w-4" />
+              <Mail className="mr-2 h-3.5 w-3.5" />
               Invite
             </Button>
           ) : null}
