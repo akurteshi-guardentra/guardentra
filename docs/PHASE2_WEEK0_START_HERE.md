@@ -1,60 +1,57 @@
 # Phase 2 — Week 0 start here (runbook)
 
-Copied into the repo from the Drive starter-kit. Execute in a human terminal with
-`gcloud` / `gsutil` access — agents cannot complete WIF OAuth for you.
-
 ## Ratified decisions (Track B defaults)
 
 - **Cloud:** Stay on GCP; Cloud SQL for Postgres; AlloyDB later if lag/failover needs it.
 - **First infra target:** EU staging (`infra/envs/eu-staging`).
+- **Current GCP project (demo until staging exists):** `guardentra-7f582` / number `967769575761`.
 - **Audit retention (interim):** **7 years** until Phase 1 legal confirms otherwise.
   Constant: `AUDIT_RETENTION_YEARS` in `server/lib/audit/retention.ts`.
 
-## Steps
+## Automated script
 
-1. Confirm the cloud decision with Chief + Product Owner (above).
-2. Confirm or override retention years in `server/lib/audit/retention.ts`.
-3. Workload Identity Federation (replace `PROJECT_ID` / `PROJECT_NUMBER`):
-
-```bash
-gcloud iam workload-identity-pools create "github-pool" \
-  --project="PROJECT_ID" --location="global" \
-  --display-name="GitHub Actions pool"
-
-gcloud iam workload-identity-pools providers create-oidc "github-provider" \
-  --project="PROJECT_ID" --location="global" \
-  --workload-identity-pool="github-pool" \
-  --display-name="GitHub OIDC provider" \
-  --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
-  --issuer-uri="https://token.actions.githubusercontent.com"
-
-gcloud iam service-accounts create "github-actions-ci" --project="PROJECT_ID"
-
-gcloud iam service-accounts add-iam-policy-binding \
-  "github-actions-ci@PROJECT_ID.iam.gserviceaccount.com" \
-  --project="PROJECT_ID" \
-  --role="roles/iam.workloadIdentityUser" \
-  --member="principalSet://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github-pool/attribute.repository/akurteshi-guardentra/guardentra"
+```powershell
+# After: gcloud auth login
+powershell -File scripts/phase2-week0-wif.ps1
 ```
 
-4. Terraform state bucket:
+Creates (idempotent re-run): WIF pool `github-pool`, OIDC provider `github-provider`
+(with `attribute-condition` on this repo), SA `github-actions-ci`, bucket
+`gs://guardentra-tfstate-eu-staging`, and GitHub Actions vars when `gh` is logged in.
 
-```bash
-gsutil mb -p PROJECT_ID -l EU gs://guardentra-tfstate-eu-staging
-gsutil versioning set on gs://guardentra-tfstate-eu-staging
+## Status (2026-08-10)
+
+| Resource | Status |
+|----------|--------|
+| WIF pool + OIDC provider | **ACTIVE** (re-verified) |
+| SA `github-actions-ci` + WIF IAM binding | Created |
+| TF state bucket `gs://guardentra-tfstate-eu-staging` | Created |
+| GitHub Actions `GCP_PROJECT_ID` / `GCP_PROJECT_NUMBER` | **Set** (`guardentra-7f582` / `967769575761`) |
+| Local audit spine Path A | Green — see `docs/PHASE2_OPS_STATUS.md` |
+
+## Remaining human steps (Path B / Dual Firebase)
+
+Week 0 WIF + GitHub vars are done. Next:
+
+1. Cloud SQL Path B — enable APIs + VPC + apply (see [`PHASE2_CLOUDSQL_STAGING.md`](./PHASE2_CLOUDSQL_STAGING.md)).
+2. Dual Firebase — org Owner must create `guardentra-eu` / `guardentra-us` (see [`PHASE2_DUAL_FIREBASE.md`](./PHASE2_DUAL_FIREBASE.md)).
+
+Auth refresh if sessions expire (no Cloud Shell):
+
+```powershell
+powershell -File scripts/phase2-auth-gcloud.ps1   # URL + paste code (phone OK)
+powershell -File scripts/phase2-auth-gh.ps1       # device code + sets Actions vars
 ```
 
-5. Set GitHub Actions vars `GCP_PROJECT_ID` and `GCP_PROJECT_NUMBER`, then open a PR
-   touching `infra/` so `.github/workflows/infra-ci.yml` can plan.
+See [`docs/PHASE2_AUTH_NO_BROWSER.md`](./PHASE2_AUTH_NO_BROWSER.md).
 
-6. Local audit DB (no cloud required) — prefer existing migrations:
+Or set vars manually after `gh auth login --web`:
 
 ```bash
-docker compose -f docker-compose.audit.yml up -d
-npm run migrate:audit
-# .env.local:
-# AUDIT_SPINE_ENABLED=true
-# AUDIT_DATABASE_URL=postgres://audit_app:audit_app@localhost:5433/guardentra_audit
+gh variable set GCP_PROJECT_ID --body guardentra-7f582 --repo akurteshi-guardentra/guardentra
+gh variable set GCP_PROJECT_NUMBER --body 967769575761 --repo akurteshi-guardentra/guardentra
 ```
 
-See also `docs/PHASE2_ISSUE_BACKLOG.md`, `docs/FASTTRACK_PHASE2.md`, `infra/README.md`.
+Local audit DB — `powershell -File scripts/phase2-local-spine.ps1` (requires Docker Desktop; script prepends Docker bin on Windows).
+
+See also `docs/PHASE2_ISSUE_BACKLOG.md`, `docs/PHASE2_CLOUDSQL_STAGING.md`, `docs/PHASE2_DUAL_FIREBASE.md`, `docs/FASTTRACK_PHASE2.md`, `infra/README.md`.

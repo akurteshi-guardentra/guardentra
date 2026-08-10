@@ -1,8 +1,6 @@
-# Phase 2 starter — Cloud SQL module. NOT wired up yet in envs/eu-staging —
-# add this to the environment root module in Week 2 (plan §13), after the
-# Secret Manager PR (Week 0 step 5) has proven the pipeline. Reference/starting
-# point only — review instance sizing and flags before applying to anything
-# real.
+# Phase 2 starter — Cloud SQL module.
+# Optionally wired from infra/envs/eu-staging (enable_cloud_sql = true + vpc_network_id).
+# Keep default false until Week 0 WIF + private VPC exist. Review tier/flags before apply.
 
 variable "project_id" {
   type = string
