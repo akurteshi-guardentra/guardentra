@@ -27,7 +27,9 @@ resource "google_sql_database_instance" "audit" {
   database_version = "POSTGRES_16"
 
   settings {
-    tier = "db-custom-2-8192" # review against real load before Week 5 sign-off
+    tier              = "db-custom-2-8192" # review against real load before Week 5 sign-off
+    edition           = "ENTERPRISE"
+    availability_type = "REGIONAL" # zonal HA within the region
 
     ip_configuration {
       ipv4_enabled    = false # no public IP, ever
@@ -39,8 +41,6 @@ resource "google_sql_database_instance" "audit" {
       point_in_time_recovery_enabled = true
       transaction_log_retention_days = 7
     }
-
-    availability_type = "REGIONAL" # zonal HA within the region
   }
 
   deletion_protection = true
