@@ -2,7 +2,7 @@
 
 After local Docker spine is green (`scripts/phase2-local-spine.ps1` + `npm run phase2:live-prove`):
 
-## Blocked as of 2026-08-10 (verified)
+## Status as of 2026-08-10 (Path B applied)
 
 | Prerequisite | Status |
 |--------------|--------|
@@ -81,9 +81,10 @@ Then: `npm run migrate:audit` → `npm run phase2:live-prove` (or `verify:audit-
 
 | Piece | Status |
 |-------|--------|
-| `infra/modules/cloud-sql` | Present |
-| `infra/modules/vpc` | Present (stub; default off) |
-| `enable_vpc` / `enable_cloud_sql` in eu-staging | Present (default `false`) |
-| Secret names for audit | Present |
-| Live apply | Blocked on API enable + human plan/apply |
+| `infra/modules/cloud-sql` | Present (`edition = ENTERPRISE`) |
+| `infra/modules/vpc` | Present + applied |
+| `enable_vpc` / `enable_cloud_sql` in eu-staging | Applied true in local tfvars |
+| Secret Manager secret **shells** + IAM | Applied |
+| Secret **versions** + App Hosting wire-up | Remaining human step |
+| Live migrate against private IP | Needs Auth Proxy / private path |
 
