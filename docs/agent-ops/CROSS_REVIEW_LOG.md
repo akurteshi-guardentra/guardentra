@@ -15,7 +15,7 @@ This log records material disagreements, evidence checks, corrections, and unres
 ### 2026-08-10 — Master-plan reconciliation
 
 - Claude verified multiple repository claims from the full-product runbook and identified stale versus current findings.
-- Master Delivery Plan Version 2 accepted stronger requirements traceability, KMS-signed checkpoints, disaster recovery, Agency Agents basics, work-type tool assignment, and hard release gates.
+- Master Delivery Plan Version 2 proposed stronger requirements traceability, KMS-signed checkpoints, disaster recovery, Agency Agents basics, work-type tool assignment, and hard release gates. This is historical planning context, not an operative requirement of these agent rules. KMS-signed checkpoints must not be implemented or described as available until an approved ADR, assigned owner, implementation issue, and live-state verification exist.
 - P0 post-submission immutability remained a verified blocker at the then-inspected repository state; evidence-before-scan remained unverified.
 
 ### 2026-08-10 to 2026-08-12 — Workspace/delivery correction

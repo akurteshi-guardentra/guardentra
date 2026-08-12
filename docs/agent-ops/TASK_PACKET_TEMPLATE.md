@@ -12,6 +12,8 @@
 - Independent reviewer:
 - Human approver(s):
 
+For security-sensitive work, identify each approver by GitHub username or approved team before implementation begins. If no qualified approver is assigned, mark the task `NOT READY`. `CODEOWNERS` routing does not replace this field or recorded approval in the PR.
+
 ## Scope and authority
 
 - User-visible outcome:

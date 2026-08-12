@@ -30,6 +30,10 @@ Before editing, the assigned writer must:
 7. State intended files/services, tests, evidence, documentation impact, rollback, and unresolved decisions.
 8. Stop if the task is ambiguous, lacks acceptance criteria, requests secrets, conflicts with an approved control, or requires authority not granted by the issue.
 
+### Lightweight documentation path
+
+A documentation-only correction may use a lightweight task packet when it changes no product behavior, requirement, architecture, security/privacy rule, operational procedure, source-of-truth claim, code, infrastructure, CI, migration, or deployment path. The PR description must still identify scope, exact changed files, validation results, reviewer, and all seven completion-evidence fields. If classification is uncertain, use the full procedure.
+
 ## 3. Execution rules
 
 - One primary writing tool owns a branch at a time.
@@ -42,6 +46,7 @@ Before editing, the assigned writer must:
 - Never claim a file or artifact exists without giving its exact location and confirming who can access it. Distinguish an isolated workspace, the user's checkout, GitHub, Library/Drive, and a deployed environment.
 - Database, rules, IAM, encryption, retention, audit, and deployment changes require impact notes, negative tests, and independent review.
 - Security-sensitive work requires a named human approval before merge; AI review is supplementary.
+- Before security-sensitive implementation begins, the task packet must identify each required human approver by GitHub username or approved team. If no qualified approver is assigned, the task is `NOT READY`. `CODEOWNERS` may automate routing later, but it does not replace explicit assignment or recorded approval.
 - Do not merge, deploy, rotate secrets, modify production data, or weaken controls without explicit human authorization.
 - After three failed correction cycles, stop and hand off logs, diffs, hypotheses, and the safest next action.
 
