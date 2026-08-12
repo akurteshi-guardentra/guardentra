@@ -51,3 +51,7 @@ GoogleService-Info.plist
 *.tfvars
 !*.tfvars.example
 .terraform.lock.hcl
+
+# Local ops secrets (never commit)
+.local-secrets/
+

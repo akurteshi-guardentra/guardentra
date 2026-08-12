@@ -3,13 +3,16 @@
 # Usage: powershell -File scripts/phase2-dual-firebase.ps1
 
 Write-Host @"
-Dual Firebase (EU/US) - after spine proof
+Dual Firebase (EU/US) - GATED (re-verified 2026-08-11)
+
+Visible GCP project today: guardentra-7f582 only.
+.firebaserc aliases eu/us/dev/staging/prod are placeholders until Org Owner creates them.
 
 1. Org Owner must create projects (CLI create blocked for admin@guardentra.com):
    - guardentra-eu
    - guardentra-us
-   testIamPermissions omits resourcemanager.projects.create on organizations/280975227603
-   even with organizationAdmin — use console or grant Project Creator.
+   Even with organizationAdmin + billing.admin, project create is denied / projects missing.
+   Use console or grant Project Creator; do NOT retry firebase projects:create until then.
    Aliases already in .firebaserc: eu / us.
 
 2. Enable Auth (Email + Anonymous), Firestore, Storage on both.
