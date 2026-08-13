@@ -390,7 +390,7 @@ service cloud.firestore {
       allow read: if isDocOrgMember() || (isPortalSessionFor(assessmentId) && isPortalReadableAssessment());
       allow create: if isCreatingForOwnOrg();
       allow update: if (isDocOrgMember() && orgPreservesSentSnapshot() && orgPreservesFinalDecision()) ||
-        (portalSubmitTransition() && portalSubmitFieldsChanged()) ||
+        (isPortalSessionFor(assessmentId) && portalSubmitTransition() && portalSubmitFieldsChanged()) ||
         (portalMayWriteAssessment(assessmentId) && onlyPortalAssessmentFieldsChanged());
       allow delete: if isDocOrgMember() && isAdmin();
     }

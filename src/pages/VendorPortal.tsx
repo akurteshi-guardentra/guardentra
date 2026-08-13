@@ -81,9 +81,11 @@ function isReceiptMode(data: {
   decisionOutcome?: string;
   completedAt?: string;
   portalOpen?: boolean;
+  correctionReopenedAt?: string;
 }): boolean {
-  // Remediation reopen: org re-opens the portal; vendor should edit again.
+  // Org reopen paths: vendor edits again instead of receipt-only.
   if (data.decisionOutcome === 'remediate' && data.portalOpen === true) return false;
+  if (data.correctionReopenedAt && data.portalOpen === true) return false;
   if (data.status === 'Completed' || data.status === 'Under Review') return true;
   if (data.completedAt) return true;
   return false;
