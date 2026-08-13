@@ -7,11 +7,11 @@ GitHub Issues are the operational dispatch board. Labels classify work; they do 
 - Apply one phase label when the delivery phase is known.
 - Apply every affected area label.
 - Apply exactly one highest applicable risk label.
-- Apply exactly one primary writer label after the human owner assigns the writer.
-- Apply the required review labels independently of the writer.
+- Apply exactly one primary writer label after the owner assigns the writer.
+- Apply one independent AI review label; the reviewer must be different from the writer.
 - Tool labels are per-issue assignments, not permanent ownership or authority.
 - Status labels reflect readiness, not implementation completeness.
-- The issue body and task packet remain authoritative for scope, acceptance criteria, branch ownership, and named human approvals.
+- The issue body and task packet remain authoritative for scope, acceptance criteria, branch ownership, and owner-controlled merge/deployment decisions.
 - If classification is uncertain, use `status:not-ready` and resolve the ambiguity before implementation.
 
 ## Phase
@@ -48,7 +48,7 @@ GitHub Issues are the operational dispatch board. Labels classify work; they do 
 | Label | Meaning |
 |---|---|
 | `risk:critical` | Tenant isolation, audit integrity, IAM, keys, production data, or release-hard-gate impact |
-| `risk:high` | Security/privacy/data integrity impact requiring named human approval |
+| `risk:high` | Security/privacy/data-integrity impact requiring strong tests and owner-controlled merge |
 | `risk:medium` | Product behavior or operational change with bounded impact |
 | `risk:low` | Trivial documentation or repository metadata with no behavior/control change |
 
@@ -56,46 +56,46 @@ GitHub Issues are the operational dispatch board. Labels classify work; they do 
 
 | Label | Meaning |
 |---|---|
-| `tool:codex` | Codex is the assigned single writer for this issue |
-| `tool:claude-code` | Claude Code is the assigned single writer |
-| `tool:cursor` | Cursor is the assigned single writer |
-| `tool:antigravity` | Antigravity is the assigned single writer or investigator |
-| `tool:cloud-code` | Google Cloud Code supports the assigned GCP operational task |
+| `writer:codex` | Codex is the assigned single writer for this issue |
+| `writer:claude-code` | Claude Code is the assigned single writer |
+| `writer:cursor` | Cursor is the assigned single writer |
+| `writer:antigravity` | Antigravity is the assigned single writer or investigator |
+| `writer:cloud-code` | Google Cloud Code supports the assigned GCP operational task |
 
 Only one primary writing tool owns a branch at a time. Changing this label requires updating the task packet and recording the handoff.
 
-## Review
+## Independent AI review
 
 | Label | Meaning |
 |---|---|
-| `review:codex` | Codex performs independent review |
-| `review:claude-code` | Claude Code performs independent review |
-| `review:copilot` | GitHub Copilot supplies supplementary automated review |
-| `review:devops-security` | Named human DevOps/security review is required |
-| `review:human-security` | Named human security approval is required |
+| `reviewer:codex` | Codex independently reviews another tool's committed diff |
+| `reviewer:claude-code` | Claude Code independently reviews another tool's committed diff |
+| `reviewer:copilot` | GitHub Copilot provides automated PR review |
+| `reviewer:cursor` | Cursor reviews implementation or test behavior it did not author |
+| `reviewer:antigravity` | Antigravity performs independent UI/browser/accessibility review |
 
-AI review does not replace required human approval.
+The repository currently requires no additional human-reviewer label or approval count. The owner, `@akurteshi-guardentra`, controls merge and deployment decisions. For security-sensitive work, the owner must inspect the PR evidence and explicitly authorize merge; this is an owner gate, not a separate reviewer assignment.
 
 ## Type and readiness
 
 | Label | Meaning |
 |---|---|
 | `type:investigation` | Read-only investigation; implementation needs a separate issue if confirmed |
-| `status:not-ready` | Requirements, authority, acceptance criteria, dependencies, or approvers are missing |
-| `status:ready` | Task packet, writer, reviewer, approvals, and acceptance evidence are defined |
+| `status:not-ready` | Requirements, authority, acceptance criteria, dependencies, or owner decision are missing |
+| `status:ready` | Task packet, writer, independent AI reviewer, and acceptance evidence are defined |
 | `status:blocked` | Work started or was ready but an external dependency prevents progress |
 
 ## Initial backlog mapping
 
-| Issue | Phase | Areas | Risk | Writer | Review |
+| Issue | Phase | Areas | Risk | Writer | Independent AI review |
 |---|---|---|---|---|---|
-| #10 P0-1 | `phase:P0` | backend, Firebase, security | high | Cursor | Codex or Claude Code + human security |
+| #10 P0-1 | `phase:P0` | backend, Firebase, security | high | Cursor | Codex or Claude Code |
 | #11 P0-2 | `phase:P0` | frontend, backend, evidence | investigation | Antigravity | Codex |
-| #12 F1 | `phase:sprint-10` | infrastructure, backend, security | critical | Codex | Claude Code + DevOps/security |
-| #13 F2 | `phase:sprint-11` | backend, database, audit | critical | Claude Code | Codex + human security/database |
-| #14 F3 | `phase:sprint-12` | backend, database, audit, security | critical | Claude Code | Codex + human security |
-| #15 F4 | `phase:sprint-14` | backend, observability, security | critical | Codex | Claude Code + DevOps/security |
-| #16 F5 | determined by task packet | backend, database, compliance, security | high | Codex | Claude Code + human security/privacy |
-| #17 F6 | `phase:sprint-13` | backend, AI, audit, security | high | Claude Code | Codex + human security/privacy |
+| #12 F1 | `phase:sprint-10` | infrastructure, backend, security | critical | Codex | Claude Code |
+| #13 F2 | `phase:sprint-11` | backend, database, audit | critical | Claude Code | Codex |
+| #14 F3 | `phase:sprint-12` | backend, database, audit, security | critical | Claude Code | Codex |
+| #15 F4 | `phase:sprint-14` | backend, observability, security | critical | Codex | Claude Code |
+| #16 F5 | determined by task packet | backend, database, compliance, security | high | Codex | Claude Code |
+| #17 F6 | `phase:sprint-13` | backend, AI, audit, security | high | Claude Code | Codex |
 
 Repository administrators create these labels in GitHub and apply them to the mapped issues. Until then, the issue body's classification fields remain the durable assignment record.
