@@ -1,0 +1,62 @@
+name: infra-ci
+
+on:
+  pull_request:
+    paths:
+      - 'infra/**'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/**'
+
+permissions:
+  id-token: write   # required for Workload Identity Federation — no static key
+  contents: read
+  pull-requests: write  # to post the plan as a PR comment
+
+jobs:
+  plan:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          # Replace PROJECT_NUMBER / PROJECT_ID after Week 0 WIF setup (docs/PHASE2_WEEK0_START_HERE.md).
+          workload_identity_provider: projects/${{ vars.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-actions-ci@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform plan (eu-staging)
+        working-directory: infra/envs/eu-staging
+        run: |
+          terraform init
+          terraform plan -no-color -out=tfplan
+        # TODO: post plan output as a PR comment before merging this workflow for real use
+
+  apply:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: infra-production  # GitHub Environments manual-approval gate — configure this in repo settings
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/${{ vars.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-actions-ci@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform apply (eu-staging)
+        working-directory: infra/envs/eu-staging
+        run: |
+          terraform init
+          terraform apply -auto-approve
+        # "environment: infra-production" above is what makes this wait for a
+        # human approval click in GitHub before running — do not remove that
+        # gate to make CI "faster."

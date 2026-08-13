@@ -1,4 +1,4 @@
-// NexusGRC Main Server - Deployment Revision 2026-04-29-1952-v3
+// Guardentra Main Server - Deployment Revision 2026-04-29-1952-v3
 // MUST stay first: route modules read process.env at import time, and ESM evaluates
 // imports before any statement below them. See server/loadEnv.ts.
 import "./server/loadEnv.ts";
@@ -11,7 +11,11 @@ import aiRoutes from "./server/routes/ai.ts";
 import stripeRoutes from "./server/routes/stripe.ts";
 import notifyRoutes from "./server/routes/notify.ts";
 import portalRoutes from "./server/routes/portal.ts";
+import auditRoutes from "./server/routes/audit.ts";
 import { requireFirebaseAuth } from "./server/middleware/requireFirebaseAuth.ts";
+import { startAuditWorker } from "./server/lib/audit/worker.ts";
+import { closeAuditPool } from "./server/lib/audit/pool.ts";
+import { startAssessmentReminderWorker } from "./server/lib/reminders/worker.ts";
 
 /** Cloud Run / Firebase App Hosting: always prefer process.env.PORT, fallback 8080. */
 export function resolvePort(): number {
@@ -36,11 +40,12 @@ export async function createApp() {
 
   // API routes FIRST
   app.get("/api/health", (_req, res) => {
-    res.json({ status: "ok", message: "NexusGRC API is online." });
+    res.json({ status: "ok", message: "Guardentra API is online." });
   });
 
   app.use("/api/ai", requireFirebaseAuth, aiRoutes);
   app.use("/api/notify", requireFirebaseAuth, notifyRoutes);
+  app.use("/api/audit", requireFirebaseAuth, auditRoutes);
   app.use("/api/stripe", stripeRoutes);
   // Intentionally NOT behind requireFirebaseAuth — this endpoint is what mints the
   // vendor portal's session, so requiring one would be circular. It rate-limits and
@@ -57,13 +62,32 @@ export async function createApp() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("/", (_req, res) => {
+    // Vite hashed assets under /assets — cache forever; index.html stays no-cache below.
+    app.use(
+      "/assets",
+      express.static(path.join(distPath, "assets"), {
+        maxAge: "1y",
+        immutable: true,
+        setHeaders(res) {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        },
+      })
+    );
+    app.use(
+      express.static(distPath, {
+        setHeaders(res, filePath) {
+          if (filePath.endsWith("index.html")) {
+            res.setHeader("Cache-Control", "no-cache");
+          }
+        },
+      })
+    );
+    const sendIndex = (_req: express.Request, res: express.Response) => {
+      res.setHeader("Cache-Control", "no-cache");
       res.sendFile(path.join(distPath, "index.html"));
-    });
-    app.get("*all", (_req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
+    };
+    app.get("/", sendIndex);
+    app.get("*all", sendIndex);
   }
 
   return app;
@@ -80,9 +104,16 @@ export async function startServer(): Promise<Server> {
   return await new Promise<Server>((resolve, reject) => {
     const server = app.listen(PORT, "0.0.0.0", () => {
       console.log(`Server running on http://0.0.0.0:${PORT}`);
+      startAuditWorker();
+      startAssessmentReminderWorker();
       resolve(server);
     });
     server.on("error", reject);
+    const shutdown = () => {
+      void closeAuditPool();
+    };
+    process.once("SIGTERM", shutdown);
+    process.once("SIGINT", shutdown);
   });
 }
 

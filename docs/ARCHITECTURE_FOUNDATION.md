@@ -110,7 +110,8 @@ Spine-aligned surfaces today: Assessment Wizard + Vendor Portal (answers + evide
 
 - **Rules as code (product sense):** map framework IDs → question bank / control IDs; store responses on `assessments` / `assessment_responses`; store evidence with org + assessment linkage; Audit Lab writes `audit_readiness` snapshots (framework, coveragePercent, gaps).
 - **Evidence chain:** Portal / Impact uploads → Storage + metadata; reviewer notes / remediations collections already sketched in rules — use when closing gaps, not for vanity UI.
-- **Audit trail:** prefer append-only events (who answered, when evidence uploaded, when readiness scan ran). Can start as fields + timestamps on spine docs; formal `audit_events` collection later.
+- **Audit trail:** Phase 2 append-only spine lives in **PostgreSQL** (`audit_events` + `audit_hash_chain` + outbox), not Firestore. Product state stays in Firestore; material transitions emit via `POST /api/audit/emit` when `AUDIT_SPINE_ENABLED=true`. See [`docs/FASTTRACK_PHASE2.md`](./FASTTRACK_PHASE2.md). Until Cloud SQL is attached, the spine stays off and product flows continue without hashing.
+- **Data region (P2B prep):** `organizations.dataRegion` is `eu`|`us`, set at org create (default `us`), immutable in rules. Server bindings resolve from trusted org records only ([`server/lib/regionRouter.ts`](../server/lib/regionRouter.ts)); dual Firebase projects still required before live isolation.
 - **Do not** unfreeze Policies UI unless Plan phase says so; if policy text is needed for Audit Lab context, read existing `policies` collection optionally without shipping Draftsman.
 
 ### Test

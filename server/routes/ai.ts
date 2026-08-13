@@ -4,10 +4,21 @@ import { createRateLimiter } from '../middleware/rateLimit';
 
 const router = Router();
 
-// Every route in this file is an LLM call — cap frequency per user so one account
-// can't drive unbounded Gemini spend or hammer the endpoint. 20/min is generous for
-// interactive use (Copilot chat, wizard previews) but bounds scripted abuse.
-router.use(createRateLimiter({ windowMs: 60_000, max: 20 }));
+// Cap AI spend per organization (header X-Org-Id or body.organizationId), not only per user.
+// Falls back to uid/IP when org is unknown so unauthenticated probes are still bounded.
+router.use(
+  createRateLimiter({
+    windowMs: 60_000,
+    max: 30,
+    errorMessage: 'Too many AI requests for this organization, please slow down.',
+    keyFn: (req) => {
+      const headerOrg = String(req.header('x-org-id') || '').trim();
+      const bodyOrg = String((req.body && (req.body as { organizationId?: string }).organizationId) || '').trim();
+      const org = headerOrg || bodyOrg;
+      return org ? `org:${org}` : '';
+    },
+  })
+);
 
 const isPlaceholderKey = (key?: string) => {
   if (!key) return true;
@@ -183,6 +194,8 @@ router.post('/analyze', async (req, res) => {
 const MAX_PROMPT_LENGTH = 20_000; // generous for any legitimate wizard/copilot prompt
 
 const DEFAULT_MODEL = 'gemini-3.5-flash';
+/** Prefer 3.5; if the API rejects it, try the newer flash id once. */
+const FALLBACK_MODELS = ['gemini-3.6-flash', 'gemini-2.5-flash'] as const;
 
 /**
  * Models this server will actually forward. Everything else falls back to the default.
@@ -199,7 +212,7 @@ const DEFAULT_MODEL = 'gemini-3.5-flash';
  *
  * Adding a model here is a one-line change once it's been verified against the key.
  */
-const ALLOWED_MODELS = new Set([DEFAULT_MODEL]);
+const ALLOWED_MODELS = new Set<string>([DEFAULT_MODEL, ...FALLBACK_MODELS]);
 
 function resolveModel(requested: unknown): string {
   if (typeof requested !== 'string' || !requested.trim()) return DEFAULT_MODEL;
@@ -207,6 +220,37 @@ function resolveModel(requested: unknown): string {
   if (ALLOWED_MODELS.has(name)) return name;
   console.warn(`[ai] Ignoring unsupported model "${name}", using ${DEFAULT_MODEL}`);
   return DEFAULT_MODEL;
+}
+
+function isModelUnavailableError(err: unknown): boolean {
+  const status = (err as { status?: number })?.status;
+  if (status === 404) return true;
+  const msg = String((err as { message?: string })?.message || err || '').toLowerCase();
+  return msg.includes('not found') || msg.includes('is not found') || msg.includes('unsupported model');
+}
+
+async function generateWithModelFallback(args: {
+  prompt: string;
+  config?: Record<string, unknown>;
+  preferred?: string;
+}) {
+  const primary = resolveModel(args.preferred);
+  const chain = [primary, ...FALLBACK_MODELS.filter((m) => m !== primary)];
+  let lastErr: unknown;
+  for (const model of chain) {
+    try {
+      return await ai!.models.generateContent({
+        model,
+        contents: args.prompt,
+        config: args.config && Object.keys(args.config).length ? args.config : undefined,
+      });
+    } catch (err) {
+      lastErr = err;
+      if (!isModelUnavailableError(err)) throw err;
+      console.warn(`[ai] Model ${model} unavailable, trying next fallback`);
+    }
+  }
+  throw lastErr;
 }
 
 router.post('/generate', async (req, res) => {
@@ -224,10 +268,10 @@ router.post('/generate', async (req, res) => {
     const config: Record<string, unknown> = {};
     if (responseMimeType) config.responseMimeType = responseMimeType;
     if (responseSchema) config.responseSchema = responseSchema;
-    const result = await ai!.models.generateContent({
-      model: resolveModel(model),
-      contents: prompt,
-      config: Object.keys(config).length ? config : undefined,
+    const result = await generateWithModelFallback({
+      prompt,
+      config,
+      preferred: model,
     });
     return res.json({ text: result.text || '' });
   } catch (err) {
@@ -334,11 +378,13 @@ Never invent controlKey values that are not in the added list.`;
       },
     });
     const parsed = JSON.parse(result.text || '{}');
+    const aiMappings = Array.isArray(parsed.mappings) ? parsed.mappings : null;
+    const useAi = Boolean(aiMappings && aiMappings.length > 0);
     return res.json({
       fromPackId,
       toPackId,
-      mappings: Array.isArray(parsed.mappings) ? parsed.mappings : heuristicMappings,
-      source: 'ai',
+      mappings: useAi ? aiMappings : heuristicMappings,
+      source: useAi ? 'ai' : 'heuristic',
     });
   } catch (err) {
     console.warn('framework-map Error (heuristic fallback):', err);
@@ -1132,6 +1178,60 @@ router.post('/analyze-emails', async (req, res) => {
   } catch (err) {
     console.warn("Gmail Audit API Error (falling back to mock):", err);
     return res.json(mockResponse);
+  }
+});
+
+/**
+ * Evidence-assisted answer proposals for Vendor Portal.
+ * Returns suggested Yes/No/Partially/N/A with a citation; vendor must Accept/Edit/Reject.
+ */
+router.post('/propose-answers', async (req, res) => {
+  const { questions, evidenceFileNames, vendorName } = req.body || {};
+  const qList = Array.isArray(questions) ? questions.slice(0, 40) : [];
+  const files = Array.isArray(evidenceFileNames)
+    ? evidenceFileNames.map((f: unknown) => String(f)).slice(0, 20)
+    : [];
+  const citation =
+    files[0] || 'Uploaded evidence (vendor to confirm page/section)';
+
+  const mockProposals = qList.map((q: { id?: string; question?: string; options?: string[] }) => ({
+    questionId: q.id || '',
+    proposedAnswer: Array.isArray(q.options) && q.options.includes('Yes') ? 'Yes' : q.options?.[0] || 'Yes',
+    citation: `${citation} — supports: ${(q.question || '').slice(0, 80)}`,
+    confidence: 0.55,
+    sourceFileName: files[0] || null,
+  }));
+
+  try {
+    if (!hasAIApi || !qList.length) {
+      return res.json({ proposals: mockProposals });
+    }
+
+    const prompt = `You are Guardentra assisting a vendor completing a security questionnaire for ${vendorName || 'a customer'}.
+Given evidence file names: ${JSON.stringify(files)}
+And questions (id + text + options): ${JSON.stringify(qList.map((q: any) => ({ id: q.id, question: q.question, options: q.options })))}
+
+Propose answers ONLY when evidence filenames make a Yes/compliant answer plausible; otherwise prefer "Partially" with low confidence.
+Return JSON { "proposals": [ { "questionId", "proposedAnswer", "citation", "confidence" (0-1), "sourceFileName" } ] }.
+proposedAnswer must be one of each question's options. citation must mention a file name and brief reason.`;
+
+    const response = await ai!.models.generateContent({
+      model: 'gemini-2.0-flash',
+      contents: prompt,
+      config: { responseMimeType: 'application/json' },
+    });
+    try {
+      const parsed = JSON.parse(response.text || '{}');
+      if (Array.isArray(parsed.proposals) && parsed.proposals.length) {
+        return res.json({ proposals: parsed.proposals });
+      }
+    } catch {
+      /* fall through */
+    }
+    return res.json({ proposals: mockProposals });
+  } catch (err) {
+    console.warn('[ai] propose-answers fallback', err);
+    return res.json({ proposals: mockProposals });
   }
 });
 

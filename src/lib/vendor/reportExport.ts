@@ -178,3 +178,70 @@ export function openVendorReportForPrint(input: VendorReportInput): void {
     reportWindow.print();
   }, 300);
 }
+
+export type DecisionPacketInput = {
+  vendorName: string;
+  assessmentId: string;
+  frameworksLabel: string;
+  outcome: string;
+  decisionNotes?: string;
+  decidedBy?: string;
+  decidedAt?: string;
+  nextReviewAt?: string;
+  exceptions: { question: string; reason: string; answer?: string }[];
+  triageTier?: string;
+  reviewCadence?: string;
+};
+
+/** FastTrack decision packet (print → Save as PDF) — distinct from Impact report. */
+export function buildDecisionPacketHtml(input: DecisionPacketInput): string {
+  const rows = input.exceptions
+    .map(
+      (e) =>
+        `<tr><td>${escapeHtml(e.question)}</td><td>${escapeHtml(e.reason)}</td><td>${escapeHtml(
+          e.answer || '—'
+        )}</td></tr>`
+    )
+    .join('');
+  return `<!doctype html>
+<html><head><meta charset="utf-8"/><title>Decision packet — ${escapeHtml(input.vendorName)}</title>
+<style>
+  body{font-family:Georgia,serif;margin:40px;color:#111;line-height:1.45}
+  h1{font-size:22px;margin:0 0 8px} h2{font-size:16px;margin:24px 0 8px}
+  .meta{color:#444;font-size:13px} table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px}
+  th,td{border:1px solid #ccc;padding:8px;text-align:left;vertical-align:top} th{background:#f4f4f4}
+  .banner{border-left:4px solid #0f766e;padding:8px 12px;background:#f0fdfa;margin:16px 0}
+</style></head><body>
+<h1>Guardentra FastTrack decision packet</h1>
+<p class="meta">Generated ${escapeHtml(new Date().toISOString())}</p>
+<div class="banner">
+  <strong>${escapeHtml(input.vendorName)}</strong> · ${escapeHtml(input.frameworksLabel)}<br/>
+  Outcome: <strong>${escapeHtml(input.outcome)}</strong>
+  ${input.triageTier ? ` · Triage: ${escapeHtml(input.triageTier)}` : ''}
+</div>
+<p class="meta">Assessment ${escapeHtml(input.assessmentId)}</p>
+<p>Decided by: ${escapeHtml(input.decidedBy || '—')} at ${escapeHtml(input.decidedAt || '—')}</p>
+<p>Next review: ${escapeHtml(input.nextReviewAt || '—')}${
+    input.reviewCadence ? ` (cadence: ${escapeHtml(input.reviewCadence)})` : ''
+  }</p>
+<h2>Conditions / rationale</h2>
+<p>${escapeHtml(input.decisionNotes || 'None recorded.')}</p>
+<h2>Exceptions summary (${input.exceptions.length})</h2>
+<table><thead><tr><th>Question</th><th>Reason</th><th>Answer</th></tr></thead>
+<tbody>${rows || '<tr><td colspan="3">No exceptions flagged.</td></tr>'}</tbody></table>
+<p class="meta" style="margin-top:28px">This packet is an org-side FastTrack artifact. Audit hash-chain verification is available in Settings when AUDIT_SPINE_ENABLED is on.</p>
+</body></html>`;
+}
+
+export function openDecisionPacketForPrint(input: DecisionPacketInput): void {
+  const html = buildDecisionPacketHtml(input);
+  const reportWindow = window.open('', '_blank', 'noopener,noreferrer');
+  if (!reportWindow) {
+    throw new Error('Popup blocked — allow popups to print the decision packet.');
+  }
+  reportWindow.document.open();
+  reportWindow.document.write(html);
+  reportWindow.document.close();
+  reportWindow.focus();
+  setTimeout(() => reportWindow.print(), 300);
+}

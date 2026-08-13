@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   collection,
@@ -7,37 +7,37 @@ import {
   where,
   addDoc,
   doc,
+  getDoc,
   runTransaction,
 } from 'firebase/firestore';
 import {
-  Search,
-  Upload,
-  Plus,
-  Download,
-  Filter,
-  MoreVertical,
+  Building2,
   ShieldAlert,
   CalendarClock,
   AlertTriangle,
-  Building2,
-  UserPlus,
-  Sparkles,
-  X,
-  CheckCircle2,
-  Clock,
-  Circle,
-  Loader2,
-  Mail,
 } from 'lucide-react';
 import { db } from '../firebase';
 import { useAuth } from '../lib/AuthContext';
-import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
-import { cn } from '../lib/utils';
-import type { AssessmentStatus, RiskLevel, Vendor } from '../lib/vendor/types';
-import { VENDOR_CATEGORIES, RISK_LEVELS } from '../lib/vendor/constants';
-import { assessmentStatusClasses, displayRiskScore, effectiveRiskLevel, hasRealRiskScore, riskBandClasses } from '../lib/vendor/risk';
+import { PageBand } from '../components/spine/PageShell';
+import { VendorsPageHeader, VendorsStatsGrid } from '../components/vendor/VendorsPageHeader';
+import { VendorsFiltersBar } from '../components/vendor/VendorsFiltersBar';
+import { VendorTable } from '../components/vendor/VendorTable';
+import { deriveAssessmentStatus } from '../components/vendor/vendorsHelpers';
+
+const AddVendorDialog = lazy(() =>
+  import('../components/vendor/AddVendorDialog').then((m) => ({ default: m.AddVendorDialog }))
+);
+const InviteVendorDialog = lazy(() =>
+  import('../components/vendor/InviteVendorDialog').then((m) => ({ default: m.InviteVendorDialog }))
+);
+const BulkImportPanel = lazy(() =>
+  import('../components/vendor/BulkImportPanel').then((m) => ({ default: m.BulkImportPanel }))
+);
+import type { RiskLevel, Vendor } from '../lib/vendor/types';
+import { RISK_LEVELS } from '../lib/vendor/constants';
+import { effectiveRiskLevel } from '../lib/vendor/risk';
 import { validateVendorForm } from '../lib/vendor/validators';
+import { emitAuditBestEffort } from '../lib/auditClient';
 import {
   downloadVendorCsvTemplate,
   findExistingDuplicates,
@@ -45,53 +45,14 @@ import {
   type ParsedBulkVendor,
 } from '../lib/vendor/csvBulk';
 import { downloadVendorRegisterReport } from '../lib/vendor/reportExport';
-import { sendEmailBestEffort } from '../lib/notifications';
+import { sendEmail } from '../lib/notifications';
 import {
   createLocalVendor,
   isFirestoreUnavailableError,
   listLocalVendors,
 } from '../lib/vendor/localVendorStore';
 import { useOrgAssessments } from '../lib/vendor/useOrgAssessments';
-import { deriveStatusFromAssessments } from '../lib/vendor/localAssessmentStore';
-
-const SELECT_CLASS =
-  'h-9 rounded-md border border-white/10 bg-slate-950 px-3 text-sm text-white [&>option]:bg-slate-950 [&>option]:text-white';
-
-function assessmentStatusIcon(status: AssessmentStatus) {
-  if (status === 'Completed') return <CheckCircle2 className="h-3.5 w-3.5" />;
-  if (status === 'In Progress' || status === 'Sent') return <Loader2 className="h-3.5 w-3.5" />;
-  if (status === 'Overdue') return <Clock className="h-3.5 w-3.5 text-rose-400" />;
-  if (status === 'Due Soon') return <Clock className="h-3.5 w-3.5" />;
-  return <Circle className="h-3.5 w-3.5" />;
-}
-
-function formatDate(iso?: string) {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
-function deriveAssessmentStatus(
-  vendor: Vendor,
-  linkedAssessments?: { status?: string; dueAt?: string; dueDate?: string; progressPct?: number; progress?: number }[]
-): AssessmentStatus {
-  if (linkedAssessments?.length) {
-    const fromAsm = deriveStatusFromAssessments(
-      linkedAssessments as Parameters<typeof deriveStatusFromAssessments>[0]
-    );
-    if (fromAsm) return fromAsm;
-  }
-  if (vendor.assessmentStatus) return vendor.assessmentStatus;
-  if (vendor.lastAssessmentAt) return 'Completed';
-  if (vendor.nextReviewAt) {
-    const due = new Date(vendor.nextReviewAt).getTime();
-    const soon = Date.now() + 14 * 24 * 60 * 60 * 1000;
-    if (due < Date.now()) return 'Overdue';
-    if (due < soon) return 'Due Soon';
-  }
-  return 'Not Started';
-}
+import { DEFAULT_VENDOR_CAP, getPlan } from '../lib/plans';
 
 function vendorPayload(
   orgId: string,
@@ -120,7 +81,7 @@ function vendorPayload(
 }
 
 export function VendorsDirectory() {
-  const { profile } = useAuth();
+  const { user, profile } = useAuth();
   const navigate = useNavigate();
   const orgId = profile?.organizationId;
   const { assessments: orgAssessments } = useOrgAssessments(orgId);
@@ -150,6 +111,7 @@ export function VendorsDirectory() {
   const [showInvite, setShowInvite] = useState(false);
   const [inviteError, setInviteError] = useState('');
   const [inviteSaving, setInviteSaving] = useState(false);
+  const [inviteBanner, setInviteBanner] = useState<{ tone: 'ok' | 'warn'; text: string } | null>(null);
   const [showBulk, setShowBulk] = useState(false);
   const [bulkRows, setBulkRows] = useState<ParsedBulkVendor[]>([]);
   const [bulkErrors, setBulkErrors] = useState<string[]>([]);
@@ -163,8 +125,14 @@ export function VendorsDirectory() {
   const bulkFileRef = useRef<HTMLInputElement>(null);
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [menuVendorId, setMenuVendorId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const pageSize = 10;
+  const [planMeter, setPlanMeter] = useState<{
+    planName: string;
+    vendorCount: number;
+    vendorCap: number;
+  } | null>(null);
 
   const refreshLocal = (id: string) => {
     setVendors(listLocalVendors(id));
@@ -172,6 +140,29 @@ export function VendorsDirectory() {
     setDataMode('local');
     setLoading(false);
   };
+
+  useEffect(() => {
+    if (!orgId) {
+      setPlanMeter(null);
+      return;
+    }
+    let cancelled = false;
+    void getDoc(doc(db, 'organizations', orgId)).then((snap) => {
+      if (cancelled) return;
+      const data = snap.data() || {};
+      const vendorCap =
+        typeof data.vendorCap === 'number' ? data.vendorCap : DEFAULT_VENDOR_CAP;
+      const vendorCount = typeof data.vendorCount === 'number' ? data.vendorCount : 0;
+      setPlanMeter({
+        planName: getPlan(data.planId).name,
+        vendorCount,
+        vendorCap,
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId, vendors.length]);
 
   useEffect(() => {
     if (!orgId) {
@@ -296,20 +287,31 @@ export function VendorsDirectory() {
     criticality: RiskLevel;
     primaryContactName?: string;
     primaryContactEmail?: string;
-  }) => {
+    source?: 'create' | 'import';
+  }): Promise<string | null> => {
     if (!orgId) throw new Error('No organization on your profile — cannot save vendors.');
     const ownerName = profile?.displayName || profile?.email || 'Unassigned';
     const payload = vendorPayload(orgId, { ...input, ownerName });
+    const eventType = input.source === 'import' ? 'vendor.imported' : 'vendor.created';
 
     const saveLocal = () => {
-      createLocalVendor(orgId, { ...input, ownerName });
+      const local = createLocalVendor(orgId, { ...input, ownerName });
       refreshLocal(orgId);
+      return local.id as string;
     };
 
     // Once local mode is active, never block the UI on a hanging Firestore write.
     if (dataModeRef.current === 'local') {
-      saveLocal();
-      return;
+      const id = saveLocal();
+      void emitAuditBestEffort({
+        tenantId: orgId,
+        eventType,
+        actorId: user?.uid || null,
+        objectType: 'vendor',
+        objectId: id,
+        payload: { name: input.name, category: input.category, criticality: input.criticality, local: true },
+      });
+      return id;
     }
 
     try {
@@ -326,27 +328,50 @@ export function VendorsDirectory() {
       // normal over-cap growth through the app, but doesn't prevent a client bypassing
       // the increment via direct Firestore access — see firestore.rules' orgField()
       // comment and docs/KNOWN_ISSUES.md.
+      let createdId = '';
       const write = runTransaction(db, async (tx) => {
         const orgRef = doc(db, 'organizations', orgId);
         const orgSnap = await tx.get(orgRef);
         const orgData = orgSnap.data() || {};
         const count = typeof orgData.vendorCount === 'number' ? orgData.vendorCount : 0;
-        const cap = typeof orgData.vendorCap === 'number' ? orgData.vendorCap : 25;
+        const cap =
+          typeof orgData.vendorCap === 'number' ? orgData.vendorCap : DEFAULT_VENDOR_CAP;
         if (count >= cap) {
-          throw new Error(`Vendor limit reached (${cap} on your plan). Upgrade to add more vendors.`);
+          const planName = getPlan(orgData.planId).name;
+          throw new Error(
+            `Vendor limit reached (${cap} on ${planName}). Upgrade your plan to add more vendors.`
+          );
         }
         const vendorRef = doc(collection(db, 'vendors'));
+        createdId = vendorRef.id;
         tx.set(vendorRef, payload);
         tx.set(orgRef, { vendorCount: count + 1 }, { merge: true });
       });
       await Promise.race([write, writeTimeout]);
+      void emitAuditBestEffort({
+        tenantId: orgId,
+        eventType,
+        actorId: user?.uid || null,
+        objectType: 'vendor',
+        objectId: createdId,
+        payload: { name: input.name, category: input.category, criticality: input.criticality },
+      });
+      return createdId;
     } catch (ex) {
       if (isFirestoreUnavailableError(ex)) {
         setDataError(
           'Cloud Firestore write failed. Switched to local browser storage for this session.'
         );
-        saveLocal();
-        return;
+        const id = saveLocal();
+        void emitAuditBestEffort({
+          tenantId: orgId,
+          eventType,
+          actorId: user?.uid || null,
+          objectType: 'vendor',
+          objectId: id,
+          payload: { name: input.name, category: input.category, criticality: input.criticality, local: true },
+        });
+        return id;
       }
       throw ex;
     }
@@ -370,8 +395,11 @@ export function VendorsDirectory() {
     setSaving(true);
     setFormError('');
     try {
-      await createVendor(input);
+      const id = await createVendor(input);
       setShowAdd(false);
+      if (id) {
+        navigate(`/assessments/triage?vendorId=${encodeURIComponent(id)}`);
+      }
     } catch (ex: any) {
       setFormError(ex?.message || 'Failed to create vendor.');
     } finally {
@@ -403,8 +431,23 @@ export function VendorsDirectory() {
     }
     setInviteSaving(true);
     setInviteError('');
+    setInviteBanner(null);
     try {
-      await createVendor(input);
+      const vendorId = await createVendor(input);
+
+      let emailQueued = false;
+      let emailQueueError = '';
+      try {
+        await sendEmail({
+          to: input.primaryContactEmail,
+          subject: `You've been added as a vendor in Guardentra`,
+          text: `Hi${input.primaryContactName ? ` ${input.primaryContactName}` : ''},\n\n${input.name} has been added to Guardentra's vendor register${profile?.displayName ? ` by ${profile.displayName}` : ''}. A security assessment questionnaire will follow separately.\n\nNo action is needed from you yet.`,
+        });
+        emailQueued = true;
+      } catch (mailEx: any) {
+        emailQueueError = mailEx?.message || 'Could not queue email';
+        console.warn('Invite vendor: email queue failed', mailEx);
+      }
 
       if (orgId) {
         try {
@@ -413,21 +456,42 @@ export function VendorsDirectory() {
             vendorName: input.name,
             vendorEmail: input.primaryContactEmail,
             invitedByEmail: profile?.email || null,
-            status: 'sent',
+            status: emailQueued ? 'email_queued' : 'vendor_created_email_failed',
+            emailError: emailQueued ? null : emailQueueError,
             createdAt: new Date().toISOString(),
           });
         } catch (invEx) {
           console.warn('Could not record vendor_invites audit entry', invEx);
         }
+        void emitAuditBestEffort({
+          tenantId: orgId,
+          eventType: 'vendor.invite_queued',
+          actorId: user?.uid || null,
+          objectType: 'vendor',
+          objectId: vendorId,
+          payload: {
+            vendorName: input.name,
+            emailQueued,
+            toDomain: input.primaryContactEmail.split('@')[1] || null,
+          },
+        });
       }
 
-      void sendEmailBestEffort({
-        to: input.primaryContactEmail,
-        subject: `You've been added as a vendor in Guardentra`,
-        text: `Hi${input.primaryContactName ? ` ${input.primaryContactName}` : ''},\n\n${input.name} has been added to Guardentra's vendor register${profile?.displayName ? ` by ${profile.displayName}` : ''}. A security assessment questionnaire will follow separately.\n\nNo action is needed from you yet.`,
-      });
-
       setShowInvite(false);
+      if (emailQueued) {
+        setInviteBanner({
+          tone: 'ok',
+          text: `Welcome email queued to ${input.primaryContactEmail}. Delivery needs the Trigger Email extension + SMTP.`,
+        });
+      } else {
+        setInviteBanner({
+          tone: 'warn',
+          text: `Vendor saved; email could not be queued to ${input.primaryContactEmail} — check Trigger Email / SMTP${emailQueueError ? ` (${emailQueueError})` : ''}.`,
+        });
+      }
+      if (vendorId) {
+        // Invite stays on register with banner; assessment send is a separate FastTrack step.
+      }
     } catch (ex: any) {
       setInviteError(ex?.message || 'Failed to invite vendor.');
     } finally {
@@ -521,6 +585,7 @@ export function VendorsDirectory() {
             criticality,
             primaryContactName: row.primaryContactName?.trim() || '',
             primaryContactEmail: row.primaryContactEmail?.trim() || '',
+            source: 'import',
           });
           existing.add(name.toLowerCase());
           imported += 1;
@@ -546,8 +611,26 @@ export function VendorsDirectory() {
     }
   };
 
+  const vendorStatCards = [
+    { label: 'Total Vendors', value: loading ? '—' : kpis.total, icon: Building2, tone: 'h-5 w-5 text-white' },
+    { label: 'Critical / High Risk', value: loading ? '—' : kpis.criticalHigh, icon: ShieldAlert, tone: 'h-5 w-5 text-rose-400' },
+    { label: 'Assessments Due', value: loading ? '—' : kpis.due, icon: CalendarClock, tone: 'h-5 w-5 text-orange-400' },
+    { label: 'Needs Attention', value: loading ? '—' : kpis.needsAttention, icon: AlertTriangle, tone: 'h-5 w-5 text-amber-400' },
+  ];
+
   return (
-    <div className="space-y-8 animate-in fade-in duration-700">
+    <VendorsPageHeader
+      dataMode={dataMode}
+      onOpenBulk={openBulkModal}
+      onOpenAdd={() => {
+        setFormError('');
+        setShowAdd(true);
+      }}
+      onOpenInvite={() => {
+        setInviteError('');
+        setShowInvite(true);
+      }}
+    >
       {dataError && (
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
           <p className="font-medium text-amber-200">
@@ -557,783 +640,156 @@ export function VendorsDirectory() {
         </div>
       )}
 
-      <div className="flex flex-col gap-6 lg:flex-row">
-        <div className="min-w-0 flex-1 space-y-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <h1 className="font-display text-3xl font-bold tracking-tight text-white text-glow">
-                Vendors
-              </h1>
-              <p className="mt-1 text-sm text-slate-400">
-                Manage, assess, and monitor every third party in one place.
-                {dataMode === 'local' && (
-                  <span className="ml-2 rounded-full border border-amber-500/30 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300">
-                    Local store
-                  </span>
-                )}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                className="border-white/10 text-slate-300 hover:bg-white/5"
-                onClick={openBulkModal}
-              >
-                <Upload className="mr-2 h-4 w-4" />
-                Bulk Upload
-              </Button>
-              <Button
-                className="bg-primary text-white hover:bg-primary/90"
-                onClick={() => {
-                  setFormError('');
-                  setShowAdd(true);
-                }}
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Add Vendor
-              </Button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {[
-              { label: 'Total Vendors', value: kpis.total, icon: Building2, tone: 'text-white' },
-              {
-                label: 'Critical / High Risk',
-                value: kpis.criticalHigh,
-                icon: ShieldAlert,
-                tone: 'text-rose-400',
-              },
-              { label: 'Assessments Due', value: kpis.due, icon: CalendarClock, tone: 'text-orange-400' },
-              {
-                label: 'Needs Attention',
-                value: kpis.needsAttention,
-                icon: AlertTriangle,
-                tone: 'text-amber-400',
-              },
-            ].map((card) => (
-              <div key={card.label} className="rounded-xl border border-white/5 bg-slate-900/50 p-4">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                    {card.label}
-                  </p>
-                  <card.icon className={cn('h-4 w-4', card.tone)} />
-                </div>
-                <p
-                  className={cn(
-                    'mt-2 font-display text-3xl font-bold text-white text-glow',
-                    card.tone
-                  )}
-                >
-                  {loading ? '—' : card.value}
-                </p>
-              </div>
-            ))}
-          </div>
-
-          <div className="rounded-xl border border-white/5 bg-slate-900/50">
-            {/* lg:flex-wrap + shrink-0 on the controls: without them these six items
-                shared one non-wrapping row, and between ~1024-1280px the selects were
-                squeezed below the width of their own longest option ("Payment
-                Processing", "Not Started"), so the labels ran into the neighbouring
-                control. Wrapping matches the More Filters row directly below. */}
-            <div className="flex flex-col gap-3 border-b border-white/5 p-4 lg:flex-row lg:flex-wrap lg:items-center">
-              <div className="relative flex-1 lg:min-w-[16rem]">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search vendors..."
-                  className="border-white/10 bg-black/20 pl-9 text-white"
-                />
-              </div>
-              <select
-                value={riskFilter}
-                onChange={(e) => setRiskFilter(e.target.value)}
-                className={cn(SELECT_CLASS, 'shrink-0')}
-                aria-label="Risk Level"
-              >
-                <option value="all">Risk Level</option>
-                {RISK_LEVELS.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={categoryFilter}
-                onChange={(e) => setCategoryFilter(e.target.value)}
-                className={cn(SELECT_CLASS, 'shrink-0')}
-                aria-label="Category"
-              >
-                <option value="all">Category</option>
-                {VENDOR_CATEGORIES.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className={cn(SELECT_CLASS, 'shrink-0')}
-                aria-label="Status"
-              >
-                <option value="all">Status</option>
-                {['Not Started', 'In Progress', 'Due Soon', 'Overdue', 'Completed'].map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-              <Button
-                type="button"
-                variant="outline"
-                className={cn(
-                  'shrink-0 border-white/10 text-slate-300',
-                  showMoreFilters && 'border-primary/40 bg-primary/10 text-primary'
-                )}
-                onClick={() => setShowMoreFilters((v) => !v)}
-              >
-                <Filter className="mr-2 h-4 w-4" />
-                More Filters
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="shrink-0 border-white/10 text-slate-300"
-                onClick={() => downloadVendorRegisterReport(filtered)}
-              >
-                <Download className="mr-2 h-4 w-4" />
-                Export
-              </Button>
-            </div>
-
-            {showMoreFilters && (
-              <div className="flex flex-wrap items-center gap-3 border-b border-white/5 px-4 py-3">
-                <select
-                  value={ownerFilter}
-                  onChange={(e) => setOwnerFilter(e.target.value)}
-                  className={SELECT_CLASS}
-                  aria-label="Owner"
-                >
-                  <option value="all">Owner</option>
-                  {owners.map((o) => (
-                    <option key={o} value={o}>
-                      {o}
-                    </option>
-                  ))}
-                </select>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="border-white/10"
-                  onClick={clearFilters}
-                >
-                  <X className="mr-1 h-3.5 w-3.5" />
-                  Clear filters
-                </Button>
-                <span className="text-xs text-slate-500">
-                  Showing {filtered.length} of {vendors.length}
-                </span>
-              </div>
-            )}
-
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] text-left text-sm">
-                <thead className="bg-white/[0.03] text-xs uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="px-4 py-3 font-medium">Vendor</th>
-                    <th className="px-4 py-3 font-medium">Category</th>
-                    <th className="px-4 py-3 font-medium">Primary Contact</th>
-                    <th className="px-4 py-3 font-medium">Risk</th>
-                    <th className="px-4 py-3 font-medium">Assessment</th>
-                    <th className="px-4 py-3 font-medium">Owner</th>
-                    <th className="px-4 py-3 font-medium">Next Review</th>
-                    <th className="px-4 py-3 font-medium" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {loading && (
-                    <tr>
-                      <td colSpan={8} className="px-4 py-10 text-center text-slate-500">
-                        Loading vendors…
-                      </td>
-                    </tr>
-                  )}
-                  {!loading && pageRows.length === 0 && (
-                    <tr>
-                      <td colSpan={8} className="px-4 py-10 text-center text-slate-500">
-                        {vendors.length === 0
-                          ? 'No vendors yet. Add one or bulk-upload a CSV to start your register.'
-                          : 'No vendors match the current filters.'}
-                      </td>
-                    </tr>
-                  )}
-                  {pageRows.map((v) => {
-                    const level = effectiveRiskLevel(v);
-                    const linked = assessmentsByVendor.get(v.id) || [];
-                    const aStatus = deriveAssessmentStatus(v, linked);
-                    return (
-                      <tr key={v.id} className="border-t border-white/5 hover:bg-white/[0.03]">
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 text-xs font-semibold text-slate-300">
-                              {v.name.slice(0, 2).toUpperCase()}
-                            </div>
-                            <button
-                              type="button"
-                              className="font-medium text-white hover:text-primary"
-                              onClick={() => navigate(`/vendors/${v.id}/impact`)}
-                            >
-                              {v.name}
-                            </button>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-slate-400">{v.category || '—'}</td>
-                        <td className="px-4 py-3 text-slate-400">
-                          {v.primaryContactName || v.primaryContactEmail || '—'}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span
-                            className={cn(
-                              'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium',
-                              riskBandClasses(level)
-                            )}
-                          >
-                            {hasRealRiskScore(v) && (
-                              <>
-                                <span className="tabular-nums">{displayRiskScore(v)}</span>
-                                <span className="opacity-80">·</span>
-                              </>
-                            )}
-                            {hasRealRiskScore(v) ? level : 'Not assessed'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <Link
-                            to={`/assessments?vendorId=${encodeURIComponent(v.id)}`}
-                            className={cn(
-                              'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium hover:underline',
-                              assessmentStatusClasses(aStatus)
-                            )}
-                            title={
-                              linked.length
-                                ? `${linked.length} assessment(s) — view tracker`
-                                : 'No assessments yet — open tracker'
-                            }
-                          >
-                            {assessmentStatusIcon(aStatus)}
-                            {aStatus}
-                            {linked.length > 0 ? ` · ${linked.length}` : ''}
-                          </Link>
-                        </td>
-                        <td className="px-4 py-3 text-slate-400">{v.ownerName || '—'}</td>
-                        <td className="px-4 py-3 text-slate-400">{formatDate(v.nextReviewAt)}</td>
-                        <td className="px-4 py-3 text-right">
-                          <Link
-                            to={`/vendors/${v.id}/impact`}
-                            className="mr-2 text-xs font-medium text-slate-300 hover:text-white hover:underline"
-                          >
-                            Impact
-                          </Link>
-                          <Link
-                            to={`/assessments/new?vendorId=${v.id}`}
-                            className="mr-2 text-xs font-medium text-primary hover:underline"
-                          >
-                            Assess
-                          </Link>
-                          <button type="button" className="text-slate-400 hover:text-white" aria-label="More">
-                            <MoreVertical className="h-4 w-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="flex items-center justify-between border-t border-white/5 px-4 py-3 text-sm text-slate-400">
-              <span>
-                {filtered.length === 0
-                  ? '0 vendors'
-                  : `${(page - 1) * pageSize + 1} to ${Math.min(page * pageSize, filtered.length)} of ${filtered.length} vendors`}
-              </span>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-white/10"
-                  disabled={page <= 1}
-                  onClick={() => setPage((p) => p - 1)}
-                >
-                  Previous
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-white/10"
-                  disabled={page >= totalPages}
-                  onClick={() => setPage((p) => p + 1)}
-                >
-                  Next
-                </Button>
-              </div>
-            </div>
+      {inviteBanner && (
+        <div
+          className={
+            inviteBanner.tone === 'ok'
+              ? 'rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100'
+              : 'rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100'
+          }
+          role="status"
+          aria-live="polite"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <p>{inviteBanner.text}</p>
+            <button
+              type="button"
+              className="shrink-0 text-xs uppercase tracking-wide opacity-70 hover:opacity-100"
+              onClick={() => setInviteBanner(null)}
+            >
+              Dismiss
+            </button>
           </div>
         </div>
+      )}
 
-        <aside className="w-full shrink-0 space-y-4 lg:w-72">
-          <div className="rounded-xl border border-white/5 bg-slate-900/50 p-4">
-            <h2 className="text-sm font-semibold text-white">Quick Actions</h2>
-            <div className="mt-3 space-y-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setFormError('');
-                  setShowAdd(true);
-                }}
-                className="flex w-full items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-left text-sm hover:bg-white/5"
-              >
-                <Plus className="h-4 w-4 text-primary" />
-                Add One Vendor
-              </button>
-              <button
-                type="button"
-                onClick={openBulkModal}
-                className="flex w-full items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-left text-sm hover:bg-white/5"
-              >
-                <Upload className="h-4 w-4 text-primary" />
-                Bulk Upload Vendors
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setInviteError('');
-                  setShowInvite(true);
-                }}
-                className="flex w-full flex-col items-start gap-0.5 rounded-lg border border-white/10 px-3 py-2 text-left text-sm hover:bg-white/5"
-              >
-                <span className="flex items-center gap-2">
-                  <Mail className="h-4 w-4 text-primary" />
-                  Invite Vendor
-                </span>
-                <span className="pl-6 text-xs text-slate-500">Add vendor &amp; send a welcome email</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate('/assessments/new')}
-                className="flex w-full flex-col items-start gap-0.5 rounded-lg border border-white/10 px-3 py-2 text-left text-sm hover:bg-white/5"
-              >
-                <span className="flex items-center gap-2">
-                  <UserPlus className="h-4 w-4 text-primary" />
-                  Invite to assessment
-                </span>
-                <span className="pl-6 text-xs text-slate-500">Opens wizard · pick vendor &amp; frameworks</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-white/5 bg-slate-900/50 p-4">
-            <h2 className="text-sm font-semibold text-white">Bulk Upload in 3 Steps</h2>
-            <ol className="mt-3 space-y-2 text-sm text-slate-400">
-              <li>
-                <span className="font-medium text-slate-200">1.</span> Download Template
-              </li>
-              <li>
-                <span className="font-medium text-slate-200">2.</span> Upload CSV (not .xlsx)
-              </li>
-              <li>
-                <span className="font-medium text-slate-200">3.</span> Review & Import
-              </li>
-            </ol>
-            <Button
-              variant="outline"
-              className="mt-3 w-full border-white/10 text-white"
-              onClick={() => downloadVendorCsvTemplate()}
-            >
-              <Download className="mr-2 h-4 w-4" />
-              Download CSV template
-            </Button>
-            <p className="mt-4 flex gap-2 rounded-lg bg-primary/10 p-3 text-xs text-primary">
-              <Sparkles className="h-4 w-4 shrink-0" />
-              Import flags duplicate names in-file and against your existing register.
-            </p>
-          </div>
-
-          <Link
-            to="/vendors/legacy"
-            className="block text-center text-xs text-slate-400 hover:text-slate-300"
+      <div className="space-y-4">
+        {planMeter ? (
+          <div
+            className={
+              planMeter.vendorCount >= planMeter.vendorCap
+                ? 'flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100'
+                : 'flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300'
+            }
           >
-            Open classic vendor workspace
-          </Link>
-        </aside>
+            <p>
+              <span className="font-medium text-white">{planMeter.planName}</span>
+              {' · '}
+              {planMeter.vendorCount} / {planMeter.vendorCap} vendors on your plan
+              {planMeter.vendorCount >= planMeter.vendorCap
+                ? ' — limit reached'
+                : ''}
+            </p>
+            <Link
+              to="/pricing"
+              className="text-xs font-semibold uppercase tracking-wide text-primary hover:underline"
+            >
+              {planMeter.vendorCount >= planMeter.vendorCap ? 'Upgrade plan' : 'View plans'}
+            </Link>
+          </div>
+        ) : null}
+        <VendorsStatsGrid cards={vendorStatCards} />
+
+        <PageBand>
+          <VendorsFiltersBar
+            search={search}
+            setSearch={setSearch}
+            riskFilter={riskFilter}
+            setRiskFilter={setRiskFilter}
+            categoryFilter={categoryFilter}
+            setCategoryFilter={setCategoryFilter}
+            statusFilter={statusFilter}
+            setStatusFilter={setStatusFilter}
+            ownerFilter={ownerFilter}
+            setOwnerFilter={setOwnerFilter}
+            showMoreFilters={showMoreFilters}
+            setShowMoreFilters={setShowMoreFilters}
+            owners={owners}
+            filteredCount={filtered.length}
+            totalCount={vendors.length}
+            clearFilters={clearFilters}
+            onExport={() => downloadVendorRegisterReport(filtered)}
+          />
+
+          <VendorTable
+            loading={loading}
+            pageRows={pageRows}
+            vendorsTotal={vendors.length}
+            filteredCount={filtered.length}
+            page={page}
+            pageSize={pageSize}
+            totalPages={totalPages}
+            setPage={setPage}
+            menuVendorId={menuVendorId}
+            setMenuVendorId={setMenuVendorId}
+            assessmentsByVendor={assessmentsByVendor}
+            onNavigate={navigate}
+          />
+        </PageBand>
       </div>
 
       {showAdd && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <form
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 text-sm text-slate-300">
+              Opening…
+            </div>
+          }
+        >
+          <AddVendorDialog
+            formError={formError}
+            saving={saving}
+            onClose={() => setShowAdd(false)}
             onSubmit={handleAddVendor}
-            className="w-full max-w-md space-y-4 rounded-xl border border-white/10 bg-slate-900 p-6 shadow-xl"
-          >
-            <h3 className="text-lg font-semibold text-white">Add Vendor</h3>
-            {formError && <p className="text-sm text-rose-400">{formError}</p>}
-            <div>
-              <label className="text-xs font-medium text-slate-400">Name</label>
-              <Input name="name" className="mt-1 border-white/10 bg-black/20 text-white" required />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-slate-400">Category</label>
-              <select name="category" className={cn(SELECT_CLASS, 'mt-1 w-full')} required>
-                {VENDOR_CATEGORIES.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-slate-400">Criticality</label>
-              <select
-                name="criticality"
-                className={cn(SELECT_CLASS, 'mt-1 w-full')}
-                defaultValue="Medium"
-              >
-                {RISK_LEVELS.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-slate-400">Primary contact</label>
-              <Input
-                name="primaryContactName"
-                className="mt-1 border-white/10 bg-black/20 text-white"
-                placeholder="Name"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-slate-400">Contact email</label>
-              <Input
-                name="primaryContactEmail"
-                type="email"
-                className="mt-1 border-white/10 bg-black/20 text-white"
-                placeholder="email@vendor.com"
-              />
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                className="border-white/10"
-                onClick={() => setShowAdd(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                className="bg-primary text-white hover:bg-primary/90"
-                disabled={saving}
-              >
-                {saving ? 'Saving…' : 'Create'}
-              </Button>
-            </div>
-          </form>
-        </div>
+          />
+        </Suspense>
       )}
 
       {showInvite && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <form
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 text-sm text-slate-300">
+              Opening…
+            </div>
+          }
+        >
+          <InviteVendorDialog
+            inviteError={inviteError}
+            inviteSaving={inviteSaving}
+            onClose={() => setShowInvite(false)}
             onSubmit={handleInviteVendor}
-            className="w-full max-w-md space-y-4 rounded-xl border border-white/10 bg-slate-900 p-6 shadow-xl"
-          >
-            <div>
-              <h3 className="text-lg font-semibold text-white">Invite Vendor</h3>
-              <p className="mt-1 text-xs text-slate-500">
-                Adds the vendor to your register and emails them a welcome notice. A security
-                assessment can be sent separately once you're ready.
-              </p>
-            </div>
-            {inviteError && <p className="text-sm text-rose-400">{inviteError}</p>}
-            <div>
-              <label className="text-xs font-medium text-slate-400">Vendor name</label>
-              <Input name="name" className="mt-1 border-white/10 bg-black/20 text-white" required />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-slate-400">Category</label>
-              <select name="category" className={cn(SELECT_CLASS, 'mt-1 w-full')} required>
-                {VENDOR_CATEGORIES.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-slate-400">Contact name</label>
-              <Input
-                name="primaryContactName"
-                className="mt-1 border-white/10 bg-black/20 text-white"
-                placeholder="Name"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-slate-400">Contact email</label>
-              <Input
-                name="primaryContactEmail"
-                type="email"
-                className="mt-1 border-white/10 bg-black/20 text-white"
-                placeholder="email@vendor.com"
-                required
-              />
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                className="border-white/10"
-                onClick={() => setShowInvite(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                className="bg-primary text-white hover:bg-primary/90"
-                disabled={inviteSaving}
-              >
-                {inviteSaving ? 'Sending…' : 'Add & Invite'}
-              </Button>
-            </div>
-          </form>
-        </div>
+          />
+        </Suspense>
       )}
 
       {showBulk && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
-          onClick={(e) => {
-            if (e.target === e.currentTarget && !bulkImporting) closeBulkModal();
-          }}
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 text-sm text-slate-300">
+              Opening…
+            </div>
+          }
         >
-          <div className="w-full max-w-xl space-y-4 rounded-xl border border-white/10 bg-slate-900 p-6 shadow-xl">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h3 className="text-lg font-semibold text-white">Bulk upload vendors</h3>
-                <p className="mt-1 text-sm text-slate-400">
-                  1) Download template → 2) Fill &amp; save as CSV → 3) Choose file → 4) Import
-                </p>
-              </div>
-              <button
-                type="button"
-                className="rounded-md p-1 text-slate-400 hover:bg-white/5 hover:text-white"
-                aria-label="Close bulk upload"
-                disabled={bulkImporting}
-                onClick={closeBulkModal}
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                className="border-white/10"
-                disabled={bulkImporting}
-                onClick={() => downloadVendorCsvTemplate()}
-              >
-                <Download className="mr-2 h-4 w-4" /> Download template
-              </Button>
-              <Button
-                type="button"
-                className="bg-primary text-white hover:bg-primary/90"
-                disabled={bulkImporting}
-                onClick={() => bulkFileRef.current?.click()}
-              >
-                <Upload className="mr-2 h-4 w-4" /> Choose CSV
-              </Button>
-              <input
-                ref={bulkFileRef}
-                type="file"
-                accept=".csv,text/csv,text/plain,.txt"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) void onBulkFile(f);
-                  e.target.value = '';
-                }}
-              />
-            </div>
-
-            <div
-              className={cn(
-                'rounded-lg border border-dashed px-4 py-6 text-center transition-colors',
-                bulkDragOver ? 'border-primary bg-primary/10' : 'border-white/15 bg-white/[0.02]',
-                bulkImporting && 'pointer-events-none opacity-60'
-              )}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setBulkDragOver(true);
-              }}
-              onDragLeave={() => setBulkDragOver(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setBulkDragOver(false);
-                const f = e.dataTransfer.files?.[0];
-                if (f) void onBulkFile(f);
-              }}
-            >
-              <p className="text-sm text-slate-300">
-                {bulkFileName ? (
-                  <>
-                    Selected: <span className="font-medium text-white">{bulkFileName}</span>
-                  </>
-                ) : (
-                  'Drop a .csv file here, or use Choose CSV'
-                )}
-              </p>
-              <p className="mt-1 text-xs text-slate-500">
-                Columns: name, category, criticality, primaryContactName, primaryContactEmail
-              </p>
-            </div>
-
-            {bulkErrors.length > 0 && (
-              <div className="max-h-28 overflow-y-auto rounded-lg bg-rose-500/10 p-3 text-xs text-rose-300">
-                {bulkErrors.map((e) => (
-                  <div key={e}>{e}</div>
-                ))}
-              </div>
-            )}
-            {(bulkDupes.length > 0 || bulkExisting.length > 0) && !bulkSuccess && (
-              <div className="rounded-lg bg-amber-500/10 p-3 text-xs text-amber-200">
-                {bulkDupes.length > 0 && <p>Duplicates in file: {bulkDupes.join(', ')}</p>}
-                {bulkExisting.length > 0 && (
-                  <p>
-                    Already in register: {bulkExisting.join(', ')} — use{' '}
-                    <span className="font-medium">Import (skip existing)</span> to keep them out.
-                  </p>
-                )}
-              </div>
-            )}
-
-            {bulkRows.length > 0 && !bulkSuccess && (
-              <div className="space-y-2">
-                <p className="text-sm text-slate-300">
-                  {bulkRows.length} valid row(s) ready to import
-                  {bulkErrors.length ? ` · ${bulkErrors.length} row(s) skipped with errors` : ''}.
-                </p>
-                <div className="max-h-36 overflow-auto rounded-lg border border-white/10">
-                  <table className="w-full text-left text-xs text-slate-300">
-                    <thead className="sticky top-0 bg-slate-950 text-slate-400">
-                      <tr>
-                        <th className="px-3 py-2 font-medium">Name</th>
-                        <th className="px-3 py-2 font-medium">Category</th>
-                        <th className="px-3 py-2 font-medium">Risk</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {bulkRows.slice(0, 8).map((row, idx) => (
-                        <tr key={`${row.name}-${idx}`} className="border-t border-white/5">
-                          <td className="px-3 py-1.5 text-white">{row.name}</td>
-                          <td className="px-3 py-1.5">{row.category}</td>
-                          <td className="px-3 py-1.5">{row.criticality || 'Medium'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {bulkRows.length > 8 && (
-                    <p className="border-t border-white/5 px-3 py-1.5 text-[11px] text-slate-500">
-                      +{bulkRows.length - 8} more row(s)
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {bulkMessage && (
-              <p
-                className={cn(
-                  'rounded-lg px-3 py-2 text-sm',
-                  bulkSuccess
-                    ? 'bg-emerald-500/10 text-emerald-200'
-                    : 'bg-white/5 text-slate-200'
-                )}
-              >
-                {bulkMessage}
-              </p>
-            )}
-
-            <div className="flex flex-wrap justify-end gap-2 pt-1">
-              {bulkSuccess ? (
-                <>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="border-white/10"
-                    onClick={() => {
-                      resetBulkState();
-                      bulkFileRef.current?.click();
-                    }}
-                  >
-                    Upload another
-                  </Button>
-                  <Button
-                    type="button"
-                    className="bg-primary text-white hover:bg-primary/90"
-                    onClick={closeBulkModal}
-                  >
-                    Done
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="border-white/10"
-                    disabled={bulkImporting}
-                    onClick={closeBulkModal}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="border-white/10"
-                    disabled={!bulkRows.length || bulkImporting}
-                    title={
-                      !bulkRows.length
-                        ? 'Choose a CSV with at least one valid row first'
-                        : 'Import new vendors only; skip names already in the register'
-                    }
-                    onClick={() => void importBulkRows(true)}
-                  >
-                    {bulkImporting ? 'Importing…' : 'Import (skip existing)'}
-                  </Button>
-                  <Button
-                    type="button"
-                    className="bg-primary text-white hover:bg-primary/90"
-                    disabled={!bulkRows.length || bulkImporting}
-                    title={
-                      !bulkRows.length
-                        ? 'Choose a CSV with at least one valid row first'
-                        : 'Import every valid row (may create duplicate names)'
-                    }
-                    onClick={() => void importBulkRows(false)}
-                  >
-                    {bulkImporting ? 'Importing…' : 'Import all valid'}
-                  </Button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
+          <BulkImportPanel
+            bulkFileRef={bulkFileRef}
+            bulkFileName={bulkFileName}
+            bulkRows={bulkRows}
+            bulkErrors={bulkErrors}
+            bulkDupes={bulkDupes}
+            bulkExisting={bulkExisting}
+            bulkMessage={bulkMessage}
+            bulkSuccess={bulkSuccess}
+            bulkImporting={bulkImporting}
+            bulkDragOver={bulkDragOver}
+            setBulkDragOver={setBulkDragOver}
+            onBulkFile={onBulkFile}
+            importBulkRows={importBulkRows}
+            resetBulkState={resetBulkState}
+            closeBulkModal={closeBulkModal}
+            downloadVendorCsvTemplate={downloadVendorCsvTemplate}
+          />
+        </Suspense>
       )}
-    </div>
+    </VendorsPageHeader>
   );
 }

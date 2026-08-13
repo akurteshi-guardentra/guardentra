@@ -1,4 +1,5 @@
 import React from 'react';
+import '../i18n';
 import { Link, useLocation } from 'react-router-dom';
 import {
   Shield,
@@ -35,7 +36,18 @@ type NavItem = {
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
-  const isDashboard = location.pathname === '/dashboard';
+  // Primary nav destinations — Back is for nested flows (impact, triage, wizard), not these hubs.
+  const PRIMARY_NAV_PATHS = new Set([
+    '/dashboard',
+    '/vendors',
+    '/assessments',
+    '/audit-readiness',
+    '/docs',
+    '/pricing',
+    '/settings',
+  ]);
+  const pathNorm = location.pathname.replace(/\/+$/, '') || '/';
+  const showBackButton = !PRIMARY_NAV_PATHS.has(pathNorm);
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
   const [isUserGuideOpen, setIsUserGuideOpen] = React.useState(false);
   const [isCopilotOpen, setIsCopilotOpen] = React.useState(false);
@@ -242,7 +254,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   />
                 </div>
                 <button
-                  onClick={logOut}
+                  onClick={() => void logOut('/')}
                   className="ml-2 p-2 text-slate-400 transition-colors hover:text-rose-400"
                   title="Log out"
                 >
@@ -282,7 +294,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               </div>
             </div>
           )}
-          {!isDashboard && <BackButton className="mb-2 sm:mb-4" />}
+          {showBackButton && <BackButton className="mb-2 sm:mb-4" />}
           <div className="mx-auto max-w-7xl">{children}</div>
         </main>
       </div>

@@ -2,7 +2,7 @@
   "entities": {
     "User": {
       "title": "User",
-      "description": "A user of the NexusGRC platform.",
+      "description": "A user of the Guardentra platform.",
       "type": "object",
       "properties": {
         "email": { "type": "string", "format": "email" },

@@ -191,6 +191,22 @@ export function buildQuestionsForPackIds(packIds: string[]): PortalQuestion[] {
   return buildQuestionsFromControlKeys([...keySet]);
 }
 
+/**
+ * Enforce FastTrack Lite / Standard / Enhanced scope. Preserves bank order
+ * (core Company Profile / Access Control first) and truncates to the tier max.
+ */
+export function applyTierQuestionCap(
+  questions: PortalQuestion[],
+  tier: string | null | undefined,
+  maxByTier: Partial<Record<string, number>> = { Lite: 20, Standard: 50, Enhanced: 100 }
+): PortalQuestion[] {
+  if (!tier) return questions;
+  const max = maxByTier[tier];
+  if (typeof max !== 'number' || max < 1) return questions;
+  if (questions.length <= max) return questions;
+  return questions.slice(0, max);
+}
+
 export interface PackControlDiff {
   added: { controlKey: string; text: string }[];
   removed: { controlKey: string; text: string }[];
@@ -243,50 +259,95 @@ export function newerCurrentPack(packId: string): FrameworkPack | undefined {
 export interface RebaselineResult {
   questions: PortalQuestion[];
   carriedAnswers: Record<string, string | string[]>;
+  carriedComments: Record<string, string>;
+  carriedEvidence: Record<string, unknown[]>;
   unmatchedAnswers: { controlKey: string; questionId: string; answer: string | string[] }[];
   frameworkPackIds: string[];
   questionBankVersion: string;
 }
 
 /**
- * Rebuild questions from target packs; copy answers by controlKey.
+ * Rebuild questions from target packs; copy answers/comments/evidence by controlKey.
  * Existing assessments are never mutated automatically — callers apply this explicitly.
  */
 export function rebaselineAssessment(input: {
   questions: Array<{ id: string; controlKey?: string; question?: string }>;
   answers?: Record<string, string | string[]>;
+  comments?: Record<string, string>;
+  evidenceByQuestion?: Record<string, unknown[]>;
   targetPackIds: string[];
 }): RebaselineResult {
   const questions = buildQuestionsForPackIds(input.targetPackIds);
-  const oldByKey = new Map<string, { id: string; answer?: string | string[] }>();
+  const oldByKey = new Map<
+    string,
+    { id: string; answer?: string | string[]; comment?: string; evidence?: unknown[] }
+  >();
+  const unmatchedAnswers: RebaselineResult['unmatchedAnswers'] = [];
+  const carriedAnswers: Record<string, string | string[]> = {};
+  const carriedComments: Record<string, string> = {};
+  const carriedEvidence: Record<string, unknown[]> = {};
 
   for (const q of input.questions) {
+    const answer = input.answers?.[q.id];
+    const comment = input.comments?.[q.id];
+    const evidence = input.evidenceByQuestion?.[q.id];
     const key = q.controlKey;
-    if (!key) continue;
-    oldByKey.set(key, { id: q.id, answer: input.answers?.[q.id] });
+    if (!key) {
+      // No controlKey → cannot remap onto new q_* ids; keep an audit trail instead of dropping.
+      if (answer !== undefined && isAnswerPresent(answer)) {
+        unmatchedAnswers.push({ controlKey: '', questionId: q.id, answer });
+      }
+      if (typeof comment === 'string' && comment.trim()) {
+        carriedComments[q.id] = comment;
+      }
+      if (Array.isArray(evidence) && evidence.length > 0) {
+        carriedEvidence[q.id] = evidence;
+      }
+      continue;
+    }
+    oldByKey.set(key, { id: q.id, answer, comment, evidence });
   }
 
-  const carriedAnswers: Record<string, string | string[]> = {};
-  const unmatchedAnswers: RebaselineResult['unmatchedAnswers'] = [];
   const usedOldKeys = new Set<string>();
 
   for (const q of questions) {
     const prev = oldByKey.get(q.controlKey);
-    if (prev?.answer !== undefined && isAnswerPresent(prev.answer)) {
+    if (!prev) continue;
+    if (prev.answer !== undefined && isAnswerPresent(prev.answer)) {
       carriedAnswers[q.id] = prev.answer;
+      usedOldKeys.add(q.controlKey);
+    }
+    if (typeof prev.comment === 'string' && prev.comment.trim()) {
+      carriedComments[q.id] = prev.comment;
+      usedOldKeys.add(q.controlKey);
+    }
+    if (Array.isArray(prev.evidence) && prev.evidence.length > 0) {
+      carriedEvidence[q.id] = prev.evidence.map((item) =>
+        item && typeof item === 'object' ? { ...item, questionId: q.id } : item
+      );
       usedOldKeys.add(q.controlKey);
     }
   }
 
   for (const [key, prev] of oldByKey) {
     if (usedOldKeys.has(key)) continue;
-    if (prev.answer === undefined || !isAnswerPresent(prev.answer)) continue;
-    unmatchedAnswers.push({ controlKey: key, questionId: prev.id, answer: prev.answer });
+    if (prev.answer !== undefined && isAnswerPresent(prev.answer)) {
+      unmatchedAnswers.push({ controlKey: key, questionId: prev.id, answer: prev.answer });
+    }
+    // Preserve orphaned comment/evidence under the old question id so data is not deleted.
+    if (typeof prev.comment === 'string' && prev.comment.trim()) {
+      carriedComments[prev.id] = prev.comment;
+    }
+    if (Array.isArray(prev.evidence) && prev.evidence.length > 0) {
+      carriedEvidence[prev.id] = prev.evidence;
+    }
   }
 
   return {
     questions,
     carriedAnswers,
+    carriedComments,
+    carriedEvidence,
     unmatchedAnswers,
     frameworkPackIds: input.targetPackIds,
     questionBankVersion: QUESTION_BANK_VERSION,

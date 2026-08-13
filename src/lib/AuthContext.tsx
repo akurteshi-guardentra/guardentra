@@ -3,6 +3,7 @@ import { auth, db } from '../firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { bootstrapUserProfile } from './orgBootstrap';
+import { isPortalUid } from './vendor/portalAuth';
 
 interface UserProfile {
   email: string;
@@ -24,52 +25,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType>({ user: null, profile: null, loading: true });
 
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId?: string | null;
-    email?: string | null;
-    emailVerified?: boolean | null;
-    isAnonymous?: boolean | null;
-    tenantId?: string | null;
-    providerInfo?: {
-      providerId?: string | null;
-      email?: string | null;
-    }[];
-  }
-}
-
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData?.map(provider => ({
-        providerId: provider.providerId,
-        email: provider.email,
-      })) || []
-    },
-    operationType,
-    path
-  }
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
-}
+import { OperationType, handleFirestoreError, isDbMissingError } from './firestoreError';
 
 const LOCAL_PROFILE_KEY = 'guardentra.localProfile.v1';
 
@@ -87,31 +43,28 @@ function writeLocalProfile(uid: string, profile: UserProfile) {
   localStorage.setItem(`${LOCAL_PROFILE_KEY}.${uid}`, JSON.stringify(profile));
 }
 
-function buildLocalProfile(currentUser: User): UserProfile {
+function buildLocalProfile(currentUser: User, opts?: { onboarded?: boolean }): UserProfile {
   const existing = readLocalProfile(currentUser.uid);
-  if (existing?.organizationId) return { ...existing, onboarded: true };
+  if (existing?.organizationId) {
+    // Preserve prior local onboarded state; never force-skip the wizard for a
+    // first-run user just because Firestore fell back to local.
+    return {
+      ...existing,
+      onboarded: opts?.onboarded ?? existing.onboarded ?? false,
+    };
+  }
   const profile: UserProfile = {
     email: currentUser.email || 'local@guardentra.dev',
     displayName: currentUser.displayName || 'Local User',
     role: 'admin',
     organizationId: `local_org_${currentUser.uid.slice(0, 8)}`,
     organizationName: 'Local Dev Organization',
-    onboarded: true,
+    onboarded: opts?.onboarded ?? false,
   };
   writeLocalProfile(currentUser.uid, profile);
   return profile;
 }
 
-function isDbMissingError(error: unknown): boolean {
-  const msg = error instanceof Error ? error.message : String(error || '');
-  const code = (error as { code?: string })?.code || '';
-  return (
-    /database.*not found/i.test(msg) ||
-    code === 'failed-precondition' ||
-    code === 'unavailable' ||
-    code === 'not-found'
-  );
-}
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -138,6 +91,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       setUser(currentUser);
       if (currentUser) {
+        // Vendor portal sessions use uid portal_* (and ideally a secondary Auth app).
+        // Never bootstrap an org profile for them — that hijacks / pollutes org tenancy.
+        if (isPortalUid(currentUser.uid)) {
+          setProfile(null);
+          setLoading(false);
+          return;
+        }
+        // User just signed in (or switched accounts). Keep loading=true until the
+        // profile snapshot arrives — otherwise Login/ProtectedRoute see
+        // user && !profile && !loading and flash /onboarding for already-onboarded users.
+        setProfile(null);
+        setLoading(true);
         try {
           // Don't hang forever if Firestore never responds (missing DB).
           timeoutId = setTimeout(() => {
@@ -182,6 +147,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     displayName: currentUser.displayName || 'New User',
                   });
                   console.log('AuthContext: Auto-created/joined organization + user profile successfully');
+                  // Keep loading=true — onSnapshot will re-fire with the new doc.
+                  // The 4s timeout above covers the offline case where it never does.
                 } catch (initErr: any) {
                   console.error('AuthContext: Auto-initialization failed:', initErr);
                   if (initErr?.code === 'permission-denied') {
@@ -195,10 +162,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                       /* logged above; intentionally not re-thrown */
                     }
                   }
-                  if (isDbMissingError(initErr) || initErr?.code === 'permission-denied') {
-                    const local = buildLocalProfile(currentUser);
-                    setProfile(local);
-                  }
+                  // Any bootstrap failure still needs a usable session so Login can
+                  // forward into /onboarding instead of a blank protected shell.
+                  const local = buildLocalProfile(currentUser, { onboarded: false });
+                  setProfile(local);
                   setLoading(false);
                 }
               }

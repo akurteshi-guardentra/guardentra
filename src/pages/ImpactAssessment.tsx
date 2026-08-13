@@ -5,6 +5,7 @@ import { ArrowLeft, CheckCircle2, FileDown, Loader2, Paperclip, Sparkles, Trash2
 import { db } from '../firebase';
 import { useAuth } from '../lib/AuthContext';
 import { Button } from '../components/ui/button';
+import { PageShell } from '../components/spine/PageShell';
 import { cn } from '../lib/utils';
 import { RISK_LEVELS } from '../lib/vendor/constants';
 import type { RiskLevel, Vendor } from '../lib/vendor/types';
@@ -13,6 +14,30 @@ import { combineImpactAndSecurity, securityLevelFromScore, vendorRatingLabel } f
 import { uploadVendorAttachment, type UploadedEvidence } from '../lib/vendor/evidenceUpload';
 import { openVendorReportForPrint } from '../lib/vendor/reportExport';
 import { authHeaders } from '../lib/authHeaders';
+
+/** Deterministic 3-sentence draft when Gemini is unavailable. */
+function buildLocalRiskNarrative(input: {
+  name: string;
+  category?: string;
+  criticality?: string;
+  riskScore?: number;
+  impactLevel: RiskLevel;
+  rating?: string | null;
+  assessmentStatus?: string;
+}): string {
+  const score =
+    typeof input.riskScore === 'number' && input.riskScore > 0
+      ? `security residual score ${input.riskScore}`
+      : 'no security residual score yet';
+  const rating = input.rating || 'pending until impact and security are both complete';
+  const status = input.assessmentStatus || 'Not Started';
+  return (
+    `${input.name} (${input.category || 'uncategorized'}) is treated as ${input.impactLevel} business impact ` +
+    `with ${score}. ` +
+    `The combined vendor rating is currently ${rating}; questionnaire status is ${status}. ` +
+    `Next step: complete FastTrack triage and the security assessment, then re-check this rating before onboarding or renewal.`
+  );
+}
 
 const IMPACT_PROMPTS: { id: string; label: string; hint: string }[] = [
   {
@@ -120,13 +145,65 @@ security gap or high business impact). Return JSON: { "summary": "..." }`;
         headers: await authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ prompt, responseMimeType: 'application/json' }),
       });
-      if (!response.ok) throw new Error('AI generation failed');
-      const { text } = await response.json();
-      const parsed = JSON.parse((text || '{}').replace(/```json/g, '').replace(/```/g, '').trim());
-      setNarrative(parsed.summary || 'No summary returned.');
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        text?: string;
+        error?: string;
+      };
+
+      if (!response.ok) {
+        // Keep the page useful when Gemini is missing, quota-blocked, or misconfigured.
+        const draft = buildLocalRiskNarrative({
+          name: vendor.name,
+          category: vendor.category,
+          criticality: vendor.criticality,
+          riskScore: vendor.riskScore,
+          impactLevel,
+          rating: preview.rating,
+          assessmentStatus: vendor.assessmentStatus,
+        });
+        setNarrative(draft);
+        if (response.status === 503) {
+          setNarrativeError('AI is not configured on this environment. Showing a draft from vendor fields.');
+        } else if (response.status === 429) {
+          setNarrativeError(payload.error || 'AI quota exhausted. Showing a draft from vendor fields.');
+        } else if (response.status === 401) {
+          setNarrativeError('Your session expired. Sign in again to use AI, or keep this draft.');
+        } else {
+          setNarrativeError(payload.error || 'AI generation failed. Showing a draft from vendor fields.');
+        }
+        return;
+      }
+
+      const raw = (payload.text || '').replace(/```json/g, '').replace(/```/g, '').trim();
+      let summary = '';
+      try {
+        const parsed = JSON.parse(raw || '{}') as { summary?: string };
+        summary = typeof parsed.summary === 'string' ? parsed.summary.trim() : '';
+      } catch {
+        // Model sometimes returns plain prose despite JSON mime type.
+        summary = raw;
+      }
+      if (!summary) {
+        throw new Error('empty_summary');
+      }
+      setNarrative(summary);
     } catch (e) {
       console.error('Risk narrative generation failed:', e);
-      setNarrativeError('Could not generate a narrative right now.');
+      if (vendor) {
+        setNarrative(
+          buildLocalRiskNarrative({
+            name: vendor.name,
+            category: vendor.category,
+            criticality: vendor.criticality,
+            riskScore: vendor.riskScore,
+            impactLevel,
+            rating: preview.rating,
+            assessmentStatus: vendor.assessmentStatus,
+          })
+        );
+      }
+      setNarrativeError('Could not reach AI. Showing a draft from vendor fields.');
     } finally {
       setNarrativeLoading(false);
     }
@@ -225,34 +302,35 @@ security gap or high business impact). Return JSON: { "summary": "..." }`;
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 p-6 md:p-8">
-      <div>
-        <Link to="/vendors" className="mb-4 inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white">
-          <ArrowLeft className="h-4 w-4" /> Vendors
-        </Link>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold text-white">Impact Assessment</h1>
-            <p className="mt-1 text-slate-400">
-              Business impact for <span className="text-white">{vendor.name}</span>. Combined with the security
-              questionnaire to produce a final vendor rating.
-            </p>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              try {
-                openVendorReportForPrint({ vendor, impactLevel, notes, attachments });
-              } catch (e: any) {
-                setError(e?.message || 'Could not open the report window.');
-              }
-            }}
-          >
-            <FileDown className="mr-2 h-4 w-4" /> Report
-          </Button>
-        </div>
-      </div>
+    <PageShell
+      eyebrow="Impact Review"
+      title="Impact Assessment"
+      description={
+        <span>
+          Business impact for <span className="text-white">{vendor.name}</span>. Combine operational impact
+          with the security questionnaire to produce the final vendor rating.
+        </span>
+      }
+      className="max-w-4xl"
+      actions={
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            try {
+              openVendorReportForPrint({ vendor, impactLevel, notes, attachments });
+            } catch (e: any) {
+              setError(e?.message || 'Could not open the report window.');
+            }
+          }}
+        >
+          <FileDown className="mr-2 h-4 w-4" /> Report
+        </Button>
+      }
+    >
+      <Link to="/vendors" className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white">
+        <ArrowLeft className="h-4 w-4" /> Vendors
+      </Link>
 
       <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
         <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">Guidance</h2>
@@ -337,7 +415,16 @@ security gap or high business impact). Return JSON: { "summary": "..." }`;
             )}
           </Button>
         </div>
-        {narrativeError && <p className="mt-2 text-xs text-rose-400">{narrativeError}</p>}
+        {narrativeError && (
+          <p
+            className={cn(
+              'mt-2 text-xs',
+              narrative ? 'text-amber-300/90' : 'text-rose-400'
+            )}
+          >
+            {narrativeError}
+          </p>
+        )}
         {narrative && !narrativeLoading && (
           <p className="mt-3 text-sm leading-relaxed text-slate-300">{narrative}</p>
         )}
@@ -418,11 +505,11 @@ security gap or high business impact). Return JSON: { "summary": "..." }`;
           type="button"
           variant="outline"
           className="border-white/10"
-          onClick={() => navigate(`/assessments/new?vendorId=${vendor.id}`)}
+          onClick={() => navigate(`/assessments/triage?vendorId=${vendor.id}`)}
         >
-          Continue to security assessment
+          Continue to FastTrack triage
         </Button>
       </div>
-    </div>
+    </PageShell>
   );
 }

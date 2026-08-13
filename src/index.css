@@ -118,4 +118,23 @@
     animation: gradient-x 15s ease infinite;
     background-size: 200% 200%;
   }
+
+  @keyframes landing-fade {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-landing-fade {
+    animation: landing-fade 0.7s ease-out both;
+  }
+
+  .animate-landing-fade-delay {
+    animation: landing-fade 0.7s ease-out 0.35s both;
+  }
 }

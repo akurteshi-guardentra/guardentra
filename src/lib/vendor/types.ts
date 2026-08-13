@@ -94,7 +94,15 @@ export interface VendorAssessment {
   createdAt: string;
   sentAt?: string;
   completedAt?: string;
+  /** Org sign-off outcome (FastTrack decision terminal). */
+  decisionOutcome?: 'approved' | 'conditional' | 'remediate' | 'rejected';
+  decisionNotes?: string;
+  decidedAt?: string;
+  decidedBy?: string;
   inviteEmail?: string;
+  /** SaaS tenant brand stamped at invite (vendor portal chrome). */
+  requesterOrgName?: string;
+  requesterLogoUrl?: string;
   /** Legacy fields from older VendorRisk UI */
   type?: string;
   summary?: string;
@@ -170,4 +178,5 @@ export const COLLECTIONS = {
   assessmentResponses: 'assessment_responses',
   evidence: 'evidence',
   vendorInvites: 'vendor_invites',
+  vendorTriage: 'vendor_triage',
 } as const;

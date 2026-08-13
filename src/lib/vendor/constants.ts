@@ -42,7 +42,7 @@ export const FRAMEWORK_CATALOG: FrameworkDefinition[] = [
   {
     id: 'custom',
     name: 'Custom Questionnaire',
-    description: 'Create or upload your own questions',
+    description: 'Not available yet — use a standard framework pack',
     questionCount: 0,
   },
 ];

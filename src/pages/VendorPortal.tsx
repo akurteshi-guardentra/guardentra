@@ -17,7 +17,8 @@ import {
   Clock,
   Download,
 } from 'lucide-react';
-import { auth, db } from '../firebase';
+import { db } from '../firebase';
+import { getPortalAuth } from '../lib/vendor/portalAuth';
 import { Button } from '../components/ui/button';
 import { cn } from '../lib/utils';
 import type { AnswerValue } from '../lib/vendor/types';
@@ -30,10 +31,63 @@ import {
   type PortalQuestion,
 } from '../lib/vendor/questionBank';
 import { uploadPortalEvidence, type UploadedEvidence } from '../lib/vendor/evidenceUpload';
+import { syncVendorAfterAssessmentProgress, syncVendorAfterAssessmentSubmit } from '../lib/vendor/syncVendorAssessment';
+import {
+  buildPortalAutosavePatch,
+  buildPortalSubmitPatch,
+} from '../lib/vendor/assessmentLifecycle';
+import {
+  attestationsComplete,
+  effectiveAnswersForProgress,
+  type AnswerProposal,
+  type PortalAttestations,
+} from '../lib/vendor/portalProposals';
+import { emitAuditBestEffort } from '../lib/auditClient';
+import { authHeaders } from '../lib/authHeaders';
 
 type AnswersMap = Record<string, AnswerValue | string | string[] | undefined>;
 type CommentsMap = Record<string, string>;
 type EvidenceMap = Record<string, UploadedEvidence[]>;
+
+type PortalBranding = {
+  requesterOrgName: string;
+  requesterLogoUrl: string | null;
+};
+
+function PortalBrandMark({ branding, subtitle }: { branding: PortalBranding; subtitle?: string }) {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg border border-primary/30 bg-primary/10">
+        {branding.requesterLogoUrl ? (
+          <img
+            src={branding.requesterLogoUrl}
+            alt=""
+            className="h-full w-full object-contain"
+          />
+        ) : (
+          <Shield className="h-5 w-5 text-primary" />
+        )}
+      </div>
+      <div>
+        <p className="font-semibold text-white">{branding.requesterOrgName}</p>
+        <p className="text-xs text-slate-500">{subtitle || 'Vendor security assessment'}</p>
+      </div>
+    </div>
+  );
+}
+
+function isReceiptMode(data: {
+  status?: string;
+  decisionOutcome?: string;
+  completedAt?: string;
+  portalOpen?: boolean;
+}): boolean {
+  // Remediation reopen: org re-opens the portal; vendor should edit again.
+  if (data.decisionOutcome === 'remediate' && data.portalOpen === true) return false;
+  if (data.status === 'Completed' || data.status === 'Under Review') return true;
+  if (data.completedAt) return true;
+  return false;
+}
 
 export function VendorPortal() {
   const { assessmentId } = useParams();
@@ -49,10 +103,24 @@ export function VendorPortal() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [started, setStarted] = useState(false);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [showSavingLabel, setShowSavingLabel] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [proposing, setProposing] = useState(false);
+  const [proposals, setProposals] = useState<Record<string, AnswerProposal>>({});
+  const [attestations, setAttestations] = useState<PortalAttestations>({
+    accuracy: false,
+    authority: false,
+  });
+  const [attestedByName, setAttestedByName] = useState('');
+  const [branding, setBranding] = useState<PortalBranding>({
+    requesterOrgName: 'Requesting organization',
+    requesterLogoUrl: null,
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savingLabelTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savedClearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     /**
@@ -77,9 +145,23 @@ export function VendorPortal() {
       if (!res.ok) {
         throw new Error(`Portal session request failed (${res.status})`);
       }
-      const { token } = (await res.json()) as { token?: string };
-      if (!token) throw new Error('Portal session response contained no token');
-      await signInWithCustomToken(auth, token);
+      const body = (await res.json()) as {
+        token?: string;
+        branding?: {
+          requesterOrgName?: string;
+          requesterLogoUrl?: string | null;
+          submitted?: boolean;
+        };
+      };
+      if (!body.token) throw new Error('Portal session response contained no token');
+      if (body.branding?.requesterOrgName) {
+        setBranding({
+          requesterOrgName: body.branding.requesterOrgName,
+          requesterLogoUrl: body.branding.requesterLogoUrl || null,
+        });
+      }
+      await signInWithCustomToken(getPortalAuth(), body.token);
+      return body.branding;
     };
 
     const fetchAssessment = async () => {
@@ -104,6 +186,13 @@ export function VendorPortal() {
         }
         const data = { id: snap.id, ...snap.data() } as any;
         setAssessment(data);
+        if (typeof data.requesterOrgName === 'string' && data.requesterOrgName) {
+          setBranding((b) => ({
+            requesterOrgName: data.requesterOrgName,
+            requesterLogoUrl:
+              typeof data.requesterLogoUrl === 'string' ? data.requesterLogoUrl : b.requesterLogoUrl,
+          }));
+        }
 
         let qs: PortalQuestion[] = [];
         if (Array.isArray(data.questions) && data.questions.length) {
@@ -117,14 +206,28 @@ export function VendorPortal() {
             required: q.required !== false,
           }));
         }
-        // Do not rebuild from the live bank — empty snapshot means a broken/legacy
-        // assessment; silent rebuild would mutate historical question identity.
 
         setQuestions(qs);
         if (data.answers) setAnswers(data.answers);
         if (data.comments) setComments(data.comments);
         if (data.evidenceByQuestion) setEvidence(data.evidenceByQuestion);
-        if (data.progressPct > 0 || data.progress > 0) setStarted(true);
+        if (data.answerProposals && typeof data.answerProposals === 'object') {
+          setProposals(data.answerProposals as Record<string, AnswerProposal>);
+        }
+        if (data.attestations && typeof data.attestations === 'object') {
+          setAttestations({
+            accuracy: Boolean(data.attestations.accuracy),
+            authority: Boolean(data.attestations.authority),
+            attestedAt: data.attestations.attestedAt,
+            attestedByName: data.attestations.attestedByName,
+          });
+          if (data.attestations.attestedByName) setAttestedByName(String(data.attestations.attestedByName));
+        }
+        if (isReceiptMode(data)) {
+          setIsSuccess(true);
+        } else if (data.progressPct > 0 || data.progress > 0) {
+          setStarted(true);
+        }
         if (qs.length) setActiveCategory(qs[0].category);
       } catch (err) {
         console.error('Failed to load assessment', err);
@@ -133,6 +236,11 @@ export function VendorPortal() {
       }
     };
     fetchAssessment();
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      if (savingLabelTimer.current) clearTimeout(savingLabelTimer.current);
+      if (savedClearTimer.current) clearTimeout(savedClearTimer.current);
+    };
   }, [assessmentId]);
 
   const categoryQs = useMemo(
@@ -141,40 +249,74 @@ export function VendorPortal() {
   );
 
   const currentQuestion = categoryQs[questionIndex] || categoryQs[0];
-  const progress = overallProgressPct(questions, answers);
-  const catStats = categoryProgress(questions, answers);
+  const progressAnswers = useMemo(
+    () => effectiveAnswersForProgress(answers, proposals),
+    [answers, proposals]
+  );
+  const progress = overallProgressPct(questions, progressAnswers);
+  const catStats = categoryProgress(questions, progressAnswers);
 
   const persistDraft = useCallback(
-    async (nextAnswers: AnswersMap, nextComments: CommentsMap, nextEvidence: EvidenceMap) => {
+    async (
+      nextAnswers: AnswersMap,
+      nextComments: CommentsMap,
+      nextEvidence: EvidenceMap,
+      nextProposals?: Record<string, AnswerProposal>
+    ) => {
       if (!assessmentId || !assessment) return;
+      if (savingLabelTimer.current) clearTimeout(savingLabelTimer.current);
+      // Only show "Saving…" if the write takes longer than a short beat — avoids
+      // flashing the label on every answer click.
+      savingLabelTimer.current = setTimeout(() => setShowSavingLabel(true), 700);
       setSaveState('saving');
       try {
-        const pct = overallProgressPct(questions, nextAnswers);
-        await updateDoc(doc(db, 'assessments', assessmentId), {
-          answers: nextAnswers,
+        const props = nextProposals || proposals;
+        const effective = effectiveAnswersForProgress(nextAnswers, props);
+        const patch = buildPortalAutosavePatch({
+          questions,
+          answers: effective,
           comments: nextComments,
           evidenceByQuestion: nextEvidence,
-          progressPct: pct,
-          progress: pct,
-          status: pct === 100 ? 'Completed' : 'In Progress',
-          questions,
-          updatedAt: new Date().toISOString(),
         });
+        await updateDoc(doc(db, 'assessments', assessmentId), {
+          ...patch,
+          answers: nextAnswers,
+          answerProposals: props,
+        });
+        if (patch.progressPct > 0 && assessment.vendorId && assessment.organizationId) {
+          void syncVendorAfterAssessmentProgress(
+            assessment.organizationId,
+            assessment.vendorId,
+            false
+          );
+        }
+        if (savingLabelTimer.current) clearTimeout(savingLabelTimer.current);
+        setShowSavingLabel(false);
         setSaveState('saved');
+        if (savedClearTimer.current) clearTimeout(savedClearTimer.current);
+        savedClearTimer.current = setTimeout(() => setSaveState('idle'), 1600);
       } catch (err) {
         console.error(err);
+        if (savingLabelTimer.current) clearTimeout(savingLabelTimer.current);
+        setShowSavingLabel(false);
         setSaveState('error');
       }
     },
-    [assessmentId, assessment, questions]
+    [assessmentId, assessment, questions, proposals]
   );
 
   const scheduleSave = useCallback(
-    (nextAnswers: AnswersMap, nextComments: CommentsMap, nextEvidence: EvidenceMap) => {
+    (
+      nextAnswers: AnswersMap,
+      nextComments: CommentsMap,
+      nextEvidence: EvidenceMap,
+      nextProposals?: Record<string, AnswerProposal>
+    ) => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
+      // Longer debounce so rapid answer changes coalesce into one write.
       saveTimer.current = setTimeout(() => {
-        void persistDraft(nextAnswers, nextComments, nextEvidence);
-      }, 600);
+        void persistDraft(nextAnswers, nextComments, nextEvidence, nextProposals);
+      }, 1200);
     },
     [persistDraft]
   );
@@ -214,6 +356,19 @@ export function VendorPortal() {
       const next = { ...evidence, [currentQuestion.id]: list };
       setEvidence(next);
       scheduleSave(answers, comments, next);
+      if (assessment?.organizationId) {
+        void emitAuditBestEffort({
+          tenantId: assessment.organizationId,
+          eventType: 'evidence.uploaded',
+          objectType: 'assessment',
+          objectId: assessmentId,
+          payload: {
+            questionId: currentQuestion.id,
+            fileName: uploaded.fileName,
+            contentType: uploaded.contentType,
+          },
+        });
+      }
     } catch (err: any) {
       setUploadError(err?.message || 'Upload failed. Check Storage rules / anonymous auth.');
     } finally {
@@ -221,24 +376,151 @@ export function VendorPortal() {
     }
   };
 
+  const proposeFromEvidence = async () => {
+    if (!currentQuestion || !assessmentId) return;
+    const files = (evidence[currentQuestion.id] || []).map((f) => f.fileName);
+    if (!files.length) {
+      setUploadError('Upload evidence first, then ask AI to propose an answer.');
+      return;
+    }
+    setProposing(true);
+    setUploadError('');
+    try {
+      const res = await fetch('/api/ai/propose-answers', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          vendorName: assessment?.vendorName,
+          evidenceFileNames: files,
+          questions: [
+            {
+              id: currentQuestion.id,
+              question: currentQuestion.question,
+              options: currentQuestion.options,
+            },
+          ],
+        }),
+      });
+      const body = (await res.json()) as {
+        proposals?: Array<{
+          questionId: string;
+          proposedAnswer: string | string[];
+          citation?: string;
+          confidence?: number;
+          sourceFileName?: string;
+        }>;
+      };
+      const raw = body.proposals?.[0];
+      if (!raw) throw new Error('No proposal returned');
+      const proposal: AnswerProposal = {
+        questionId: currentQuestion.id,
+        proposedAnswer: raw.proposedAnswer,
+        citation: raw.citation,
+        confidence: raw.confidence,
+        sourceFileName: raw.sourceFileName || files[0],
+        status: 'proposed',
+        proposedAt: new Date().toISOString(),
+      };
+      const nextProps = { ...proposals, [currentQuestion.id]: proposal };
+      setProposals(nextProps);
+      scheduleSave(answers, comments, evidence, nextProps);
+      if (assessment?.organizationId) {
+        void emitAuditBestEffort({
+          tenantId: assessment.organizationId,
+          eventType: 'answer.proposed',
+          objectType: 'assessment',
+          objectId: assessmentId,
+          payload: {
+            questionId: currentQuestion.id,
+            confidence: proposal.confidence,
+            sourceFileName: proposal.sourceFileName,
+          },
+        });
+      }
+    } catch (err: any) {
+      setUploadError(err?.message || 'Could not propose answers from evidence.');
+    } finally {
+      setProposing(false);
+    }
+  };
+
+  const confirmProposal = (status: 'accepted' | 'edited' | 'rejected', editedAnswer?: string) => {
+    if (!currentQuestion) return;
+    const existing = proposals[currentQuestion.id];
+    if (!existing) return;
+    const nextProp: AnswerProposal = {
+      ...existing,
+      status,
+      confirmedAt: new Date().toISOString(),
+      proposedAnswer: status === 'edited' && editedAnswer ? editedAnswer : existing.proposedAnswer,
+    };
+    const nextProps = { ...proposals, [currentQuestion.id]: nextProp };
+    setProposals(nextProps);
+    let nextAnswers = { ...answers };
+    if (status === 'accepted' || status === 'edited') {
+      nextAnswers = {
+        ...answers,
+        [currentQuestion.id]: nextProp.proposedAnswer,
+      };
+      setAnswers(nextAnswers);
+    }
+    scheduleSave(nextAnswers, comments, evidence, nextProps);
+    if (assessment?.organizationId && assessmentId) {
+      void emitAuditBestEffort({
+        tenantId: assessment.organizationId,
+        eventType: status === 'rejected' ? 'answer.saved' : 'answer.confirmed',
+        objectType: 'assessment',
+        objectId: assessmentId,
+        payload: { questionId: currentQuestion.id, status },
+      });
+    }
+  };
+
   const handleSubmit = async () => {
     if (!assessmentId) return;
-    const missing = questions.filter((q) => q.required && !isAnswered(answers[q.id]));
+    const effective = effectiveAnswersForProgress(answers, proposals);
+    const missing = questions.filter((q) => q.required && !isAnswered(effective[q.id]));
     if (missing.length) {
-      setUploadError(`Answer all required questions (${missing.length} remaining).`);
+      setUploadError(
+        `Answer all required questions (${missing.length} remaining). Unconfirmed AI proposals do not count.`
+      );
+      return;
+    }
+    if (!attestationsComplete(attestations) || !attestedByName.trim()) {
+      setUploadError('Confirm both attestations and enter your name before submit.');
       return;
     }
     setIsSubmitting(true);
     try {
-      await updateDoc(doc(db, 'assessments', assessmentId), {
-        answers,
+      const attestationPayload = {
+        ...attestations,
+        accuracy: true,
+        authority: true,
+        attestedAt: new Date().toISOString(),
+        attestedByName: attestedByName.trim(),
+      };
+      const patch = buildPortalSubmitPatch({
+        answers: effective,
         comments,
         evidenceByQuestion: evidence,
-        progressPct: 100,
-        progress: 100,
-        status: 'Under Review',
-        completedAt: new Date().toISOString(),
+        attestations: attestationPayload,
+        answerProposals: proposals,
       });
+      await updateDoc(doc(db, 'assessments', assessmentId), patch);
+      if (assessment?.organizationId && assessment?.vendorId) {
+        void syncVendorAfterAssessmentSubmit(assessment.organizationId, assessment.vendorId, false);
+        void emitAuditBestEffort({
+          tenantId: assessment.organizationId,
+          eventType: 'assessment.submitted',
+          objectType: 'assessment',
+          objectId: assessmentId,
+          payload: {
+            vendorId: assessment.vendorId,
+            questionCount: questions.length,
+            attestedByName: attestedByName.trim(),
+          },
+        });
+      }
       setIsSuccess(true);
     } catch (err) {
       console.error(err);
@@ -274,31 +556,92 @@ export function VendorPortal() {
   }
 
   if (!assessment || isSuccess) {
+    const downloadReceipt = () => {
+      const submittedAt =
+        (assessment?.completedAt && String(assessment.completedAt)) || new Date().toISOString();
+      const body = [
+        'Guardentra vendor assessment — submission receipt',
+        '',
+        `Requesting organization: ${branding.requesterOrgName}`,
+        `Vendor: ${assessment?.vendorName || 'Vendor'}`,
+        `Assessment reference: ${assessmentId}`,
+        `Submitted at (UTC): ${submittedAt}`,
+        `Status: ${assessment?.status || 'Under Review'}`,
+        '',
+        'Your responses were received. The requesting organization will review them.',
+        'You do not need a Guardentra account. Keep this receipt for your records.',
+        'If they ask for more information, they will send you a new portal link.',
+      ].join('\n');
+      const blob = new Blob([body], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `assessment-receipt-${assessmentId || 'unknown'}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
-        <div className="max-w-lg w-full rounded-2xl border border-white/10 bg-slate-900/50 p-8 text-center">
-          {isSuccess ? (
-            <>
-              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10">
-                <CheckCircle2 className="h-7 w-7 text-emerald-400" />
+      <div className="min-h-screen bg-slate-950 flex flex-col">
+        <header className="border-b border-white/5 bg-black/40 px-6 py-4">
+          <div className="mx-auto flex max-w-lg items-center justify-between gap-4">
+            <PortalBrandMark branding={branding} subtitle="Vendor assessment portal" />
+            <p className="text-[10px] uppercase tracking-widest text-slate-600">Powered by Guardentra</p>
+          </div>
+        </header>
+        <div className="flex flex-1 items-center justify-center p-6">
+          <div className="max-w-lg w-full rounded-2xl border border-white/10 bg-slate-900/50 p-8 text-center">
+            {isSuccess ? (
+              <>
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10">
+                  <CheckCircle2 className="h-7 w-7 text-emerald-400" />
                 </div>
-              <h1 className="text-2xl font-semibold text-white">Submission received</h1>
-              <p className="mt-2 text-sm text-slate-400">
-                Thank you. Your security assessment was submitted for review.
-              </p>
-              <p className="mt-4 font-mono text-xs text-slate-400">Ref: {assessmentId}</p>
-            </>
-          ) : (
-            <>
-              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-rose-500/10">
-                <AlertTriangle className="h-7 w-7 text-rose-400" />
+                <h1 className="text-2xl font-semibold text-white">Submission received</h1>
+                <p className="mt-2 text-sm text-slate-400">
+                  Thank you. Your responses were sent to{' '}
+                  <span className="text-slate-200">{branding.requesterOrgName}</span> for review.
+                </p>
+                <p className="mt-4 font-mono text-xs text-slate-400">Ref: {assessmentId}</p>
+                <p className="mt-6 text-sm text-slate-400">
+                  You can close this window. This link stays available as a receipt — there is no
+                  vendor dashboard to return to.
+                </p>
+                <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="border-white/10 text-slate-200"
+                    onClick={downloadReceipt}
+                  >
+                    <Download className="mr-2 h-4 w-4" />
+                    Download receipt
+                  </Button>
+                  <Button
+                    type="button"
+                    className="bg-primary text-white hover:bg-primary/90"
+                    onClick={() => window.close()}
+                  >
+                    Close window
+                  </Button>
                 </div>
-              <h1 className="text-2xl font-semibold text-white">Portal link invalid</h1>
-              <p className="mt-2 text-sm text-slate-400">
-                This assessment could not be found or the link has expired.
-              </p>
-            </>
-          )}
+                <p className="mt-4 text-xs text-slate-500">
+                  If review needs more detail, {branding.requesterOrgName} will email you a new
+                  link.
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-rose-500/10">
+                  <AlertTriangle className="h-7 w-7 text-rose-400" />
+                </div>
+                <h1 className="text-2xl font-semibold text-white">Portal link invalid</h1>
+                <p className="mt-2 text-sm text-slate-400">
+                  This assessment could not be found or the link has expired. Ask the requesting
+                  organization for a new invite.
+                </p>
+              </>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -352,25 +695,22 @@ export function VendorPortal() {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100">
         <header className="border-b border-white/5 bg-black/40 backdrop-blur-xl px-6 py-4">
-          <div className="mx-auto flex max-w-5xl items-center gap-3">
-            <div className="rounded-lg bg-primary/20 border border-primary/40 p-2">
-              <Shield className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <p className="font-semibold text-white">GuardEntra Vendor Portal</p>
-              <p className="text-xs text-slate-500">Encrypted questionnaire</p>
-            </div>
+          <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
+            <PortalBrandMark branding={branding} subtitle="Encrypted vendor questionnaire" />
+            <p className="text-[10px] uppercase tracking-widest text-slate-600">Powered by Guardentra</p>
           </div>
         </header>
         <main className="mx-auto max-w-5xl p-6 lg:p-10">
           <div className="grid gap-6 rounded-2xl border border-white/10 bg-slate-900/50 p-8 lg:grid-cols-[1fr_auto] lg:items-center">
             <div>
-              <p className="text-sm text-slate-500">Security &amp; Compliance Assessment</p>
+              <p className="text-sm text-slate-500">
+                Security assessment from {branding.requesterOrgName}
+              </p>
               <h1 className="mt-2 font-display text-3xl font-bold text-white text-glow">
                 {assessment.vendorName || 'Vendor'} questionnaire
               </h1>
               <p className="mt-2 text-sm text-slate-400">
-                Requested for your organization · {questions.length} unique questions
+                Requested by {branding.requesterOrgName} · {questions.length} unique questions
                 {assessment.sourceQuestionCount
                   ? ` (deduplicated from ${assessment.sourceQuestionCount} source questions)`
                   : ''}
@@ -399,7 +739,8 @@ export function VendorPortal() {
                 </Button>
               </div>
               <p className="mt-3 text-xs text-slate-500">
-                Save and return anytime · Upload supporting evidence · Invite a colleague (soon)
+                Save and return anytime · Upload supporting evidence · This is FastTrack step 4
+                (vendor completion)
               </p>
             </div>
             <div className="flex flex-col items-center justify-center">
@@ -445,14 +786,11 @@ export function VendorPortal() {
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <header className="sticky top-0 z-40 border-b border-white/5 bg-black/40 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
-          <div className="flex items-center gap-3">
-            <Shield className="h-5 w-5 text-primary" />
-            <div>
-              <p className="text-sm font-semibold text-white">{assessment.vendorName || 'Vendor'} assessment</p>
-              <p className="text-xs font-medium tabular-nums text-slate-400">
-                Question {Math.max(1, globalIndex + 1)} of {questions.length}
-              </p>
-            </div>
+          <div className="min-w-0">
+            <PortalBrandMark
+              branding={branding}
+              subtitle={`${assessment.vendorName || 'Vendor'} · Q${Math.max(1, globalIndex + 1)} of ${questions.length}`}
+            />
           </div>
           <div className="flex items-center gap-4">
             <div className="hidden w-40 sm:block">
@@ -464,13 +802,20 @@ export function VendorPortal() {
                 <div className="h-full bg-primary transition-all" style={{ width: `${progress}%` }} />
               </div>
             </div>
-            <span className="text-xs text-slate-500">
-              {saveState === 'saving' && 'Saving…'}
+            <span
+              className={cn(
+                'text-xs tabular-nums',
+                saveState === 'error' ? 'text-rose-400' : 'text-slate-500'
+              )}
+              aria-live="polite"
+            >
+              {saveState === 'saving' && showSavingLabel && 'Saving…'}
               {saveState === 'saved' && 'Saved'}
-              {saveState === 'error' && 'Save failed'}
-              {saveState === 'idle' && (
-                <span className="inline-flex items-center gap-1">
-                  <Save className="h-3 w-3" /> Autosave on
+              {saveState === 'error' && 'Save failed — retrying on next change'}
+              {(saveState === 'idle' || (saveState === 'saving' && !showSavingLabel)) && (
+                <span className="inline-flex items-center gap-1 opacity-70">
+                  <Save className="h-3 w-3" />
+                  Autosaved
                 </span>
               )}
             </span>
@@ -643,7 +988,82 @@ export function VendorPortal() {
                   </div>
                 ))}
                 {uploadError && <p className="mt-2 text-sm text-rose-400">{uploadError}</p>}
+                <button
+                  type="button"
+                  disabled={proposing || !(evidence[currentQuestion.id] || []).length}
+                  onClick={() => void proposeFromEvidence()}
+                  className="mt-3 text-xs font-medium text-primary hover:underline disabled:text-slate-600"
+                >
+                  {proposing ? 'Proposing from evidence…' : 'AI propose answer from uploaded evidence'}
+                </button>
+                {proposals[currentQuestion.id]?.status === 'proposed' && (
+                  <div className="mt-3 rounded-lg border border-sky-500/30 bg-sky-500/10 p-3 text-xs text-sky-100">
+                    <p className="font-medium">AI proposal (not counted until confirmed)</p>
+                    <p className="mt-1">
+                      Answer: <span className="text-white">{String(proposals[currentQuestion.id].proposedAnswer)}</span>
+                    </p>
+                    {proposals[currentQuestion.id].citation && (
+                      <p className="mt-1 text-sky-200/80">{proposals[currentQuestion.id].citation}</p>
+                    )}
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-8 bg-emerald-600 text-white"
+                        onClick={() => confirmProposal('accepted')}
+                      >
+                        Accept
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-8 border-white/10"
+                        onClick={() => confirmProposal('rejected')}
+                      >
+                        Reject
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
+
+              {globalIndex >= questions.length - 1 && (
+                <div className="mt-6 space-y-3 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+                  <p className="text-sm font-medium text-amber-100">Attestations required to submit</p>
+                  <label className="flex items-start gap-2 text-sm text-slate-300">
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={attestations.accuracy}
+                      onChange={(e) =>
+                        setAttestations((a) => ({ ...a, accuracy: e.target.checked }))
+                      }
+                    />
+                    I attest that the answers and evidence provided are accurate to the best of my knowledge.
+                  </label>
+                  <label className="flex items-start gap-2 text-sm text-slate-300">
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={attestations.authority}
+                      onChange={(e) =>
+                        setAttestations((a) => ({ ...a, authority: e.target.checked }))
+                      }
+                    />
+                    I attest that I am authorized to respond on behalf of this vendor.
+                  </label>
+                  <label className="block text-sm text-slate-400">
+                    Full name
+                    <input
+                      value={attestedByName}
+                      onChange={(e) => setAttestedByName(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-white"
+                      placeholder="Your name"
+                    />
+                  </label>
+                </div>
+              )}
 
               <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-white/5 pt-4">
                 <Button
@@ -678,7 +1098,11 @@ export function VendorPortal() {
                   {globalIndex >= questions.length - 1 ? (
                     <Button
                       className="bg-emerald-600 text-white hover:bg-emerald-500"
-                      disabled={isSubmitting}
+                      disabled={
+                        isSubmitting ||
+                        !attestationsComplete(attestations) ||
+                        !attestedByName.trim()
+                      }
                       onClick={() => void handleSubmit()}
                     >
                       {isSubmitting ? (
@@ -689,7 +1113,21 @@ export function VendorPortal() {
                       Submit
                     </Button>
                   ) : (
-                    <Button className="bg-primary text-white hover:bg-primary/90" onClick={goNext}>
+                    <Button
+                      className="bg-primary text-white hover:bg-primary/90"
+                      onClick={() => {
+                        if (assessment?.organizationId && assessmentId && currentQuestion) {
+                          void emitAuditBestEffort({
+                            tenantId: assessment.organizationId,
+                            eventType: 'answer.saved',
+                            objectType: 'assessment',
+                            objectId: assessmentId,
+                            payload: { questionId: currentQuestion.id },
+                          });
+                        }
+                        goNext();
+                      }}
+                    >
                       Next Question
                     </Button>
                   )}
@@ -698,7 +1136,7 @@ export function VendorPortal() {
             </div>
           )}
           <p className="text-center text-xs text-slate-400">
-            Progress saves automatically · Your responses are encrypted in transit
+            Progress saves automatically · Unconfirmed AI proposals do not count as complete
           </p>
         </main>
       </div>

@@ -51,8 +51,16 @@ router.post('/session', portalSessionLimiter, async (req, res) => {
       return;
     }
 
-    if (snap.data()?.portalOpen !== true) {
-      res.status(403).json({ error: 'This assessment is no longer accepting responses.' });
+    const data = snap.data() || {};
+    const status = String(data.status || '');
+    const open = data.portalOpen === true;
+    const submitted =
+      status === 'Under Review' ||
+      status === 'Completed' ||
+      Boolean(data.completedAt);
+    // Allow session for in-progress portals and for post-submit receipt views.
+    if (!open && !submitted) {
+      res.status(403).json({ error: 'This assessment is no longer available.' });
       return;
     }
 
@@ -62,7 +70,35 @@ router.post('/session', portalSessionLimiter, async (req, res) => {
       portalAssessmentId: assessmentId,
     });
 
-    res.json({ token });
+    // Branding for SaaS multi-tenant portal chrome (stamped on assessment; org fallback).
+    let requesterOrgName = typeof data.requesterOrgName === 'string' ? data.requesterOrgName : '';
+    let requesterLogoUrl = typeof data.requesterLogoUrl === 'string' ? data.requesterLogoUrl : '';
+    if ((!requesterOrgName || !requesterLogoUrl) && data.organizationId) {
+      try {
+        const orgSnap = await getAdminDb().collection('organizations').doc(String(data.organizationId)).get();
+        if (orgSnap.exists) {
+          const org = orgSnap.data() || {};
+          if (!requesterOrgName && typeof org.name === 'string') requesterOrgName = org.name;
+          if (!requesterLogoUrl && typeof org.logoUrl === 'string') requesterLogoUrl = org.logoUrl;
+        }
+      } catch {
+        /* branding is best-effort */
+      }
+    }
+
+    res.json({
+      token,
+      branding: {
+        requesterOrgName: requesterOrgName || 'Requesting organization',
+        requesterLogoUrl: requesterLogoUrl || null,
+        vendorName: typeof data.vendorName === 'string' ? data.vendorName : null,
+        status,
+        portalOpen: open,
+        submitted,
+        completedAt: data.completedAt || null,
+        decisionOutcome: data.decisionOutcome || null,
+      },
+    });
   } catch (err) {
     // createCustomToken needs credentials that can sign JWTs — a service account key,
     // or ADC plus the "Service Account Token Creator" role. On Cloud Run / App Hosting

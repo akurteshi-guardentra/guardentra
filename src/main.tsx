@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 // @ts-ignore
 import './index.css';
-import './i18n';
+// i18n loads with the authenticated shell (Layout) — not on public Landing.
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {

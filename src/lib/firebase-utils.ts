@@ -3,52 +3,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { GoogleAuthProvider, signInWithPopup, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification, updateProfile } from 'firebase/auth';
 import { bootstrapUserProfile } from './orgBootstrap';
 
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId?: string | null;
-    email?: string | null;
-    emailVerified?: boolean | null;
-    isAnonymous?: boolean | null;
-    tenantId?: string | null;
-    providerInfo?: {
-      providerId?: string | null;
-      email?: string | null;
-    }[];
-  }
-}
-
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData?.map(provider => ({
-        providerId: provider.providerId,
-        email: provider.email,
-      })) || []
-    },
-    operationType,
-    path
-  }
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
-}
+import { OperationType, handleFirestoreError } from './firestoreError';
 
 export const signInWithGoogle = async () => {
   console.log("firebase-utils: signInWithGoogle started");
@@ -139,11 +94,16 @@ export const signInWithEmail = async (email: string, password: string) => {
   }
 };
 
-export const logOut = async () => {
+export const logOut = async (redirectTo: string = '/') => {
   try {
     await signOut(auth);
   } catch (error) {
-    console.error("Error signing out", error);
+    console.error('Error signing out', error);
+  } finally {
+    // Hard navigate so we leave AppAuthenticated (ProtectedRoute would otherwise
+    // send an unauthenticated user to /login). Default is the public home page.
+    // Do not use /dashboard here — it is auth-gated and redirects to /login.
+    window.location.assign(redirectTo);
   }
 };
 

@@ -15,6 +15,7 @@ import { logOut } from '../lib/firebase-utils';
 import { ONBOARDING_FRAMEWORKS } from '../lib/vendor/constants';
 import type { FrameworkId } from '../lib/vendor/types';
 import { currentDefaultsForFrameworks, saveOrgFrameworkPackDefaults } from '../lib/vendor/orgFrameworkPacks';
+import { isLocallyOnboarded, setLocallyOnboarded } from '../lib/onboardingFlag';
 
 const ONBOARDING_ICONS: Record<string, typeof Shield> = {
   iso27001: Shield,
@@ -30,17 +31,17 @@ export function Onboarding() {
   const [orgName, setOrgName] = useState('');
   const [industry, setIndustry] = useState('');
   const [selectedFrameworks, setSelectedFrameworks] = useState<string[]>([]);
+  const [seedSampleData, setSeedSampleData] = useState(false);
   const [isFinishing, setIsFinishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Redirect if already onboarded
   React.useEffect(() => {
-    if (!loading && (profile?.onboarded || localStorage.getItem('guardentra_onboarded') === 'true')) {
+    if (!loading && (profile?.onboarded || (user && isLocallyOnboarded(user.uid)))) {
       console.log("Onboarding: User already onboarded in profile state, redirecting to dashboard");
       navigate('/dashboard');
     }
-  }, [profile?.onboarded, loading, navigate]);
-
+  }, [profile?.onboarded, loading, user, navigate]);
   const handleNext = () => {
     setError(null);
     if (step === 1 && !orgName.trim()) {
@@ -75,7 +76,7 @@ export function Onboarding() {
     const isOrgCreator = profile?.role !== 'member';
 
     // Set immediate client-side onboarding state so they are never locked out
-    localStorage.setItem('guardentra_onboarded', 'true');
+    setLocallyOnboarded(user.uid);
     localStorage.setItem('guardentra_fallback_org_id', activeOrgId);
 
     try {
@@ -124,17 +125,19 @@ export function Onboarding() {
           }
         }
 
-        // 3. Seed Professional Data Templates
-        console.log("Onboarding: Seeding professional metrics...");
-        try {
-          await seedProfessionalData({
-            organizationId: activeOrgId,
-            industry: industry || 'SaaS',
-            frameworks: selectedFrameworks
-          });
-          console.log("Onboarding: Seeding completed");
-        } catch (e: any) {
-          console.warn("Onboarding: Seeding failed, proceeding with local fallback:", e);
+        // 3. Optional sample seed (off by default — keeps Dashboard Quick Start honest)
+        if (seedSampleData) {
+          console.log("Onboarding: Seeding professional metrics...");
+          try {
+            await seedProfessionalData({
+              organizationId: activeOrgId,
+              industry: industry || 'SaaS',
+              frameworks: selectedFrameworks
+            });
+            console.log("Onboarding: Seeding completed");
+          } catch (e: any) {
+            console.warn("Onboarding: Seeding failed, proceeding with local fallback:", e);
+          }
         }
       } else {
         console.log("Onboarding: Invited member joining existing org — skipping org update/framework init/seeding");
@@ -181,7 +184,7 @@ export function Onboarding() {
           <ArrowLeft className="h-4 w-4" />
           <span className="text-xs font-bold uppercase tracking-widest">Back to Landing</span>
         </Link>
-        <Button variant="ghost" onClick={logOut} className="text-slate-500 hover:text-rose-400">
+        <Button variant="ghost" onClick={() => void logOut('/')} className="text-slate-500 hover:text-rose-400">
           <LogOut className="h-4 w-4 mr-2" />
           Sign Out
         </Button>
@@ -249,7 +252,7 @@ export function Onboarding() {
                   <select 
                     value={industry}
                     onChange={(e) => setIndustry(e.target.value)}
-                    className="w-full h-14 px-4 rounded-xl bg-white/5 border border-white/10 text-white text-lg focus:ring-1 focus:ring-primary outline-none"
+                    className="w-full h-14 px-4 rounded-xl bg-slate-950 border border-white/10 text-white text-lg focus:ring-1 focus:ring-primary outline-none [&>option]:bg-slate-950 [&>option]:text-white"
                   >
                     <option value="" disabled>Select industry...</option>
                     <option value="FinTech">Financial services / FinTech</option>
@@ -381,6 +384,17 @@ export function Onboarding() {
                     </div>
                   </div>
                 </div>
+                <label className="mt-5 flex items-start gap-3 cursor-pointer border-t border-white/5 pt-4">
+                  <input
+                    type="checkbox"
+                    checked={seedSampleData}
+                    onChange={(e) => setSeedSampleData(e.target.checked)}
+                    className="mt-1 rounded border-white/20 bg-black/40"
+                  />
+                  <span className="text-xs text-slate-400 leading-relaxed">
+                    Load sample demo data (risks, incidents, etc.). Leave unchecked for a clean vendor spine.
+                  </span>
+                </label>
               </Card>
 
               <Button 

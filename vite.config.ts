@@ -35,6 +35,25 @@ export default defineConfig(({ mode }) => {
       },
       build: {
         rollupOptions: {
+          output: {
+            manualChunks(id) {
+              if (!id.includes('node_modules')) return;
+              // React family first — never let another vendor chunk absorb React
+              // (e.g. paths under framer-motion that also contain "/react/").
+              if (
+                id.includes('react-dom') ||
+                id.includes('react-router') ||
+                id.includes('react-is') ||
+                id.includes(`${path.sep}scheduler${path.sep}`) ||
+                id.includes('/scheduler/') ||
+                /[/\\]react[/\\]/.test(id)
+              ) {
+                return 'react-vendor';
+              }
+              if (id.includes('firebase')) return 'firebase-vendor';
+              // framer-motion / recharts / d3 stay with the lazy routes that import them.
+            },
+          },
           onwarn(warning, warn) {
             if (warning.code === 'MODULE_LEVEL_DIRECTIVE') {
               return;

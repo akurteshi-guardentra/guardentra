@@ -43,3 +43,15 @@ GoogleService-Info.plist
 
 # Mockup/reference screenshots dropped at repo root, not app assets
 *.webp
+
+# Terraform local state / secrets
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+.terraform.lock.hcl
+
+# Local ops secrets (never commit)
+.local-secrets/
+

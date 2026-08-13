@@ -4,6 +4,8 @@
     "demo": "guardentra-7f582",
     "dev": "guardentra-dev",
     "staging": "guardentra-staging",
-    "prod": "guardentra-prod"
+    "prod": "guardentra-prod",
+    "eu": "guardentra-eu",
+    "us": "guardentra-us"
   }
 }

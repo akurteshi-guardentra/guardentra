@@ -60,7 +60,7 @@ export function TrustVault() {
     fetchVaultData();
   }, [profile?.organizationId]);
 
-  const publicUrl = `https://nexusgrc.com/trust/${profile?.organizationId || 'acme-corp'}`;
+  const publicUrl = `https://guardentra.com/trust/${profile?.organizationId || 'acme-corp'}`;
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(publicUrl);

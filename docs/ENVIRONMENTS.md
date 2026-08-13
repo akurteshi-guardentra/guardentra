@@ -40,6 +40,34 @@ Replace placeholder IDs in `.firebaserc` once projects exist (`guardentra-dev`, 
 - Per-env secrets: `GEMINI_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`.
 - Staging Stripe = test mode; prod Stripe = live mode.
 
+## Phase 2 audit spine (optional Postgres)
+
+Default **off** so App Hosting boots without Cloud SQL. Local:
+
+```bash
+docker compose -f docker-compose.audit.yml up -d
+# .env.local — see .env.example
+AUDIT_SPINE_ENABLED=true
+AUDIT_DATABASE_URL=postgres://audit_app:audit_app@localhost:5433/guardentra_audit
+AUDIT_DATABASE_URL_MIGRATOR=postgres://audit_migrator:audit_migrator@localhost:5433/guardentra_audit
+npm run migrate:audit
+```
+
+Details: [`docs/FASTTRACK_PHASE2.md`](./FASTTRACK_PHASE2.md). Prod later attaches Cloud SQL and sets the same env vars as App Hosting secrets.
+
+Week 0 runbook + Terraform: [`docs/PHASE2_WEEK0_START_HERE.md`](./PHASE2_WEEK0_START_HERE.md), [`infra/`](../infra/).
+
+## Dual Firebase residency (Phase 2 Week 1 — not live yet)
+
+`organizations.dataRegion` (`eu`|`us`) and [`server/lib/regionRouter.ts`](../server/lib/regionRouter.ts) are ready. Live isolation still needs two Firebase projects, e.g.:
+
+| Region | Suggested project | Storage bucket env |
+|--------|-------------------|--------------------|
+| US | `guardentra-us` (or staging/prod aliases) | `FIREBASE_PROJECT_ID_US`, `FIREBASE_STORAGE_BUCKET_US` |
+| EU | `guardentra-eu` | `FIREBASE_PROJECT_ID_EU`, `FIREBASE_STORAGE_BUCKET_EU` |
+
+Until both projects exist, keep a single demo/staging project and treat dual routing as prep-only.
+
 ## Deploying the app (Firebase App Hosting)
 
 [`apphosting.yaml`](../apphosting.yaml) is the deploy config. App Hosting runs
@@ -65,6 +93,38 @@ firebase apphosting:secrets:set STRIPE_WEBHOOK_SECRET --project guardentra-7f582
 ```
 
 After that, pushing to the connected branch builds and deploys automatically.
+
+### Verifying a live App Hosting rollout
+
+Firebase CLI rollout commands need a fresh login. If you see
+`Authentication Error: … firebase login --reauth`, restore CLI first:
+
+```bash
+npm run firebase:reauth
+# or: npx firebase-tools login --reauth
+npx firebase-tools projects:list
+npx firebase-tools apphosting:rollouts:list --backend guardentra --project guardentra-7f582
+```
+
+**Do not wait on CLI to know if guardentra.com updated.** After every `main` push, run
+the CDN string probe (no Firebase auth required):
+
+```bash
+npm run verify:live
+# optional: node scripts/verify-live-deploy.mjs --base https://guardentra.com
+```
+
+What it checks:
+
+1. Homepage HTML → hashed `/assets/index-*.js`
+2. Entry → `AppAuthenticated-*.js` graph includes `PageShell`, `VendorsDirectory`, `Assessments`, `AddVendorDialog` chunks
+3. Page chunks contain expected polish markers (`Vendor Register`, `Assessment Tracker`, `Opening review`)
+
+Exit `0` = live bundle looks current. Exit `1` = stale or incomplete vs markers — then open
+Firebase Console → App Hosting → backend `guardentra` and compare rollout commit to
+`origin/main`.
+
+Human backup: hard-refresh `/vendors` and confirm the **Vendor Register** eyebrow header.
 
 ### Two prerequisites that fail silently if missed
 
@@ -107,4 +167,34 @@ See **[`docs/SECRETS.md`](./SECRETS.md)** for the full policy:
 4. Confirm production rules have **no** personal email bypass (`isAtIdhee` removed).
 5. Point App Hosting / Cloud Run `main` at `guardentra-prod` only.
 6. Keep `GEMINI_API_KEY` server-only (not in client production bundles).
-7. **Install the "Trigger Email from Firestore" extension** (Console → Extensions → search "firestore-send-email") in each project, configured with a real SMTP or SendGrid provider. `server/routes/notify.ts` (`POST /api/notify/mail`) already writes correctly-shaped docs to the `mail` collection — without this extension installed, those writes succeed but no email is ever actually sent. This is the one piece of Sprint 6 (notifications) that can't be done from code.
+7. **Install and verify the "Trigger Email from Firestore" extension** (required for Invite Vendor / reminders to reach inboxes such as `akurteshi@guardentra.com`).
+
+### Trigger Email (`firestore-send-email`) — ops checklist
+
+App code path (already implemented):
+
+1. **Invite Vendor** → `POST /api/notify/mail` (auth + rate limit) → Admin SDK writes `mail/{id}` with `{ to, message: { subject, text, html? }, createdAt }`.
+2. Firestore rules deny all client access to `mail` — only the server route can queue.
+3. The UI now **awaits** queue success for Invite Vendor and shows a banner: queued OK, or “Vendor saved; email could not be queued…”.
+
+What code cannot do: deliver the message. That requires the extension + SMTP/SendGrid.
+
+**Install (each Firebase project that sends mail, including live `guardentra-7f582`):**
+
+1. Firebase Console → **Extensions** → search **Trigger Email from Firestore** (`firebase/firestore-send-email`).
+2. Collection: `mail` (must match `server/routes/notify.ts`).
+3. Configure SMTP **or** SendGrid. Prefer From: `support@guardentra.com` (or another address on a verified domain).
+4. Deploy/enable the extension; wait until status is **Active**.
+
+**Diagnose after Invite Vendor to `akurteshi@guardentra.com`:**
+
+| Observation | Likely cause | Next step |
+|---|---|---|
+| UI banner: email could not be queued | `/api/notify/mail` auth/Admin/rate-limit failure | App Hosting logs for `[notify] failed to queue email` |
+| UI banner: Welcome email queued, but inbox empty | Extension missing, misconfigured, or SMTP rejected | Console → Extensions; Firestore → `mail` docs for `delivery` / error fields |
+| `mail` doc has `delivery.state: SUCCESS` | Delivered (check spam) | Confirm From domain / spam filters |
+| `mail` doc has error / PENDING forever | SMTP credentials, From not allowed, or extension down | Fix SMTP / SendGrid; re-invite |
+
+**Retest:** Vendors → Invite → contact `akurteshi@guardentra.com` → expect queue banner within seconds and inbox (or spam) within a few minutes once the extension is healthy.
+
+CLI note: listing extensions needs a valid Firebase login (`npm run firebase:reauth` in a local interactive terminal). Agent shells cannot complete browser OAuth.

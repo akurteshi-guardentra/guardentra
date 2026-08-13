@@ -88,12 +88,17 @@ export function patchLocalVendor(
   return upsertLocalVendor(orgId, { ...existing, ...patch, id: vendorId, organizationId: orgId });
 }
 
-/** Mark vendor as having an active security assessment (Cynomi-style status chip). */
-export function markLocalVendorAssessmentStarted(orgId: string, vendorId: string): Vendor | null {
+/** Mark vendor as having a questionnaire sent (awaiting vendor response). */
+export function markLocalVendorAssessmentSent(orgId: string, vendorId: string): Vendor | null {
   return patchLocalVendor(orgId, vendorId, {
-    assessmentStatus: 'In Progress',
+    assessmentStatus: 'Sent',
     lastAssessmentAt: new Date().toISOString(),
   });
+}
+
+/** @deprecated Prefer markLocalVendorAssessmentSent — kept as alias for older call sites/tests. */
+export function markLocalVendorAssessmentStarted(orgId: string, vendorId: string): Vendor | null {
+  return markLocalVendorAssessmentSent(orgId, vendorId);
 }
 
 /** Detect common Firestore/network failures that should trip local fallback. */

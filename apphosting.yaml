@@ -22,7 +22,9 @@ runConfig:
   # configured max. Keeping maxInstances low bounds that drift until it moves to a
   # shared store (already flagged in that file).
   maxInstances: 2
-  minInstances: 0
+  # Keep one warm instance so guardentra.com doesn't pay a multi-second Cloud Run
+  # cold start on the first visit after idle (minInstances: 0 was dominating TTFB).
+  minInstances: 1
   concurrency: 80
 
 env:
@@ -58,6 +60,25 @@ env:
   # behind /api/ai precisely so this key stays server-side.
   - variable: GEMINI_API_KEY
     secret: GEMINI_API_KEY
+    availability:
+      - RUNTIME
+
+  # Phase 2 audit spine — default OFF in this shared yaml so production (main)
+  # stays safe. Staging App Hosting backend must override AUDIT_SPINE_ENABLED=true
+  # in the Firebase console (or a branch-specific config) after Cloud SQL is attached.
+  # AUDIT_DATABASE_URL uses unix socket /cloudsql/INSTANCE (see docs/PHASE2_CLOUDSQL_STAGING.md).
+  - variable: AUDIT_SPINE_ENABLED
+    value: "false"
+    availability:
+      - RUNTIME
+
+  - variable: AUDIT_DATABASE_URL
+    secret: AUDIT_DATABASE_URL
+    availability:
+      - RUNTIME
+
+  - variable: AUDIT_WORKER_ENABLED
+    value: "true"
     availability:
       - RUNTIME
 

@@ -1,0 +1,9 @@
+project_id                    = "guardentra-7f582"
+region                        = "europe-west3"
+backend_service_account_email = "firebase-app-hosting-compute@guardentra-7f582.iam.gserviceaccount.com"
+
+# Path B — keep both false until APIs are enabled and a human reviews plan.
+# Apply order: enable_vpc=true first → then enable_cloud_sql=true (vpc_network_id optional if module.vpc is on).
+enable_vpc       = false
+enable_cloud_sql = false
+vpc_network_id   = "" # optional override; leave empty to use module.vpc[0].network_id

@@ -7,6 +7,7 @@ import {
   removeLocalAssessment,
   type StoredAssessment,
 } from './localAssessmentStore';
+import { promoteLocalVendors } from './useOrgVendors';
 import type { FrameworkId } from './types';
 
 export type AssessmentDataMode = 'firestore' | 'local';
@@ -15,13 +16,23 @@ export const ASSESSMENT_RETRY_INTERVAL_MS = 30000;
 
 /** Write any local-only assessments (created while Firestore was unreachable) for real,
  * then drop them from the local store — otherwise they'd stay invisible to teammates
- * forever even after Firestore reconnects. */
-export async function promoteLocalAssessments(orgId: string): Promise<void> {
+ * forever even after Firestore reconnects.
+ * Remaps vendorId from local_* → cloud id when vendors were promoted in the same pass. */
+export async function promoteLocalAssessments(
+  orgId: string,
+  vendorIdMap?: Map<string, string>
+): Promise<void> {
+  // Ensure local vendors exist in cloud first so assessment.vendorId can be remapped.
+  const resolvedMap = vendorIdMap ?? (await promoteLocalVendors(orgId));
   const localOnly = listLocalAssessments(orgId).filter((a) => a.id.startsWith('local_asm_'));
   for (const assessment of localOnly) {
     try {
       const { id, ...rest } = assessment;
-      await addDoc(collection(db, 'assessments'), rest);
+      const vendorId =
+        rest.vendorId && resolvedMap.has(rest.vendorId)
+          ? resolvedMap.get(rest.vendorId)!
+          : rest.vendorId;
+      await addDoc(collection(db, 'assessments'), { ...rest, vendorId });
       removeLocalAssessment(orgId, id);
     } catch (err) {
       console.warn('useOrgAssessments: could not promote local-only assessment, will retry next reconnect', err);
@@ -63,6 +74,11 @@ function normalizeCloudDoc(id: string, data: Record<string, unknown>): StoredAss
     // is why the org-side review screen always showed "No response provided."
     answers: data.answers as Record<string, string | string[]> | undefined,
     comments: data.comments as Record<string, string> | undefined,
+    evidenceByQuestion: data.evidenceByQuestion as Record<string, unknown[]> | undefined,
+    decisionOutcome: data.decisionOutcome as StoredAssessment['decisionOutcome'] | undefined,
+    decisionNotes: data.decisionNotes as string | undefined,
+    decidedAt: data.decidedAt as string | undefined,
+    decidedBy: data.decidedBy as string | undefined,
   };
 }
 

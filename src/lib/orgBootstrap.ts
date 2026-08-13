@@ -10,9 +10,10 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { db } from '../firebase';
+import { DEFAULT_PLAN_ID, DEFAULT_SEAT_CAP, DEFAULT_VENDOR_CAP, PLANS } from './plans';
 
-/** Starter-tier seat allowance (docs/ARCHITECTURE_FOUNDATION.md §4). Growth raises it to 10. */
-export const DEFAULT_SEAT_CAP = 3;
+/** @deprecated Prefer DEFAULT_SEAT_CAP from `./plans`. Re-exported for existing imports. */
+export { DEFAULT_SEAT_CAP };
 
 interface NewProfileFields {
   email: string | null;
@@ -40,17 +41,26 @@ export async function bootstrapUserProfile(uid: string, fields: NewProfileFields
 
   let pendingInvite: { id: string; organizationId: string; role?: string } | null = null;
   if (email) {
-    const invitesQuery = query(
-      collection(db, 'org_invites'),
-      where('email', '==', email),
-      where('status', '==', 'pending'),
-      limit(1)
-    );
-    const inviteSnap = await getDocs(invitesQuery);
-    if (!inviteSnap.empty) {
-      const inviteDoc = inviteSnap.docs[0];
-      const data = inviteDoc.data() as { organizationId: string; role?: string };
-      pendingInvite = { id: inviteDoc.id, organizationId: data.organizationId, role: data.role };
+    // Invite lookup must never block account creation. Rules require the query
+    // email to equal request.auth.token.email exactly — casing mismatches or
+    // transient permission errors used to reject the entire bootstrap and leave
+    // first-run users on a local-only profile (blank/skipped onboarding).
+    try {
+      const invitesQuery = query(
+        collection(db, 'org_invites'),
+        where('email', '==', email),
+        where('status', '==', 'pending'),
+        limit(1)
+      );
+      const inviteSnap = await getDocs(invitesQuery);
+      if (!inviteSnap.empty) {
+        const inviteDoc = inviteSnap.docs[0];
+        const data = inviteDoc.data() as { organizationId: string; role?: string };
+        pendingInvite = { id: inviteDoc.id, organizationId: data.organizationId, role: data.role };
+      }
+    } catch (inviteErr) {
+      console.warn('orgBootstrap: pending-invite lookup failed; creating a new org instead', inviteErr);
+      pendingInvite = null;
     }
   }
 
@@ -74,13 +84,21 @@ export async function bootstrapUserProfile(uid: string, fields: NewProfileFields
     // below. Putting it here broke joining entirely.
   } else {
     const orgRef = doc(collection(db, 'organizations'));
+    const starter = PLANS[DEFAULT_PLAN_ID];
     batch.set(orgRef, {
       name: `${fields.displayName || 'User'}'s Organization`,
       createdAt: new Date().toISOString(),
       autoCreated: true,
+      // P2B: pin residency at create. Dual Firebase wiring comes later; field is immutable.
+      dataRegion: 'us',
+      // SaaS Starter defaults — Stripe webhook raises planId + caps on paid upgrade.
+      planId: starter.id,
+      vendorCount: 0,
+      vendorCap: DEFAULT_VENDOR_CAP,
       // The creator occupies the first seat.
       seatCount: 1,
       seatCap: DEFAULT_SEAT_CAP,
+      subscriptionStatus: 'none',
     });
     batch.set(userRef, {
       email: fields.email,
