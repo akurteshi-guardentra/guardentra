@@ -14,6 +14,15 @@ export interface StoredAssessment extends VendorAssessment {
   answers?: Record<string, string | string[]>;
   comments?: Record<string, string>;
   evidenceByQuestion?: Record<string, unknown[]>;
+  submittedSnapshot?: {
+    answers: Record<string, string | string[]>;
+    comments?: Record<string, string>;
+    evidenceByQuestion?: Record<string, unknown[]>;
+    submittedAt: string;
+  };
+  correctionReopenedAt?: string;
+  correctionReopenedBy?: string;
+  correctionReason?: string;
 }
 
 type StoreShape = Record<string, StoredAssessment[]>;
