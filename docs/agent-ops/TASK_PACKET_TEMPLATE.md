@@ -8,11 +8,11 @@
 - Relevant ADRs:
 - Base branch and verified SHA:
 - Feature branch:
-- Primary writing tool:
-- Independent reviewer:
-- Human approver(s):
+- Primary writing tool (`tool:*`):
+- Optional reviewer (`review:*`, if any):
+- Owner / merge authority: `@akurteshi-guardentra`
 
-For security-sensitive work, identify each approver by GitHub username or approved team before implementation begins. If no qualified approver is assigned, mark the task `NOT READY`. `CODEOWNERS` routing does not replace this field or recorded approval in the PR.
+Optional review does not block merge after required CI passes unless the owner explicitly makes it blocking for this task.
 
 ## Scope and authority
 
@@ -22,6 +22,7 @@ For security-sensitive work, identify each approver by GitHub username or approv
 - Allowed files/services:
 - Prohibited actions:
 - Dependencies/blockers:
+- Owner command authorized (commit / commit and PR / commit, PR, and merge / deploy staging / deploy production):
 
 ## Impact analysis
 
@@ -42,6 +43,7 @@ For security-sensitive work, identify each approver by GitHub username or approv
 - Security/negative tests:
 - Build/lint/typecheck:
 - Required screenshots/logs/live-state evidence:
+- Exact changed-file scope validation:
 
 ## Handoff
 
@@ -55,7 +57,7 @@ For security-sensitive work, identify each approver by GitHub username or approv
 - Deployment status and verification:
 - Known limitations:
 - Rollback procedure:
-- Reviewer findings:
-- Remaining human decisions:
+- Optional reviewer findings (if engaged):
+- Remaining owner decisions:
 
 Attach the completed `COMPLETION_EVIDENCE_TEMPLATE.md`. Missing evidence prohibits a completion claim.

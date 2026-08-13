@@ -24,8 +24,8 @@ Copy this block into every completion report, handoff, and PR. Do not remove fie
 - Security/privacy/data/migration/documentation impact:
 - Known limitations:
 - Rollback procedure:
-- Independent reviewer:
-- Human approvals still required:
+- Optional reviewer (`review:*`, if engaged): name/tool and result, or `NONE`
+- Owner authorization still required (merge/deploy/secrets/production): yes/no and which command
 
 ## Gate decision
 
@@ -34,3 +34,5 @@ Copy this block into every completion report, handoff, and PR. Do not remove fie
 - Permitted wording: `local checkpoint`, `PR ready`, `merged`, or `deployed and verified`
 
 The gate passes only when every mandatory field is populated and consistent with repository, GitHub, CI, and deployment evidence. `NOT COMMITTED`, `NO PR`, failed/unrun required tests, unexplained working-tree changes, or unverified deployment prevent a full completion claim.
+
+Merge requires required CI pass and owner authorization. Optional review is not a merge gate unless the owner explicitly designated it blocking for that task.
