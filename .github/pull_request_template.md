@@ -22,5 +22,7 @@ Missing or inconsistent fields fail the completion-evidence gate. Commit, push, 
 - Documentation impact:
 - Known limitations:
 - Rollback procedure:
-- Independent reviewer:
-- Human approvals still required:
+- Optional reviewer (`review:*`, if engaged):
+- Owner authorization required for merge/deploy: `@akurteshi-guardentra`
+
+Solo-owner model: independent review is optional and does not block merge after required CI passes unless the owner explicitly designated review as blocking for this PR.
