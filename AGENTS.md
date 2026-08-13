@@ -1,6 +1,6 @@
-# GuardEntra Agent Operating Rules
+﻿# GuardEntra Agent Operating Rules
 
-Owner: GuardEntra human product/technical lead  
+Owner: GuardEntra human product/technical lead
 Applies to: every AI assistant, coding agent, reviewer, automation, and contributor
 
 ## 1. Authority order
@@ -79,3 +79,40 @@ Every handoff and PR must also include issue/requirement IDs, behavior changed, 
 Tools are selected per issue, based on task type, access, current demonstrated results, and independent-review availability. Neither Claude Code nor Codex is permanently primary.
 
 See `docs/agent-ops/TOOLCHAIN.md`. Specialist prompts grant expertise and output format only; they do not grant authority.
+
+---
+
+## Appendix: Cursor Cloud developer notes
+
+### Cursor Cloud specific instructions
+
+This repo runs as a single Node.js/TypeScript web service: a React 19 + Vite SPA and an Express API served from one process on port 8080. `npm run dev` (`tsx server.ts`) attaches Vite as middleware in non-production, so the frontend and `/api/*` are on the same origin/port — there is no separate frontend dev server. Standard commands live in `package.json` `scripts` and `.github/workflows/ci.yml`.
+
+### Run / lint / test / build
+
+| Task | Command | Notes |
+|------|---------|-------|
+| Dev server | `npm run dev` | React SPA + API on `http://localhost:8080`. Health: `GET /api/health`. |
+| Lint / typecheck | `npm run lint` | This is `tsc --noEmit` — there is no ESLint. |
+| Unit tests (Node) | `npm test` | Jest (`app.test.js`), runs via `--experimental-vm-modules`. |
+| Unit tests (client) | `npm run test:vitest` | Vitest + jsdom over `src/tests/**`. |
+| Production build | `npm run build` | Vite client bundle + esbuild → `dist/server.cjs`. `npm start` runs the built server (production mode serves static `dist/`, no Vite). |
+
+CI (`.github/workflows/ci.yml`) runs `npm ci` → lint → jest → vitest. It does not run emulator rules tests (`test:firestore-rules`, `test:storage-rules`) or any e2e.
+
+### Firebase Web API key is required for the UI to render
+
+`src/firebase.ts` throws at module load unless a Web API key with the shape `AIza…` (>20 chars) is present via `VITE_FIREBASE_API_KEY` (or `firebase-applet-config.json`, whose `apiKey` is intentionally empty). Because `AuthProvider`/`db` are imported by `src/App.tsx`, a missing key makes the entire SPA blank (only `/api/*` still works).
+
+- A gitignored `.env.local` in this repo can set a placeholder `VITE_FIREBASE_API_KEY` so the SPA boots for sandbox work. The placeholder is not a working key. To exercise auth-gated routes you need a real `VITE_FIREBASE_API_KEY` from a Firebase project with Auth enabled (put it in `.env.local`; restart `npm run dev`).
+- With a real key, Auth works, but demo project's Firestore/Storage rules may deny writes; the app falls back to local stores as designed.
+
+### Dev-mode conveniences and gotchas
+
+- In non-production, `server/middleware/requireFirebaseAuth.ts` lets certain backend endpoints through without a full auth token for local testing.
+- `GEMINI_API_KEY`/`STRIPE_SECRET_KEY` unset → mock or clear-not-configured responses.
+- The server binds `0.0.0.0` and prefers `process.env.PORT` (default 8080). The Firestore emulator also defaults to 8080; avoid running emulator and dev server simultaneously.
+
+---
+
+(End of merged AGENTS.md)
