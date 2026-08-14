@@ -3,6 +3,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { ensureAdmin } from '../middleware/requireFirebaseAuth.ts';
 import { createRateLimiter } from '../middleware/rateLimit.ts';
 import { getAdminDb } from '../lib/adminDb.ts';
+import { classifyEvidenceScan } from '../../src/lib/vendor/evidenceTrust.ts';
 
 const router = Router();
 
@@ -105,6 +106,67 @@ router.post('/session', portalSessionLimiter, async (req, res) => {
     // the default service account has this; a bare local dev shell without ADC does not.
     console.error('[portal] Failed to mint portal session token', err);
     res.status(500).json({ error: 'Could not start the portal session.' });
+  }
+});
+
+const evidenceScanLimiter = createRateLimiter({ windowMs: 60_000, max: 30 });
+
+router.post('/evidence-scan', evidenceScanLimiter, async (req, res) => {
+  const assessmentId = String(req.body?.assessmentId || '').trim();
+  const storagePath = String(req.body?.storagePath || '').trim();
+  const contentType = String(req.body?.contentType || '');
+  const sizeBytes = Number(req.body?.sizeBytes);
+  const fileName = String(req.body?.fileName || '');
+  const prefix = `portal/${assessmentId}/`;
+
+  if (!assessmentId || assessmentId.length > 128 || /[/.\s]/.test(assessmentId)) {
+    res.status(400).json({ error: 'A valid assessmentId is required.' });
+    return;
+  }
+  if (!storagePath.startsWith(prefix) || storagePath.includes('..')) {
+    res.status(400).json({ error: 'storagePath must belong to this assessment.' });
+    return;
+  }
+
+  const header = req.headers.authorization;
+  const token = header?.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  const appEnv = (process.env.APP_ENV || process.env.NODE_ENV || '').toLowerCase();
+  const productionLike = appEnv === 'production' || appEnv === 'prod' || appEnv === 'staging';
+
+  try {
+    ensureAdmin();
+    if (token) {
+      const decoded = await getAuth().verifyIdToken(token);
+      if (decoded.portalAssessmentId && decoded.portalAssessmentId !== assessmentId) {
+        res.status(403).json({ error: 'Portal session does not match this assessment.' });
+        return;
+      }
+    } else if (productionLike) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+
+    const scanStatus = classifyEvidenceScan({ contentType, sizeBytes, fileName });
+    const snap = await getAdminDb().collection('assessments').doc(assessmentId).get();
+    if (!snap.exists) {
+      res.status(404).json({ error: 'Assessment not found.' });
+      return;
+    }
+    const data = snap.data() || {};
+    const existing =
+      data.evidenceScanByStoragePath && typeof data.evidenceScanByStoragePath === 'object'
+        ? data.evidenceScanByStoragePath
+        : {};
+    await getAdminDb()
+      .collection('assessments')
+      .doc(assessmentId)
+      .update({
+        evidenceScanByStoragePath: { ...existing, [storagePath]: scanStatus },
+      });
+    res.json({ scanStatus, storagePath });
+  } catch (err) {
+    console.error('[portal] evidence-scan failed', err);
+    res.status(500).json({ error: 'Could not scan evidence.' });
   }
 });
 

@@ -75,6 +75,7 @@ function normalizeCloudDoc(id: string, data: Record<string, unknown>): StoredAss
     answers: data.answers as Record<string, string | string[]> | undefined,
     comments: data.comments as Record<string, string> | undefined,
     evidenceByQuestion: data.evidenceByQuestion as Record<string, unknown[]> | undefined,
+    evidenceScanByStoragePath: data.evidenceScanByStoragePath as StoredAssessment['evidenceScanByStoragePath'],
     decisionOutcome: data.decisionOutcome as StoredAssessment['decisionOutcome'] | undefined,
     decisionNotes: data.decisionNotes as string | undefined,
     decidedAt: data.decidedAt as string | undefined,

@@ -23,6 +23,8 @@ export interface StoredAssessment extends VendorAssessment {
   correctionReopenedAt?: string;
   correctionReopenedBy?: string;
   correctionReason?: string;
+  /** P0-2: server/org scan results keyed by Storage path. Portal sessions cannot write this. */
+  evidenceScanByStoragePath?: Record<string, 'pending' | 'clean' | 'failed' | 'quarantined'>;
 }
 
 type StoreShape = Record<string, StoredAssessment[]>;

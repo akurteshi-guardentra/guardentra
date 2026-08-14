@@ -49,9 +49,30 @@ describe('listAssessmentExceptions', () => {
     const withFile = listAssessmentExceptions({
       questions: [questions[0]],
       answers: { q_1: 'Yes' },
-      evidenceByQuestion: { q_1: [{ fileName: 'policy.pdf' }] },
+      evidenceByQuestion: {
+        q_1: [{ fileName: 'policy.pdf', storagePath: 'portal/a/p.pdf', scanStatus: 'clean' }],
+      },
     });
     expect(withFile.some((e) => e.reason === 'missing_evidence')).toBe(false);
+
+    const pendingOnly = listAssessmentExceptions({
+      questions: [questions[0]],
+      answers: { q_1: 'Yes' },
+      evidenceByQuestion: {
+        q_1: [{ fileName: 'policy.pdf', storagePath: 'portal/a/p.pdf', scanStatus: 'pending' }],
+      },
+    });
+    expect(pendingOnly.some((e) => e.id === 'q_1' && e.reason === 'missing_evidence')).toBe(true);
+
+    const selfCertifiedDeniedByMap = listAssessmentExceptions({
+      questions: [questions[0]],
+      answers: { q_1: 'Yes' },
+      evidenceByQuestion: {
+        q_1: [{ fileName: 'policy.pdf', storagePath: 'portal/a/p.pdf', scanStatus: 'clean' }],
+      },
+      evidenceScanByStoragePath: { 'portal/a/p.pdf': 'quarantined' },
+    });
+    expect(selfCertifiedDeniedByMap.some((e) => e.reason === 'missing_evidence')).toBe(true);
   });
 
   it('sorts by category then id', () => {

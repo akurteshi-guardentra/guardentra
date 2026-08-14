@@ -315,6 +315,7 @@ export function Assessments() {
       questions,
       answers: reviewAssessment.answers,
       evidenceByQuestion: reviewAssessment.evidenceByQuestion,
+      evidenceScanByStoragePath: reviewAssessment.evidenceScanByStoragePath ?? {},
     });
   }, [reviewAssessment]);
 
@@ -367,6 +368,7 @@ export function Assessments() {
         questions: (reviewAssessment.questions || []) as any,
         answers: reviewAssessment.answers,
         evidenceByQuestion: reviewAssessment.evidenceByQuestion as any,
+        evidenceScanByStoragePath: reviewAssessment.evidenceScanByStoragePath ?? {},
       });
       void emitAuditBestEffort({
         tenantId: orgId,

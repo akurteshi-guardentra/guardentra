@@ -353,4 +353,23 @@ describe('vendor assessment portal/tracker lifecycle', () => {
       ])
     ).toBe('Completed');
   });
+
+  it('submit still succeeds with pending evidence in the snapshot without treating it as trusted', () => {
+    const pending = [
+      {
+        fileName: 'policy.pdf',
+        storagePath: 'portal/asm/x.pdf',
+        scanStatus: 'pending',
+      },
+    ];
+    const submit = buildPortalSubmitPatch({
+      answers: { q1: 'Yes' },
+      comments: {},
+      evidenceByQuestion: { q1: pending },
+      nowIso: '2026-08-14T13:00:00.000Z',
+    });
+    expect(submit.portalOpen).toBe(false);
+    expect(submit.status).toBe('Under Review');
+    expect(submit.submittedSnapshot.evidenceByQuestion.q1).toEqual(pending);
+  });
 });

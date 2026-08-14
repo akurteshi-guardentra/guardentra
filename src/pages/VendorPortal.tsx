@@ -30,7 +30,8 @@ import {
   QUESTION_CATEGORIES,
   type PortalQuestion,
 } from '../lib/vendor/questionBank';
-import { uploadPortalEvidence, type UploadedEvidence } from '../lib/vendor/evidenceUpload';
+import { uploadPortalEvidence, requestPortalEvidenceScan, type UploadedEvidence } from '../lib/vendor/evidenceUpload';
+import { trustedEvidenceFileNames } from '../lib/vendor/evidenceTrust';
 import { syncVendorAfterAssessmentProgress, syncVendorAfterAssessmentSubmit } from '../lib/vendor/syncVendorAssessment';
 import {
   buildPortalAutosavePatch,
@@ -340,7 +341,20 @@ export function VendorPortal() {
         file,
         questionId: currentQuestion.id,
       });
-      const list = [...(evidence[currentQuestion.id] || []), uploaded];
+      let scanned = uploaded;
+      try {
+        const scanStatus = await requestPortalEvidenceScan({
+          assessmentId,
+          storagePath: uploaded.storagePath,
+          contentType: uploaded.contentType,
+          sizeBytes: uploaded.sizeBytes,
+          fileName: uploaded.fileName,
+        });
+        scanned = { ...uploaded, scanStatus };
+      } catch {
+        scanned = { ...uploaded, scanStatus: 'pending' };
+      }
+      const list = [...(evidence[currentQuestion.id] || []), scanned];
       const next = { ...evidence, [currentQuestion.id]: list };
       setEvidence(next);
       scheduleSave(answers, comments, next);
@@ -352,8 +366,9 @@ export function VendorPortal() {
           objectId: assessmentId,
           payload: {
             questionId: currentQuestion.id,
-            fileName: uploaded.fileName,
-            contentType: uploaded.contentType,
+            fileName: scanned.fileName,
+            contentType: scanned.contentType,
+            scanStatus: scanned.scanStatus,
           },
         });
       }
@@ -366,9 +381,11 @@ export function VendorPortal() {
 
   const proposeFromEvidence = async () => {
     if (!currentQuestion || !assessmentId) return;
-    const files = (evidence[currentQuestion.id] || []).map((f) => f.fileName);
+    const files = trustedEvidenceFileNames(evidence[currentQuestion.id] || []);
     if (!files.length) {
-      setUploadError('Upload evidence first, then ask AI to propose an answer.');
+      setUploadError(
+        'Upload evidence and wait until it is scanned clean before asking AI to propose an answer.'
+      );
       return;
     }
     setProposing(true);
@@ -958,6 +975,9 @@ export function VendorPortal() {
                       >
                         {f.fileName}
                       </a>
+                      <span className="shrink-0 text-[10px] uppercase tracking-wide text-slate-500">
+                        {f.scanStatus === 'clean' ? 'scanned' : f.scanStatus || 'pending'}
+                      </span>
                     </span>
                     <button
                       type="button"

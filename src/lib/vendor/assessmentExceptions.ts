@@ -3,6 +3,7 @@
  * Pure: no Firestore / React.
  */
 import { isAnswered } from './questionBank';
+import { hasTrustedEvidence, type EvidenceScanMap } from './evidenceTrust';
 
 export type ExceptionReason = 'unanswered' | 'negative' | 'missing_evidence';
 
@@ -29,11 +30,10 @@ function formatAnswer(value: string | string[] | undefined): string | string[] |
 
 function hasEvidence(
   questionId: string,
-  evidenceByQuestion?: Record<string, unknown[]>
+  evidenceByQuestion?: Record<string, unknown[]>,
+  scanMap?: EvidenceScanMap | null
 ): boolean {
-  if (!evidenceByQuestion) return true; // no map provided → do not flag missing evidence
-  const list = evidenceByQuestion[questionId];
-  return Array.isArray(list) && list.length > 0;
+  return hasTrustedEvidence(questionId, evidenceByQuestion, scanMap);
 }
 
 /**
@@ -44,6 +44,7 @@ export function listAssessmentExceptions(input: {
   questions: ExceptionQuestion[];
   answers?: Record<string, string | string[]>;
   evidenceByQuestion?: Record<string, unknown[]>;
+  evidenceScanByStoragePath?: EvidenceScanMap | null;
 }): AssessmentException[] {
   const answers = input.answers || {};
   const out: AssessmentException[] = [];
@@ -80,7 +81,11 @@ export function listAssessmentExceptions(input: {
       }
     }
 
-    if (required && answered && !hasEvidence(q.id, input.evidenceByQuestion)) {
+    if (
+      required &&
+      answered &&
+      !hasEvidence(q.id, input.evidenceByQuestion, input.evidenceScanByStoragePath)
+    ) {
       out.push({
         id: q.id,
         category,

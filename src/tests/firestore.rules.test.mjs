@@ -392,6 +392,79 @@ async function main() {
     ),
   );
 
+  console.log('\nP0-2 evidence scan map (portal cannot self-certify):');
+
+  const ASSESS_E = 'asm-evidence-scan';
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), `assessments/${ASSESS_E}`), {
+      organizationId: ORG,
+      vendorId: 'v1',
+      status: 'In Progress',
+      portalOpen: true,
+      progressPct: 10,
+      answers: {},
+      comments: {},
+      evidenceByQuestion: {},
+      versionLocked: true,
+      sentAt: '2026-08-01T00:00:00.000Z',
+    });
+    await setDoc(doc(ctx.firestore(), 'users/outsider-1'), {
+      organizationId: 'other-org',
+      role: 'admin',
+    });
+  });
+  const portalE = testEnv
+    .authenticatedContext('portal-e', { portalAssessmentId: ASSESS_E })
+    .firestore();
+  const outsiderDb = testEnv
+    .authenticatedContext('outsider-1', { email: 'x@other.example' })
+    .firestore();
+
+  await check('portal session CAN autosave pending (untrusted) evidence on a draft', () =>
+    assertSucceeds(
+      updateDoc(doc(portalE, 'assessments', ASSESS_E), {
+        evidenceByQuestion: {
+          q1: [
+            {
+              fileName: 'policy.pdf',
+              storagePath: `portal/${ASSESS_E}/a.pdf`,
+              scanStatus: 'pending',
+            },
+          ],
+        },
+        progressPct: 20,
+        progress: 20,
+        status: 'In Progress',
+        updatedAt: '2026-08-14T20:00:00.000Z',
+      }),
+    ),
+  );
+
+  await check('portal session CANNOT write evidenceScanByStoragePath (self-certify)', () =>
+    assertFails(
+      updateDoc(doc(portalE, 'assessments', ASSESS_E), {
+        evidenceScanByStoragePath: { [`portal/${ASSESS_E}/a.pdf`]: 'clean' },
+        updatedAt: '2026-08-14T20:01:00.000Z',
+      }),
+    ),
+  );
+
+  await check('org member CAN record a scan result on their assessment', () =>
+    assertSucceeds(
+      updateDoc(doc(db, 'assessments', ASSESS_E), {
+        evidenceScanByStoragePath: { [`portal/${ASSESS_E}/a.pdf`]: 'clean' },
+      }),
+    ),
+  );
+
+  await check('cross-tenant admin CANNOT write scan results onto another org assessment', () =>
+    assertFails(
+      updateDoc(doc(outsiderDb, 'assessments', ASSESS_E), {
+        evidenceScanByStoragePath: { [`portal/${ASSESS_E}/a.pdf`]: 'clean' },
+      }),
+    ),
+  );
+
   await testEnv.cleanup();
   console.log(`\nResult: ${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);

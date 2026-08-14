@@ -120,6 +120,19 @@ async function main() {
   );
 
   await check(
+    'session for A CANNOT write evidence into another tenant assessment path',
+    async () => {
+      await assertFails(
+        uploadBytes(
+          ref(portal('assessmentA').storage(), 'portal/assessmentC/stolen.pdf'),
+          pdfBytes,
+          pdfMeta,
+        ),
+      );
+    },
+  );
+
+  await check(
     'scoped portal session CAN read back its own evidence',
     async () => {
       await assertSucceeds(

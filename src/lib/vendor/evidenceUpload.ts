@@ -1,6 +1,7 @@
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../../firebase';
 import { validateEvidenceFile } from './validators';
+import { classifyEvidenceScan, type EvidenceScanStatus } from './evidenceTrust';
 
 export interface UploadedEvidence {
   fileName: string;
@@ -10,6 +11,8 @@ export interface UploadedEvidence {
   downloadUrl: string;
   uploadedAt: string;
   questionId?: string;
+  /** Advisory only. Reviewers must use evidenceScanByStoragePath. */
+  scanStatus?: EvidenceScanStatus;
 }
 
 export async function uploadPortalEvidence(input: {
@@ -46,7 +49,45 @@ export async function uploadPortalEvidence(input: {
     downloadUrl,
     uploadedAt: new Date().toISOString(),
     questionId: input.questionId,
+    scanStatus: 'pending',
   };
+}
+
+export async function requestPortalEvidenceScan(input: {
+  assessmentId: string;
+  storagePath: string;
+  contentType: string;
+  sizeBytes: number;
+  fileName: string;
+}): Promise<EvidenceScanStatus> {
+  const { getPortalAuth } = await import('./portalAuth');
+  const user = getPortalAuth().currentUser;
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (user) {
+    try {
+      headers.Authorization = `Bearer ${await user.getIdToken()}`;
+    } catch {
+      /* local */
+    }
+  }
+  const res = await fetch('/api/portal/evidence-scan', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    throw new Error('Evidence scan could not be completed.');
+  }
+  const body = (await res.json()) as { scanStatus?: string };
+  if (
+    body.scanStatus === 'clean' ||
+    body.scanStatus === 'failed' ||
+    body.scanStatus === 'quarantined' ||
+    body.scanStatus === 'pending'
+  ) {
+    return body.scanStatus;
+  }
+  throw new Error('Evidence scan returned no status.');
 }
 
 /** Vendor-level general attachment (not tied to a portal question). Max 20MB to match Cynomi-style vendor packs. */
@@ -78,5 +119,10 @@ export async function uploadVendorAttachment(input: {
     storagePath: path,
     downloadUrl,
     uploadedAt: new Date().toISOString(),
+    scanStatus: classifyEvidenceScan({
+      contentType: input.file.type,
+      sizeBytes: input.file.size,
+      fileName: input.file.name,
+    }),
   };
 }
