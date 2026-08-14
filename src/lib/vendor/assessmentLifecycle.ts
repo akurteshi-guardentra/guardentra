@@ -13,6 +13,16 @@ export type PortalAnswersMap = Record<string, string | string[]>;
 export type PortalCommentsMap = Record<string, string>;
 export type PortalEvidenceMap = Record<string, unknown[]>;
 
+/** Immutable vendor submission captured at Submit — org may compare after reopen. */
+export type SubmittedAssessmentSnapshot = {
+  answers: PortalAnswersMap;
+  comments: PortalCommentsMap;
+  evidenceByQuestion: PortalEvidenceMap;
+  submittedAt: string;
+  attestations?: Record<string, unknown>;
+  answerProposals?: Record<string, unknown>;
+};
+
 function compactAnswers(
   answers: Record<string, string | string[] | undefined>
 ): PortalAnswersMap {
@@ -135,7 +145,7 @@ export function buildPortalAutosavePatch(input: {
   };
 }
 
-/** Vendor submit for org review — Under Review at 100%, never Completed. */
+/** Vendor submit for org review — Under Review at 100%, portal closed, snapshot frozen. */
 export function buildPortalSubmitPatch(input: {
   answers: Record<string, string | string[] | undefined>;
   comments: PortalCommentsMap;
@@ -151,22 +161,59 @@ export function buildPortalSubmitPatch(input: {
   progress: 100;
   status: 'Under Review';
   completedAt: string;
+  portalOpen: false;
+  submittedSnapshot: SubmittedAssessmentSnapshot;
   attestations?: Record<string, unknown>;
   answerProposals?: Record<string, unknown>;
   versionLocked: true;
 } {
   const now = input.nowIso || new Date().toISOString();
+  const answers = compactAnswers(input.answers);
   return {
-    answers: compactAnswers(input.answers),
+    answers,
     comments: input.comments,
     evidenceByQuestion: input.evidenceByQuestion,
     progressPct: 100,
     progress: 100,
     status: 'Under Review',
     completedAt: now,
+    portalOpen: false,
+    submittedSnapshot: {
+      answers,
+      comments: input.comments,
+      evidenceByQuestion: input.evidenceByQuestion,
+      submittedAt: now,
+      ...(input.attestations ? { attestations: input.attestations } : {}),
+      ...(input.answerProposals ? { answerProposals: input.answerProposals } : {}),
+    },
     versionLocked: true,
     ...(input.attestations ? { attestations: input.attestations } : {}),
     ...(input.answerProposals ? { answerProposals: input.answerProposals } : {}),
+  };
+}
+
+/**
+ * Org-controlled correction reopen (P0-1). Vendor cannot self-reopen; org records reason
+ * and re-enables portal writes. Remediate via buildOrgDecisionPatch is the other path.
+ */
+export function buildOrgCorrectionReopenPatch(input: {
+  reopenedBy: string;
+  reason: string;
+  nowIso?: string;
+}): {
+  portalOpen: true;
+  status: 'In Progress';
+  correctionReopenedAt: string;
+  correctionReopenedBy: string;
+  correctionReason: string;
+} {
+  const at = input.nowIso || new Date().toISOString();
+  return {
+    portalOpen: true,
+    status: 'In Progress',
+    correctionReopenedAt: at,
+    correctionReopenedBy: input.reopenedBy,
+    correctionReason: input.reason.trim(),
   };
 }
 

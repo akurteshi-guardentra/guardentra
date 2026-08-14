@@ -15,7 +15,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertFails, assertSucceeds, initializeTestEnvironment } from '@firebase/rules-unit-testing';
-import { doc, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '../..');
@@ -198,6 +198,114 @@ async function main() {
 
   await check('cannot write a document into another org', () =>
     assertFails(setDoc(doc(db, 'risks/r4'), { organizationId: 'someone-else', title: 'X' })),
+  );
+
+  console.log('\nP0-1 portal assessment lock (issue #10):');
+
+  const ASSESS = 'asm-portal-p0';
+  const portalDb = testEnv
+    .authenticatedContext('portal-vendor', {
+      portalAssessmentId: ASSESS,
+    })
+    .firestore();
+
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), `assessments/${ASSESS}`), {
+      organizationId: ORG,
+      vendorId: 'v1',
+      vendorName: 'Portal Co',
+      status: 'In Progress',
+      portalOpen: true,
+      progressPct: 50,
+      answers: { q1: 'Yes' },
+      comments: {},
+      evidenceByQuestion: {},
+      versionLocked: true,
+      sentAt: '2026-08-01T00:00:00.000Z',
+    });
+  });
+
+  await check('portal session CAN autosave draft answers while portalOpen=true', () =>
+    assertSucceeds(
+      updateDoc(doc(portalDb, 'assessments', ASSESS), {
+        answers: { q1: 'Yes', q2: 'No' },
+        progressPct: 75,
+        progress: 75,
+        status: 'In Progress',
+        updatedAt: '2026-08-05T12:00:00.000Z',
+      }),
+    ),
+  );
+
+  await check('portal session CAN submit (Under Review + portalOpen=false + snapshot)', () =>
+    assertSucceeds(
+      updateDoc(doc(portalDb, 'assessments', ASSESS), {
+        answers: { q1: 'Yes', q2: 'No' },
+        comments: {},
+        evidenceByQuestion: {},
+        progressPct: 100,
+        progress: 100,
+        status: 'Under Review',
+        completedAt: '2026-08-05T13:00:00.000Z',
+        portalOpen: false,
+        versionLocked: true,
+        submittedSnapshot: {
+          answers: { q1: 'Yes', q2: 'No' },
+          comments: {},
+          evidenceByQuestion: {},
+          submittedAt: '2026-08-05T13:00:00.000Z',
+        },
+      }),
+    ),
+  );
+
+  await check('portal session CAN read submitted assessment (receipt)', () =>
+    assertSucceeds(getDoc(doc(portalDb, 'assessments', ASSESS))),
+  );
+
+  await check('portal session CANNOT mutate answers after submit', () =>
+    assertFails(
+      updateDoc(doc(portalDb, 'assessments', ASSESS), {
+        answers: { q1: 'Tampered' },
+        progressPct: 100,
+        progress: 100,
+        status: 'Under Review',
+        updatedAt: '2026-08-05T14:00:00.000Z',
+      }),
+    ),
+  );
+
+  await check('portal session CANNOT reopen portalOpen themselves', () =>
+    assertFails(
+      updateDoc(doc(portalDb, 'assessments', ASSESS), {
+        portalOpen: true,
+        status: 'In Progress',
+      }),
+    ),
+  );
+
+  await check('org member CAN org-controlled correction reopen', () =>
+    assertSucceeds(
+      updateDoc(doc(db, 'assessments', ASSESS), {
+        portalOpen: true,
+        status: 'In Progress',
+        correctionReopenedAt: '2026-08-06T09:00:00.000Z',
+        correctionReopenedBy: 'admin@example.com',
+        correctionReason: 'Missing evidence',
+      }),
+    ),
+  );
+
+  await check('portal session CAN edit again after org correction reopen', () =>
+    assertSucceeds(
+      updateDoc(doc(portalDb, 'assessments', ASSESS), {
+        answers: { q1: 'Yes', q2: 'Updated' },
+        progressPct: 90,
+        progress: 90,
+        status: 'In Progress',
+        updatedAt: '2026-08-06T10:00:00.000Z',
+      }),
+    ),
   );
 
   await testEnv.cleanup();

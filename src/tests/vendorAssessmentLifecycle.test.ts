@@ -24,6 +24,7 @@ import {
 } from '../lib/vendor/emptyAssessmentRecovery';
 import {
   buildCreateAssessmentFields,
+  buildOrgCorrectionReopenPatch,
   buildOrgDecisionPatch,
   buildPortalAutosavePatch,
   buildPortalSubmitPatch,
@@ -155,6 +156,9 @@ describe('vendor assessment portal/tracker lifecycle', () => {
     });
     expect(submit.status).toBe('Under Review');
     expect(submit.progressPct).toBe(100);
+    expect(submit.portalOpen).toBe(false);
+    expect(submit.submittedSnapshot.answers).toEqual(submit.answers);
+    expect(submit.submittedSnapshot.submittedAt).toBe('2026-08-05T13:00:00.000Z');
     expect(submit.status).not.toBe('Completed' as never);
 
     const underReview = upsertLocalAssessment(orgId, {
@@ -162,6 +166,8 @@ describe('vendor assessment portal/tracker lifecycle', () => {
       ...submit,
       questions,
     });
+    expect(underReview.portalOpen).toBe(false);
+    expect(underReview.submittedSnapshot?.answers).toEqual(submit.answers);
     await syncVendorAfterAssessmentSubmit(orgId, vendor.id, true);
     expect(listLocalVendors(orgId)[0]?.assessmentStatus).toBe('Under Review');
     expect(
@@ -273,6 +279,29 @@ describe('vendor assessment portal/tracker lifecycle', () => {
     expect(
       deriveStatusFromAssessments([{ status: 'Under Review', progressPct: 100 }])
     ).toBe('Under Review');
+  });
+
+  it('submit closes portal; org correction reopen is auditable and distinct from silent edit', () => {
+    const questions = buildQuestionsForPackIds(resolvePackIdsForFrameworks(['soc2'])).slice(0, 2);
+    const answers = Object.fromEntries(questions.map((q) => [q.id, 'Yes']));
+    const submit = buildPortalSubmitPatch({
+      answers,
+      comments: { [questions[0].id]: 'note' },
+      evidenceByQuestion: {},
+      nowIso: '2026-08-05T13:00:00.000Z',
+    });
+    expect(submit.portalOpen).toBe(false);
+    expect(submit.submittedSnapshot.comments).toEqual({ [questions[0].id]: 'note' });
+
+    const reopen = buildOrgCorrectionReopenPatch({
+      reopenedBy: 'admin@example.com',
+      reason: 'Vendor omitted SOC 2 CC6.1 evidence',
+      nowIso: '2026-08-06T09:00:00.000Z',
+    });
+    expect(reopen.portalOpen).toBe(true);
+    expect(reopen.status).toBe('In Progress');
+    expect(reopen.correctionReopenedBy).toBe('admin@example.com');
+    expect(reopen.correctionReason).toContain('evidence');
   });
 
   it('recovery patch restores a usable Sent-ready questionnaire; archive closes chips', () => {
