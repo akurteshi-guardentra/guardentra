@@ -5,17 +5,18 @@ Solo-owner model: `@akurteshi-guardentra` is merge authority. Independent review
 ## Procedure
 
 1. Confirm an approved GitHub issue exists; allow untracked chat requests only for read-only analysis.
-2. Resolve requirement/source IDs, acceptance criteria, dependencies, and relevant ADRs.
-3. Classify affected layers and risk.
-4. Select exactly one writing tool (`tool:*`). Record an optional reviewer (`review:*`) only when risk, uncertainty, or owner preference warrants it.
-5. Identify owner authorization boundaries (especially for T3/T4 work).
-6. Complete `TASK_PACKET_TEMPLATE.md`.
-7. Create a feature branch from the verified current base only after authorization.
-8. Writer implements, tests, documents, and commits a coherent checkpoint.
-9. Writer completes `COMPLETION_EVIDENCE_TEMPLATE.md`.
-10. Optional reviewer (if requested) checks the recorded SHA, source documents, diff, tests, and live-state evidence where applicable.
-11. Corrections return to the assigned writer; stop after three failed cycles.
-12. **Required CI** gates merge. Owner merges after CI pass and exact diff verification. Deployment requires separate authorization and verification.
+2. Read `PROJECT_STATE.md`; reconcile it with the issue, current GitHub base, and any live-state or pasted tool evidence.
+3. Resolve requirement/source IDs, acceptance criteria, dependencies, and relevant ADRs.
+4. Classify affected layers and risk.
+5. Select exactly one writing tool (`tool:*`). Record an optional reviewer (`review:*`) only when risk, uncertainty, or owner preference warrants it.
+6. Identify owner authorization boundaries (especially for T3/T4 work).
+7. Complete `TASK_PACKET_TEMPLATE.md`.
+8. Create a feature branch from the verified current base only after authorization.
+9. Writer implements, tests, documents, and commits a coherent checkpoint.
+10. Writer completes `COMPLETION_EVIDENCE_TEMPLATE.md`.
+11. Optional reviewer (if requested) checks the recorded SHA, source documents, diff, tests, and live-state evidence where applicable.
+12. Corrections return to the assigned writer; stop after three failed cycles.
+13. **Required CI** gates merge. Owner merges after CI pass and exact diff verification. Deployment requires separate authorization and verification.
 
 ## Owner command meanings
 
@@ -52,3 +53,17 @@ If essential information is missing or conflicting, mark the task NOT READY.
 ```
 
 Tools coordinate through issues, branches, commits, PRs, CI, and handoffs. Do not automate UI typing between tools or assume shared credentials.
+
+
+## Report reconciliation and state transition
+
+When the owner pastes output from Cursor, Antigravity, Cloud/Claude, Firebase, a UI tool, or another agent:
+
+1. Identify source, issue, branch/commit, and claimed end state.
+2. Separate `CLAIMED` from GitHub-verified, test-verified, merged, deployed, and live-verified facts.
+3. Reconcile repository and live state using `SOURCE_OF_TRUTH.md`.
+4. Return current position, blockers, decision, and next authorized step.
+5. Generate the next prompt from `TOOL_PROMPT_ROUTER.md`.
+6. When evidence warrants a durable transition, update `PROJECT_STATE.md` and append `PROJECT_TRANSITIONS.md` through a documentation PR.
+
+Never silently promote a pasted report to verified state. Never equate merged with deployed.
