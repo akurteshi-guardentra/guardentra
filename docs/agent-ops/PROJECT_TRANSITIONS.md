@@ -39,3 +39,15 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
 - Reconciliation: product application code and rules are deployed; `main` is ahead only by probe/docs.
 - Limitation: bundle-marker verification is not a production end-to-end vendor submission.
 - Next: merge issue #33 governance after required checks, then issue #11 investigation.
+
+## 2026-08-14 — P0-2 investigation complete; implementation issue opened
+
+- Verifier: owner-authorized GitHub metadata + documentation PR.
+- Issue #11: previous `open investigation` → **CONFIRMED DEFECT / investigation complete / closed**. Verdict is **not FIXED**.
+- Issue #37: created, **approved, not started**. Title: `[P0-2] Authoritative evidence states and backend-only trust enforcement`. Owner decision: **Option B**. Writer `tool:antigravity`; optional `review:codex`.
+- PR #36: **closed unmerged** (`REQUEST CHANGES`). Head `eecdd3561b53b6f887096af339f6355826cc1f33` on `fix/p0-2-evidence-before-scan` **retained**. Do not merge or deploy.
+- Repository `main`: `8d3e66e76e0e75ce7f9e64c05c985173310c2f42` (verified). Product code for P0-2 **not** on `main`.
+- Checks for this documentation PR: as reported on the PR.
+- Deployment: **NOT DEPLOYED**. Production application/rules **unchanged**. **P0-1 remains live.** **No malware scanner exists.**
+- Reconciliation: live still matches P0-1; P0-2 trust enforcement is not live.
+- Next authorized action: implement #37 after owner start; merge this documentation PR only if the owner later authorizes merge. No production deploy.
