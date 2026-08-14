@@ -35,6 +35,7 @@ import { syncVendorAfterAssessmentProgress, syncVendorAfterAssessmentSubmit } fr
 import {
   buildPortalAutosavePatch,
   buildPortalSubmitPatch,
+  isReceiptMode,
 } from '../lib/vendor/assessmentLifecycle';
 import {
   attestationsComplete,
@@ -74,21 +75,6 @@ function PortalBrandMark({ branding, subtitle }: { branding: PortalBranding; sub
       </div>
     </div>
   );
-}
-
-function isReceiptMode(data: {
-  status?: string;
-  decisionOutcome?: string;
-  completedAt?: string;
-  portalOpen?: boolean;
-  correctionReopenedAt?: string;
-}): boolean {
-  // Org reopen paths: vendor edits again instead of receipt-only.
-  if (data.decisionOutcome === 'remediate' && data.portalOpen === true) return false;
-  if (data.correctionReopenedAt && data.portalOpen === true) return false;
-  if (data.status === 'Completed' || data.status === 'Under Review') return true;
-  if (data.completedAt) return true;
-  return false;
 }
 
 export function VendorPortal() {
