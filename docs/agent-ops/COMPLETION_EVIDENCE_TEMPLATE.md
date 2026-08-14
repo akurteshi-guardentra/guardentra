@@ -4,7 +4,7 @@ Copy this block into every completion report, handoff, and PR. Do not remove fie
 
 ## Classification
 
-- Status: `CHECKPOINT` / `PR READY` / `MERGED` / `DEPLOYED AND VERIFIED`
+- Status: `CLAIMED` / `CHECKPOINT` / `PR READY` / `MERGED` / `DEPLOYED` / `LIVE VERIFIED` / `BLOCKED`
 - Claim being verified:
 
 ## Mandatory evidence
@@ -26,6 +26,9 @@ Copy this block into every completion report, handoff, and PR. Do not remove fie
 - Rollback procedure:
 - Optional reviewer (`review:*`, if engaged): name/tool and result, or `NONE`
 - Owner authorization still required (merge/deploy/secrets/production): yes/no and which command
+- Repository/live-state reconciliation: matching / mismatched / not applicable, with evidence
+- Project-state transition: none, or exact `PROJECT_STATE.md` and appended `PROJECT_TRANSITIONS.md` update required
+- Next authorized issue/action:
 
 ## Gate decision
 
