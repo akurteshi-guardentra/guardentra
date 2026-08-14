@@ -210,11 +210,31 @@ export function buildOrgCorrectionReopenPatch(input: {
   const at = input.nowIso || new Date().toISOString();
   return {
     portalOpen: true,
+    // In Progress (not Under Review) so isReceiptMode does not treat leftover
+    // completedAt from the original submit as a receipt lock. Does not touch
+    // submittedSnapshot or completedAt — original submission stays retrievable.
     status: 'In Progress',
     correctionReopenedAt: at,
     correctionReopenedBy: input.reopenedBy,
     correctionReason: input.reason.trim(),
   };
+}
+
+/** Vendor portal receipt vs editable questionnaire (pure; no Firebase). */
+export function isReceiptMode(data: {
+  status?: string;
+  decisionOutcome?: string;
+  completedAt?: string;
+  portalOpen?: boolean;
+  correctionReopenedAt?: string;
+}): boolean {
+  if (data.decisionOutcome === 'remediate' && data.portalOpen === true) return false;
+  if (data.correctionReopenedAt && data.portalOpen === true && data.status === 'In Progress') {
+    return false;
+  }
+  if (data.status === 'Completed' || data.status === 'Under Review') return true;
+  if (data.completedAt) return true;
+  return false;
 }
 
 export function canSignOffAssessment(assessment: {

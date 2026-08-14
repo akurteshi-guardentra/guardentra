@@ -30,6 +30,7 @@ import {
   buildPortalSubmitPatch,
   canSignOffAssessment,
   decisionRequiresNotes,
+  isReceiptMode,
   nextReviewAtForDecision,
 } from '../lib/vendor/assessmentLifecycle';
 import {
@@ -281,7 +282,7 @@ describe('vendor assessment portal/tracker lifecycle', () => {
     ).toBe('Under Review');
   });
 
-  it('submit closes portal; org correction reopen is auditable and distinct from silent edit', () => {
+  it('submit closes portal; org correction reopen returns vendor to editable questionnaire and keeps snapshot', () => {
     const questions = buildQuestionsForPackIds(resolvePackIdsForFrameworks(['soc2'])).slice(0, 2);
     const answers = Object.fromEntries(questions.map((q) => [q.id, 'Yes']));
     const submit = buildPortalSubmitPatch({
@@ -293,6 +294,12 @@ describe('vendor assessment portal/tracker lifecycle', () => {
     expect(submit.portalOpen).toBe(false);
     expect(submit.submittedSnapshot.comments).toEqual({ [questions[0].id]: 'note' });
 
+    const submittedDoc = {
+      ...submit,
+      submittedSnapshot: submit.submittedSnapshot,
+    };
+    expect(isReceiptMode(submittedDoc)).toBe(true);
+
     const reopen = buildOrgCorrectionReopenPatch({
       reopenedBy: 'admin@example.com',
       reason: 'Vendor omitted SOC 2 CC6.1 evidence',
@@ -302,6 +309,27 @@ describe('vendor assessment portal/tracker lifecycle', () => {
     expect(reopen.status).toBe('In Progress');
     expect(reopen.correctionReopenedBy).toBe('admin@example.com');
     expect(reopen.correctionReason).toContain('evidence');
+    expect('submittedSnapshot' in reopen).toBe(false);
+    expect('completedAt' in reopen).toBe(false);
+
+    const reopenedDoc = { ...submittedDoc, ...reopen };
+    expect(isReceiptMode(reopenedDoc)).toBe(false);
+    expect(reopenedDoc.status).toBe('In Progress');
+    expect(reopenedDoc.portalOpen).toBe(true);
+    expect(reopenedDoc.completedAt).toBe(submit.completedAt);
+    expect(reopenedDoc.submittedSnapshot).toEqual(submit.submittedSnapshot);
+
+    const laterAnswers = { ...answers, [questions[1].id]: 'No' };
+    const correctionEdit = buildPortalAutosavePatch({
+      questions,
+      answers: laterAnswers,
+      comments: { [questions[0].id]: 'updated after reopen' },
+      evidenceByQuestion: {},
+    });
+    const afterEdit = { ...reopenedDoc, ...correctionEdit };
+    expect(afterEdit.submittedSnapshot).toEqual(submit.submittedSnapshot);
+    expect(afterEdit.answers[questions[1].id]).toBe('No');
+    expect(isReceiptMode(afterEdit)).toBe(false);
   });
 
   it('recovery patch restores a usable Sent-ready questionnaire; archive closes chips', () => {

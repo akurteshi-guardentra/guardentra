@@ -308,6 +308,90 @@ async function main() {
     ),
   );
 
+  await check('correction edit does not require rewriting submittedSnapshot (original remains)', async () => {
+    const snap = await getDoc(doc(portalDb, 'assessments', ASSESS));
+    const data = snap.data();
+    if (data?.submittedSnapshot?.answers?.q1 !== 'Yes' || data?.submittedSnapshot?.answers?.q2 !== 'No') {
+      throw new Error('submittedSnapshot was mutated during correction edit');
+    }
+  });
+
+  console.log('\nP0-1 submit session binding negatives (issue #10 review):');
+
+  const ASSESS_B = 'asm-portal-p0-b';
+  const submitShape = {
+    answers: { q1: 'Yes' },
+    comments: {},
+    evidenceByQuestion: {},
+    progressPct: 100,
+    progress: 100,
+    status: 'Under Review',
+    completedAt: '2026-08-07T13:00:00.000Z',
+    portalOpen: false,
+    versionLocked: true,
+    submittedSnapshot: {
+      answers: { q1: 'Yes' },
+      comments: {},
+      evidenceByQuestion: {},
+      submittedAt: '2026-08-07T13:00:00.000Z',
+    },
+  };
+
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), `assessments/${ASSESS_B}`), {
+      organizationId: ORG,
+      vendorId: 'v2',
+      vendorName: 'Other Co',
+      status: 'In Progress',
+      portalOpen: true,
+      progressPct: 40,
+      answers: { q1: 'Draft' },
+      comments: {},
+      evidenceByQuestion: {},
+      versionLocked: true,
+      sentAt: '2026-08-01T00:00:00.000Z',
+    });
+  });
+
+  const unauthDb = testEnv.unauthenticatedContext().firestore();
+  await check('unauthenticated CANNOT submit an open assessment', () =>
+    assertFails(updateDoc(doc(unauthDb, 'assessments', ASSESS_B), submitShape)),
+  );
+
+  await check('session for assessment A CANNOT submit assessment B', () =>
+    assertFails(updateDoc(doc(portalDb, 'assessments', ASSESS_B), submitShape)),
+  );
+
+  const portalB = testEnv
+    .authenticatedContext('portal-vendor-b', { portalAssessmentId: ASSESS_B })
+    .firestore();
+
+  await check('scoped session CAN submit its own open assessment once', () =>
+    assertSucceeds(updateDoc(doc(portalB, 'assessments', ASSESS_B), submitShape)),
+  );
+
+  await check('scoped session CANNOT submit a second time after portal closed', () =>
+    assertFails(
+      updateDoc(doc(portalB, 'assessments', ASSESS_B), {
+        ...submitShape,
+        completedAt: '2026-08-07T14:00:00.000Z',
+        submittedSnapshot: {
+          ...submitShape.submittedSnapshot,
+          submittedAt: '2026-08-07T14:00:00.000Z',
+        },
+      }),
+    ),
+  );
+
+  await check('scoped session CANNOT update evidence after submit', () =>
+    assertFails(
+      updateDoc(doc(portalB, 'assessments', ASSESS_B), {
+        evidenceByQuestion: { q1: [{ name: 'late.pdf' }] },
+        updatedAt: '2026-08-07T14:05:00.000Z',
+      }),
+    ),
+  );
+
   await testEnv.cleanup();
   console.log(`\nResult: ${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);
