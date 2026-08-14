@@ -118,13 +118,14 @@ What it checks:
 
 1. Homepage HTML → hashed `/assets/index-*.js`
 2. Entry → `AppAuthenticated-*.js` graph includes `PageShell`, `VendorsDirectory`, `Assessments`, `AddVendorDialog` chunks
-3. Page chunks contain expected polish markers (`Vendor Register`, `Assessment Tracker`, `Opening review`)
+3. Eager spine copy in `AppAuthenticated`: `FastTrack · Add vendor`, `FastTrack · Review & decide`, `Risk triage`, `Opening review`
+4. Lazy `VendorPortal` graph contains P0-1 markers (`submittedSnapshot`, `correctionReopenedAt`, `portalOpen:!1`)
 
 Exit `0` = live bundle looks current. Exit `1` = stale or incomplete vs markers — then open
 Firebase Console → App Hosting → backend `guardentra` and compare rollout commit to
 `origin/main`.
 
-Human backup: hard-refresh `/vendors` and confirm the **Vendor Register** eyebrow header.
+Human backup: hard-refresh `/vendors` and confirm the **FastTrack · Add vendor** eyebrow.
 
 ### Two prerequisites that fail silently if missed
 

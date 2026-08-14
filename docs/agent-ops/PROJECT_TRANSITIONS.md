@@ -30,3 +30,12 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
 - Transition: continuity proposal → authorized documentation work.
 - Deployment: `NOT DEPLOYED`.
 - Next: commit and PR; no merge or deployment.
+
+## 2026-08-14 — P0-1 application rollout and live-bundle verification
+
+- App Hosting serves application commit `2aae09a237b615ecd78ec5bb6f3b67723a952c36` on `guardentra.com`.
+- PR #35 merged at `2ca586db1f10266577cbc0a29ff363ac2b2377aa`; probe/documentation only.
+- Live probe: PASS for current FastTrack spine and P0-1 markers `submittedSnapshot`, `correctionReopenedAt`, and `portalOpen:!1`.
+- Reconciliation: product application code and rules are deployed; `main` is ahead only by probe/docs.
+- Limitation: bundle-marker verification is not a production end-to-end vendor submission.
+- Next: merge issue #33 governance after required checks, then issue #11 investigation.

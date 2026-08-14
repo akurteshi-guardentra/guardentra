@@ -1,6 +1,6 @@
 # GuardEntra Repository Map
 
-Verified against GitHub `main` at `2aae09a237b615ecd78ec5bb6f3b67723a952c36` on 2026-08-14. This is a navigation map, not a complete file listing or proof that a feature works, is deployed, secure, or complete.
+Verified against GitHub `main` at `2ca586db1f10266577cbc0a29ff363ac2b2377aa` on 2026-08-14. This is a navigation map, not a complete file listing or proof that a feature works, is deployed, secure, or complete.
 
 ## When to read this map
 
