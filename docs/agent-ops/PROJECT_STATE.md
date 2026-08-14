@@ -23,9 +23,12 @@ This is a navigation ledger, not independent proof. Verify claims using the issu
 
 | Item | Verified state |
 |---|---|
-| Default branch/current commit | `main` at `2ca586db1f10266577cbc0a29ff363ac2b2377aa` |
+| Default branch/current commit | `main` at `8d3e66e76e0e75ce7f9e64c05c985173310c2f42` |
 | Latest merged product work | PR #24: P0-1 implementation; PR #35: live-verification probe |
 | Active governance work | Issue #33: project-state ledger and tool-routing protocol |
+| P0-2 investigation | Issue #11: **CONFIRMED DEFECT**; investigation complete; closed; **not FIXED** |
+| P0-2 implementation | Issue #37: approved, **not started**; Option B |
+| P0-2 rejected PR | PR #36: **closed unmerged**; branch `fix/p0-2-evidence-before-scan` retained |
 | Stale PR requiring disposition | PR #7; do not merge without rebase and scope review |
 
 ## Live runtime state
@@ -39,14 +42,14 @@ This is a navigation ledger, not independent proof. Verify claims using the issu
 | P0-1 outcome | **DEPLOYED; BUNDLE VERIFIED** | Live probe passes for `submittedSnapshot`, `correctionReopenedAt`, and `portalOpen:!1`; production end-to-end submission remains separate evidence |
 | Named dev/staging/prod | Not established as live configured projects | Intended IDs remain placeholders |
 
-P0-1 application/rule artifacts are live and bundle-verified. Do not claim a production end-to-end submission without separate evidence. Any deploy to `guardentra-7f582` is production-equivalent and needs explicit production authorization.
+P0-1 application/rule artifacts are live and bundle-verified. P0-2 is **not** deployed. Do not claim a malware scanner or malware protection. Do not claim a production end-to-end submission without separate evidence. Any deploy to `guardentra-7f582` is production-equivalent and needs explicit production authorization.
 
 ## Delivery position
 
 | Track | Issues | Current position | Next gate |
 |---|---|---|---|
 | P0-1 vendor lock | #10, PRs #23/#24 | Code/rules/application deployed; bundle markers live verified | Safely record production end-to-end submission evidence |
-| P0-2 scan/review | #11 | Open investigation | End-to-end trace; no behavior change |
+| P0-2 scan/review | #11 closed; #37 open | Investigation complete: **CONFIRMED DEFECT**. Implementation approved, not started. **No malware scanner exists.** PR #36 closed unmerged. | Implement #37 on a new branch; do not merge #36; do not deploy |
 | Framework inventory | #25 | Ready after P0 reconciliation | Inventory content, mappings, provenance, rights, claims |
 | Framework claims | #26 | Blocked by #25 | Evidence-backed wording decisions |
 | Framework hardening | #27–#28 | Not ready | Requires #25/#26 and approved design |
@@ -61,12 +64,14 @@ P0-1 application/rule artifacts are live and bundle-verified. Do not claim a pro
 3. Production end-to-end P0-1 submission evidence is not recorded, although bundle verification passes.
 4. PR #7 is stale.
 5. Framework-labelled content lacks a completed provenance/rights inventory.
+6. Live/`main` still treats uploaded portal evidence as present for review/AI; there is no malware scanner. MIME/size/extension is not a scan.
 
 ## Next authorized actions
 
-1. Complete issue #33 as documentation-only PR; do not merge or deploy.
-2. Execute issue #11 as investigation-only.
-3. Execute issue #25 before #26 or framework-engine implementation.
+1. Implement issue #37 (P0-2 Option B) on a **new** branch after owner start authorization; do not reuse PR #36 without a fresh security review.
+2. Do not merge PR #36. Do not delete `fix/p0-2-evidence-before-scan`.
+3. Do not deploy application or rules for P0-2 until explicit owner deploy authorization.
+4. Execute issue #25 before #26 or framework-engine implementation.
 
 ## Daily reporting
 
