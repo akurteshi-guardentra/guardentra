@@ -65,3 +65,15 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
 - Deployment: **NOT DEPLOYED**. Production unchanged. **P0-1 remains live.** **No malware scanner exists.** `clean` is never produced by metadata validation.
 - Limitations: malware scanning out of scope; evidence remains `scan_pending` after `validated`; AI/approval treat non-`clean` as untrusted.
 - Next: Codex security review; owner merge authorization separate from deploy.
+
+## 2026-08-15 — P0-2 Codex REQUEST CHANGES addressed (repository only)
+
+- Verifier: Cursor (`tool:cursor`).
+- Issue #37 / PR #39: Codex verdict REQUEST CHANGES on `6acbd63de0b52a1697d16221ac5eb1be4a916124` → fixes committed. **Not merged. Not live verified.**
+- Branch: `fix/p0-2-authoritative-evidence-states`.
+- Commit: `8e9aa693bc8589ec2c6b5b2461a3b98563572146`.
+- PR: https://github.com/akurteshi-guardentra/guardentra/pull/39 (**open, not merged**). Review threads left open.
+- Checks (local): `npm run lint` PASS; `npm test` 1/1 PASS; `npm run test:vitest` 174/174 PASS; `npm run test:firestore-rules` 42/42 PASS; `npm run test:storage-rules` 19/19 PASS; `npm run build` PASS.
+- Deployment: **NOT DEPLOYED**. Production unchanged. **P0-1 remains live.** **No malware scanner exists.** Reviewer downloads require authoritative `clean`; metadata validation still never produces `clean`.
+- Fixes: server archive-empty path; transactional decision lock + enum/notes; org attachment signed downloads; portal AI uses portal token; org evidence download gated on `clean`; Storage denies org client reads of portal objects; trust-map keys encode `.`.
+- Next: wait for fresh `verify` and Bugbot; return PR #39 for Codex security review. No merge. No deploy.
