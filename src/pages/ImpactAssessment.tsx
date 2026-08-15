@@ -11,7 +11,7 @@ import { RISK_LEVELS } from '../lib/vendor/constants';
 import type { RiskLevel, Vendor } from '../lib/vendor/types';
 import { riskBandClasses } from '../lib/vendor/risk';
 import { combineImpactAndSecurity, securityLevelFromScore, vendorRatingLabel } from '../lib/vendor/vendorRating';
-import { uploadVendorAttachment, type UploadedEvidence } from '../lib/vendor/evidenceUpload';
+import { uploadVendorAttachment, fetchOrgAttachmentDownloadUrl, type UploadedEvidence } from '../lib/vendor/evidenceUpload';
 import { openVendorReportForPrint } from '../lib/vendor/reportExport';
 import { authHeaders } from '../lib/authHeaders';
 
@@ -232,7 +232,6 @@ security gap or high business impact). Return JSON: { "summary": "..." }`;
           contentType: a.contentType,
           sizeBytes: a.sizeBytes,
           storagePath: a.storagePath,
-          downloadUrl: a.downloadUrl,
           uploadedAt: a.uploadedAt,
           uploadedBy: profile.displayName || profile.email || user?.uid,
         })),
@@ -268,7 +267,6 @@ security gap or high business impact). Return JSON: { "summary": "..." }`;
           contentType: a.contentType,
           sizeBytes: a.sizeBytes,
           storagePath: a.storagePath,
-          downloadUrl: a.downloadUrl,
           uploadedAt: a.uploadedAt,
           uploadedBy: profile.displayName || profile.email || user?.uid,
         })),
@@ -473,14 +471,22 @@ security gap or high business impact). Return JSON: { "summary": "..." }`;
                 key={f.storagePath}
                 className="flex items-center justify-between gap-3 rounded-lg border border-white/5 bg-black/20 px-3 py-2 text-sm"
               >
-                <a
-                  href={f.downloadUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="truncate text-slate-200 hover:text-primary"
+                <button
+                  type="button"
+                  className="truncate text-left text-slate-200 hover:text-primary"
+                  onClick={() => {
+                    if (!profile?.organizationId || !vendor) return;
+                    void fetchOrgAttachmentDownloadUrl({
+                      orgId: profile.organizationId,
+                      vendorId: vendor.id,
+                      storagePath: f.storagePath,
+                    })
+                      .then((url) => window.open(url, '_blank', 'noopener,noreferrer'))
+                      .catch((err: Error) => setError(err.message));
+                  }}
                 >
                   {f.fileName}
-                </a>
+                </button>
                 <button
                   type="button"
                   className="text-slate-500 hover:text-rose-400"

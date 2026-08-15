@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  authorizePortalAi,
+  handleArchiveEmptyAssessment,
   handleEvidenceDownload,
+  handleOrgAttachmentDownload,
+  handleOrgDecision,
   handlePortalValidate,
+  requirePortalAssessment,
   type EvidenceDeps,
 } from '../../server/lib/evidenceAccess';
 
@@ -48,6 +53,7 @@ function deps(overrides: Partial<EvidenceDeps> = {}): EvidenceDeps {
       }
       if (token === 'malformed') throw new Error('Decoding Firebase ID token failed');
       if (token === 'org') return { uid: 'user-1', email: 'a@org.example' } as any;
+      if (token === 'member') return { uid: 'user-member', email: 'm@org.example' } as any;
       if (token === 'portal-a') return { uid: 'portal_asmA', portalAssessmentId: 'asmA' } as any;
       if (token === 'portal-b') return { uid: 'portal_asmB', portalAssessmentId: 'asmB' } as any;
       if (token === 'no-claim') return { uid: 'user-2' } as any;
@@ -67,6 +73,7 @@ function deps(overrides: Partial<EvidenceDeps> = {}): EvidenceDeps {
     }),
     getUser: vi.fn(async (uid: string) => {
       if (uid === 'user-1') return { organizationId: 'org1', role: 'admin' };
+      if (uid === 'user-member') return { organizationId: 'org1', role: 'member' };
       return null;
     }),
     getStorageMetadata: vi.fn(async (path: string) => {
@@ -78,6 +85,12 @@ function deps(overrides: Partial<EvidenceDeps> = {}): EvidenceDeps {
     }),
     writeTrustRecord: vi.fn(async (_id, storagePath, record) => ({ ...record, storagePath })),
     signReadUrl: vi.fn(async () => 'https://signed.example/tmp'),
+    runAssessmentTransaction: vi.fn(async (_id, updater) => updater({
+      organizationId: 'org1',
+      portalOpen: false,
+      questions: [],
+      answers: {},
+    })),
     ...overrides,
   };
 }
@@ -248,6 +261,231 @@ describe('evidence download', () => {
       res as any,
       deps(),
       'portal'
+    );
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('allows portal self-download of untrusted files while the portal is open', async () => {
+    const res = mockRes();
+    await handleEvidenceDownload(
+      req({
+        token: 'portal-a',
+        query: { assessmentId: 'asmA', storagePath: 'portal/asmA/a.pdf' },
+      }),
+      res as any,
+      deps(),
+      'portal'
+    );
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('does not treat portal self-download as a reviewer bypass', async () => {
+    const res = mockRes();
+    await handleEvidenceDownload(
+      req({
+        token: 'portal-a',
+        query: { assessmentId: 'asmA', storagePath: 'portal/asmA/a.pdf' },
+      }),
+      res as any,
+      deps(),
+      'org'
+    );
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('rejects reviewer download unless the trust map is authoritative clean', async () => {
+    const res = mockRes();
+    await handleEvidenceDownload(
+      req({
+        token: 'org',
+        query: { assessmentId: 'asmA', storagePath: 'portal/asmA/a.pdf' },
+      }),
+      res as any,
+      deps(),
+      'org'
+    );
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('signs a reviewer URL only for authoritative clean evidence', async () => {
+    const d = deps({
+      getAssessment: vi.fn(async () => ({
+        organizationId: 'org1',
+        portalOpen: false,
+        evidenceTrustByStoragePath: {
+          [encodeURIComponent('portal/asmA/a.pdf').replace(/\./g, '%2E')]: {
+            state: 'clean',
+            storagePath: 'portal/asmA/a.pdf',
+            updatedAt: 't',
+          },
+        },
+      })),
+    });
+    const res = mockRes();
+    await handleEvidenceDownload(
+      req({
+        token: 'org',
+        query: { assessmentId: 'asmA', storagePath: 'portal/asmA/a.pdf' },
+      }),
+      res as any,
+      d,
+      'org'
+    );
+    expect(res.statusCode).toBe(200);
+    expect((res.body as { url?: string }).url).toBe('https://signed.example/tmp');
+  });
+});
+
+describe('organization attachments', () => {
+  const attach = 'orgs/org1/vendors/v1/attachments/pack.pdf';
+
+  it('rejects unauthenticated attachment downloads', async () => {
+    const res = mockRes();
+    await handleOrgAttachmentDownload(
+      req({ token: null, query: { orgId: 'org1', vendorId: 'v1', storagePath: attach } }),
+      res as any,
+      deps()
+    );
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('rejects cross-tenant attachment downloads', async () => {
+    const res = mockRes();
+    await handleOrgAttachmentDownload(
+      req({
+        token: 'org',
+        query: { orgId: 'org2', vendorId: 'v1', storagePath: 'orgs/org2/vendors/v1/attachments/pack.pdf' },
+      }),
+      res as any,
+      deps()
+    );
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('allows same-tenant attachment downloads', async () => {
+    const res = mockRes();
+    await handleOrgAttachmentDownload(
+      req({ token: 'org', query: { orgId: 'org1', vendorId: 'v1', storagePath: attach } }),
+      res as any,
+      deps()
+    );
+    expect(res.statusCode).toBe(200);
+  });
+});
+
+describe('portal AI token binding', () => {
+  it('accepts a matching portal token and rejects org, missing, and mismatched claims', async () => {
+    await expect(
+      authorizePortalAi({ uid: 'p', portalAssessmentId: 'asmA' } as any, 'asmA')
+    ).resolves.toBeUndefined();
+    await expect(requirePortalAssessment({ uid: 'user-1' } as any, 'asmA')).rejects.toMatchObject({
+      status: 403,
+    });
+    await expect(authorizePortalAi({ uid: 'user-1' } as any, 'asmA')).rejects.toMatchObject({
+      status: 403,
+    });
+    await expect(authorizePortalAi({ uid: 'p' } as any, 'asmA')).rejects.toMatchObject({
+      status: 403,
+    });
+    await expect(
+      authorizePortalAi({ uid: 'p', portalAssessmentId: 'asmA' } as any, 'asmB')
+    ).rejects.toMatchObject({ status: 403 });
+  });
+});
+
+describe('org decisions', () => {
+  it('rejects unknown outcomes', async () => {
+    const res = mockRes();
+    await handleOrgDecision(
+      req({ token: 'org', body: { assessmentId: 'asmA', outcome: 'ship-it' } }),
+      res as any,
+      deps()
+    );
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects remediate without required notes', async () => {
+    const res = mockRes();
+    await handleOrgDecision(
+      req({ token: 'org', body: { assessmentId: 'asmA', outcome: 'remediate' } }),
+      res as any,
+      deps()
+    );
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects a second decision and concurrent replacement of approved with remediate', async () => {
+    const store: Record<string, unknown> = {
+      organizationId: 'org1',
+      questions: [],
+      answers: {},
+    };
+    const d = deps({
+      runAssessmentTransaction: vi.fn(async (_id, updater) => {
+        const snapshot = { ...store };
+        const patch = await updater(snapshot);
+        Object.assign(store, patch);
+        return patch;
+      }),
+    });
+    const first = mockRes();
+    await handleOrgDecision(
+      req({ token: 'org', body: { assessmentId: 'asmA', outcome: 'approved' } }),
+      first as any,
+      d
+    );
+    expect(first.statusCode).toBe(200);
+    expect(store.decidedAt).toBeTruthy();
+
+    const second = mockRes();
+    await handleOrgDecision(
+      req({
+        token: 'org',
+        body: { assessmentId: 'asmA', outcome: 'remediate', decisionNotes: 'change it' },
+      }),
+      second as any,
+      d
+    );
+    expect(second.statusCode).toBe(409);
+
+    const concurrent = mockRes();
+    const racing = deps({
+      runAssessmentTransaction: vi.fn(async (_id, updater) => {
+        const snapshot = { ...store };
+        const patch = await updater(snapshot);
+        Object.assign(store, patch);
+        return patch;
+      }),
+    });
+    await handleOrgDecision(
+      req({
+        token: 'org',
+        body: { assessmentId: 'asmA', outcome: 'rejected', decisionNotes: 'race' },
+      }),
+      concurrent as any,
+      racing
+    );
+    expect(concurrent.statusCode).toBe(409);
+  });
+});
+
+describe('empty assessment archive', () => {
+  it('allows an authorized admin archive via the server path', async () => {
+    const res = mockRes();
+    await handleArchiveEmptyAssessment(
+      req({ token: 'org', body: { assessmentId: 'asmA', reason: 'Legacy empty snapshot' } }),
+      res as any,
+      deps()
+    );
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('rejects a non-admin member archive', async () => {
+    const res = mockRes();
+    await handleArchiveEmptyAssessment(
+      req({ token: 'member', body: { assessmentId: 'asmA', reason: 'Legacy empty snapshot' } }),
+      res as any,
+      deps()
     );
     expect(res.statusCode).toBe(403);
   });

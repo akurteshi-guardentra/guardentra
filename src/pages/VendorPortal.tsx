@@ -45,7 +45,6 @@ import {
   type PortalAttestations,
 } from '../lib/vendor/portalProposals';
 import { emitAuditBestEffort } from '../lib/auditClient';
-import { authHeaders } from '../lib/authHeaders';
 
 type AnswersMap = Record<string, AnswerValue | string | string[] | undefined>;
 type CommentsMap = Record<string, string>;
@@ -399,9 +398,15 @@ export function VendorPortal() {
     setProposing(true);
     setUploadError('');
     try {
+      const { getPortalAuth } = await import('../lib/vendor/portalAuth');
+      const portalUser = getPortalAuth().currentUser;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (portalUser) {
+        headers.Authorization = `Bearer ${await portalUser.getIdToken()}`;
+      }
       const res = await fetch('/api/ai/propose-answers', {
         method: 'POST',
-        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        headers,
         body: JSON.stringify({
           vendorName: assessment?.vendorName,
           assessmentId,
