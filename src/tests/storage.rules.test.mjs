@@ -88,6 +88,10 @@ async function main() {
       organizationId: 'org1',
       role: 'admin',
     });
+    await setDoc(doc(db, 'users/org-member-2'), {
+      organizationId: 'org2',
+      role: 'admin',
+    });
   });
 
   const anon = testEnv.authenticatedContext('anon-vendor-1', {
@@ -95,6 +99,9 @@ async function main() {
   });
   const member = testEnv.authenticatedContext('org-member-1', {
     email: 'member@example.com',
+  });
+  const otherOrg = testEnv.authenticatedContext('org-member-2', {
+    email: 'other@example.com',
   });
   const unauth = testEnv.unauthenticatedContext();
   // What server/routes/portal.ts actually mints: uid portal_<id> + the scoping claim.
@@ -129,6 +136,20 @@ async function main() {
   );
 
   await check(
+    'org member CANNOT directly read untrusted portal evidence while portal is open',
+    async () => {
+      await assertFails(getBytes(ref(member.storage(), 'portal/assessmentA/evidence-a.pdf')));
+    },
+  );
+
+  await check(
+    'cross-tenant org member CANNOT read portal evidence',
+    async () => {
+      await assertFails(getBytes(ref(otherOrg.storage(), 'portal/assessmentA/evidence-a.pdf')));
+    },
+  );
+
+  await check(
     'bare anonymous session (no portalAssessmentId claim) CANNOT write — KNOWN_ISSUES #17',
     async () => {
       await assertFails(
@@ -158,6 +179,15 @@ async function main() {
     'anonymous CANNOT read /portal/assessmentB/... when B portalOpen=false',
     async () => {
       await assertFails(getBytes(ref(anon.storage(), 'portal/assessmentB/seeded-b.pdf')));
+    },
+  );
+
+  await check(
+    'session for A CANNOT read assessment B evidence',
+    async () => {
+      await assertFails(
+        getBytes(ref(portal('assessmentA').storage(), 'portal/assessmentB/seeded-b.pdf')),
+      );
     },
   );
 
@@ -207,6 +237,20 @@ async function main() {
     );
   });
 
+  await check('org member CAN write vendor attachments', async () => {
+    await assertSucceeds(
+      uploadBytes(
+        ref(member.storage(), 'orgs/org1/vendors/v1/attachments/pack.pdf'),
+        pdfBytes,
+        pdfMeta,
+      ),
+    );
+  });
+
+  await check('org member CANNOT read attachments via the client SDK', async () => {
+    await assertFails(getBytes(ref(member.storage(), 'orgs/org1/vendors/v1/attachments/pack.pdf')));
+  });
+
   await check('unauthenticated CANNOT write portal path', async () => {
     await assertFails(
       uploadBytes(ref(unauth.storage(), 'portal/assessmentA/noauth.pdf'), pdfBytes, pdfMeta),
@@ -240,9 +284,9 @@ async function main() {
   );
 
   await check(
-    'org member CAN still read /portal/assessmentA/... after portalOpen=false',
+    'org member CANNOT read portal evidence directly (reviewer bypass closed)',
     async () => {
-      await assertSucceeds(getBytes(ref(member.storage(), 'portal/assessmentA/evidence-a.pdf')));
+      await assertFails(getBytes(ref(member.storage(), 'portal/assessmentA/evidence-a.pdf')));
     },
   );
 

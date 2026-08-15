@@ -457,6 +457,50 @@ async function main() {
     ),
   );
 
+  await check('org member CANNOT archive an empty assessment via browser decision fields', () =>
+    assertFails(
+      updateDoc(doc(db, 'assessments', ASSESS_T), {
+        status: 'Completed',
+        portalOpen: false,
+        progressPct: 0,
+        progress: 0,
+        completedAt: '2026-08-15T12:00:00.000Z',
+        archivedAt: '2026-08-15T12:00:00.000Z',
+        archiveReason: 'Legacy empty snapshot',
+        decisionOutcome: 'rejected',
+        decisionNotes: 'Archived empty assessment: Legacy empty snapshot',
+        decidedAt: '2026-08-15T12:00:00.000Z',
+        decidedBy: 'member-1',
+      }),
+    ),
+  );
+
+  await check('encoded trust-map keys with periods stay distinct map entries', async () => {
+    const pathV2 = `portal/${ASSESS_T}/policy.v2.pdf`;
+    const pathPdf = `portal/${ASSESS_T}/policy.pdf`;
+    const keyV2 = encodeURIComponent(pathV2).replace(/\./g, '%2E');
+    const keyPdf = encodeURIComponent(pathPdf).replace(/\./g, '%2E');
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), `assessments/${ASSESS_T}`), {
+        evidenceTrustByStoragePath: {
+          [keyV2]: { state: 'scan_pending', storagePath: pathV2, updatedAt: 't' },
+          [keyPdf]: { state: 'quarantined', storagePath: pathPdf, updatedAt: 't' },
+        },
+      });
+    });
+    const snap = await getDoc(doc(db, 'assessments', ASSESS_T));
+    const map = snap.data()?.evidenceTrustByStoragePath || {};
+    if (map[keyV2]?.state !== 'scan_pending') {
+      throw new Error(`missing v2 record, keys=${Object.keys(map).join(',')}`);
+    }
+    if (map[keyPdf]?.state !== 'quarantined') {
+      throw new Error('policy.pdf record was overwritten or nested');
+    }
+    if (map.policy || map['policy.v2']) {
+      throw new Error('period in filename was interpreted as nested fields');
+    }
+  });
+
   await testEnv.cleanup();
   console.log(`\nResult: ${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);

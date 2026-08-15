@@ -8,6 +8,8 @@ import {
   hasTrustedEvidence,
   isPortalEvidencePath,
   isTrustedEvidence,
+  encodeTrustMapKey,
+  lookupTrustRecord,
   mergeTrustMapEntry,
   optionBRecordedState,
   trustedEvidenceFileNames,
@@ -49,31 +51,31 @@ describe('fail-closed trust', () => {
     expect(
       isTrustedEvidence(
         { ...pdf },
-        { [pdf.storagePath.replace(/\//g, '__')]: { state: 'validation_pending', storagePath: pdf.storagePath, updatedAt: 't' } }
+        { [encodeTrustMapKey(pdf.storagePath)]: { state: 'validation_pending', storagePath: pdf.storagePath, updatedAt: 't' } }
       )
     ).toBe(false);
     expect(
       isTrustedEvidence(
         { ...pdf },
-        { [pdf.storagePath.replace(/\//g, '__')]: { state: 'validated', storagePath: pdf.storagePath, updatedAt: 't' } }
+        { [encodeTrustMapKey(pdf.storagePath)]: { state: 'validated', storagePath: pdf.storagePath, updatedAt: 't' } }
       )
     ).toBe(false);
     expect(
       isTrustedEvidence(
         { ...pdf },
-        { [pdf.storagePath.replace(/\//g, '__')]: { state: 'scan_pending', storagePath: pdf.storagePath, updatedAt: 't' } }
+        { [encodeTrustMapKey(pdf.storagePath)]: { state: 'scan_pending', storagePath: pdf.storagePath, updatedAt: 't' } }
       )
     ).toBe(false);
     expect(
       isTrustedEvidence(
         { ...pdf },
-        { [pdf.storagePath.replace(/\//g, '__')]: { state: 'quarantined', storagePath: pdf.storagePath, updatedAt: 't' } }
+        { [encodeTrustMapKey(pdf.storagePath)]: { state: 'quarantined', storagePath: pdf.storagePath, updatedAt: 't' } }
       )
     ).toBe(false);
     expect(
       isTrustedEvidence(
         { ...pdf },
-        { [pdf.storagePath.replace(/\//g, '__')]: { state: 'scan_failed', storagePath: pdf.storagePath, updatedAt: 't' } }
+        { [encodeTrustMapKey(pdf.storagePath)]: { state: 'scan_failed', storagePath: pdf.storagePath, updatedAt: 't' } }
       )
     ).toBe(false);
     expect(effectiveEvidenceState(null)).toBe('missing');
@@ -91,7 +93,7 @@ describe('fail-closed trust', () => {
 
   it('trusts only authoritative clean in the backend map', () => {
     const map = {
-      [pdf.storagePath.replace(/\//g, '__')]: {
+      [encodeTrustMapKey(pdf.storagePath)]: {
         state: 'clean' as const,
         storagePath: pdf.storagePath,
         updatedAt: 't',
@@ -138,7 +140,7 @@ describe('concurrency merge', () => {
       updatedAt: '2026-08-15T11:00:00.000Z',
     };
     const next = mergeTrustMapEntry(map, a.storagePath, stale);
-    expect(next[a.storagePath.replace(/\//g, '__')]).toMatchObject({ state: 'scan_pending' });
+    expect(next[encodeTrustMapKey(a.storagePath)]).toMatchObject({ state: 'scan_pending' });
   });
 });
 
@@ -151,5 +153,29 @@ describe('approval gate', () => {
   it('does not emit a malware-safety claim in labels', () => {
     expect(evidenceStateLabel('scan_pending')).not.toMatch(/safe|protected|malware-free/i);
     expect(evidenceStateLabel('validated')).not.toMatch(/scanned clean/i);
+  });
+});
+
+describe('trust-map key encoding', () => {
+  it('encodes filenames with periods without creating dotted Firestore paths', () => {
+    const path = 'portal/asm1/policy.v2.pdf';
+    const key = encodeTrustMapKey(path);
+    expect(key).not.toContain('.');
+    expect(key).not.toContain('/');
+    const other = 'portal/asm1/policy.pdf';
+    expect(encodeTrustMapKey(path)).not.toBe(encodeTrustMapKey(other));
+    const rec = {
+      state: 'scan_pending' as const,
+      storagePath: path,
+      updatedAt: 't',
+    };
+    const map = mergeTrustMapEntry({}, path, rec);
+    map[encodeTrustMapKey(other)] = {
+      state: 'quarantined',
+      storagePath: other,
+      updatedAt: 't',
+    };
+    expect(lookupTrustRecord(path, map)?.state).toBe('scan_pending');
+    expect(lookupTrustRecord(other, map)?.state).toBe('quarantined');
   });
 });

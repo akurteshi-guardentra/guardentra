@@ -1204,11 +1204,18 @@ router.post('/propose-answers', async (req, res) => {
       const { ensureAdmin } = await import('../middleware/requireFirebaseAuth.ts');
       const { getAuth } = await import('firebase-admin/auth');
       const { getAdminDb } = await import('../lib/adminDb.ts');
-      const { trustedNamesForAi } = await import('../lib/evidenceAccess.ts');
+      const { authorizePortalAi, HttpError, trustedNamesForAi } = await import(
+        '../lib/evidenceAccess.ts'
+      );
       ensureAdmin();
       const decoded = await getAuth().verifyIdToken(token);
-      if (decoded.portalAssessmentId !== assessmentId) {
-        return res.status(403).json({ error: 'Portal session does not match this assessment', proposals: [] });
+      try {
+        await authorizePortalAi(decoded, assessmentId);
+      } catch (authErr) {
+        if (authErr instanceof HttpError) {
+          return res.status(authErr.status).json({ error: authErr.message, proposals: [] });
+        }
+        throw authErr;
       }
       const snap = await getAdminDb().collection('assessments').doc(assessmentId).get();
       const data = snap.data() || {};

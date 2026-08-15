@@ -142,3 +142,24 @@ export async function fetchOrgEvidenceDownloadUrl(input: {
   if (!body.url) throw new Error('Evidence download was not authorized.');
   return body.url;
 }
+
+export async function fetchOrgAttachmentDownloadUrl(input: {
+  orgId: string;
+  vendorId: string;
+  storagePath: string;
+}): Promise<string> {
+  const { authHeaders } = await import('../authHeaders');
+  const headers = await authHeaders();
+  const params = new URLSearchParams({
+    orgId: input.orgId,
+    vendorId: input.vendorId,
+    storagePath: input.storagePath,
+  });
+  const res = await fetch(`/api/org/attachment-download?${params.toString()}`, { headers });
+  if (!res.ok) {
+    throw new Error('Attachment download was not authorized.');
+  }
+  const parsed = (await res.json()) as { url?: string };
+  if (!parsed.url) throw new Error('Attachment download was not authorized.');
+  return parsed.url;
+}

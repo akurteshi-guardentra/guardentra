@@ -480,12 +480,28 @@ export function Assessments() {
     if (!reviewAssessment || !orgId) return;
     setArchivingEmpty(true);
     try {
-      const archivedBy = profile?.email || profile?.displayName || 'org-admin';
-      const patch = buildArchiveEmptyAssessmentPatch({
-        reason: archiveReason,
-        archivedBy,
-      });
-      await persistAssessmentPatch(reviewAssessment, patch);
+      const preferLocal = mode === 'local' || reviewAssessment.id.startsWith('local_');
+      if (preferLocal) {
+        const archivedBy = profile?.email || profile?.displayName || 'org-admin';
+        const patch = buildArchiveEmptyAssessmentPatch({
+          reason: archiveReason,
+          archivedBy,
+        });
+        await persistAssessmentPatch(reviewAssessment, patch);
+      } else {
+        const res = await fetch('/api/org/archive-empty-assessment', {
+          method: 'POST',
+          headers: await authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({
+            assessmentId: reviewAssessment.id,
+            reason: archiveReason,
+          }),
+        });
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(body.error || 'Could not archive assessment.');
+        }
+      }
       setToast({
         tone: 'ok',
         text: 'Empty assessment archived. Create a new assessment when you are ready to send a questionnaire.',

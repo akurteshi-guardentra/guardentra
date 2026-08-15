@@ -61,12 +61,24 @@ export function isEvidenceState(value: unknown): value is EvidenceState {
   return typeof value === 'string' && (EVIDENCE_STATES as readonly string[]).includes(value);
 }
 
+/** Firestore map keys must not contain `.` or `/` (dotted update paths nest fields). */
 export function encodeTrustMapKey(storagePath: string): string {
-  return storagePath.replace(/\//g, '__');
+  return encodeURIComponent(storagePath).replace(/\./g, '%2E');
 }
 
 export function decodeTrustMapKey(key: string): string {
-  return key.replace(/__/g, '/');
+  return decodeURIComponent(key);
+}
+
+export function isOrgAttachmentPath(orgId: string, vendorId: string, storagePath: string): boolean {
+  if (!orgId || !vendorId || !storagePath) return false;
+  if (storagePath.includes('..') || storagePath.includes('\\') || storagePath.includes('\0')) {
+    return false;
+  }
+  const prefix = `orgs/${orgId}/vendors/${vendorId}/attachments/`;
+  if (!storagePath.startsWith(prefix)) return false;
+  const rest = storagePath.slice(prefix.length);
+  return Boolean(rest) && !rest.includes('/');
 }
 
 export function normalizeTrustRecord(
