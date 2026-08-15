@@ -105,3 +105,12 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
 - Live checks: homepage 200; `/login` 200; `npm run verify:live` PASS (P0-1 portal markers); unauthenticated org/portal APIs 401 except `POST /api/org/assessment-decision` 400 on empty body. Live bundle contains `/api/org/assessment-decision` and `/api/org/archive-empty-assessment`. Dedicated test-assessment SDK matrix **BLOCKED/NOT RUN**.
 - **No malware scanner exists.** Metadata validation does not produce `clean`. Reviewer download remains fail-closed without authoritative `clean` + matching path + generation.
 - Issue #37: **OPEN** (dedicated live SDK verification not completed).
+
+## 2026-08-15 — PR #40 dedicated live verification (mixed)
+
+- Verifier: Cursor (`tool:cursor`). Disposable org `6b61d58cdd61427ca7fa` assessments A–D (synthetic PDF only). No customer assessments used. No `clean` fabricated.
+- Historical audit: **14** `assessments` documents; **0** `evidenceTrustByStoragePath` maps; **0** `state=clean` (object or string); **0** terminal `decisionOutcome`/`decidedAt`. No assessment `updateTime` in 2026-08-15T10:56Z–16:54Z.
+- PASS: org client trust/decision writes 403; ordinary vendor field write 200; org Storage SDK portal/attachment reads 403; portal A→A 200 / A→B 403; portal read after submit close 403; propose-answers none 401 / org 403 / cross 403 / bound 200; unauthenticated valid-shaped decision **401**; P0-1 submit 200 then rewrite 403.
+- FAIL: `/api/org/evidence-download` and `/api/org/attachment-download` **500** (`getStorage().bucket()` — bucket name not specified). `/api/org/assessment-decision` after successful remediate: rejected/second terminal **500** (`decisionNotes` undefined in Firestore `update`). Concurrent: 500 + 200, not 409.
+- **No malware scanner exists.** Metadata validation does not produce `clean`.
+- Issue #37 **OPEN**. PR #43 remains open (do not merge until owner instructs). Do not deploy a follow-up from this task.

@@ -27,7 +27,7 @@ This is a navigation ledger, not independent proof. Verify claims using the issu
 | Latest merged product work | PR #24 P0-1; PR #35 live probe; PR #38 P0-2 investigation ledger; PR #39 rejected-head merge `85f718de43b19fa9a8d10312d726d2bf0899aaeb`; **PR #40 squash-merged** `8ea4b24e1a15b03e518de8d928d56d7491bc8599` from head `e54fcc2eb02c5439794d8dddc9846ee9fcaf6938` |
 | Active governance work | Issue #33: project-state ledger and tool-routing protocol |
 | P0-2 investigation | Issue #11: **CONFIRMED DEFECT**; investigation complete; closed; **not FIXED** |
-| P0-2 implementation | Issue #37: PR #40 **MERGED** and App Hosting **DEPLOYED** (`guardentra-build-2026-08-15-002` 100%). Live SDK matrix on a dedicated test assessment is **BLOCKED/NOT RUN**. **Issue #37 remains OPEN.** Writer `tool:cursor`. GitHub `reviewDecision` was unset at merge. |
+| P0-2 implementation | Issue #37: PR #40 **MERGED** and App Hosting **DEPLOYED** (`guardentra-build-2026-08-15-002` 100%). Dedicated live matrix **ran**; several API paths returned **500**. **Issue #37 remains OPEN.** Ledger PR #43. |
 | P0-2 rejected PR | PR #36: **closed unmerged**; branch `fix/p0-2-evidence-before-scan` retained |
 | Stale PR requiring disposition | PR #7; do not merge without rebase and scope review |
 
@@ -43,14 +43,14 @@ This is a navigation ledger, not independent proof. Verify claims using the issu
 | P0-1 outcome | **DEPLOYED; BUNDLE VERIFIED** | Live probe still passes `submittedSnapshot`, `correctionReopenedAt`, and `portalOpen:!1` |
 | Named dev/staging/prod | Not established as live configured projects | Intended IDs remain placeholders |
 
-PR #40 recovery application and rules are **DEPLOYED** to `guardentra-7f582`. Bundle probe PASS. Dedicated-assessment SDK negatives are **not** live-verified. **No malware scanner exists.** Metadata validation still cannot produce `clean`. Reviewer download stays fail-closed without an authoritative `clean` record.
+PR #40 recovery application and rules are **DEPLOYED**. Dedicated live matrix: client Firestore/Storage denials and P0-1 portal lock **PASS**. Server signed-URL and some decision updates **500** (`storageBucket` unset; `decisionNotes: undefined`). Historical `clean` count **0**. **No malware scanner exists.** #37 stays OPEN.
 
 ## Delivery position
 
 | Track | Issues | Current position | Next gate |
 |---|---|---|---|
 | P0-1 vendor lock | #10, PRs #23/#24 | Code/rules/application deployed; bundle markers live verified | Safely record production end-to-end submission evidence |
-| P0-2 scan/review | #11 closed; #37 **OPEN** | PR #40 merged + rules/app deployed. Dedicated live SDK verification remaining. **No malware scanner exists.** | Run dedicated test-assessment matrix; then close #37 only if it PASSes |
+| P0-2 scan/review | #11 closed; #37 **OPEN** | PR #40 deployed. Live matrix mixed PASS/FAIL (server 500s). **No malware scanner exists.** | Fix `storageBucket` + undefined `decisionNotes`; re-run signed-URL and decision matrix; do not close #37 yet |
 | Framework inventory | #25 | Ready after P0 reconciliation | Inventory content, mappings, provenance, rights, claims |
 | Framework claims | #26 | Blocked by #25 | Evidence-backed wording decisions |
 | Framework hardening | #27–#28 | Not ready | Requires #25/#26 and approved design |
@@ -69,7 +69,7 @@ PR #40 recovery application and rules are **DEPLOYED** to `guardentra-7f582`. Bu
 
 ## Next authorized actions
 
-1. Complete dedicated test-assessment live SDK verification; keep #37 open until it PASSes.
+1. Keep #37 open. Follow-up (not a new recovery PR from this task): Admin Storage bucket name + omit undefined `decisionNotes`. Re-verify signed URL and terminal decisions.
 2. Do not merge PR #36. Do not delete `fix/p0-2-evidence-before-scan`. Do not reopen PR #39.
 3. App Hosting rollback remains `guardentra-build-2026-08-14-006`. Rules rollback: Firestore `6a2b8292-1fc2-41da-b77b-48dd5165071b`, Storage `ebffb056-6adb-4522-8086-061ecf70064e`.
 4. Execute issue #25 before #26 or framework-engine implementation.
