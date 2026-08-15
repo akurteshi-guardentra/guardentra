@@ -51,10 +51,13 @@ service firebase.storage {
 
     // Portal evidence uploads (vendor portal session, scoped to its own assessment)
     match /portal/{assessmentId}/{fileName} {
-      allow read: if isSignedIn() && (
-        isOrgMemberOfAssessment(assessmentId) ||
-        (isPortalSessionFor(assessmentId) && isOpenPortalAssessment(assessmentId))
-      );
+      // Org members must not read portal objects via the client SDK; reviewer
+      // access is short-lived signed URLs from /api/org/evidence-download after
+      // an authoritative `clean` record. Portal self-read is only the matching
+      // open session (not a reviewer bypass).
+      allow read: if isSignedIn()
+        && isPortalSessionFor(assessmentId)
+        && isOpenPortalAssessment(assessmentId);
       allow write: if isSignedIn()
         && isPortalSessionFor(assessmentId)
         && isOpenPortalAssessment(assessmentId)
@@ -88,7 +91,7 @@ service firebase.storage {
     // used by the Impact page) — 20MB cap matches the app-side check in that function.
     // Written by signed-in org members, so org scoping is the correct gate.
     match /orgs/{orgId}/vendors/{vendorId}/attachments/{fileName} {
-      allow read: if isMemberOfOrg(orgId);
+      allow read: if false;
       allow write: if isMemberOfOrg(orgId)
         && request.resource.size < 20 * 1024 * 1024
         && isAllowedDocType();

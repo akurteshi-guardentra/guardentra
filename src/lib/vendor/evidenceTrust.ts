@@ -61,12 +61,34 @@ export function isEvidenceState(value: unknown): value is EvidenceState {
   return typeof value === 'string' && (EVIDENCE_STATES as readonly string[]).includes(value);
 }
 
+/** Firestore map keys must not contain `.` or `/` (dotted update paths nest fields). */
 export function encodeTrustMapKey(storagePath: string): string {
+  return encodeURIComponent(storagePath).replace(/\./g, '%2E');
+}
+
+/** PR #39 encoding: slashes only. Periods remain (unsafe for dotted paths). */
+export function encodePr39TrustMapKey(storagePath: string): string {
   return storagePath.replace(/\//g, '__');
 }
 
 export function decodeTrustMapKey(key: string): string {
+  if (key.includes('%')) return decodeURIComponent(key);
   return key.replace(/__/g, '/');
+}
+
+export function trustMapAliasKeys(storagePath: string): string[] {
+  return Array.from(new Set([encodeTrustMapKey(storagePath), encodePr39TrustMapKey(storagePath), storagePath]));
+}
+
+export function isOrgAttachmentPath(orgId: string, vendorId: string, storagePath: string): boolean {
+  if (!orgId || !vendorId || !storagePath) return false;
+  if (storagePath.includes('..') || storagePath.includes('\\') || storagePath.includes('\0')) {
+    return false;
+  }
+  const prefix = `orgs/${orgId}/vendors/${vendorId}/attachments/`;
+  if (!storagePath.startsWith(prefix)) return false;
+  const rest = storagePath.slice(prefix.length);
+  return Boolean(rest) && !rest.includes('/');
 }
 
 export function normalizeTrustRecord(
@@ -86,15 +108,47 @@ export function lookupTrustRecord(
   map?: EvidenceTrustMap | null
 ): EvidenceTrustRecord | undefined {
   if (!storagePath || !map) return undefined;
-  return (
-    normalizeTrustRecord(map[storagePath]) ||
-    normalizeTrustRecord(map[encodeTrustMapKey(storagePath)])
-  );
+  const found: EvidenceTrustRecord[] = [];
+  for (const key of trustMapAliasKeys(storagePath)) {
+    const rec = normalizeTrustRecord(map[key]);
+    if (rec) {
+      found.push({
+        ...rec,
+        storagePath: rec.storagePath || storagePath,
+      });
+    }
+  }
+  if (!found.length) return undefined;
+  return found.reduce((best, rec) => {
+    const bestRank = STATE_RANK[best.state] ?? -1;
+    const recRank = STATE_RANK[rec.state] ?? -1;
+    if (recRank > bestRank) return rec;
+    if (recRank < bestRank) return best;
+    if (rec.updatedAt && best.updatedAt && rec.updatedAt > best.updatedAt) return rec;
+    return best;
+  });
 }
 
 /** Fail closed: only authoritative `clean` is trusted. */
 export function isTrustedState(state: string | undefined): boolean {
   return state === 'clean';
+}
+
+/**
+ * Reviewer download: clean record must name this Storage object generation.
+ * Missing, mismatched path, or stale generation are untrusted.
+ */
+export function reviewerTrustMatchesObject(input: {
+  trust?: EvidenceTrustRecord;
+  storagePath: string;
+  generation?: string | number;
+}): boolean {
+  const { trust, storagePath } = input;
+  if (!trust || !isTrustedState(trust.state)) return false;
+  if (!trust.storagePath || trust.storagePath !== storagePath) return false;
+  const objectGen = input.generation != null ? String(input.generation) : '';
+  const recordedGen = trust.generation != null ? String(trust.generation) : '';
+  return Boolean(objectGen) && Boolean(recordedGen) && objectGen === recordedGen;
 }
 
 export function effectiveEvidenceState(
@@ -225,10 +279,15 @@ export function mergeTrustMapEntry(
   storagePath: string,
   next: EvidenceTrustRecord
 ): EvidenceTrustMap {
-  const key = encodeTrustMapKey(storagePath);
+  const canonical = encodeTrustMapKey(storagePath);
   const existing = lookupTrustRecord(storagePath, map);
   if (!shouldReplaceTrustRecord(existing, next)) return map;
-  return { ...map, [key]: { ...next, storagePath } };
+  const merged: EvidenceTrustMap = { ...map };
+  for (const alias of trustMapAliasKeys(storagePath)) {
+    if (alias !== canonical) delete merged[alias];
+  }
+  merged[canonical] = { ...next, storagePath };
+  return merged;
 }
 
 export function approvalBlockedByUntrustedEvidence(

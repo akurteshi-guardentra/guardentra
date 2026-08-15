@@ -1,19 +1,33 @@
 import type { DecodedIdToken } from 'firebase-admin/auth';
 import type { Request, Response } from 'express';
 import { getAuth } from 'firebase-admin/auth';
+import { FieldPath, FieldValue } from 'firebase-admin/firestore';
 import { ensureAdmin } from '../middleware/requireFirebaseAuth.ts';
 import { getAdminDb } from './adminDb.ts';
 import {
   classifyStorageMetadata,
   encodeTrustMapKey,
+  isOrgAttachmentPath,
   isPortalEvidencePath,
   lookupTrustRecord,
   mergeTrustMapEntry,
   optionBRecordedState,
+  reviewerTrustMatchesObject,
+  shouldReplaceTrustRecord,
+  trustMapAliasKeys,
   trustedEvidenceFileNames,
   type EvidenceTrustMap,
   type EvidenceTrustRecord,
 } from '../../src/lib/vendor/evidenceTrust.ts';
+import { decisionRequiresNotes } from '../../src/lib/vendor/assessmentLifecycle.ts';
+import type { DecisionOutcome } from '../../src/lib/vendor/assessmentExceptions.ts';
+
+const DECISION_OUTCOMES: readonly DecisionOutcome[] = [
+  'approved',
+  'conditional',
+  'remediate',
+  'rejected',
+];
 
 export type StorageObjectMeta = {
   contentType?: string;
@@ -32,6 +46,10 @@ export type EvidenceDeps = {
     record: EvidenceTrustRecord
   ) => Promise<EvidenceTrustRecord>;
   signReadUrl: (storagePath: string) => Promise<string>;
+  runAssessmentTransaction: (
+    assessmentId: string,
+    updater: (current: Record<string, unknown>) => Record<string, unknown> | Promise<Record<string, unknown>>
+  ) => Promise<Record<string, unknown>>;
 };
 
 export class HttpError extends Error {
@@ -78,10 +96,19 @@ export async function requirePortalAssessment(
   }
 }
 
+export function parseDecisionOutcome(raw: unknown): DecisionOutcome {
+  const outcome = String(raw || '');
+  if (!(DECISION_OUTCOMES as readonly string[]).includes(outcome)) {
+    throw new HttpError(400, 'Invalid decision outcome');
+  }
+  return outcome as DecisionOutcome;
+}
+
 export async function requireOrgAssessmentAccess(
   decoded: DecodedIdToken,
   assessment: Record<string, unknown>,
-  getUser: EvidenceDeps['getUser']
+  getUser: EvidenceDeps['getUser'],
+  opts?: { adminOnly?: boolean }
 ): Promise<void> {
   if (decoded.portalAssessmentId) {
     throw new HttpError(403, 'Portal sessions cannot use organization evidence routes');
@@ -97,6 +124,9 @@ export async function requireOrgAssessmentAccess(
   const role = String(user.role || 'member');
   if (role !== 'admin' && role !== 'member' && role !== 'owner') {
     throw new HttpError(403, 'Reviewer permission required');
+  }
+  if (opts?.adminOnly && role !== 'admin' && role !== 'owner') {
+    throw new HttpError(403, 'Administrator permission required');
   }
 }
 
@@ -137,10 +167,21 @@ export function liveEvidenceDeps(): EvidenceDeps {
           throw new HttpError(403, 'Portal is closed');
         }
         const map = (data.evidenceTrustByStoragePath || {}) as EvidenceTrustMap;
+        const existing = lookupTrustRecord(storagePath, map);
         const merged = mergeTrustMapEntry(map, storagePath, record);
         const key = encodeTrustMapKey(storagePath);
-        const nextRecord = merged[key] as EvidenceTrustRecord;
-        tx.update(ref, { [`evidenceTrustByStoragePath.${key}`]: nextRecord });
+        const nextRecord = lookupTrustRecord(storagePath, merged);
+        if (!nextRecord) throw new HttpError(500, 'Could not record evidence trust');
+        if (!shouldReplaceTrustRecord(existing, record)) {
+          return nextRecord;
+        }
+        const args: unknown[] = [new FieldPath('evidenceTrustByStoragePath', key), nextRecord];
+        for (const alias of trustMapAliasKeys(storagePath)) {
+          if (alias !== key && alias in map && !(alias in merged)) {
+            args.push(new FieldPath('evidenceTrustByStoragePath', alias), FieldValue.delete());
+          }
+        }
+        tx.update(ref, ...(args as [FirebaseFirestore.FieldPath, unknown, ...unknown[]]));
         return nextRecord;
       });
       return applied;
@@ -155,7 +196,28 @@ export function liveEvidenceDeps(): EvidenceDeps {
       });
       return url;
     },
+    async runAssessmentTransaction(assessmentId, updater) {
+      ensureAdmin();
+      const ref = getAdminDb().collection('assessments').doc(assessmentId);
+      return getAdminDb().runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        if (!snap.exists) throw new HttpError(404, 'Assessment not found');
+        const current = (snap.data() || {}) as Record<string, unknown>;
+        const patch = await updater(current);
+        tx.update(ref, patch);
+        return patch;
+      });
+    },
   };
+}
+
+function sendError(res: Response, err: unknown, fallback: string) {
+  if (err instanceof HttpError) {
+    res.status(err.status).json({ error: err.message });
+    return;
+  }
+  console.error(fallback, err);
+  res.status(500).json({ error: fallback });
 }
 
 export async function handlePortalValidate(req: Request, res: Response, deps: EvidenceDeps) {
@@ -209,12 +271,7 @@ export async function handlePortalValidate(req: Request, res: Response, deps: Ev
       validation: saved.validation,
     });
   } catch (err) {
-    if (err instanceof HttpError) {
-      res.status(err.status).json({ error: err.message });
-      return;
-    }
-    console.error('[portal] evidence-validate failed', err);
-    res.status(500).json({ error: 'Could not validate evidence.' });
+    sendError(res, err, 'Could not validate evidence.');
   }
 }
 
@@ -254,34 +311,77 @@ export async function handleEvidenceDownload(
       return;
     }
 
+    if (kind === 'org') {
+      const trust = lookupTrustRecord(
+        storagePath,
+        assessment.evidenceTrustByStoragePath as EvidenceTrustMap
+      );
+      if (
+        !reviewerTrustMatchesObject({
+          trust,
+          storagePath,
+          generation: meta.generation,
+        })
+      ) {
+        res.status(403).json({
+          error: 'Reviewer download requires an authoritative clean evidence record.',
+        });
+        return;
+      }
+    }
+
+    const url = await deps.signReadUrl(storagePath);
+    res.json({ url, expiresInSec: 300, storagePath, kind });
+  } catch (err) {
+    sendError(res, err, 'Could not authorize download.');
+  }
+}
+
+export async function handleOrgAttachmentDownload(req: Request, res: Response, deps: EvidenceDeps) {
+  try {
+    const decoded = await requireVerifiedToken(req, deps);
+    if (decoded.portalAssessmentId) {
+      throw new HttpError(403, 'Portal sessions cannot use organization evidence routes');
+    }
+    const orgId = String(req.query.orgId || req.body?.orgId || '').trim();
+    const vendorId = String(req.query.vendorId || req.body?.vendorId || '').trim();
+    const storagePath = String(req.query.storagePath || req.body?.storagePath || '').trim();
+    if (!orgId || !vendorId || !isOrgAttachmentPath(orgId, vendorId, storagePath)) {
+      res.status(400).json({ error: 'A valid organization attachment path is required.' });
+      return;
+    }
+    const user = await deps.getUser(decoded.uid);
+    if (!user) throw new HttpError(403, 'Organization membership required');
+    const userOrg = String(user.organizationId || '');
+    if (!userOrg || userOrg !== orgId) {
+      throw new HttpError(403, 'Cross-tenant access denied');
+    }
+    const meta = await deps.getStorageMetadata(storagePath);
+    if (!meta) {
+      res.status(404).json({ error: 'Storage object not found.' });
+      return;
+    }
     const url = await deps.signReadUrl(storagePath);
     res.json({ url, expiresInSec: 300, storagePath });
   } catch (err) {
-    if (err instanceof HttpError) {
-      res.status(err.status).json({ error: err.message });
-      return;
-    }
-    console.error('[evidence] download failed', err);
-    res.status(500).json({ error: 'Could not authorize download.' });
+    sendError(res, err, 'Could not authorize download.');
   }
 }
 
 export async function handleOrgDecision(req: Request, res: Response, deps: EvidenceDeps) {
   try {
     const assessmentId = String(req.body?.assessmentId || '').trim();
-    const outcome = String(req.body?.outcome || '');
+    const outcome = parseDecisionOutcome(req.body?.outcome);
     const decisionNotes = String(req.body?.decisionNotes || '');
     const decoded = await requireVerifiedToken(req, deps);
     if (!assessmentId) {
       res.status(400).json({ error: 'assessmentId is required.' });
       return;
     }
-    const assessment = await deps.getAssessment(assessmentId);
-    if (!assessment) {
-      res.status(404).json({ error: 'Assessment not found.' });
+    if (decisionRequiresNotes(outcome) && !decisionNotes.trim()) {
+      res.status(400).json({ error: 'Decision notes are required for this outcome.' });
       return;
     }
-    await requireOrgAssessmentAccess(decoded, assessment, deps.getUser);
 
     const { listAssessmentExceptions } = await import(
       '../../src/lib/vendor/assessmentExceptions.ts'
@@ -289,41 +389,85 @@ export async function handleOrgDecision(req: Request, res: Response, deps: Evide
     const { approvalBlockedByUntrustedEvidence } = await import(
       '../../src/lib/vendor/evidenceTrust.ts'
     );
-    const { buildOrgDecisionPatch } = await import('../../src/lib/vendor/assessmentLifecycle.ts');
+    const { buildOrgDecisionPatch, hasTerminalOrgDecision } = await import(
+      '../../src/lib/vendor/assessmentLifecycle.ts'
+    );
 
-    const questions = Array.isArray(assessment.questions) ? assessment.questions : [];
-    const exceptions = listAssessmentExceptions({
-      questions: questions as { id: string; category?: string; question?: string; required?: boolean }[],
-      answers: assessment.answers as Record<string, string | string[]>,
-      evidenceByQuestion: assessment.evidenceByQuestion as Record<string, unknown[]>,
-      evidenceTrustByStoragePath: assessment.evidenceTrustByStoragePath as EvidenceTrustMap,
-    });
-
-    if (outcome === 'approved' && approvalBlockedByUntrustedEvidence(exceptions)) {
-      res.status(409).json({
-        error: 'Required evidence is not trusted. Approval is blocked until an authoritative clean result exists.',
-        exceptions,
+    const patch = await deps.runAssessmentTransaction(assessmentId, async (current) => {
+      await requireOrgAssessmentAccess(decoded, current, deps.getUser);
+      if (hasTerminalOrgDecision(current)) {
+        throw new HttpError(409, 'A terminal decision already exists');
+      }
+      const questions = Array.isArray(current.questions) ? current.questions : [];
+      const exceptions = listAssessmentExceptions({
+        questions: questions as {
+          id: string;
+          category?: string;
+          question?: string;
+          required?: boolean;
+        }[],
+        answers: current.answers as Record<string, string | string[]>,
+        evidenceByQuestion: current.evidenceByQuestion as Record<string, unknown[]>,
+        evidenceTrustByStoragePath: current.evidenceTrustByStoragePath as EvidenceTrustMap,
       });
-      return;
-    }
-
-    const patch = buildOrgDecisionPatch({
-      outcome: outcome as 'approved' | 'conditional' | 'remediate' | 'rejected',
-      decidedBy: decoded.uid,
-      decisionNotes,
+      if (outcome === 'approved' && approvalBlockedByUntrustedEvidence(exceptions)) {
+        throw new HttpError(
+          409,
+          'Required evidence is not trusted. Approval is blocked until an authoritative clean result exists.'
+        );
+      }
+      return buildOrgDecisionPatch({
+        outcome,
+        decidedBy: decoded.uid,
+        decisionNotes,
+      }) as unknown as Record<string, unknown>;
     });
 
-    ensureAdmin();
-    await getAdminDb().collection('assessments').doc(assessmentId).update(patch);
     res.json({ ok: true, patch });
   } catch (err) {
-    if (err instanceof HttpError) {
-      res.status(err.status).json({ error: err.message });
+    sendError(res, err, 'Could not record decision.');
+  }
+}
+
+export async function handleArchiveEmptyAssessment(req: Request, res: Response, deps: EvidenceDeps) {
+  try {
+    const assessmentId = String(req.body?.assessmentId || '').trim();
+    const reason = String(req.body?.reason || '');
+    const decoded = await requireVerifiedToken(req, deps);
+    if (!assessmentId) {
+      res.status(400).json({ error: 'assessmentId is required.' });
       return;
     }
-    console.error('[org] decision failed', err);
-    res.status(500).json({ error: 'Could not record decision.' });
+    const { buildArchiveEmptyAssessmentPatch, hasEmptyQuestionSnapshot } = await import(
+      '../../src/lib/vendor/emptyAssessmentRecovery.ts'
+    );
+
+    const patch = await deps.runAssessmentTransaction(assessmentId, async (current) => {
+      await requireOrgAssessmentAccess(decoded, current, deps.getUser, { adminOnly: true });
+      const { hasTerminalOrgDecision } = await import('../../src/lib/vendor/assessmentLifecycle.ts');
+      if (hasTerminalOrgDecision(current)) {
+        throw new HttpError(409, 'A terminal decision already exists');
+      }
+      if (!hasEmptyQuestionSnapshot(current)) {
+        throw new HttpError(409, 'Assessment already has snapshotted questions');
+      }
+      return buildArchiveEmptyAssessmentPatch({
+        reason,
+        archivedBy: decoded.uid,
+      }) as unknown as Record<string, unknown>;
+    });
+
+    res.json({ ok: true, patch });
+  } catch (err) {
+    sendError(res, err, 'Could not archive assessment.');
   }
+}
+
+export async function authorizePortalAi(
+  decoded: DecodedIdToken,
+  assessmentId: string
+): Promise<void> {
+  await requirePortalAssessment(decoded, assessmentId);
 }
 
 export function trustedNamesForAi(

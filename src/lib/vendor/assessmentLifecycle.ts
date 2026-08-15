@@ -254,6 +254,17 @@ export function decisionClosesPortal(outcome: DecisionOutcome): boolean {
   return outcome === 'approved' || outcome === 'conditional' || outcome === 'rejected';
 }
 
+/** Terminal FastTrack outcomes. `remediate` is not terminal. */
+export function isTerminalDecisionOutcome(outcome: unknown): boolean {
+  return outcome === 'approved' || outcome === 'conditional' || outcome === 'rejected';
+}
+
+export function hasTerminalOrgDecision(assessment: {
+  decisionOutcome?: unknown;
+}): boolean {
+  return isTerminalDecisionOutcome(assessment.decisionOutcome);
+}
+
 export function nextReviewAtForDecision(
   outcome: DecisionOutcome,
   from: Date = new Date()
