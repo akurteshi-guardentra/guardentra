@@ -392,6 +392,59 @@ async function main() {
     ),
   );
 
+  console.log('\nP0-2 evidence trust map (browser cannot write):');
+
+  const ASSESS_T = 'asm-evidence-trust';
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), `assessments/${ASSESS_T}`), {
+      organizationId: ORG,
+      vendorId: 'v1',
+      status: 'In Progress',
+      portalOpen: true,
+      progressPct: 10,
+      answers: {},
+      comments: {},
+      evidenceByQuestion: {},
+      versionLocked: true,
+      sentAt: '2026-08-01T00:00:00.000Z',
+    });
+    await setDoc(doc(ctx.firestore(), 'users/outsider-1'), {
+      organizationId: 'other-org',
+      role: 'admin',
+    });
+  });
+  const portalT = testEnv
+    .authenticatedContext('portal-t', { portalAssessmentId: ASSESS_T })
+    .firestore();
+  const outsiderDb = testEnv
+    .authenticatedContext('outsider-1', { email: 'x@other.example' })
+    .firestore();
+
+  await check('portal session CANNOT write evidenceTrustByStoragePath', () =>
+    assertFails(
+      updateDoc(doc(portalT, 'assessments', ASSESS_T), {
+        evidenceTrustByStoragePath: { portal__x: { state: 'clean' } },
+        updatedAt: '2026-08-15T12:00:00.000Z',
+      }),
+    ),
+  );
+
+  await check('org member CANNOT write evidenceTrustByStoragePath', () =>
+    assertFails(
+      updateDoc(doc(db, 'assessments', ASSESS_T), {
+        evidenceTrustByStoragePath: { portal__x: { state: 'clean' } },
+      }),
+    ),
+  );
+
+  await check('cross-tenant admin CANNOT write trust results onto another org assessment', () =>
+    assertFails(
+      updateDoc(doc(outsiderDb, 'assessments', ASSESS_T), {
+        evidenceTrustByStoragePath: { portal__x: { state: 'clean' } },
+      }),
+    ),
+  );
+
   await testEnv.cleanup();
   console.log(`\nResult: ${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);

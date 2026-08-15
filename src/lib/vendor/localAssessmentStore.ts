@@ -1,4 +1,5 @@
 import type { AssessmentStatus, FrameworkId, VendorAssessment } from './types';
+import type { EvidenceTrustMap } from './evidenceTrust';
 
 const STORAGE_KEY = 'guardentra.localAssessments.v1';
 
@@ -14,6 +15,8 @@ export interface StoredAssessment extends VendorAssessment {
   answers?: Record<string, string | string[]>;
   comments?: Record<string, string>;
   evidenceByQuestion?: Record<string, unknown[]>;
+  /** P0-2: backend-only trust records keyed by encoded Storage path. */
+  evidenceTrustByStoragePath?: EvidenceTrustMap;
   submittedSnapshot?: {
     answers: Record<string, string | string[]>;
     comments?: Record<string, string>;
