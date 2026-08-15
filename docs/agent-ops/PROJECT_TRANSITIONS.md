@@ -94,3 +94,14 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
 - Deployment: **NOT DEPLOYED BY THIS TASK**. Rollout of `85f718d`: **UNKNOWN — VERIFY APP HOSTING ROLLOUT**.
 - Limitations: no malware scanner; metadata validation never produces `clean`; reviewer download stays fail-closed until an authoritative scanner writes `clean`.
 - Next: independent Codex security review. Do not merge. Do not deploy. Do not reopen PR #39.
+
+## 2026-08-15 — PR #40 production recovery (deploy production recovery)
+
+- Verifier: Cursor (`tool:cursor`). Owner phrase: `deploy production recovery`.
+- Old `main`: `85f718de43b19fa9a8d10312d726d2bf0899aaeb`. PR #40 head: `e54fcc2eb02c5439794d8dddc9846ee9fcaf6938`. Squash merge: `8ea4b24e1a15b03e518de8d928d56d7491bc8599`. GitHub `reviewDecision` unset at merge; no Codex APPROVE object on the head.
+- Storage previous `ebffb056-6adb-4522-8086-061ecf70064e` → live `7bf9df8c-474f-4100-b5cc-77d019d7b2a9` (`releases/firebase.storage/guardentra-7f582.firebasestorage.app`). Published text: portal read is matching open session only; attachments `allow read: if false`.
+- Firestore `(default)` previous `6a2b8292-1fc2-41da-b77b-48dd5165071b` → live `c12a5117-1675-4775-b25b-ca463b36e7dc` (`releases/cloud.firestore`). Live text includes `orgPreservesEvidenceTrust()` and `orgDeniesClientDecisionWrites()`. AI Studio ruleset `546970cd-d45f-48c0-85c3-5cf73c0016b2` unchanged.
+- App Hosting previous `guardentra-build-2026-08-15-001` (`sha256:b2afbc7d81ac403c1a5999e9f8d087ba0c41faef7a765f15270c1fd78c320da9`) → **100%** `guardentra-build-2026-08-15-002` (`sha256:211e44bd9551d7c99966e4b74db5bead8510ca568520af57674539ebe8c01fa0`), created `2026-08-15T16:56:48Z`, Ready `2026-08-15T16:57:40Z`. Rollback remains `guardentra-build-2026-08-14-006`.
+- Live checks: homepage 200; `/login` 200; `npm run verify:live` PASS (P0-1 portal markers); unauthenticated org/portal APIs 401 except `POST /api/org/assessment-decision` 400 on empty body. Live bundle contains `/api/org/assessment-decision` and `/api/org/archive-empty-assessment`. Dedicated test-assessment SDK matrix **BLOCKED/NOT RUN**.
+- **No malware scanner exists.** Metadata validation does not produce `clean`. Reviewer download remains fail-closed without authoritative `clean` + matching path + generation.
+- Issue #37: **OPEN** (dedicated live SDK verification not completed).
