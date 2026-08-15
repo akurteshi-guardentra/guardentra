@@ -77,3 +77,13 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
 - Deployment: **NOT DEPLOYED**. Production unchanged. **P0-1 remains live.** **No malware scanner exists.** Reviewer downloads require authoritative `clean`; metadata validation still never produces `clean`.
 - Fixes: server archive-empty path; transactional decision lock + enum/notes; org attachment signed downloads; portal AI uses portal token; org evidence download gated on `clean`; Storage denies org client reads of portal objects; trust-map keys encode `.`.
 - Next: wait for fresh `verify` and Bugbot; return PR #39 for Codex security review. No merge. No deploy.
+
+## 2026-08-15 — Ledger correction: PR #39 merged before review-blocker fixes
+
+- Verifier: Cursor (`tool:cursor`).
+- GitHub: PR #39 **MERGED** at 2026-08-15T10:55:20Z. Merge commit `85f718de43b19fa9a8d10312d726d2bf0899aaeb`. Merged head was `6acbd63de0b52a1697d16221ac5eb1be4a916124` (Codex REQUEST CHANGES). This writer did **not** merge.
+- Review-blocker implementation: `8e9aa693bc8589ec2c6b5b2461a3b98563572146` on `fix/p0-2-authoritative-evidence-states`. Pushed after the merge; **not in `main`**.
+- Local checks on the unmerged fix commit: `npm run lint` PASS; `npm test` 1/1 PASS; `npm run test:vitest` 174/174 PASS; `npm run test:firestore-rules` 42/42 PASS; `npm run test:storage-rules` 19/19 PASS; `npm run build` PASS.
+- Deployment: **NOT DEPLOYED** by this writer. Live runtime not re-verified against `85f718d`. **P0-1 remains the last live-verified product deploy.** **No malware scanner exists.**
+- Constraint: owner instruction was do not open another PR. The seven blockers are therefore **not delivered to `main`**.
+- Next authorized action: owner opens/authorizes a follow-up PR from the post-merge branch; Codex re-review; no deploy of unfixed #39 merge without that follow-up.

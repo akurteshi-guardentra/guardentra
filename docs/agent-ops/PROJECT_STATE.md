@@ -23,11 +23,11 @@ This is a navigation ledger, not independent proof. Verify claims using the issu
 
 | Item | Verified state |
 |---|---|
-| Default branch/current commit | `main` at `dbcd2c4d97a0de307eba2aa27c88030e5e45e580` |
-| Latest merged product work | PR #24: P0-1 implementation; PR #35: live-verification probe; PR #38: P0-2 investigation ledger |
+| Default branch/current commit | `main` at `85f718de43b19fa9a8d10312d726d2bf0899aaeb` (PR #39 merge; **this is the REQUEST CHANGES head**, not the later review-blocker commits) |
+| Latest merged product work | PR #24: P0-1 implementation; PR #35: live-verification probe; PR #38: P0-2 investigation ledger; PR #39: P0-2 Option B **merged with known Codex REQUEST CHANGES still open** |
 | Active governance work | Issue #33: project-state ledger and tool-routing protocol |
 | P0-2 investigation | Issue #11: **CONFIRMED DEFECT**; investigation complete; closed; **not FIXED** |
-| P0-2 implementation | Issue #37: **PR READY** at https://github.com/akurteshi-guardentra/guardentra/pull/39 (`8e9aa693bc8589ec2c6b5b2461a3b98563572146`). Writer `tool:cursor`; `review:codex` (prior verdict REQUEST CHANGES; fixes pushed, awaiting re-review). Option B. **Not merged. NOT DEPLOYED.** |
+| P0-2 implementation | Issue #37: PR #39 **MERGED** at `85f718de43b19fa9a8d10312d726d2bf0899aaeb` (reviewed HEAD `6acbd63`). Codex REQUEST CHANGES was **not** resolved on `main`. Follow-up commits `8e9aa69` and `c2ba3a6` exist on `fix/p0-2-authoritative-evidence-states` but are **not on `main`**. Writer `tool:cursor`; `review:codex`. **NOT DEPLOYED** (runtime not re-verified for this merge). |
 | P0-2 rejected PR | PR #36: **closed unmerged**; branch `fix/p0-2-evidence-before-scan` retained |
 | Stale PR requiring disposition | PR #7; do not merge without rebase and scope review |
 
@@ -49,7 +49,7 @@ P0-1 application/rule artifacts are live and bundle-verified. P0-2 is **not** de
 | Track | Issues | Current position | Next gate |
 |---|---|---|---|
 | P0-1 vendor lock | #10, PRs #23/#24 | Code/rules/application deployed; bundle markers live verified | Safely record production end-to-end submission evidence |
-| P0-2 scan/review | #11 closed; #37 in progress | Option B + review-blocker fixes on feature branch (not on `main`). **No malware scanner exists.** PR #36 closed unmerged. | Fresh Codex security review of `8e9aa69`; do not merge #36; do not deploy |
+| P0-2 scan/review | #11 closed; #37 / PR #39 **merged with open review blockers** | `main` has Option B **without** the seven Codex/Bugbot fixes. Fixes sit on the same branch after merge. **No malware scanner exists.** | Owner must authorize a **new** PR from the post-merge branch commits; do not treat #39 as closed-clean; do not deploy until review-blocker fixes are on `main` and authorized |
 | Framework inventory | #25 | Ready after P0 reconciliation | Inventory content, mappings, provenance, rights, claims |
 | Framework claims | #26 | Blocked by #25 | Evidence-backed wording decisions |
 | Framework hardening | #27–#28 | Not ready | Requires #25/#26 and approved design |
@@ -68,9 +68,9 @@ P0-1 application/rule artifacts are live and bundle-verified. P0-2 is **not** de
 
 ## Next authorized actions
 
-1. Optional `review:codex` of PR #39 HEAD `8e9aa693bc8589ec2c6b5b2461a3b98563572146`; do not merge until the owner authorizes.
+1. Owner decision: open a new PR for `8e9aa69`/`c2ba3a6` (and the ledger correction) because PR #39 is already merged. This writer was instructed not to open another PR.
 2. Do not merge PR #36. Do not delete `fix/p0-2-evidence-before-scan`.
-3. Do not deploy application or rules for P0-2 until explicit owner deploy authorization.
+3. Do not deploy application or rules for P0-2 until the review-blocker fixes are on `main` and the owner authorizes deploy.
 4. Execute issue #25 before #26 or framework-engine implementation.
 
 ## Daily reporting
