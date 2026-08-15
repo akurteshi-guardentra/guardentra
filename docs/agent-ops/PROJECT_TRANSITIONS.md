@@ -65,3 +65,24 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
 - Deployment: **NOT DEPLOYED**. Production unchanged. **P0-1 remains live.** **No malware scanner exists.** `clean` is never produced by metadata validation.
 - Limitations: malware scanning out of scope; evidence remains `scan_pending` after `validated`; AI/approval treat non-`clean` as untrusted.
 - Next: Codex security review; owner merge authorization separate from deploy.
+
+## 2026-08-15 — PR #39 merged at rejected head (emergency)
+
+- Verifier: Cursor (`tool:cursor`).
+- GitHub merged PR #39 at 2026-08-15T10:55:20Z. This writer did **not** merge it.
+- Rejected reviewed HEAD: `6acbd63de0b52a1697d16221ac5eb1be4a916124` (Codex REQUEST CHANGES).
+- Merge commit on `main`: `85f718de43b19fa9a8d10312d726d2bf0899aaeb`.
+- Security blockers reached `main`. Corrective commit `8e9aa693bc8589ec2c6b5b2461a3b98563572146` was **not** in that merge.
+- Deployment/rollout: **UNKNOWN — VERIFY APP HOSTING ROLLOUT**. Not deployed by this task.
+
+## 2026-08-15 — Post-merge P0-2 security recovery (repository only)
+
+- Verifier: Cursor (`tool:cursor`).
+- Branch: `fix/p0-2-post-merge-security-recovery` from `origin/main` `85f718de43b19fa9a8d10312d726d2bf0899aaeb`.
+- Cherry-pick source: `8e9aa693bc8589ec2c6b5b2461a3b98563572146` (no conflicts).
+- Additional: reviewer downloads require matching Storage generation + path.
+- Corrective PR: recorded after `gh pr create` on this branch.
+- Checks (local): `npm run lint` PASS; `npm test` 1/1 PASS; `npm run test:vitest` 178/178 PASS; `npm run test:firestore-rules` 42/42 PASS (includes P0-1 correction reopen); `npm run test:storage-rules` 19/19 PASS; `npm run build` PASS.
+- Deployment: **NOT DEPLOYED BY THIS TASK**. Rollout of `85f718d`: **UNKNOWN — VERIFY APP HOSTING ROLLOUT**.
+- Limitations: no malware scanner; metadata validation never produces `clean`; reviewer download stays fail-closed until an authoritative scanner writes `clean`.
+- Next: independent Codex security review. Do not merge. Do not deploy. Do not reopen PR #39.

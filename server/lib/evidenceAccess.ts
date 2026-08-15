@@ -9,10 +9,10 @@ import {
   encodeTrustMapKey,
   isOrgAttachmentPath,
   isPortalEvidencePath,
-  isTrustedState,
   lookupTrustRecord,
   mergeTrustMapEntry,
   optionBRecordedState,
+  reviewerTrustMatchesObject,
   trustedEvidenceFileNames,
   type EvidenceTrustMap,
   type EvidenceTrustRecord,
@@ -290,22 +290,31 @@ export async function handleEvidenceDownload(
       }
     } else {
       await requireOrgAssessmentAccess(decoded, assessment, deps.getUser);
-      const trust = lookupTrustRecord(
-        storagePath,
-        assessment.evidenceTrustByStoragePath as EvidenceTrustMap
-      );
-      if (!isTrustedState(trust?.state)) {
-        res.status(403).json({
-          error: 'Reviewer download requires an authoritative clean evidence record.',
-        });
-        return;
-      }
     }
 
     const meta = await deps.getStorageMetadata(storagePath);
     if (!meta) {
       res.status(404).json({ error: 'Storage object not found.' });
       return;
+    }
+
+    if (kind === 'org') {
+      const trust = lookupTrustRecord(
+        storagePath,
+        assessment.evidenceTrustByStoragePath as EvidenceTrustMap
+      );
+      if (
+        !reviewerTrustMatchesObject({
+          trust,
+          storagePath,
+          generation: meta.generation,
+        })
+      ) {
+        res.status(403).json({
+          error: 'Reviewer download requires an authoritative clean evidence record.',
+        });
+        return;
+      }
     }
 
     const url = await deps.signReadUrl(storagePath);

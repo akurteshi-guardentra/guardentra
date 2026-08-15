@@ -307,7 +307,7 @@ describe('evidence download', () => {
     expect(res.statusCode).toBe(403);
   });
 
-  it('signs a reviewer URL only for authoritative clean evidence', async () => {
+  it('signs a reviewer URL only for authoritative clean evidence matching path and generation', async () => {
     const d = deps({
       getAssessment: vi.fn(async () => ({
         organizationId: 'org1',
@@ -316,6 +316,7 @@ describe('evidence download', () => {
           [encodeURIComponent('portal/asmA/a.pdf').replace(/\./g, '%2E')]: {
             state: 'clean',
             storagePath: 'portal/asmA/a.pdf',
+            generation: '1',
             updatedAt: 't',
           },
         },
@@ -333,6 +334,60 @@ describe('evidence download', () => {
     );
     expect(res.statusCode).toBe(200);
     expect((res.body as { url?: string }).url).toBe('https://signed.example/tmp');
+  });
+
+  it('rejects reviewer download when the clean record generation is stale', async () => {
+    const d = deps({
+      getAssessment: vi.fn(async () => ({
+        organizationId: 'org1',
+        evidenceTrustByStoragePath: {
+          [encodeURIComponent('portal/asmA/a.pdf').replace(/\./g, '%2E')]: {
+            state: 'clean',
+            storagePath: 'portal/asmA/a.pdf',
+            generation: '99',
+            updatedAt: 't',
+          },
+        },
+      })),
+    });
+    const res = mockRes();
+    await handleEvidenceDownload(
+      req({
+        token: 'org',
+        query: { assessmentId: 'asmA', storagePath: 'portal/asmA/a.pdf' },
+      }),
+      res as any,
+      d,
+      'org'
+    );
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('rejects reviewer download when the trust record path does not match', async () => {
+    const d = deps({
+      getAssessment: vi.fn(async () => ({
+        organizationId: 'org1',
+        evidenceTrustByStoragePath: {
+          [encodeURIComponent('portal/asmA/a.pdf').replace(/\./g, '%2E')]: {
+            state: 'clean',
+            storagePath: 'portal/asmA/other.pdf',
+            generation: '1',
+            updatedAt: 't',
+          },
+        },
+      })),
+    });
+    const res = mockRes();
+    await handleEvidenceDownload(
+      req({
+        token: 'org',
+        query: { assessmentId: 'asmA', storagePath: 'portal/asmA/a.pdf' },
+      }),
+      res as any,
+      d,
+      'org'
+    );
+    expect(res.statusCode).toBe(403);
   });
 });
 
@@ -394,6 +449,16 @@ describe('portal AI token binding', () => {
 });
 
 describe('org decisions', () => {
+  it('rejects missing outcomes', async () => {
+    const res = mockRes();
+    await handleOrgDecision(
+      req({ token: 'org', body: { assessmentId: 'asmA' } }),
+      res as any,
+      deps()
+    );
+    expect(res.statusCode).toBe(400);
+  });
+
   it('rejects unknown outcomes', async () => {
     const res = mockRes();
     await handleOrgDecision(

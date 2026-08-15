@@ -12,6 +12,7 @@ import {
   lookupTrustRecord,
   mergeTrustMapEntry,
   optionBRecordedState,
+  reviewerTrustMatchesObject,
   trustedEvidenceFileNames,
   type EvidenceTrustRecord,
 } from '../lib/vendor/evidenceTrust';
@@ -177,5 +178,36 @@ describe('trust-map key encoding', () => {
     };
     expect(lookupTrustRecord(path, map)?.state).toBe('scan_pending');
     expect(lookupTrustRecord(other, map)?.state).toBe('quarantined');
+  });
+});
+
+describe('reviewerTrustMatchesObject', () => {
+  it('requires clean + matching path + matching generation', () => {
+    const trust = {
+      state: 'clean' as const,
+      storagePath: 'portal/asm1/a.pdf',
+      generation: '7',
+      updatedAt: 't',
+    };
+    expect(
+      reviewerTrustMatchesObject({ trust, storagePath: 'portal/asm1/a.pdf', generation: '7' })
+    ).toBe(true);
+    expect(
+      reviewerTrustMatchesObject({ trust, storagePath: 'portal/asm1/a.pdf', generation: '8' })
+    ).toBe(false);
+    expect(
+      reviewerTrustMatchesObject({
+        trust: { ...trust, storagePath: 'portal/asm1/b.pdf' },
+        storagePath: 'portal/asm1/a.pdf',
+        generation: '7',
+      })
+    ).toBe(false);
+    expect(
+      reviewerTrustMatchesObject({
+        trust: { ...trust, state: 'scan_pending' },
+        storagePath: 'portal/asm1/a.pdf',
+        generation: '7',
+      })
+    ).toBe(false);
   });
 });

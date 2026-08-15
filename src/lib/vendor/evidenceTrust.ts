@@ -109,6 +109,23 @@ export function isTrustedState(state: string | undefined): boolean {
   return state === 'clean';
 }
 
+/**
+ * Reviewer download: clean record must name this Storage object generation.
+ * Missing, mismatched path, or stale generation are untrusted.
+ */
+export function reviewerTrustMatchesObject(input: {
+  trust?: EvidenceTrustRecord;
+  storagePath: string;
+  generation?: string | number;
+}): boolean {
+  const { trust, storagePath } = input;
+  if (!trust || !isTrustedState(trust.state)) return false;
+  if (!trust.storagePath || trust.storagePath !== storagePath) return false;
+  const objectGen = input.generation != null ? String(input.generation) : '';
+  const recordedGen = trust.generation != null ? String(trust.generation) : '';
+  return Boolean(objectGen) && Boolean(recordedGen) && objectGen === recordedGen;
+}
+
 export function effectiveEvidenceState(
   item: EvidenceItem | unknown,
   map?: EvidenceTrustMap | null

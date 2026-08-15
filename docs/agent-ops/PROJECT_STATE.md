@@ -23,11 +23,11 @@ This is a navigation ledger, not independent proof. Verify claims using the issu
 
 | Item | Verified state |
 |---|---|
-| Default branch/current commit | `main` at `dbcd2c4d97a0de307eba2aa27c88030e5e45e580` |
-| Latest merged product work | PR #24: P0-1 implementation; PR #35: live-verification probe; PR #38: P0-2 investigation ledger |
+| Default branch/current commit | `main` at `85f718de43b19fa9a8d10312d726d2bf0899aaeb` |
+| Latest merged product work | PR #24 P0-1; PR #35 live probe; PR #38 P0-2 investigation ledger; **PR #39 merged at rejected head** `6acbd63de0b52a1697d16221ac5eb1be4a916124` |
 | Active governance work | Issue #33: project-state ledger and tool-routing protocol |
 | P0-2 investigation | Issue #11: **CONFIRMED DEFECT**; investigation complete; closed; **not FIXED** |
-| P0-2 implementation | Issue #37: **PR READY** at https://github.com/akurteshi-guardentra/guardentra/pull/39 (`e944e451d6feba49340446b3588e47ae2a6c8be5`). Writer `tool:cursor`; `review:codex`. Option B. **Not merged. NOT DEPLOYED.** |
+| P0-2 implementation | Issue #37: PR #39 **MERGED WITH OPEN SECURITY BLOCKERS**. Merge commit `85f718de43b19fa9a8d10312d726d2bf0899aaeb`. Corrective recovery on `fix/p0-2-post-merge-security-recovery` (cherry-pick of `8e9aa693bc8589ec2c6b5b2461a3b98563572146` plus generation-match). Writer `tool:cursor`; `review:codex`. **Not merged. NOT DEPLOYED BY THIS TASK.** |
 | P0-2 rejected PR | PR #36: **closed unmerged**; branch `fix/p0-2-evidence-before-scan` retained |
 | Stale PR requiring disposition | PR #7; do not merge without rebase and scope review |
 
@@ -37,19 +37,19 @@ This is a navigation ledger, not independent proof. Verify claims using the issu
 |---|---|---|
 | Public domain | `https://guardentra.com` | Reachable; performance baseline still needs measured evidence |
 | Firebase project serving traffic | `guardentra-7f582` | Labelled demo/local-development but operationally production-equivalent |
-| App Hosting | backend `guardentra`, `us-central1`; rollout serves application commit `2aae09a237b615ecd78ec5bb6f3b67723a952c36` | Product code matches deployed application; `main` is ahead only by PR #35 probe/docs |
+| App Hosting | backend `guardentra`, `us-central1`; last live-verified application commit `2aae09a237b615ecd78ec5bb6f3b67723a952c36` | **UNKNOWN — VERIFY APP HOSTING ROLLOUT** whether `85f718d` / PR #39 auto-rolled. Do not claim production is unchanged. |
 | Firestore rules | Live release matches the P0-1 rules on `main` | Rules and live client contain the P0-1 close/snapshot implementation |
 | P0-1 outcome | **DEPLOYED; BUNDLE VERIFIED** | Live probe passes for `submittedSnapshot`, `correctionReopenedAt`, and `portalOpen:!1`; production end-to-end submission remains separate evidence |
 | Named dev/staging/prod | Not established as live configured projects | Intended IDs remain placeholders |
 
-P0-1 application/rule artifacts are live and bundle-verified. P0-2 is **not** deployed. Do not claim a malware scanner or malware protection. Do not claim a production end-to-end submission without separate evidence. Any deploy to `guardentra-7f582` is production-equivalent and needs explicit production authorization.
+P0-1 application/rule artifacts were live-verified. **PR #39 security blockers reached `main`.** Whether App Hosting rolled that merge is **UNKNOWN — VERIFY APP HOSTING ROLLOUT**. Do not claim a malware scanner. Metadata validation still cannot produce `clean`. Any deploy to `guardentra-7f582` is production-equivalent.
 
 ## Delivery position
 
 | Track | Issues | Current position | Next gate |
 |---|---|---|---|
 | P0-1 vendor lock | #10, PRs #23/#24 | Code/rules/application deployed; bundle markers live verified | Safely record production end-to-end submission evidence |
-| P0-2 scan/review | #11 closed; #37 in progress | Option B implemented on feature branch (not on `main`). **No malware scanner exists.** PR #36 closed unmerged. | Codex security review; do not merge #36; do not deploy |
+| P0-2 scan/review | #11 closed; #37 / PR #39 **merged at rejected head** | Security blockers on `main`. Recovery branch `fix/p0-2-post-merge-security-recovery`. **No malware scanner exists.** | Codex review of the recovery PR; do not merge without owner authorization; do not deploy |
 | Framework inventory | #25 | Ready after P0 reconciliation | Inventory content, mappings, provenance, rights, claims |
 | Framework claims | #26 | Blocked by #25 | Evidence-backed wording decisions |
 | Framework hardening | #27–#28 | Not ready | Requires #25/#26 and approved design |
@@ -64,13 +64,13 @@ P0-1 application/rule artifacts are live and bundle-verified. P0-2 is **not** de
 3. Production end-to-end P0-1 submission evidence is not recorded, although bundle verification passes.
 4. PR #7 is stale.
 5. Framework-labelled content lacks a completed provenance/rights inventory.
-6. Live/`main` still treats uploaded portal evidence as present for review/AI; there is no malware scanner. MIME/size/extension is not a scan.
+6. Live/`main` contains PR #39 Option B **without** the post-review security fixes until the recovery PR merges. There is no malware scanner. MIME/size/extension is not a scan.
 
 ## Next authorized actions
 
-1. Optional `review:codex` of the issue #37 PR; do not merge until the owner authorizes.
-2. Do not merge PR #36. Do not delete `fix/p0-2-evidence-before-scan`.
-3. Do not deploy application or rules for P0-2 until explicit owner deploy authorization.
+1. Independent `review:codex` of the post-merge recovery PR; **do not merge** until the owner authorizes.
+2. Do not merge PR #36. Do not delete `fix/p0-2-evidence-before-scan`. Do not reopen PR #39.
+3. Do not deploy. Verify App Hosting rollout for `85f718d` before treating production as unchanged.
 4. Execute issue #25 before #26 or framework-engine implementation.
 
 ## Daily reporting
