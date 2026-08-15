@@ -27,7 +27,7 @@ This is a navigation ledger, not independent proof. Verify claims using the issu
 | Latest merged product work | PR #24: P0-1 implementation; PR #35: live-verification probe; PR #38: P0-2 investigation ledger |
 | Active governance work | Issue #33: project-state ledger and tool-routing protocol |
 | P0-2 investigation | Issue #11: **CONFIRMED DEFECT**; investigation complete; closed; **not FIXED** |
-| P0-2 implementation | Issue #37: **in progress** on `fix/p0-2-authoritative-evidence-states` (writer `tool:cursor`; `review:codex`). Option B. **PR READY after push.** Not merged. **NOT DEPLOYED.** |
+| P0-2 implementation | Issue #37: **PR READY** at https://github.com/akurteshi-guardentra/guardentra/pull/39 (`e944e451d6feba49340446b3588e47ae2a6c8be5`). Writer `tool:cursor`; `review:codex`. Option B. **Not merged. NOT DEPLOYED.** |
 | P0-2 rejected PR | PR #36: **closed unmerged**; branch `fix/p0-2-evidence-before-scan` retained |
 | Stale PR requiring disposition | PR #7; do not merge without rebase and scope review |
 

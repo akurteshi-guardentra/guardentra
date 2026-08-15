@@ -58,6 +58,8 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
 - Issue #37: previous `approved, not started` → **implemented on feature branch / PR opened**. Not merged. Not live verified.
 - Starting `origin/main`: `dbcd2c4d97a0de307eba2aa27c88030e5e45e580`.
 - Branch: `fix/p0-2-authoritative-evidence-states`.
+- Commit: `e944e451d6feba49340446b3588e47ae2a6c8be5`.
+- PR: https://github.com/akurteshi-guardentra/guardentra/pull/39 (**open, not merged**).
 - PR #36 remains closed unmerged. That branch was not used.
 - Checks (local): `npm run lint` PASS; `npm test` 1/1 PASS; `npm run test:vitest` 160/160 PASS; `npm run test:firestore-rules` 39/39 PASS; `npm run test:storage-rules` 14/14 PASS; `npm run build` PASS.
 - Deployment: **NOT DEPLOYED**. Production unchanged. **P0-1 remains live.** **No malware scanner exists.** `clean` is never produced by metadata validation.
