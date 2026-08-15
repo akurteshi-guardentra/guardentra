@@ -80,8 +80,8 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
 - Verifier: Cursor (`tool:cursor`).
 - Branch: `fix/p0-2-post-merge-security-recovery` from `origin/main` `85f718de43b19fa9a8d10312d726d2bf0899aaeb`.
 - Cherry-pick source: `8e9aa693bc8589ec2c6b5b2461a3b98563572146` (no conflicts).
-- Additional: reviewer downloads require matching Storage generation + path. Recovery HEAD `42ef2176158b2afb3df3cfa186d5ddff15f6c0f7`.
-- Corrective PR: recorded after `gh pr create` on this branch.
+- Additional: reviewer downloads require matching Storage generation + path. Implementation commit `42ef2176158b2afb3df3cfa186d5ddff15f6c0f7`.
+- Corrective PR: https://github.com/akurteshi-guardentra/guardentra/pull/40 (**open, not merged**). Recovery HEAD `1561ef1`.
 - Checks (local): `npm run lint` PASS; `npm test` 1/1 PASS; `npm run test:vitest` 178/178 PASS; `npm run test:firestore-rules` 42/42 PASS (includes P0-1 correction reopen); `npm run test:storage-rules` 19/19 PASS; `npm run build` PASS.
 - Deployment: **NOT DEPLOYED BY THIS TASK**. Rollout of `85f718d`: **UNKNOWN — VERIFY APP HOSTING ROLLOUT**.
 - Limitations: no malware scanner; metadata validation never produces `clean`; reviewer download stays fail-closed until an authoritative scanner writes `clean`.
