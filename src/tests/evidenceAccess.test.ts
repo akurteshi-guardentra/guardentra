@@ -6,6 +6,7 @@ import {
   handleOrgAttachmentDownload,
   handleOrgDecision,
   handlePortalValidate,
+  HttpError,
   requirePortalAssessment,
   type EvidenceDeps,
 } from '../../server/lib/evidenceAccess';
@@ -479,20 +480,135 @@ describe('org decisions', () => {
     expect(res.statusCode).toBe(400);
   });
 
-  it('rejects a second decision and concurrent replacement of approved with remediate', async () => {
+  function transactionalStore(initial: Record<string, unknown> = {}) {
     const store: Record<string, unknown> = {
       organizationId: 'org1',
       questions: [],
       answers: {},
+      ...initial,
     };
     const d = deps({
       runAssessmentTransaction: vi.fn(async (_id, updater) => {
-        const snapshot = { ...store };
-        const patch = await updater(snapshot);
+        const patch = await updater({ ...store });
         Object.assign(store, patch);
         return patch;
       }),
     });
+    return { store, d };
+  }
+
+  it('accepts remediate without treating decidedAt as a terminal lock', async () => {
+    const { store, d } = transactionalStore();
+    const res = mockRes();
+    await handleOrgDecision(
+      req({
+        token: 'org',
+        body: { assessmentId: 'asmA', outcome: 'remediate', decisionNotes: 'fix SSO' },
+      }),
+      res as any,
+      d
+    );
+    expect(res.statusCode).toBe(200);
+    expect(store.decisionOutcome).toBe('remediate');
+    expect(store.decidedAt).toBeTruthy();
+    expect(store.portalOpen).toBe(true);
+  });
+
+  it('allows one terminal decision after remediate, correction reopen, and resubmission', async () => {
+    const { store, d } = transactionalStore();
+    const rem = mockRes();
+    await handleOrgDecision(
+      req({
+        token: 'org',
+        body: { assessmentId: 'asmA', outcome: 'remediate', decisionNotes: 'fix SSO' },
+      }),
+      rem as any,
+      d
+    );
+    expect(rem.statusCode).toBe(200);
+
+    Object.assign(store, {
+      portalOpen: true,
+      status: 'In Progress',
+      correctionReopenedAt: '2026-08-15T13:00:00.000Z',
+      submittedSnapshot: { answers: { q1: 'No' } },
+    });
+    Object.assign(store, {
+      status: 'Under Review',
+      portalOpen: false,
+      answers: { q1: 'Yes' },
+    });
+
+    const approved = mockRes();
+    await handleOrgDecision(
+      req({ token: 'org', body: { assessmentId: 'asmA', outcome: 'approved' } }),
+      approved as any,
+      d
+    );
+    expect(approved.statusCode).toBe(200);
+    expect(store.decisionOutcome).toBe('approved');
+    expect(store.submittedSnapshot).toEqual({ answers: { q1: 'No' } });
+  });
+
+  it('allows approved after remediate', async () => {
+    const { store, d } = transactionalStore({
+      decisionOutcome: 'remediate',
+      decidedAt: '2026-08-15T12:00:00.000Z',
+      portalOpen: false,
+      status: 'Under Review',
+      submittedSnapshot: { answers: { q1: 'No' } },
+    });
+    const res = mockRes();
+    await handleOrgDecision(
+      req({ token: 'org', body: { assessmentId: 'asmA', outcome: 'approved' } }),
+      res as any,
+      d
+    );
+    expect(res.statusCode).toBe(200);
+    expect(store.decisionOutcome).toBe('approved');
+    expect(store.submittedSnapshot).toEqual({ answers: { q1: 'No' } });
+  });
+
+  it('allows conditional after remediate', async () => {
+    const { store, d } = transactionalStore({
+      decisionOutcome: 'remediate',
+      decidedAt: '2026-08-15T12:00:00.000Z',
+      submittedSnapshot: { answers: { q1: 'No' } },
+    });
+    const res = mockRes();
+    await handleOrgDecision(
+      req({
+        token: 'org',
+        body: { assessmentId: 'asmA', outcome: 'conditional', decisionNotes: 'conditions' },
+      }),
+      res as any,
+      d
+    );
+    expect(res.statusCode).toBe(200);
+    expect(store.decisionOutcome).toBe('conditional');
+  });
+
+  it('allows rejected after remediate', async () => {
+    const { store, d } = transactionalStore({
+      decisionOutcome: 'remediate',
+      decidedAt: '2026-08-15T12:00:00.000Z',
+      submittedSnapshot: { answers: { q1: 'No' } },
+    });
+    const res = mockRes();
+    await handleOrgDecision(
+      req({
+        token: 'org',
+        body: { assessmentId: 'asmA', outcome: 'rejected', decisionNotes: 'nope' },
+      }),
+      res as any,
+      d
+    );
+    expect(res.statusCode).toBe(200);
+    expect(store.decisionOutcome).toBe('rejected');
+  });
+
+  it('rejects a terminal decision followed by any later decision', async () => {
+    const { store, d } = transactionalStore();
     const first = mockRes();
     await handleOrgDecision(
       req({ token: 'org', body: { assessmentId: 'asmA', outcome: 'approved' } }),
@@ -500,37 +616,57 @@ describe('org decisions', () => {
       d
     );
     expect(first.statusCode).toBe(200);
-    expect(store.decidedAt).toBeTruthy();
+    expect(store.decisionOutcome).toBe('approved');
 
     const second = mockRes();
     await handleOrgDecision(
       req({
         token: 'org',
-        body: { assessmentId: 'asmA', outcome: 'remediate', decisionNotes: 'change it' },
+        body: { assessmentId: 'asmA', outcome: 'remediate', decisionNotes: 'too late' },
       }),
       second as any,
       d
     );
     expect(second.statusCode).toBe(409);
+  });
 
-    const concurrent = mockRes();
-    const racing = deps({
+  it('concurrent terminal decisions keep only one final result', async () => {
+    const start: Record<string, unknown> = {
+      organizationId: 'org1',
+      questions: [],
+      answers: {},
+    };
+    let committed: Record<string, unknown> | null = null;
+    const d = deps({
       runAssessmentTransaction: vi.fn(async (_id, updater) => {
-        const snapshot = { ...store };
-        const patch = await updater(snapshot);
-        Object.assign(store, patch);
+        const patch = await updater({ ...start });
+        if (
+          committed &&
+          (committed.decisionOutcome === 'approved' ||
+            committed.decisionOutcome === 'conditional' ||
+            committed.decisionOutcome === 'rejected')
+        ) {
+          throw new HttpError(409, 'A terminal decision already exists');
+        }
+        committed = { ...start, ...patch };
         return patch;
       }),
     });
+    const a = mockRes();
+    const b = mockRes();
     await handleOrgDecision(
-      req({
-        token: 'org',
-        body: { assessmentId: 'asmA', outcome: 'rejected', decisionNotes: 'race' },
-      }),
-      concurrent as any,
-      racing
+      req({ token: 'org', body: { assessmentId: 'asmA', outcome: 'approved' } }),
+      a as any,
+      d
     );
-    expect(concurrent.statusCode).toBe(409);
+    await handleOrgDecision(
+      req({ token: 'org', body: { assessmentId: 'asmA', outcome: 'rejected' } }),
+      b as any,
+      d
+    );
+    expect(a.statusCode).toBe(200);
+    expect(b.statusCode).toBe(409);
+    expect((committed as Record<string, unknown> | null)?.decisionOutcome).toBe('approved');
   });
 });
 

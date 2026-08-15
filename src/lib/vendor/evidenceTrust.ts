@@ -66,8 +66,18 @@ export function encodeTrustMapKey(storagePath: string): string {
   return encodeURIComponent(storagePath).replace(/\./g, '%2E');
 }
 
+/** PR #39 encoding: slashes only. Periods remain (unsafe for dotted paths). */
+export function encodePr39TrustMapKey(storagePath: string): string {
+  return storagePath.replace(/\//g, '__');
+}
+
 export function decodeTrustMapKey(key: string): string {
-  return decodeURIComponent(key);
+  if (key.includes('%')) return decodeURIComponent(key);
+  return key.replace(/__/g, '/');
+}
+
+export function trustMapAliasKeys(storagePath: string): string[] {
+  return Array.from(new Set([encodeTrustMapKey(storagePath), encodePr39TrustMapKey(storagePath), storagePath]));
 }
 
 export function isOrgAttachmentPath(orgId: string, vendorId: string, storagePath: string): boolean {
@@ -98,10 +108,25 @@ export function lookupTrustRecord(
   map?: EvidenceTrustMap | null
 ): EvidenceTrustRecord | undefined {
   if (!storagePath || !map) return undefined;
-  return (
-    normalizeTrustRecord(map[storagePath]) ||
-    normalizeTrustRecord(map[encodeTrustMapKey(storagePath)])
-  );
+  const found: EvidenceTrustRecord[] = [];
+  for (const key of trustMapAliasKeys(storagePath)) {
+    const rec = normalizeTrustRecord(map[key]);
+    if (rec) {
+      found.push({
+        ...rec,
+        storagePath: rec.storagePath || storagePath,
+      });
+    }
+  }
+  if (!found.length) return undefined;
+  return found.reduce((best, rec) => {
+    const bestRank = STATE_RANK[best.state] ?? -1;
+    const recRank = STATE_RANK[rec.state] ?? -1;
+    if (recRank > bestRank) return rec;
+    if (recRank < bestRank) return best;
+    if (rec.updatedAt && best.updatedAt && rec.updatedAt > best.updatedAt) return rec;
+    return best;
+  });
 }
 
 /** Fail closed: only authoritative `clean` is trusted. */
@@ -254,10 +279,15 @@ export function mergeTrustMapEntry(
   storagePath: string,
   next: EvidenceTrustRecord
 ): EvidenceTrustMap {
-  const key = encodeTrustMapKey(storagePath);
+  const canonical = encodeTrustMapKey(storagePath);
   const existing = lookupTrustRecord(storagePath, map);
   if (!shouldReplaceTrustRecord(existing, next)) return map;
-  return { ...map, [key]: { ...next, storagePath } };
+  const merged: EvidenceTrustMap = { ...map };
+  for (const alias of trustMapAliasKeys(storagePath)) {
+    if (alias !== canonical) delete merged[alias];
+  }
+  merged[canonical] = { ...next, storagePath };
+  return merged;
 }
 
 export function approvalBlockedByUntrustedEvidence(

@@ -4,11 +4,12 @@ import {
   classifyStorageMetadata,
   effectiveEvidenceState,
   evidenceStateLabel,
+  encodePr39TrustMapKey,
+  encodeTrustMapKey,
   filterTrustedEvidence,
   hasTrustedEvidence,
   isPortalEvidencePath,
   isTrustedEvidence,
-  encodeTrustMapKey,
   lookupTrustRecord,
   mergeTrustMapEntry,
   optionBRecordedState,
@@ -178,6 +179,68 @@ describe('trust-map key encoding', () => {
     };
     expect(lookupTrustRecord(path, map)?.state).toBe('scan_pending');
     expect(lookupTrustRecord(other, map)?.state).toBe('quarantined');
+  });
+});
+
+describe('legacy trust-map keys', () => {
+  const path = 'portal/asm1/policy.v2.pdf';
+  const canonical = encodeTrustMapKey(path);
+  const pr39 = encodePr39TrustMapKey(path);
+
+  it('looks up PR #39 slash-to-underscore keys and raw historical paths', () => {
+    expect(lookupTrustRecord(path, { [pr39]: { state: 'scan_pending', storagePath: path, updatedAt: 't' } })?.state).toBe(
+      'scan_pending'
+    );
+    expect(lookupTrustRecord(path, { [path]: { state: 'validated', storagePath: path, updatedAt: 't' } })?.state).toBe(
+      'validated'
+    );
+  });
+
+  it('does not let a stale scan_pending replace a legacy quarantined or scan_failed record', () => {
+    const quarantined: EvidenceTrustRecord = {
+      state: 'quarantined',
+      storagePath: path,
+      generation: '1',
+      updatedAt: '2026-08-15T12:00:00.000Z',
+    };
+    const failed: EvidenceTrustRecord = {
+      state: 'scan_failed',
+      storagePath: path,
+      generation: '1',
+      updatedAt: '2026-08-15T12:00:00.000Z',
+    };
+    const stale: EvidenceTrustRecord = {
+      state: 'scan_pending',
+      storagePath: path,
+      generation: '1',
+      updatedAt: '2026-08-15T13:00:00.000Z',
+    };
+    expect(mergeTrustMapEntry({ [pr39]: quarantined }, path, stale)[pr39]).toMatchObject({
+      state: 'quarantined',
+    });
+    expect(mergeTrustMapEntry({ [path]: failed }, path, stale)[path]).toMatchObject({
+      state: 'scan_failed',
+    });
+    expect(mergeTrustMapEntry({ [pr39]: quarantined }, path, stale)[canonical]).toBeUndefined();
+  });
+
+  it('canonical write after legacy lookup consolidates without a conflicting duplicate', () => {
+    const pending: EvidenceTrustRecord = {
+      state: 'uploaded',
+      storagePath: path,
+      generation: '1',
+      updatedAt: '2026-08-15T12:00:00.000Z',
+    };
+    const next: EvidenceTrustRecord = {
+      state: 'scan_pending',
+      storagePath: path,
+      generation: '1',
+      updatedAt: '2026-08-15T12:01:00.000Z',
+    };
+    const merged = mergeTrustMapEntry({ [pr39]: pending }, path, next);
+    expect(merged[canonical]).toMatchObject({ state: 'scan_pending', storagePath: path, generation: '1' });
+    expect(merged[pr39]).toBeUndefined();
+    expect(Object.keys(merged).filter((k) => lookupTrustRecord(path, { [k]: merged[k] }))).toHaveLength(1);
   });
 });
 

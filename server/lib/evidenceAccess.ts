@@ -1,7 +1,7 @@
 import type { DecodedIdToken } from 'firebase-admin/auth';
 import type { Request, Response } from 'express';
 import { getAuth } from 'firebase-admin/auth';
-import { FieldPath } from 'firebase-admin/firestore';
+import { FieldPath, FieldValue } from 'firebase-admin/firestore';
 import { ensureAdmin } from '../middleware/requireFirebaseAuth.ts';
 import { getAdminDb } from './adminDb.ts';
 import {
@@ -13,6 +13,8 @@ import {
   mergeTrustMapEntry,
   optionBRecordedState,
   reviewerTrustMatchesObject,
+  shouldReplaceTrustRecord,
+  trustMapAliasKeys,
   trustedEvidenceFileNames,
   type EvidenceTrustMap,
   type EvidenceTrustRecord,
@@ -165,10 +167,21 @@ export function liveEvidenceDeps(): EvidenceDeps {
           throw new HttpError(403, 'Portal is closed');
         }
         const map = (data.evidenceTrustByStoragePath || {}) as EvidenceTrustMap;
+        const existing = lookupTrustRecord(storagePath, map);
         const merged = mergeTrustMapEntry(map, storagePath, record);
         const key = encodeTrustMapKey(storagePath);
-        const nextRecord = merged[key] as EvidenceTrustRecord;
-        tx.update(ref, new FieldPath('evidenceTrustByStoragePath', key), nextRecord);
+        const nextRecord = lookupTrustRecord(storagePath, merged);
+        if (!nextRecord) throw new HttpError(500, 'Could not record evidence trust');
+        if (!shouldReplaceTrustRecord(existing, record)) {
+          return nextRecord;
+        }
+        const args: unknown[] = [new FieldPath('evidenceTrustByStoragePath', key), nextRecord];
+        for (const alias of trustMapAliasKeys(storagePath)) {
+          if (alias !== key && alias in map && !(alias in merged)) {
+            args.push(new FieldPath('evidenceTrustByStoragePath', alias), FieldValue.delete());
+          }
+        }
+        tx.update(ref, ...(args as [FirebaseFirestore.FieldPath, unknown, ...unknown[]]));
         return nextRecord;
       });
       return applied;
@@ -376,12 +389,14 @@ export async function handleOrgDecision(req: Request, res: Response, deps: Evide
     const { approvalBlockedByUntrustedEvidence } = await import(
       '../../src/lib/vendor/evidenceTrust.ts'
     );
-    const { buildOrgDecisionPatch } = await import('../../src/lib/vendor/assessmentLifecycle.ts');
+    const { buildOrgDecisionPatch, hasTerminalOrgDecision } = await import(
+      '../../src/lib/vendor/assessmentLifecycle.ts'
+    );
 
     const patch = await deps.runAssessmentTransaction(assessmentId, async (current) => {
       await requireOrgAssessmentAccess(decoded, current, deps.getUser);
-      if (current.decidedAt) {
-        throw new HttpError(409, 'A finalized decision already exists');
+      if (hasTerminalOrgDecision(current)) {
+        throw new HttpError(409, 'A terminal decision already exists');
       }
       const questions = Array.isArray(current.questions) ? current.questions : [];
       const exceptions = listAssessmentExceptions({
@@ -429,8 +444,9 @@ export async function handleArchiveEmptyAssessment(req: Request, res: Response, 
 
     const patch = await deps.runAssessmentTransaction(assessmentId, async (current) => {
       await requireOrgAssessmentAccess(decoded, current, deps.getUser, { adminOnly: true });
-      if (current.decidedAt) {
-        throw new HttpError(409, 'A finalized decision already exists');
+      const { hasTerminalOrgDecision } = await import('../../src/lib/vendor/assessmentLifecycle.ts');
+      if (hasTerminalOrgDecision(current)) {
+        throw new HttpError(409, 'A terminal decision already exists');
       }
       if (!hasEmptyQuestionSnapshot(current)) {
         throw new HttpError(409, 'Assessment already has snapshotted questions');

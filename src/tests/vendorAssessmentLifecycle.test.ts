@@ -30,7 +30,9 @@ import {
   buildPortalSubmitPatch,
   canSignOffAssessment,
   decisionRequiresNotes,
+  hasTerminalOrgDecision,
   isReceiptMode,
+  isTerminalDecisionOutcome,
   nextReviewAtForDecision,
 } from '../lib/vendor/assessmentLifecycle';
 import {
@@ -239,6 +241,9 @@ describe('vendor assessment portal/tracker lifecycle', () => {
     expect(remediate.status).toBe('Under Review');
     expect(remediate.portalOpen).toBe(true);
     expect(remediate.decisionOutcome).toBe('remediate');
+    expect(hasTerminalOrgDecision(remediate)).toBe(false);
+    expect(isTerminalDecisionOutcome('remediate')).toBe(false);
+    expect(isTerminalDecisionOutcome('approved')).toBe(true);
 
     const remRow = upsertLocalAssessment(orgId, { ...submitted, ...remediate });
     // Vendor chip stays Under Review — approve sync is only for closing outcomes
