@@ -27,7 +27,7 @@ This is a navigation ledger, not independent proof. Verify claims using the issu
 | Latest merged product work | PR #24 P0-1; PR #35 live probe; PR #38 P0-2 investigation ledger; **PR #39 merged at rejected head** `6acbd63de0b52a1697d16221ac5eb1be4a916124` |
 | Active governance work | Issue #33: project-state ledger and tool-routing protocol |
 | P0-2 investigation | Issue #11: **CONFIRMED DEFECT**; investigation complete; closed; **not FIXED** |
-| P0-2 implementation | Issue #37: PR #39 **MERGED WITH OPEN SECURITY BLOCKERS** (`85f718de43b19fa9a8d10312d726d2bf0899aaeb`). Corrective **PR #40** https://github.com/akurteshi-guardentra/guardentra/pull/40 HEAD `1561ef1a` on `fix/p0-2-post-merge-security-recovery`. Writer `tool:cursor`; `review:codex`. **Not merged. NOT DEPLOYED BY THIS TASK.** |
+| P0-2 implementation | Issue #37: PR #39 **MERGED WITH OPEN SECURITY BLOCKERS** (`85f718de43b19fa9a8d10312d726d2bf0899aaeb`). Corrective **PR #40** https://github.com/akurteshi-guardentra/guardentra/pull/40 HEAD `a163cbad205481235c37676f46f15ce0adab4dcc` on `fix/p0-2-post-merge-security-recovery`. Writer `tool:cursor`; `review:codex`. **Not merged. NOT DEPLOYED BY THIS TASK.** |
 | P0-2 rejected PR | PR #36: **closed unmerged**; branch `fix/p0-2-evidence-before-scan` retained |
 | Stale PR requiring disposition | PR #7; do not merge without rebase and scope review |
 

@@ -89,7 +89,7 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
 - `remediate` is not terminal; terminal lock is `approved` / `conditional` / `rejected` only.
 - Trust lookup/merge recognizes raw, PR #39 `__`, and canonical percent-encoded keys. New writes use `FieldPath` + canonical encoding only.
 - Deployment: **NOT DEPLOYED**. **NOT MERGED**. Rollout of `85f718d`: **UNKNOWN — VERIFY APP HOSTING ROLLOUT**.
-- Next: Codex re-review of PR #40.
+- Next: Codex re-review of PR #40. HEAD `a163cbad205481235c37676f46f15ce0adab4dcc`. Local: lint PASS; test 1/1; vitest 187/187; firestore-rules 42/42; storage-rules 19/19; build PASS.
 - Checks (local): `npm run lint` PASS; `npm test` 1/1 PASS; `npm run test:vitest` 178/178 PASS; `npm run test:firestore-rules` 42/42 PASS (includes P0-1 correction reopen); `npm run test:storage-rules` 19/19 PASS; `npm run build` PASS.
 - Deployment: **NOT DEPLOYED BY THIS TASK**. Rollout of `85f718d`: **UNKNOWN — VERIFY APP HOSTING ROLLOUT**.
 - Limitations: no malware scanner; metadata validation never produces `clean`; reviewer download stays fail-closed until an authoritative scanner writes `clean`.
