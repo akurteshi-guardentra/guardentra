@@ -445,6 +445,18 @@ async function main() {
     ),
   );
 
+  await check('org member CANNOT finalize an approved decision via the browser client', () =>
+    assertFails(
+      updateDoc(doc(db, 'assessments', ASSESS_T), {
+        decisionOutcome: 'approved',
+        decidedAt: '2026-08-15T12:00:00.000Z',
+        decidedBy: 'member-1',
+        status: 'Completed',
+        portalOpen: false,
+      }),
+    ),
+  );
+
   await testEnv.cleanup();
   console.log(`\nResult: ${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);

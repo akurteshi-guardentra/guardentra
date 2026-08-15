@@ -345,6 +345,11 @@ service cloud.firestore {
         .hasAny(['evidenceTrustByStoragePath']);
     }
 
+    function orgDeniesClientDecisionWrites() {
+      return !request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(['decisionOutcome', 'decisionNotes', 'decidedAt', 'decidedBy']);
+    }
+
     function portalSubmitTransition() {
       return resource.data.portalOpen == true
         && resource.data.status != 'Under Review'
@@ -396,7 +401,7 @@ service cloud.firestore {
     match /assessments/{assessmentId} {
       allow read: if isDocOrgMember() || (isPortalSessionFor(assessmentId) && isPortalReadableAssessment());
       allow create: if isCreatingForOwnOrg();
-      allow update: if (isDocOrgMember() && orgPreservesSentSnapshot() && orgPreservesFinalDecision() && orgPreservesEvidenceTrust()) ||
+      allow update: if (isDocOrgMember() && orgPreservesSentSnapshot() && orgPreservesFinalDecision() && orgPreservesEvidenceTrust() && orgDeniesClientDecisionWrites()) ||
         (isPortalSessionFor(assessmentId) && portalSubmitTransition() && portalSubmitFieldsChanged()) ||
         (portalMayWriteAssessment(assessmentId) && onlyPortalAssessmentFieldsChanged());
       allow delete: if isDocOrgMember() && isAdmin();
