@@ -668,6 +668,54 @@ describe('org decisions', () => {
     expect(b.statusCode).toBe(409);
     expect((committed as Record<string, unknown> | null)?.decisionOutcome).toBe('approved');
   });
+
+  function assertNoUndefinedValues(patch: Record<string, unknown>) {
+    for (const [key, value] of Object.entries(patch)) {
+      expect(value, key).not.toBeUndefined();
+    }
+  }
+
+  it('omits decisionNotes and undefined values for rejected without notes', async () => {
+    let patch: Record<string, unknown> | undefined;
+    const d = deps({
+      runAssessmentTransaction: vi.fn(async (_id, updater) => {
+        patch = await updater({ organizationId: 'org1', questions: [], answers: {} });
+        return patch!;
+      }),
+    });
+    const res = mockRes();
+    await handleOrgDecision(
+      req({ token: 'org', body: { assessmentId: 'asmA', outcome: 'rejected' } }),
+      res as any,
+      d
+    );
+    expect(res.statusCode).toBe(200);
+    expect(patch).toBeDefined();
+    expect(Object.prototype.hasOwnProperty.call(patch, 'decisionNotes')).toBe(false);
+    assertNoUndefinedValues(patch!);
+    expect(patch!.decisionOutcome).toBe('rejected');
+    expect(patch!.decidedAt).toBeTruthy();
+    expect(patch!.decidedBy).toBeTruthy();
+  });
+
+  it('omits decisionNotes and undefined values for approved without notes', async () => {
+    let patch: Record<string, unknown> | undefined;
+    const d = deps({
+      runAssessmentTransaction: vi.fn(async (_id, updater) => {
+        patch = await updater({ organizationId: 'org1', questions: [], answers: {} });
+        return patch!;
+      }),
+    });
+    const res = mockRes();
+    await handleOrgDecision(
+      req({ token: 'org', body: { assessmentId: 'asmA', outcome: 'approved' } }),
+      res as any,
+      d
+    );
+    expect(res.statusCode).toBe(200);
+    expect(Object.prototype.hasOwnProperty.call(patch, 'decisionNotes')).toBe(false);
+    assertNoUndefinedValues(patch!);
+  });
 });
 
 describe('empty assessment archive', () => {

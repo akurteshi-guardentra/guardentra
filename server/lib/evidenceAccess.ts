@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldPath, FieldValue } from 'firebase-admin/firestore';
 import { ensureAdmin } from '../middleware/requireFirebaseAuth.ts';
+import { getConfiguredStorageBucket } from './adminConfig.ts';
 import { getAdminDb } from './adminDb.ts';
 import {
   classifyStorageMetadata,
@@ -149,7 +150,7 @@ export function liveEvidenceDeps(): EvidenceDeps {
     async getStorageMetadata(storagePath) {
       const { getStorage } = await import('firebase-admin/storage');
       ensureAdmin();
-      const bucket = getStorage().bucket();
+      const bucket = getConfiguredStorageBucket(getStorage());
       const file = bucket.file(storagePath);
       const [exists] = await file.exists();
       if (!exists) return null;
@@ -189,7 +190,7 @@ export function liveEvidenceDeps(): EvidenceDeps {
     async signReadUrl(storagePath) {
       const { getStorage } = await import('firebase-admin/storage');
       ensureAdmin();
-      const bucket = getStorage().bucket();
+      const bucket = getConfiguredStorageBucket(getStorage());
       const [url] = await bucket.file(storagePath).getSignedUrl({
         action: 'read',
         expires: Date.now() + 5 * 60 * 1000,
