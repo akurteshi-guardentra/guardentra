@@ -30,7 +30,8 @@ import {
   QUESTION_CATEGORIES,
   type PortalQuestion,
 } from '../lib/vendor/questionBank';
-import { uploadPortalEvidence, type UploadedEvidence } from '../lib/vendor/evidenceUpload';
+import { uploadPortalEvidence, requestPortalEvidenceValidate, fetchPortalEvidenceDownloadUrl, type UploadedEvidence } from '../lib/vendor/evidenceUpload';
+import { evidenceStateLabel, trustedEvidenceFileNames, type EvidenceState } from '../lib/vendor/evidenceTrust';
 import { syncVendorAfterAssessmentProgress, syncVendorAfterAssessmentSubmit } from '../lib/vendor/syncVendorAssessment';
 import {
   buildPortalAutosavePatch,
@@ -87,6 +88,7 @@ export function VendorPortal() {
   const [answers, setAnswers] = useState<AnswersMap>({});
   const [comments, setComments] = useState<CommentsMap>({});
   const [evidence, setEvidence] = useState<EvidenceMap>({});
+  const [trustHints, setTrustHints] = useState<Record<string, EvidenceState | 'uploaded'>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [started, setStarted] = useState(false);
@@ -340,9 +342,30 @@ export function VendorPortal() {
         file,
         questionId: currentQuestion.id,
       });
+      let displayState: EvidenceState | 'uploaded' = 'uploaded';
+      try {
+        const validated = await requestPortalEvidenceValidate({
+          assessmentId,
+          storagePath: uploaded.storagePath,
+        });
+        if (
+          validated.state === 'uploaded' ||
+          validated.state === 'validation_pending' ||
+          validated.state === 'validated' ||
+          validated.state === 'scan_pending' ||
+          validated.state === 'quarantined' ||
+          validated.state === 'scan_failed' ||
+          validated.state === 'clean'
+        ) {
+          displayState = validated.state;
+        }
+      } catch {
+        displayState = 'validation_pending';
+      }
       const list = [...(evidence[currentQuestion.id] || []), uploaded];
       const next = { ...evidence, [currentQuestion.id]: list };
       setEvidence(next);
+      setTrustHints((prev) => ({ ...prev, [uploaded.storagePath]: displayState }));
       scheduleSave(answers, comments, next);
       if (assessment?.organizationId) {
         void emitAuditBestEffort({
@@ -366,9 +389,11 @@ export function VendorPortal() {
 
   const proposeFromEvidence = async () => {
     if (!currentQuestion || !assessmentId) return;
-    const files = (evidence[currentQuestion.id] || []).map((f) => f.fileName);
+    const files = trustedEvidenceFileNames(evidence[currentQuestion.id] || []);
     if (!files.length) {
-      setUploadError('Upload evidence first, then ask AI to propose an answer.');
+      setUploadError(
+        'AI proposals require authoritative trusted evidence. No malware scanner is configured, so uploaded files stay untrusted.'
+      );
       return;
     }
     setProposing(true);
@@ -379,6 +404,7 @@ export function VendorPortal() {
         headers: await authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           vendorName: assessment?.vendorName,
+          assessmentId,
           evidenceFileNames: files,
           questions: [
             {
@@ -950,14 +976,26 @@ export function VendorPortal() {
                   >
                     <span className="inline-flex items-center gap-2 truncate">
                       <FileText className="h-3.5 w-3.5 text-primary" />
-                      <a
-                        href={f.downloadUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="truncate text-primary hover:underline"
+                      <button
+                        type="button"
+                        className="truncate text-left text-primary hover:underline"
+                        onClick={() => {
+                          if (!assessmentId || !f.storagePath) return;
+                          void fetchPortalEvidenceDownloadUrl({
+                            assessmentId,
+                            storagePath: f.storagePath,
+                          }).then((url) => {
+                            window.open(url, '_blank', 'noopener,noreferrer');
+                          }).catch((err: Error) => {
+                            setUploadError(err.message || 'Evidence download was not authorized.');
+                          });
+                        }}
                       >
                         {f.fileName}
-                      </a>
+                      </button>
+                      <span className="shrink-0 text-[10px] uppercase tracking-wide text-slate-500">
+                        {evidenceStateLabel(trustHints[f.storagePath] || 'uploaded')}
+                      </span>
                     </span>
                     <button
                       type="button"

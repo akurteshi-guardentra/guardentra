@@ -23,11 +23,11 @@ This is a navigation ledger, not independent proof. Verify claims using the issu
 
 | Item | Verified state |
 |---|---|
-| Default branch/current commit | `main` at `8d3e66e76e0e75ce7f9e64c05c985173310c2f42` |
-| Latest merged product work | PR #24: P0-1 implementation; PR #35: live-verification probe |
+| Default branch/current commit | `main` at `dbcd2c4d97a0de307eba2aa27c88030e5e45e580` |
+| Latest merged product work | PR #24: P0-1 implementation; PR #35: live-verification probe; PR #38: P0-2 investigation ledger |
 | Active governance work | Issue #33: project-state ledger and tool-routing protocol |
 | P0-2 investigation | Issue #11: **CONFIRMED DEFECT**; investigation complete; closed; **not FIXED** |
-| P0-2 implementation | Issue #37: approved, **not started**; Option B |
+| P0-2 implementation | Issue #37: **PR READY** at https://github.com/akurteshi-guardentra/guardentra/pull/39 (`e944e451d6feba49340446b3588e47ae2a6c8be5`). Writer `tool:cursor`; `review:codex`. Option B. **Not merged. NOT DEPLOYED.** |
 | P0-2 rejected PR | PR #36: **closed unmerged**; branch `fix/p0-2-evidence-before-scan` retained |
 | Stale PR requiring disposition | PR #7; do not merge without rebase and scope review |
 
@@ -49,7 +49,7 @@ P0-1 application/rule artifacts are live and bundle-verified. P0-2 is **not** de
 | Track | Issues | Current position | Next gate |
 |---|---|---|---|
 | P0-1 vendor lock | #10, PRs #23/#24 | Code/rules/application deployed; bundle markers live verified | Safely record production end-to-end submission evidence |
-| P0-2 scan/review | #11 closed; #37 open | Investigation complete: **CONFIRMED DEFECT**. Implementation approved, not started. **No malware scanner exists.** PR #36 closed unmerged. | Implement #37 on a new branch; do not merge #36; do not deploy |
+| P0-2 scan/review | #11 closed; #37 in progress | Option B implemented on feature branch (not on `main`). **No malware scanner exists.** PR #36 closed unmerged. | Codex security review; do not merge #36; do not deploy |
 | Framework inventory | #25 | Ready after P0 reconciliation | Inventory content, mappings, provenance, rights, claims |
 | Framework claims | #26 | Blocked by #25 | Evidence-backed wording decisions |
 | Framework hardening | #27–#28 | Not ready | Requires #25/#26 and approved design |
@@ -68,7 +68,7 @@ P0-1 application/rule artifacts are live and bundle-verified. P0-2 is **not** de
 
 ## Next authorized actions
 
-1. Implement issue #37 (P0-2 Option B) on a **new** branch after owner start authorization; do not reuse PR #36 without a fresh security review.
+1. Optional `review:codex` of the issue #37 PR; do not merge until the owner authorizes.
 2. Do not merge PR #36. Do not delete `fix/p0-2-evidence-before-scan`.
 3. Do not deploy application or rules for P0-2 until explicit owner deploy authorization.
 4. Execute issue #25 before #26 or framework-engine implementation.

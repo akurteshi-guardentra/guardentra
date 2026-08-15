@@ -1186,11 +1186,46 @@ router.post('/analyze-emails', async (req, res) => {
  * Returns suggested Yes/No/Partially/N/A with a citation; vendor must Accept/Edit/Reject.
  */
 router.post('/propose-answers', async (req, res) => {
-  const { questions, evidenceFileNames, vendorName } = req.body || {};
+  const { questions, evidenceFileNames, vendorName, assessmentId: rawAssessmentId } = req.body || {};
   const qList = Array.isArray(questions) ? questions.slice(0, 40) : [];
-  const files = Array.isArray(evidenceFileNames)
+  const requested = Array.isArray(evidenceFileNames)
     ? evidenceFileNames.map((f: unknown) => String(f)).slice(0, 20)
     : [];
+  const assessmentId = String(rawAssessmentId || '').trim();
+  let files: string[] = [];
+
+  if (assessmentId) {
+    try {
+      const header = req.headers.authorization;
+      const token = header?.startsWith('Bearer ') ? header.slice(7).trim() : '';
+      if (!token) {
+        return res.status(401).json({ error: 'Authentication required', proposals: [] });
+      }
+      const { ensureAdmin } = await import('../middleware/requireFirebaseAuth.ts');
+      const { getAuth } = await import('firebase-admin/auth');
+      const { getAdminDb } = await import('../lib/adminDb.ts');
+      const { trustedNamesForAi } = await import('../lib/evidenceAccess.ts');
+      ensureAdmin();
+      const decoded = await getAuth().verifyIdToken(token);
+      if (decoded.portalAssessmentId !== assessmentId) {
+        return res.status(403).json({ error: 'Portal session does not match this assessment', proposals: [] });
+      }
+      const snap = await getAdminDb().collection('assessments').doc(assessmentId).get();
+      const data = snap.data() || {};
+      files = trustedNamesForAi(
+        requested,
+        data.evidenceByQuestion as Record<string, unknown[]> | undefined,
+        data.evidenceTrustByStoragePath as Record<string, never> | undefined
+      );
+    } catch {
+      return res.status(401).json({ error: 'Invalid or expired token', proposals: [] });
+    }
+  }
+
+  if (!files.length) {
+    return res.json({ proposals: [], reason: 'no_trusted_evidence' });
+  }
+
   const citation =
     files[0] || 'Uploaded evidence (vendor to confirm page/section)';
 

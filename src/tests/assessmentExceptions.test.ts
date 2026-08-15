@@ -49,9 +49,23 @@ describe('listAssessmentExceptions', () => {
     const withFile = listAssessmentExceptions({
       questions: [questions[0]],
       answers: { q_1: 'Yes' },
-      evidenceByQuestion: { q_1: [{ fileName: 'policy.pdf' }] },
+      evidenceByQuestion: {
+        q_1: [{ fileName: 'policy.pdf', storagePath: 'portal/a/p.pdf' }],
+      },
     });
-    expect(withFile.some((e) => e.reason === 'missing_evidence')).toBe(false);
+    expect(withFile.some((e) => e.reason === 'missing_evidence')).toBe(true);
+
+    const clean = listAssessmentExceptions({
+      questions: [questions[0]],
+      answers: { q_1: 'Yes' },
+      evidenceByQuestion: {
+        q_1: [{ fileName: 'policy.pdf', storagePath: 'portal/a/p.pdf' }],
+      },
+      evidenceTrustByStoragePath: {
+        'portal/a/p.pdf': { state: 'clean', storagePath: 'portal/a/p.pdf', updatedAt: 't' },
+      },
+    });
+    expect(clean.some((e) => e.reason === 'missing_evidence')).toBe(false);
   });
 
   it('sorts by category then id', () => {

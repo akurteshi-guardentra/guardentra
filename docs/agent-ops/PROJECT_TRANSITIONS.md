@@ -51,3 +51,17 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
 - Deployment: **NOT DEPLOYED**. Production application/rules **unchanged**. **P0-1 remains live.** **No malware scanner exists.**
 - Reconciliation: live still matches P0-1; P0-2 trust enforcement is not live.
 - Next authorized action: implement #37 after owner start; merge this documentation PR only if the owner later authorizes merge. No production deploy.
+
+## 2026-08-15 — P0-2 Option B implementation (repository only)
+
+- Verifier: Cursor (`tool:cursor` reassigned from Antigravity by owner).
+- Issue #37: previous `approved, not started` → **implemented on feature branch / PR opened**. Not merged. Not live verified.
+- Starting `origin/main`: `dbcd2c4d97a0de307eba2aa27c88030e5e45e580`.
+- Branch: `fix/p0-2-authoritative-evidence-states`.
+- Commit: `e944e451d6feba49340446b3588e47ae2a6c8be5`.
+- PR: https://github.com/akurteshi-guardentra/guardentra/pull/39 (**open, not merged**).
+- PR #36 remains closed unmerged. That branch was not used.
+- Checks (local): `npm run lint` PASS; `npm test` 1/1 PASS; `npm run test:vitest` 160/160 PASS; `npm run test:firestore-rules` 39/39 PASS; `npm run test:storage-rules` 14/14 PASS; `npm run build` PASS.
+- Deployment: **NOT DEPLOYED**. Production unchanged. **P0-1 remains live.** **No malware scanner exists.** `clean` is never produced by metadata validation.
+- Limitations: malware scanning out of scope; evidence remains `scan_pending` after `validated`; AI/approval treat non-`clean` as untrusted.
+- Next: Codex security review; owner merge authorization separate from deploy.

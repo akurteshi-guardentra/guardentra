@@ -333,9 +333,21 @@ service cloud.firestore {
     // Fields VendorPortal.tsx actually writes during autosave/submit (src/pages/VendorPortal.tsx).
     // A portal session (incl. anonymous) may only ever change these — never organizationId,
     // vendorId, frameworks, dueAt/dueDate. portalOpen/submittedSnapshot only on submit transition.
+    // Authoritative trust map is backend-only (P0-2). Portal and org browser
+    // clients must not write evidenceTrustByStoragePath.
     function onlyPortalAssessmentFieldsChanged() {
       return request.resource.data.diff(resource.data).affectedKeys()
         .hasOnly(['answers', 'comments', 'evidenceByQuestion', 'progressPct', 'progress', 'status', 'questions', 'updatedAt', 'completedAt', 'attestations', 'answerProposals', 'confirmedAnswerIds']);
+    }
+
+    function orgPreservesEvidenceTrust() {
+      return !request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(['evidenceTrustByStoragePath']);
+    }
+
+    function orgDeniesClientDecisionWrites() {
+      return !request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(['decisionOutcome', 'decisionNotes', 'decidedAt', 'decidedBy']);
     }
 
     function portalSubmitTransition() {
@@ -389,7 +401,7 @@ service cloud.firestore {
     match /assessments/{assessmentId} {
       allow read: if isDocOrgMember() || (isPortalSessionFor(assessmentId) && isPortalReadableAssessment());
       allow create: if isCreatingForOwnOrg();
-      allow update: if (isDocOrgMember() && orgPreservesSentSnapshot() && orgPreservesFinalDecision()) ||
+      allow update: if (isDocOrgMember() && orgPreservesSentSnapshot() && orgPreservesFinalDecision() && orgPreservesEvidenceTrust() && orgDeniesClientDecisionWrites()) ||
         (isPortalSessionFor(assessmentId) && portalSubmitTransition() && portalSubmitFieldsChanged()) ||
         (portalMayWriteAssessment(assessmentId) && onlyPortalAssessmentFieldsChanged());
       allow delete: if isDocOrgMember() && isAdmin();

@@ -11,6 +11,7 @@ import aiRoutes from "./server/routes/ai.ts";
 import stripeRoutes from "./server/routes/stripe.ts";
 import notifyRoutes from "./server/routes/notify.ts";
 import portalRoutes from "./server/routes/portal.ts";
+import orgEvidenceRoutes from "./server/routes/orgEvidence.ts";
 import auditRoutes from "./server/routes/audit.ts";
 import { requireFirebaseAuth } from "./server/middleware/requireFirebaseAuth.ts";
 import { startAuditWorker } from "./server/lib/audit/worker.ts";
@@ -51,6 +52,7 @@ export async function createApp() {
   // vendor portal's session, so requiring one would be circular. It rate-limits and
   // verifies the assessment is open itself. See server/routes/portal.ts.
   app.use("/api/portal", portalRoutes);
+  app.use("/api/org", orgEvidenceRoutes);
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

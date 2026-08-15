@@ -23,6 +23,7 @@ import {
   upsertLocalAssessment,
   type StoredAssessment,
 } from '../lib/vendor/localAssessmentStore';
+import { approvalBlockedByUntrustedEvidence } from '../lib/vendor/evidenceTrust';
 import { FRAMEWORK_CATALOG } from '../lib/vendor/constants';
 import { packsNeedingUpgradeNotice } from '../lib/vendor/frameworkPacks';
 import {
@@ -315,6 +316,7 @@ export function Assessments() {
       questions,
       answers: reviewAssessment.answers,
       evidenceByQuestion: reviewAssessment.evidenceByQuestion,
+      evidenceTrustByStoragePath: reviewAssessment.evidenceTrustByStoragePath,
     });
   }, [reviewAssessment]);
 
@@ -324,6 +326,13 @@ export function Assessments() {
       setToast({
         tone: 'warn',
         text: 'Wait for the vendor to submit (or start answering) before signing off.',
+      });
+      return;
+    }
+    if (outcome === 'approved' && approvalBlockedByUntrustedEvidence(reviewExceptions)) {
+      setToast({
+        tone: 'warn',
+        text: 'Required evidence is not trusted. Approval is blocked until an authoritative clean result exists.',
       });
       return;
     }
@@ -351,7 +360,19 @@ export function Assessments() {
         upsertLocalAssessment(orgId, { ...reviewAssessment, ...patch });
         refreshLocal();
       } else {
-        await updateDoc(doc(db, 'assessments', reviewAssessment.id), { ...patch });
+        const res = await fetch('/api/org/assessment-decision', {
+          method: 'POST',
+          headers: await authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({
+            assessmentId: reviewAssessment.id,
+            outcome,
+            decisionNotes: decisionNotes.trim() || undefined,
+          }),
+        });
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(body.error || 'Could not record decision.');
+        }
       }
 
       if (closes) {
@@ -367,6 +388,7 @@ export function Assessments() {
         questions: (reviewAssessment.questions || []) as any,
         answers: reviewAssessment.answers,
         evidenceByQuestion: reviewAssessment.evidenceByQuestion as any,
+        evidenceTrustByStoragePath: reviewAssessment.evidenceTrustByStoragePath,
       });
       void emitAuditBestEffort({
         tenantId: orgId,

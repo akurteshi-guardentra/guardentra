@@ -3,8 +3,14 @@ import { getAuth } from 'firebase-admin/auth';
 import { ensureAdmin } from '../middleware/requireFirebaseAuth.ts';
 import { createRateLimiter } from '../middleware/rateLimit.ts';
 import { getAdminDb } from '../lib/adminDb.ts';
+import {
+  handleEvidenceDownload,
+  handlePortalValidate,
+  liveEvidenceDeps,
+} from '../lib/evidenceAccess.ts';
 
 const router = Router();
+const evidenceDeps = liveEvidenceDeps();
 
 /**
  * Mints the scoped session a vendor portal link runs under.
@@ -107,5 +113,15 @@ router.post('/session', portalSessionLimiter, async (req, res) => {
     res.status(500).json({ error: 'Could not start the portal session.' });
   }
 });
+
+const evidenceLimiter = createRateLimiter({ windowMs: 60_000, max: 30 });
+
+router.post('/evidence-validate', evidenceLimiter, (req, res) =>
+  handlePortalValidate(req, res, evidenceDeps)
+);
+
+router.get('/evidence-download', evidenceLimiter, (req, res) =>
+  handleEvidenceDownload(req, res, evidenceDeps, 'portal')
+);
 
 export default router;
