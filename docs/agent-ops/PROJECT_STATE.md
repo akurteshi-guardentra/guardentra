@@ -26,7 +26,7 @@ This is a navigation ledger, not independent proof. Verify claims using the issu
 | Default branch/current commit | `main` at `d233eaa09fa7cd0b0c9f5a4518ae2850f7d34eb9` |
 | Latest merged product work | PR #24 P0-1; PR #35 live probe; PR #38 P0-2 investigation ledger; PR #39 rejected-head merge `85f718de43b19fa9a8d10312d726d2bf0899aaeb`; PR #40 squash-merged `8ea4b24e1a15b03e518de8d928d56d7491bc8599`; **PR #44 squash-merged** `d233eaa09fa7cd0b0c9f5a4518ae2850f7d34eb9` from head `1e90a37507b4623aba3f7f855ff28f07bc345657` |
 | Active governance work | Issue #33: project-state ledger and tool-routing protocol. Ledger PR #43 records PR #44 live recovery; **OPEN / NOT MERGED**. |
-| P0-2 investigation | Issue #11: **CONFIRMED DEFECT**; investigation complete; closed; **not FIXED** (no malware scanner) |
+| P0-2 investigation | Issue #11 closed: confirmed defect investigated and recovery implemented under Option B. **No malware scanner exists**; therefore evidence cannot become authoritative `clean` until a future scanner workstream. |
 | P0-2 implementation | Issue #37: PR #44 **MERGED** and App Hosting **DEPLOYED** (`guardentra-build-2026-08-17-001` **100%**). 2026-08-17 synthetic live matrix **PASS**. GitHub auto-closed #37 on the #44 merge; it was **reopened** so this ledger can merge. **#37 remains OPEN** until PR #43 merges. |
 | P0-2 rejected PR | PR #36: **closed unmerged**; branch `fix/p0-2-evidence-before-scan` retained |
 | Stale PR requiring disposition | PR #7; do not merge without rebase and scope review |
