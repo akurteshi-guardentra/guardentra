@@ -1,6 +1,6 @@
 # GuardEntra Project State
 
-Current verified snapshot: 2026-08-15  
+Current verified snapshot: 2026-08-17  
 Repository: `akurteshi-guardentra/guardentra`  
 Owner and merge/deployment authority: `@akurteshi-guardentra`
 
@@ -23,11 +23,11 @@ This is a navigation ledger, not independent proof. Verify claims using the issu
 
 | Item | Verified state |
 |---|---|
-| Default branch/current commit | `main` at `8ea4b24e1a15b03e518de8d928d56d7491bc8599` |
-| Latest merged product work | PR #24 P0-1; PR #35 live probe; PR #38 P0-2 investigation ledger; PR #39 rejected-head merge `85f718de43b19fa9a8d10312d726d2bf0899aaeb`; **PR #40 squash-merged** `8ea4b24e1a15b03e518de8d928d56d7491bc8599` from head `e54fcc2eb02c5439794d8dddc9846ee9fcaf6938` |
-| Active governance work | Issue #33: project-state ledger and tool-routing protocol |
-| P0-2 investigation | Issue #11: **CONFIRMED DEFECT**; investigation complete; closed; **not FIXED** |
-| P0-2 implementation | Issue #37: PR #40 **MERGED** and App Hosting **DEPLOYED** (`guardentra-build-2026-08-15-002` 100%). Dedicated live matrix **ran**; several API paths returned **500**. **Issue #37 remains OPEN.** Ledger PR #43. |
+| Default branch/current commit | `main` at `d233eaa09fa7cd0b0c9f5a4518ae2850f7d34eb9` |
+| Latest merged product work | PR #24 P0-1; PR #35 live probe; PR #38 P0-2 investigation ledger; PR #39 rejected-head merge `85f718de43b19fa9a8d10312d726d2bf0899aaeb`; PR #40 squash-merged `8ea4b24e1a15b03e518de8d928d56d7491bc8599`; **PR #44 squash-merged** `d233eaa09fa7cd0b0c9f5a4518ae2850f7d34eb9` from head `1e90a37507b4623aba3f7f855ff28f07bc345657` |
+| Active governance work | Issue #33: project-state ledger and tool-routing protocol. Ledger PR #43 records PR #44 live recovery; **OPEN / NOT MERGED**. |
+| P0-2 investigation | Issue #11: **CONFIRMED DEFECT**; investigation complete; closed; **not FIXED** (no malware scanner) |
+| P0-2 implementation | Issue #37: PR #44 **MERGED** and App Hosting **DEPLOYED** (`guardentra-build-2026-08-17-001` **100%**). 2026-08-17 synthetic live matrix **PASS**. GitHub auto-closed #37 on the #44 merge; it was **reopened** so this ledger can merge. **#37 remains OPEN** until PR #43 merges. |
 | P0-2 rejected PR | PR #36: **closed unmerged**; branch `fix/p0-2-evidence-before-scan` retained |
 | Stale PR requiring disposition | PR #7; do not merge without rebase and scope review |
 
@@ -35,22 +35,22 @@ This is a navigation ledger, not independent proof. Verify claims using the issu
 
 | Layer | Live state | Reconciliation |
 |---|---|---|
-| Public domain | `https://guardentra.com` | Reachable; performance baseline still needs measured evidence |
+| Public domain | `https://guardentra.com` | Homepage **200**; `/login` **200**. Performance baseline still needs measured evidence. |
 | Firebase project serving traffic | `guardentra-7f582` | Labelled demo/local-development but operationally production-equivalent |
-| App Hosting | backend `guardentra`, `us-central1`; **100%** `guardentra-build-2026-08-15-002` | Image `sha256:211e44bd9551d7c99966e4b74db5bead8510ca568520af57674539ebe8c01fa0`. Previous rejected-head revision `guardentra-build-2026-08-15-001`. Rollback still `guardentra-build-2026-08-14-006`. |
-| Firestore rules | `(default)` release `cloud.firestore` → `projects/guardentra-7f582/rulesets/c12a5117-1675-4775-b25b-ca463b36e7dc` | Live text includes `orgPreservesEvidenceTrust()` and `orgDeniesClientDecisionWrites()`. Previous: `6a2b8292-1fc2-41da-b77b-48dd5165071b`. AI Studio DB unchanged. |
-| Storage rules | `firebase.storage/guardentra-7f582.firebasestorage.app` → `projects/guardentra-7f582/rulesets/7bf9df8c-474f-4100-b5cc-77d019d7b2a9` | Portal reads require matching open portal session; attachments `allow read: if false`. Previous: `ebffb056-6adb-4522-8086-061ecf70064e`. |
-| P0-1 outcome | **DEPLOYED; BUNDLE VERIFIED** | Live probe still passes `submittedSnapshot`, `correctionReopenedAt`, and `portalOpen:!1` |
+| App Hosting | backend `guardentra`, `us-central1`; **100%** `guardentra-build-2026-08-17-001` | Image `sha256:9031ec3eb08516847c42e3db47f589cd37642d22f59dc405901532464e519659` serving merge `d233eaa`. Auto-roll on `main` **did not start**; manual build+rollout of that SHA succeeded. Rollback: `guardentra-build-2026-08-15-002`. |
+| Firestore rules | `(default)` release `cloud.firestore` → `projects/guardentra-7f582/rulesets/c12a5117-1675-4775-b25b-ca463b36e7dc` | **Unchanged and NOT redeployed** in the PR #44 recovery. Live text still includes `orgPreservesEvidenceTrust()` and `orgDeniesClientDecisionWrites()`. |
+| Storage rules | `firebase.storage/guardentra-7f582.firebasestorage.app` → `projects/guardentra-7f582/rulesets/7bf9df8c-474f-4100-b5cc-77d019d7b2a9` | **Unchanged and NOT redeployed** in the PR #44 recovery. Portal reads require matching open portal session; attachments `allow read: if false`. |
+| P0-1 outcome | **DEPLOYED; BUNDLE VERIFIED** | `npm run verify:live` **PASS** (`submittedSnapshot`, `correctionReopenedAt`, `portalOpen:!1`) |
 | Named dev/staging/prod | Not established as live configured projects | Intended IDs remain placeholders |
 
-PR #40 recovery application and rules are **DEPLOYED**. Dedicated live matrix: client Firestore/Storage denials and P0-1 portal lock **PASS**. Server signed-URL and some decision updates **500** (`storageBucket` unset; `decisionNotes: undefined`). Historical `clean` count **0**. **No malware scanner exists.** #37 stays OPEN.
+PR #44 recovery application is **DEPLOYED** and **LIVE VERIFIED**. 2026-08-17 synthetic matrix **PASS** (signed URLs, no-notes terminals, 409 lock, client denials, portal isolation, P0-1 submit lock). Reviewer download remains fail-closed without authoritative `clean` + matching path + generation. **No malware scanner exists.** Do not fabricate `clean`.
 
 ## Delivery position
 
 | Track | Issues | Current position | Next gate |
 |---|---|---|---|
 | P0-1 vendor lock | #10, PRs #23/#24 | Code/rules/application deployed; bundle markers live verified | Safely record production end-to-end submission evidence |
-| P0-2 scan/review | #11 closed; #37 **OPEN** | PR #40 deployed. Live matrix mixed PASS/FAIL (server 500s). **No malware scanner exists.** | Fix `storageBucket` + undefined `decisionNotes`; re-run signed-URL and decision matrix; do not close #37 yet |
+| P0-2 scan/review | #11 closed; #37 **OPEN** (ledger close-out) | PR #44 merged/deployed; 2026-08-17 live matrix **PASS**. **No malware scanner exists.** | Merge ledger PR #43, then owner may close #37. Do **not** start #41 or #42 yet. |
 | Framework inventory | #25 | Ready after P0 reconciliation | Inventory content, mappings, provenance, rights, claims |
 | Framework claims | #26 | Blocked by #25 | Evidence-backed wording decisions |
 | Framework hardening | #27–#28 | Not ready | Requires #25/#26 and approved design |
@@ -65,14 +65,15 @@ PR #40 recovery application and rules are **DEPLOYED**. Dedicated live matrix: c
 3. Production end-to-end P0-1 submission evidence is not recorded, although bundle verification passes.
 4. PR #7 is stale.
 5. Framework-labelled content lacks a completed provenance/rights inventory.
-6. There is no malware scanner. MIME/size/extension is not a scan. Dedicated live SDK verification of reviewer download / decisions / tenant isolation is still outstanding.
+6. There is no malware scanner. MIME/size/extension is not a scan. Authoritative `clean` still requires real scanner state plus matching path and generation.
 
 ## Next authorized actions
 
-1. Keep #37 open. Follow-up (not a new recovery PR from this task): Admin Storage bucket name + omit undefined `decisionNotes`. Re-verify signed URL and terminal decisions.
-2. Do not merge PR #36. Do not delete `fix/p0-2-evidence-before-scan`. Do not reopen PR #39.
-3. App Hosting rollback remains `guardentra-build-2026-08-14-006`. Rules rollback: Firestore `6a2b8292-1fc2-41da-b77b-48dd5165071b`, Storage `ebffb056-6adb-4522-8086-061ecf70064e`.
-4. Execute issue #25 before #26 or framework-engine implementation.
+1. Keep #37 **OPEN** until ledger PR #43 is merged. Do not close #37 from this documentation task.
+2. Do not merge PR #43 until the owner authorizes. Do not start issues #41 or #42 yet.
+3. Do not deploy anything else. Do not redeploy Firestore or Storage rules. Do not change App Hosting traffic. Rollback revision remains `guardentra-build-2026-08-15-002`.
+4. Do not merge PR #36. Do not delete `fix/p0-2-evidence-before-scan`. Do not reopen PR #39.
+5. Execute issue #25 before #26 or framework-engine implementation.
 
 ## Daily reporting
 

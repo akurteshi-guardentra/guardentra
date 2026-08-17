@@ -114,3 +114,25 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
 - FAIL: `/api/org/evidence-download` and `/api/org/attachment-download` **500** (`getStorage().bucket()` — bucket name not specified). `/api/org/assessment-decision` after successful remediate: rejected/second terminal **500** (`decisionNotes` undefined in Firestore `update`). Concurrent: 500 + 200, not 409.
 - **No malware scanner exists.** Metadata validation does not produce `clean`.
 - Issue #37 **OPEN**. PR #43 remains open (do not merge until owner instructs). Do not deploy a follow-up from this task.
+
+## 2026-08-17 — PR #44 production recovery deployed and live-verified
+
+- Verifier: Cursor (`tool:cursor`). Owner phrase: `deploy production recovery`. Documentation close-out only in this PR; **no further deploy**.
+- Supersedes, as **current** live state, the 2026-08-15 notes that dedicated verification was **BLOCKED/NOT RUN**, that the live matrix still had **500** failures, and that #37 must stay open **because verification is incomplete**. Those 2026-08-15 entries remain historical fact for that date.
+- PR #44 head: `1e90a37507b4623aba3f7f855ff28f07bc345657`. Squash merge on `main`: `d233eaa09fa7cd0b0c9f5a4518ae2850f7d34eb9`.
+- Project `guardentra-7f582`; region `us-central1`; App Hosting backend `guardentra`.
+- Auto-roll on merge to `main` **did not start**. Manual build+rollout of the exact merge SHA succeeded: revision `guardentra-build-2026-08-17-001` at **100%**. Image `sha256:9031ec3eb08516847c42e3db47f589cd37642d22f59dc405901532464e519659`. Rollback: `guardentra-build-2026-08-15-002`.
+- Firestore and Storage rules were **unchanged in PR #44 and NOT redeployed**. Live rulesets remain Firestore `c12a5117-1675-4775-b25b-ca463b36e7dc` and Storage `7bf9df8c-474f-4100-b5cc-77d019d7b2a9`.
+- Bundle/unauth checks: `npm run verify:live` **PASS**; homepage **200**; `/login` **200**; unauthenticated evidence/attachment downloads **401**.
+- 2026-08-17 synthetic live matrix **PASS** (disposable org `a48bc751f6b948cea3bf`, label `P0-2-DISPOSABLE-LIVE-VERIFY-2026-08-17T14-18-41-852Z`; synthetic PDF only; no customer assessments; **no fabricated `clean`**):
+  - Attachment signed URL: **200**; bad path **400**.
+  - Reviewer evidence download: controlled **403/400**, **no 500**.
+  - Remediate → no-notes terminal (`rejected`): **200**.
+  - Same assessment, second terminal: **409**.
+  - Concurrent terminals: exactly **200 + 409**.
+  - Client decision/trust writes: **403**.
+  - Portal isolation: **PASS**.
+  - P0-1 submit lock: **PASS**.
+  - Live matrix used `rejected` as the no-notes terminal after remediate. Remediate → approved note-clearing **PASS** on PR #44 unit tests (`1e90a37` / merge `d233eaa`); a separate live remediate → approved assessment was not executed in this matrix.
+- **No malware scanner exists.** Authoritative `clean` still requires real scanner state + matching path + generation.
+- GitHub auto-closed #37 when PR #44 merged (before live verification). #37 was **reopened** for this ledger/governance close-out and **remains OPEN** until PR #43 merges. Do not start #41 or #42 yet. Do not change App Hosting traffic from this documentation task.
