@@ -280,7 +280,8 @@ export function nextReviewAtForDecision(
 
 export type OrgDecisionPatch = {
   decisionOutcome: DecisionOutcome;
-  decisionNotes?: string;
+  /** Present as a string when notes were supplied; `null` on a no-notes terminal decision so a prior remediate rationale cannot remain. */
+  decisionNotes?: string | null;
   decidedAt: string;
   decidedBy: string;
   status: 'Completed' | 'Under Review';
@@ -324,7 +325,12 @@ export function buildOrgDecisionPatch(input: {
         portalOpen: true,
       };
 
-  if (notes) patch.decisionNotes = notes;
+  if (notes) {
+    patch.decisionNotes = notes;
+  } else if (closes) {
+    // Firestore rejects `undefined`; omitting the key would leave a prior remediate note in place.
+    patch.decisionNotes = null;
+  }
   return patch;
 }
 

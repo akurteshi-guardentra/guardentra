@@ -547,12 +547,55 @@ describe('org decisions', () => {
     );
     expect(approved.statusCode).toBe(200);
     expect(store.decisionOutcome).toBe('approved');
+    expect(store.decisionNotes).toBeNull();
     expect(store.submittedSnapshot).toEqual({ answers: { q1: 'No' } });
+  });
+
+  it('clears remediate notes on a later no-notes approved or rejected decision', async () => {
+    const approvedCase = transactionalStore();
+    await handleOrgDecision(
+      req({
+        token: 'org',
+        body: { assessmentId: 'asmA', outcome: 'remediate', decisionNotes: 'fix SSO' },
+      }),
+      mockRes() as any,
+      approvedCase.d
+    );
+    expect(approvedCase.store.decisionNotes).toBe('fix SSO');
+    const approved = mockRes();
+    await handleOrgDecision(
+      req({ token: 'org', body: { assessmentId: 'asmA', outcome: 'approved' } }),
+      approved as any,
+      approvedCase.d
+    );
+    expect(approved.statusCode).toBe(200);
+    expect(approvedCase.store.decisionOutcome).toBe('approved');
+    expect(approvedCase.store.decisionNotes).toBeNull();
+
+    const rejectedCase = transactionalStore();
+    await handleOrgDecision(
+      req({
+        token: 'org',
+        body: { assessmentId: 'asmA', outcome: 'remediate', decisionNotes: 'fix SSO' },
+      }),
+      mockRes() as any,
+      rejectedCase.d
+    );
+    const rejected = mockRes();
+    await handleOrgDecision(
+      req({ token: 'org', body: { assessmentId: 'asmA', outcome: 'rejected' } }),
+      rejected as any,
+      rejectedCase.d
+    );
+    expect(rejected.statusCode).toBe(200);
+    expect(rejectedCase.store.decisionOutcome).toBe('rejected');
+    expect(rejectedCase.store.decisionNotes).toBeNull();
   });
 
   it('allows approved after remediate', async () => {
     const { store, d } = transactionalStore({
       decisionOutcome: 'remediate',
+      decisionNotes: 'fix SSO',
       decidedAt: '2026-08-15T12:00:00.000Z',
       portalOpen: false,
       status: 'Under Review',
@@ -566,6 +609,7 @@ describe('org decisions', () => {
     );
     expect(res.statusCode).toBe(200);
     expect(store.decisionOutcome).toBe('approved');
+    expect(store.decisionNotes).toBeNull();
     expect(store.submittedSnapshot).toEqual({ answers: { q1: 'No' } });
   });
 
@@ -691,7 +735,7 @@ describe('org decisions', () => {
     );
     expect(res.statusCode).toBe(200);
     expect(patch).toBeDefined();
-    expect(Object.prototype.hasOwnProperty.call(patch, 'decisionNotes')).toBe(false);
+    expect(patch!.decisionNotes).toBeNull();
     assertNoUndefinedValues(patch!);
     expect(patch!.decisionOutcome).toBe('rejected');
     expect(patch!.decidedAt).toBeTruthy();
@@ -713,7 +757,7 @@ describe('org decisions', () => {
       d
     );
     expect(res.statusCode).toBe(200);
-    expect(Object.prototype.hasOwnProperty.call(patch, 'decisionNotes')).toBe(false);
+    expect(patch!.decisionNotes).toBeNull();
     assertNoUndefinedValues(patch!);
   });
 });

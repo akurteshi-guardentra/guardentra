@@ -96,7 +96,7 @@ export interface VendorAssessment {
   completedAt?: string;
   /** Org sign-off outcome (FastTrack decision terminal). */
   decisionOutcome?: 'approved' | 'conditional' | 'remediate' | 'rejected';
-  decisionNotes?: string;
+  decisionNotes?: string | null;
   decidedAt?: string;
   decidedBy?: string;
   inviteEmail?: string;
