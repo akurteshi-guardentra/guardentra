@@ -7,7 +7,10 @@ import {
   handleOrgDecision,
   handlePortalValidate,
   HttpError,
+  applyFirestoreAssessmentUpdate,
+  isFirestoreDeleteSentinel,
   requirePortalAssessment,
+  toFirestoreAssessmentUpdate,
   type EvidenceDeps,
 } from '../../server/lib/evidenceAccess';
 
@@ -490,7 +493,11 @@ describe('org decisions', () => {
     const d = deps({
       runAssessmentTransaction: vi.fn(async (_id, updater) => {
         const patch = await updater({ ...store });
-        Object.assign(store, patch);
+        const next = applyFirestoreAssessmentUpdate(store, patch);
+        for (const key of Object.keys(store)) {
+          if (!(key in next)) delete store[key];
+        }
+        Object.assign(store, next);
         return patch;
       }),
     });
@@ -547,40 +554,26 @@ describe('org decisions', () => {
     );
     expect(approved.statusCode).toBe(200);
     expect(store.decisionOutcome).toBe('approved');
-    expect(store.decisionNotes).toBeNull();
+    expect(store.decisionNotes).toBeUndefined();
     expect(store.submittedSnapshot).toEqual({ answers: { q1: 'No' } });
   });
 
-  it('clears remediate notes on a later no-notes approved or rejected decision', async () => {
-    const approvedCase = transactionalStore();
-    await handleOrgDecision(
-      req({
-        token: 'org',
-        body: { assessmentId: 'asmA', outcome: 'remediate', decisionNotes: 'fix SSO' },
-      }),
-      mockRes() as any,
-      approvedCase.d
-    );
-    expect(approvedCase.store.decisionNotes).toBe('fix SSO');
-    const approved = mockRes();
-    await handleOrgDecision(
-      req({ token: 'org', body: { assessmentId: 'asmA', outcome: 'approved' } }),
-      approved as any,
-      approvedCase.d
-    );
-    expect(approved.statusCode).toBe(200);
-    expect(approvedCase.store.decisionOutcome).toBe('approved');
-    expect(approvedCase.store.decisionNotes).toBeNull();
-
+  it('clears remediate notes on a later no-notes rejected or approved decision', async () => {
     const rejectedCase = transactionalStore();
+    const rem = mockRes();
     await handleOrgDecision(
       req({
         token: 'org',
-        body: { assessmentId: 'asmA', outcome: 'remediate', decisionNotes: 'fix SSO' },
+        body: { assessmentId: 'asmA', outcome: 'remediate', decisionNotes: 'Fix MFA gaps' },
       }),
-      mockRes() as any,
+      rem as any,
       rejectedCase.d
     );
+    expect(rem.statusCode).toBe(200);
+    expect(rejectedCase.store.decisionOutcome).toBe('remediate');
+    expect(rejectedCase.store.decisionNotes).toBe('Fix MFA gaps');
+    expect(rejectedCase.store.portalOpen).toBe(true);
+
     const rejected = mockRes();
     await handleOrgDecision(
       req({ token: 'org', body: { assessmentId: 'asmA', outcome: 'rejected' } }),
@@ -589,7 +582,32 @@ describe('org decisions', () => {
     );
     expect(rejected.statusCode).toBe(200);
     expect(rejectedCase.store.decisionOutcome).toBe('rejected');
-    expect(rejectedCase.store.decisionNotes).toBeNull();
+    expect(rejectedCase.store.portalOpen).toBe(false);
+    expect(rejectedCase.store.decisionNotes).toBeUndefined();
+    expect(rejectedCase.store.decisionNotes).not.toBe('Fix MFA gaps');
+    expect(Object.prototype.hasOwnProperty.call(rejectedCase.store, 'decisionNotes')).toBe(
+      false
+    );
+
+    const approvedCase = transactionalStore();
+    await handleOrgDecision(
+      req({
+        token: 'org',
+        body: { assessmentId: 'asmA', outcome: 'remediate', decisionNotes: 'Fix MFA gaps' },
+      }),
+      mockRes() as any,
+      approvedCase.d
+    );
+    const approved = mockRes();
+    await handleOrgDecision(
+      req({ token: 'org', body: { assessmentId: 'asmA', outcome: 'approved' } }),
+      approved as any,
+      approvedCase.d
+    );
+    expect(approved.statusCode).toBe(200);
+    expect(approvedCase.store.decisionOutcome).toBe('approved');
+    expect(approvedCase.store.decisionNotes).toBeUndefined();
+    expect(approvedCase.store.decisionNotes).not.toBe('Fix MFA gaps');
   });
 
   it('allows approved after remediate', async () => {
@@ -609,7 +627,7 @@ describe('org decisions', () => {
     );
     expect(res.statusCode).toBe(200);
     expect(store.decisionOutcome).toBe('approved');
-    expect(store.decisionNotes).toBeNull();
+    expect(store.decisionNotes).toBeUndefined();
     expect(store.submittedSnapshot).toEqual({ answers: { q1: 'No' } });
   });
 
@@ -719,7 +737,7 @@ describe('org decisions', () => {
     }
   }
 
-  it('omits decisionNotes and undefined values for rejected without notes', async () => {
+  it('clears decisionNotes with a Firestore delete and no undefined values for rejected without notes', async () => {
     let patch: Record<string, unknown> | undefined;
     const d = deps({
       runAssessmentTransaction: vi.fn(async (_id, updater) => {
@@ -742,7 +760,28 @@ describe('org decisions', () => {
     expect(patch!.decidedBy).toBeTruthy();
   });
 
-  it('omits decisionNotes and undefined values for approved without notes', async () => {
+  it('maps null decisionNotes to a Firestore delete without leaking undefined or a sentinel in the API patch', () => {
+    const current = {
+      decisionOutcome: 'remediate',
+      decisionNotes: 'Fix MFA gaps',
+      portalOpen: true,
+    };
+    expect({ ...current, decisionOutcome: 'rejected' }.decisionNotes).toBe('Fix MFA gaps');
+
+    const patch = { decisionOutcome: 'rejected', decisionNotes: null };
+    assertNoUndefinedValues(patch);
+    expect(JSON.parse(JSON.stringify(patch)).decisionNotes).toBeNull();
+
+    const firestoreUpdate = toFirestoreAssessmentUpdate(patch);
+    expect(isFirestoreDeleteSentinel(firestoreUpdate.decisionNotes)).toBe(true);
+
+    const applied = applyFirestoreAssessmentUpdate(current, patch);
+    expect(Object.prototype.hasOwnProperty.call(applied, 'decisionNotes')).toBe(false);
+    expect(applied.decisionNotes).not.toBe('Fix MFA gaps');
+    expect(applied.decisionOutcome).toBe('rejected');
+  });
+
+  it('clears decisionNotes with a Firestore delete and no undefined values for approved without notes', async () => {
     let patch: Record<string, unknown> | undefined;
     const d = deps({
       runAssessmentTransaction: vi.fn(async (_id, updater) => {
