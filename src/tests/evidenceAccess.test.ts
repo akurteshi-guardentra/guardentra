@@ -7,7 +7,10 @@ import {
   handleOrgDecision,
   handlePortalValidate,
   HttpError,
+  applyFirestoreAssessmentUpdate,
+  isFirestoreDeleteSentinel,
   requirePortalAssessment,
+  toFirestoreAssessmentUpdate,
   type EvidenceDeps,
 } from '../../server/lib/evidenceAccess';
 
@@ -490,7 +493,11 @@ describe('org decisions', () => {
     const d = deps({
       runAssessmentTransaction: vi.fn(async (_id, updater) => {
         const patch = await updater({ ...store });
-        Object.assign(store, patch);
+        const next = applyFirestoreAssessmentUpdate(store, patch);
+        for (const key of Object.keys(store)) {
+          if (!(key in next)) delete store[key];
+        }
+        Object.assign(store, next);
         return patch;
       }),
     });
@@ -547,12 +554,66 @@ describe('org decisions', () => {
     );
     expect(approved.statusCode).toBe(200);
     expect(store.decisionOutcome).toBe('approved');
+    expect(store.decisionNotes).toBeUndefined();
     expect(store.submittedSnapshot).toEqual({ answers: { q1: 'No' } });
+  });
+
+  it('clears remediate notes on a later no-notes rejected or approved decision', async () => {
+    const rejectedCase = transactionalStore();
+    const rem = mockRes();
+    await handleOrgDecision(
+      req({
+        token: 'org',
+        body: { assessmentId: 'asmA', outcome: 'remediate', decisionNotes: 'Fix MFA gaps' },
+      }),
+      rem as any,
+      rejectedCase.d
+    );
+    expect(rem.statusCode).toBe(200);
+    expect(rejectedCase.store.decisionOutcome).toBe('remediate');
+    expect(rejectedCase.store.decisionNotes).toBe('Fix MFA gaps');
+    expect(rejectedCase.store.portalOpen).toBe(true);
+
+    const rejected = mockRes();
+    await handleOrgDecision(
+      req({ token: 'org', body: { assessmentId: 'asmA', outcome: 'rejected' } }),
+      rejected as any,
+      rejectedCase.d
+    );
+    expect(rejected.statusCode).toBe(200);
+    expect(rejectedCase.store.decisionOutcome).toBe('rejected');
+    expect(rejectedCase.store.portalOpen).toBe(false);
+    expect(rejectedCase.store.decisionNotes).toBeUndefined();
+    expect(rejectedCase.store.decisionNotes).not.toBe('Fix MFA gaps');
+    expect(Object.prototype.hasOwnProperty.call(rejectedCase.store, 'decisionNotes')).toBe(
+      false
+    );
+
+    const approvedCase = transactionalStore();
+    await handleOrgDecision(
+      req({
+        token: 'org',
+        body: { assessmentId: 'asmA', outcome: 'remediate', decisionNotes: 'Fix MFA gaps' },
+      }),
+      mockRes() as any,
+      approvedCase.d
+    );
+    const approved = mockRes();
+    await handleOrgDecision(
+      req({ token: 'org', body: { assessmentId: 'asmA', outcome: 'approved' } }),
+      approved as any,
+      approvedCase.d
+    );
+    expect(approved.statusCode).toBe(200);
+    expect(approvedCase.store.decisionOutcome).toBe('approved');
+    expect(approvedCase.store.decisionNotes).toBeUndefined();
+    expect(approvedCase.store.decisionNotes).not.toBe('Fix MFA gaps');
   });
 
   it('allows approved after remediate', async () => {
     const { store, d } = transactionalStore({
       decisionOutcome: 'remediate',
+      decisionNotes: 'fix SSO',
       decidedAt: '2026-08-15T12:00:00.000Z',
       portalOpen: false,
       status: 'Under Review',
@@ -566,6 +627,7 @@ describe('org decisions', () => {
     );
     expect(res.statusCode).toBe(200);
     expect(store.decisionOutcome).toBe('approved');
+    expect(store.decisionNotes).toBeUndefined();
     expect(store.submittedSnapshot).toEqual({ answers: { q1: 'No' } });
   });
 
@@ -667,6 +729,75 @@ describe('org decisions', () => {
     expect(a.statusCode).toBe(200);
     expect(b.statusCode).toBe(409);
     expect((committed as Record<string, unknown> | null)?.decisionOutcome).toBe('approved');
+  });
+
+  function assertNoUndefinedValues(patch: Record<string, unknown>) {
+    for (const [key, value] of Object.entries(patch)) {
+      expect(value, key).not.toBeUndefined();
+    }
+  }
+
+  it('clears decisionNotes with a Firestore delete and no undefined values for rejected without notes', async () => {
+    let patch: Record<string, unknown> | undefined;
+    const d = deps({
+      runAssessmentTransaction: vi.fn(async (_id, updater) => {
+        patch = await updater({ organizationId: 'org1', questions: [], answers: {} });
+        return patch!;
+      }),
+    });
+    const res = mockRes();
+    await handleOrgDecision(
+      req({ token: 'org', body: { assessmentId: 'asmA', outcome: 'rejected' } }),
+      res as any,
+      d
+    );
+    expect(res.statusCode).toBe(200);
+    expect(patch).toBeDefined();
+    expect(patch!.decisionNotes).toBeNull();
+    assertNoUndefinedValues(patch!);
+    expect(patch!.decisionOutcome).toBe('rejected');
+    expect(patch!.decidedAt).toBeTruthy();
+    expect(patch!.decidedBy).toBeTruthy();
+  });
+
+  it('maps null decisionNotes to a Firestore delete without leaking undefined or a sentinel in the API patch', () => {
+    const current = {
+      decisionOutcome: 'remediate',
+      decisionNotes: 'Fix MFA gaps',
+      portalOpen: true,
+    };
+    expect({ ...current, decisionOutcome: 'rejected' }.decisionNotes).toBe('Fix MFA gaps');
+
+    const patch = { decisionOutcome: 'rejected', decisionNotes: null };
+    assertNoUndefinedValues(patch);
+    expect(JSON.parse(JSON.stringify(patch)).decisionNotes).toBeNull();
+
+    const firestoreUpdate = toFirestoreAssessmentUpdate(patch);
+    expect(isFirestoreDeleteSentinel(firestoreUpdate.decisionNotes)).toBe(true);
+
+    const applied = applyFirestoreAssessmentUpdate(current, patch);
+    expect(Object.prototype.hasOwnProperty.call(applied, 'decisionNotes')).toBe(false);
+    expect(applied.decisionNotes).not.toBe('Fix MFA gaps');
+    expect(applied.decisionOutcome).toBe('rejected');
+  });
+
+  it('clears decisionNotes with a Firestore delete and no undefined values for approved without notes', async () => {
+    let patch: Record<string, unknown> | undefined;
+    const d = deps({
+      runAssessmentTransaction: vi.fn(async (_id, updater) => {
+        patch = await updater({ organizationId: 'org1', questions: [], answers: {} });
+        return patch!;
+      }),
+    });
+    const res = mockRes();
+    await handleOrgDecision(
+      req({ token: 'org', body: { assessmentId: 'asmA', outcome: 'approved' } }),
+      res as any,
+      d
+    );
+    expect(res.statusCode).toBe(200);
+    expect(patch!.decisionNotes).toBeNull();
+    assertNoUndefinedValues(patch!);
   });
 });
 

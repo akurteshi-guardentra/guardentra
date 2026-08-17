@@ -1,10 +1,10 @@
 import { Router } from 'express';
 import Stripe from 'stripe';
-import { initializeApp, getApps, getApp } from 'firebase-admin/app';
+import { getApp, getApps } from 'firebase-admin/app';
 import { getFirestore, FieldValue, type Firestore } from 'firebase-admin/firestore';
 import fs from 'fs';
 import path from 'path';
-import { requireFirebaseAuth } from '../middleware/requireFirebaseAuth';
+import { ensureAdmin, requireFirebaseAuth } from '../middleware/requireFirebaseAuth';
 import {
   buildServerStripePriceMap,
   DEFAULT_PLAN_ID,
@@ -17,17 +17,7 @@ import {
 const router = Router();
 
 try {
-  if (getApps().length === 0) {
-    const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
-    if (fs.existsSync(configPath)) {
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-      initializeApp({
-        projectId: config.projectId,
-      });
-    } else {
-      initializeApp();
-    }
-  }
+  ensureAdmin();
 } catch (error) {
   console.warn('Firebase Admin initialization failed. Webhook DB updates may not work:', error);
 }

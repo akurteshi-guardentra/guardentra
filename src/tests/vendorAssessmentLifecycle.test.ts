@@ -189,6 +189,7 @@ describe('vendor assessment portal/tracker lifecycle', () => {
     expect(decision.status).toBe('Completed');
     expect(decision.portalOpen).toBe(false);
     expect(decision.decisionOutcome).toBe('approved');
+    expect(decision.decisionNotes).toBeNull();
 
     const closed = upsertLocalAssessment(orgId, { ...underReview, ...decision });
     const nextReview = nextReviewAtForDecision('approved', new Date('2026-08-05T14:00:00.000Z'));
@@ -241,6 +242,7 @@ describe('vendor assessment portal/tracker lifecycle', () => {
     expect(remediate.status).toBe('Under Review');
     expect(remediate.portalOpen).toBe(true);
     expect(remediate.decisionOutcome).toBe('remediate');
+    expect(remediate.decisionNotes).toBe('Fix MFA gaps');
     expect(hasTerminalOrgDecision(remediate)).toBe(false);
     expect(isTerminalDecisionOutcome('remediate')).toBe(false);
     expect(isTerminalDecisionOutcome('approved')).toBe(true);
@@ -262,6 +264,7 @@ describe('vendor assessment portal/tracker lifecycle', () => {
     expect(rejected.status).toBe('Completed');
     expect(rejected.portalOpen).toBe(false);
     expect(rejected.decisionOutcome).toBe('rejected');
+    expect(rejected.decisionNotes).toBeNull();
 
     upsertLocalAssessment(orgId, { ...remRow, ...rejected });
     await syncVendorAfterAssessmentApprove(
@@ -375,5 +378,69 @@ describe('vendor assessment portal/tracker lifecycle', () => {
     expect(submit.portalOpen).toBe(false);
     expect(submit.status).toBe('Under Review');
     expect(submit.submittedSnapshot.evidenceByQuestion.q1).toEqual(pending);
+  });
+});
+
+describe('buildOrgDecisionPatch omits absent decisionNotes', () => {
+  it('clears decisionNotes for rejected and approved without notes', () => {
+    const rejected = buildOrgDecisionPatch({
+      outcome: 'rejected',
+      decidedBy: 'u1',
+    });
+    expect(rejected.decisionNotes).toBeNull();
+    expect(rejected.decisionOutcome).toBe('rejected');
+    expect(rejected.decidedAt).toBeTruthy();
+    expect(rejected.decidedBy).toBe('u1');
+    expect(rejected.portalOpen).toBe(false);
+    expect(rejected.status).toBe('Completed');
+
+    const approved = buildOrgDecisionPatch({
+      outcome: 'approved',
+      decidedBy: 'u1',
+    });
+    expect(approved.decisionNotes).toBeNull();
+    expect(approved.decisionOutcome).toBe('approved');
+    expect(approved.decidedAt).toBeTruthy();
+    expect(approved.decidedBy).toBe('u1');
+  });
+
+  it('includes decisionNotes for conditional and remediate with notes', () => {
+    const conditional = buildOrgDecisionPatch({
+      outcome: 'conditional',
+      decidedBy: 'u1',
+      decisionNotes: 'conditions apply',
+    });
+    expect(conditional.decisionNotes).toBe('conditions apply');
+    expect(conditional.portalOpen).toBe(false);
+
+    const remediate = buildOrgDecisionPatch({
+      outcome: 'remediate',
+      decidedBy: 'u1',
+      decisionNotes: 'fix gaps',
+    });
+    expect(remediate.decisionNotes).toBe('fix gaps');
+    expect(remediate.portalOpen).toBe(true);
+    expect(remediate.status).toBe('Under Review');
+  });
+
+  it('clears a prior remediate note on a later no-notes approved or rejected decision', () => {
+    const remediate = buildOrgDecisionPatch({
+      outcome: 'remediate',
+      decidedBy: 'u1',
+      decisionNotes: 'Fix MFA gaps',
+    });
+    const approved = buildOrgDecisionPatch({
+      outcome: 'approved',
+      decidedBy: 'u1',
+    });
+    const rejected = buildOrgDecisionPatch({
+      outcome: 'rejected',
+      decidedBy: 'u1',
+    });
+
+    expect({ ...remediate, ...approved }.decisionNotes).toBeNull();
+    expect({ ...remediate, ...rejected }.decisionNotes).toBeNull();
+    expect({ ...remediate, ...approved }.decisionOutcome).toBe('approved');
+    expect({ ...remediate, ...rejected }.decisionOutcome).toBe('rejected');
   });
 });

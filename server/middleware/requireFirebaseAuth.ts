@@ -1,14 +1,16 @@
 import type { NextFunction, Request, Response } from 'express';
 import { getApps, initializeApp, applicationDefault } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
+import { adminAppOptions } from '../lib/adminConfig.ts';
 
 export function ensureAdmin() {
   if (getApps().length) return;
+  const options = adminAppOptions();
   try {
-    initializeApp({ credential: applicationDefault() });
+    initializeApp({ ...options, credential: applicationDefault() });
   } catch {
     // Local/dev without ADC: token verification may fail; production must have credentials.
-    initializeApp();
+    initializeApp(options);
   }
 }
 
