@@ -280,7 +280,8 @@ export function nextReviewAtForDecision(
 
 export type OrgDecisionPatch = {
   decisionOutcome: DecisionOutcome;
-  decisionNotes?: string;
+  /** Present as a string when notes were supplied; `null` on a no-notes terminal decision so a prior remediate rationale cannot remain. */
+  decisionNotes?: string | null;
   decidedAt: string;
   decidedBy: string;
   status: 'Completed' | 'Under Review';
@@ -302,31 +303,35 @@ export function buildOrgDecisionPatch(input: {
   nowIso?: string;
 }): OrgDecisionPatch {
   const decidedAt = input.nowIso || new Date().toISOString();
-  const notes = input.decisionNotes?.trim() || undefined;
+  const notes = input.decisionNotes?.trim();
   const closes = decisionClosesPortal(input.outcome);
 
-  if (closes) {
-    return {
-      decisionOutcome: input.outcome,
-      decisionNotes: notes,
-      decidedAt,
-      decidedBy: input.decidedBy,
-      status: 'Completed',
-      progressPct: 100,
-      progress: 100,
-      portalOpen: false,
-      completedAt: decidedAt,
-    };
-  }
+  const patch: OrgDecisionPatch = closes
+    ? {
+        decisionOutcome: input.outcome,
+        decidedAt,
+        decidedBy: input.decidedBy,
+        status: 'Completed',
+        progressPct: 100,
+        progress: 100,
+        portalOpen: false,
+        completedAt: decidedAt,
+      }
+    : {
+        decisionOutcome: input.outcome,
+        decidedAt,
+        decidedBy: input.decidedBy,
+        status: 'Under Review',
+        portalOpen: true,
+      };
 
-  return {
-    decisionOutcome: input.outcome,
-    decisionNotes: notes,
-    decidedAt,
-    decidedBy: input.decidedBy,
-    status: 'Under Review',
-    portalOpen: true,
-  };
+  if (notes) {
+    patch.decisionNotes = notes;
+  } else if (closes) {
+    // Firestore rejects `undefined`; omitting the key would leave a prior remediate note in place.
+    patch.decisionNotes = null;
+  }
+  return patch;
 }
 
 /** Notes required for conditional approve and remediate. */

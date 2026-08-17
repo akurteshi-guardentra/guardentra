@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldPath, FieldValue } from 'firebase-admin/firestore';
 import { ensureAdmin } from '../middleware/requireFirebaseAuth.ts';
+import { getConfiguredStorageBucket } from './adminConfig.ts';
 import { getAdminDb } from './adminDb.ts';
 import {
   classifyStorageMetadata,
@@ -104,6 +105,54 @@ export function parseDecisionOutcome(raw: unknown): DecisionOutcome {
   return outcome as DecisionOutcome;
 }
 
+/**
+ * Convert a serializable assessment patch into a Firestore `tx.update` payload.
+ * `decisionNotes: null` becomes FieldValue.delete() so a prior remediate note is removed.
+ * The API/local patch stays JSON-serializable and must not contain `undefined`.
+ */
+export function toFirestoreAssessmentUpdate(
+  patch: Record<string, unknown>
+): Record<string, unknown> {
+  const update: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) {
+      throw new HttpError(500, `Firestore update must not contain undefined field "${key}"`);
+    }
+    if (key === 'decisionNotes' && value === null) {
+      update[key] = FieldValue.delete();
+    } else {
+      update[key] = value;
+    }
+  }
+  return update;
+}
+
+export function isFirestoreDeleteSentinel(value: unknown): boolean {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { isEqual?: unknown }).isEqual === 'function' &&
+    (value as FieldValue).isEqual(FieldValue.delete())
+  );
+}
+
+/** Same merge rules as Admin `tx.update`: omitted keys stay; delete sentinels remove keys. */
+export function applyFirestoreAssessmentUpdate(
+  current: Record<string, unknown>,
+  patch: Record<string, unknown>
+): Record<string, unknown> {
+  const next = { ...current };
+  const update = toFirestoreAssessmentUpdate(patch);
+  for (const [key, value] of Object.entries(update)) {
+    if (isFirestoreDeleteSentinel(value)) {
+      delete next[key];
+    } else {
+      next[key] = value;
+    }
+  }
+  return next;
+}
+
 export async function requireOrgAssessmentAccess(
   decoded: DecodedIdToken,
   assessment: Record<string, unknown>,
@@ -149,7 +198,7 @@ export function liveEvidenceDeps(): EvidenceDeps {
     async getStorageMetadata(storagePath) {
       const { getStorage } = await import('firebase-admin/storage');
       ensureAdmin();
-      const bucket = getStorage().bucket();
+      const bucket = getConfiguredStorageBucket(getStorage());
       const file = bucket.file(storagePath);
       const [exists] = await file.exists();
       if (!exists) return null;
@@ -189,7 +238,7 @@ export function liveEvidenceDeps(): EvidenceDeps {
     async signReadUrl(storagePath) {
       const { getStorage } = await import('firebase-admin/storage');
       ensureAdmin();
-      const bucket = getStorage().bucket();
+      const bucket = getConfiguredStorageBucket(getStorage());
       const [url] = await bucket.file(storagePath).getSignedUrl({
         action: 'read',
         expires: Date.now() + 5 * 60 * 1000,
@@ -204,7 +253,7 @@ export function liveEvidenceDeps(): EvidenceDeps {
         if (!snap.exists) throw new HttpError(404, 'Assessment not found');
         const current = (snap.data() || {}) as Record<string, unknown>;
         const patch = await updater(current);
-        tx.update(ref, patch);
+        tx.update(ref, toFirestoreAssessmentUpdate(patch));
         return patch;
       });
     },
