@@ -81,6 +81,11 @@ interface ComplianceFramework {
 
 const FALLBACK_FRAMEWORKS = currentPackDisplayNames();
 
+function resolveFrameworkSelection(current: string, options: string[]): string {
+  if (options.includes(current)) return current;
+  return options[0] || FALLBACK_FRAMEWORKS[0] || '';
+}
+
 function normalizeEvidenceGaps(raw: unknown, source: string): EvidenceGapItem[] {
   if (!raw) return [];
   if (Array.isArray(raw)) {
@@ -116,7 +121,9 @@ export function AuditReadiness() {
   const { profile, loading } = useAuth();
   const [assessments, setAssessments] = useState<AuditAssessment[]>([]);
   const [complianceFrameworks, setComplianceFrameworks] = useState<ComplianceFramework[]>([]);
-  const [selectedFramework, setSelectedFramework] = useState('NYDFS Part 500');
+  const [selectedFramework, setSelectedFramework] = useState(
+    () => FALLBACK_FRAMEWORKS[0] || ''
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [isScanning, setIsScanning] = useState(false);
   const [selectedAudit, setSelectedAudit] = useState<AuditAssessment | null>(null);
@@ -203,12 +210,6 @@ export function AuditReadiness() {
     return onSnapshot(q, (snap) => {
       const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() } as ComplianceFramework));
       setComplianceFrameworks(rows);
-      if (rows.length > 0) {
-        setSelectedFramework((prev) => {
-          if (rows.some((r) => r.name === prev)) return prev;
-          return rows[0].name;
-        });
-      }
     });
   }, [profile?.organizationId]);
 
@@ -222,8 +223,14 @@ export function AuditReadiness() {
     return merged;
   }, [complianceFrameworks]);
 
+  useEffect(() => {
+    setSelectedFramework((prev) => resolveFrameworkSelection(prev, frameworkOptions));
+  }, [frameworkOptions]);
+
   const runAuditScan = async (frameworkName: string = selectedFramework) => {
     if (!profile?.organizationId) return;
+    const resolvedFramework = resolveFrameworkSelection(frameworkName, frameworkOptions);
+    if (!resolvedFramework) return;
     setIsScanning(true);
     setScanError('');
 
@@ -269,7 +276,7 @@ export function AuditReadiness() {
 
       const matchingCompliance = complianceSnap.docs
         .map((d) => ({ id: d.id, ...d.data() } as ComplianceFramework))
-        .find((f) => f.name === frameworkName);
+        .find((f) => f.name === resolvedFramework);
 
       const complianceGaps = normalizeEvidenceGaps(
         matchingCompliance?.gapAnalysis?.evidence_gaps,
@@ -318,7 +325,7 @@ export function AuditReadiness() {
       };
 
       const prompt = `Act as a readiness reviewer for GuardEntra-authored assessment packs. You are not an auditor of record and this is not a publisher catalog review or a compliance determination.
-Estimate questionnaire coverage against the selected GuardEntra pack label: ${frameworkName}.
+Estimate questionnaire coverage against the selected GuardEntra pack label: ${resolvedFramework}.
 
 Context:
 - Risks: ${JSON.stringify(context.risks).slice(0, 6000)}
@@ -336,7 +343,7 @@ Return JSON with:
 - redFlags (string[])
 - recommendations (string[])
 - auditorOpinion (plain-language readiness notes; do not claim an audit of record or a compliance determination)
-- coveragePercent (0-100) estimated questionnaire coverage for pack label ${frameworkName}
+- coveragePercent (0-100) estimated questionnaire coverage for pack label ${resolvedFramework}
 - controlCoverage: array of { id, name, status: Met|Partial|Gap, evidenceHint } — include 6-12 representative questionnaire themes
 - evidenceGaps: array of { evidenceName, reason, priority: High|Medium|Low } merging known gaps and newly inferred ones
 
@@ -409,7 +416,7 @@ Call out TPRM and incident-response gaps when relevant. Do not invent publisher 
       await addDoc(collection(db, 'audit_readiness'), {
         ...result,
         readinessScore,
-        framework: frameworkName,
+        framework: resolvedFramework,
         organizationId: profile.organizationId,
         createdAt: new Date().toISOString(),
       });

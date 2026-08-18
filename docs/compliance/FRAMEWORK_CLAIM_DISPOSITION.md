@@ -89,7 +89,7 @@ Publication-class coverage: public-active **9**, authenticated-active **52**, fr
 | C-038 | authenticated-active | KEEP_STAMPED | Decision-packet export includes stored `frameworksLabel`. Historical wording unchanged. |
 | C-039 | authenticated-active | KEEP_FEATURE | Triage options describe the *customer’s* stated obligations, not GuardEntra certification. |
 | C-040 | authenticated-active | KEEP_FEATURE | Fast-track recommends shipped pack IDs only. |
-| C-041 | authenticated-active | CORRECTED | Audit Lab fallback list is now current shipped pack display names (no NYDFS/GDPR). |
+| C-041 | authenticated-active | CORRECTED | Audit Lab fallback list and selected-framework state use current shipped pack display names. Empty-compliance tenants cannot initialize, scan, or persist NYDFS Part 500. Existing tenant compliance names are still listed when present. |
 | C-042 | authenticated-active | CORRECTED | AI prompt is a readiness reviewer, not a “strict regulatory auditor.” |
 | C-043 | authenticated-active | CORRECTED | UI label is “Estimated coverage,” not control-coverage as a certification result. |
 | C-044 | authenticated-active | CORRECTED | “Official Auditor Opinion” / “AI Auditor” replaced with readiness notes / estimate. |

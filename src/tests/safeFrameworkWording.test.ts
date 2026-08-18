@@ -97,6 +97,8 @@ describe('Issue #26 safe pack wording', () => {
     const audit = readRepo('src/pages/AuditReadiness.tsx');
     expect(audit).not.toMatch(/Official Auditor Opinion/);
     expect(audit).not.toMatch(/strict regulatory auditor/);
+    expect(audit).not.toMatch(/NYDFS Part 500/);
+    expect(audit).not.toMatch(/useState\(['"]NYDFS/);
     expect(audit).toContain('Readiness notes');
     expect(audit).toContain('Estimated coverage');
     expect(audit).toContain('currentPackDisplayNames()');
