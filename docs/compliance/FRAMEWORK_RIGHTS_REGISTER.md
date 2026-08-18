@@ -8,7 +8,7 @@ Evidence register for provenance and rights **states** of shipped framework-labe
 | Baseline SHA | `0f07657620d853cd9228ed58cf29b7d7e9960b73` (`main`) |
 | Investigation date | 2026-08-18 |
 | Companion doc | [`FRAMEWORK_INVENTORY.md`](./FRAMEWORK_INVENTORY.md) |
-| Completeness correction | Codex REQUEST CHANGES on `2033cf72` (83→107) then on `57f94a05` (107 not exhaustive). Claim rows now **112**. Pack/bank/mapping counts unchanged (54 / 8 / 3). Search disposition: [`FRAMEWORK_INVENTORY.md`](./FRAMEWORK_INVENTORY.md) § Search disposition. |
+| Completeness correction | Codex REQUEST CHANGES on `2033cf72` (83→107), `57f94a05` (107→112), then `23d7b746` (`DemoContext.tsx` folded into C-087; **total remains 112**). Pack/bank/mapping still 54 / 8 / 3. Search disposition: [`FRAMEWORK_INVENTORY.md`](./FRAMEWORK_INVENTORY.md) § Search disposition. |
 
 ## Important limitations
 
@@ -265,7 +265,7 @@ Publication class uses default `featureFlags.ts` reachability at baseline SHA (`
 | C-084 | `src/pages/VendorRisk.tsx` L568, L687–696 | legacy | AI prompts: regulatory impact “NYDFS/NAIC”; checklist NYDFS Part 500 + NAIC Model Law; findings e.g. “SOC2 Type II status” | NYDFS, NAIC, SOC 2 | unknown | Sent to `/api/ai/generate` from legacy vendor UI | Keep legacy or #26 |
 | C-085 | `src/pages/GovIntelSuite.tsx` L55–157 | frozen | Demo recommended actions: CISA telemetry audit; NIST 800-53 MFA re-verification; “review annual ISO 27001 certificate”; EPA civil safety exemptions; Clean Water Act reporting | CISA, NIST 800-53, ISO 27001, EPA, Clean Water Act | unknown | Complements C-054 `FRAMEWORK_MAP` | Keep frozen or #26 |
 | C-086 | `src/pages/GovIntelSuite.tsx` L200, L214–215 | frozen | Default frameworks string “NIST 800-53, FedRAMP, CISA SCRM”; demo docs status **VERIFIED** (CISA SCRM / NIST 800-53) | NIST 800-53, FedRAMP, CISA | unknown | Hard-coded demo documents | Keep frozen or #26 |
-| C-087 | `src/pages/GovIntelSuite.tsx` L328–394 | frozen | EPA/DHS Mode: EPA grant reviews; “CISA directives, and NIST 800-53 matrix overlays”; EPA sustainability audit readiness | EPA, CISA, NIST 800-53 | unknown | Demo rebrand copy | Keep frozen or #26 |
+| C-087 | `src/pages/GovIntelSuite.tsx` L328–394, L642; `src/lib/DemoContext.tsx` L23–28 | frozen | EPA/DHS Mode copy; heading `{getAgencyName()} Supply Chain Vendor Dashboard`. `getAgencyName()` returns “Environmental Protection Agency (EPA)” in EPA mode (also DHS / Commerce labels) | EPA, CISA, NIST 800-53 | unknown | Demo rebrand copy. DemoContext is the source of the rendered EPA agency-name string | Keep frozen or #26 |
 | C-088 | `src/pages/Landing.tsx` L239–240 | public-active | Feature card: “EPA Civil penalties, and Clean Water Act reporting” | EPA, Clean Water Act | unknown | Public `/`; no EPA pack | #26 wording |
 | C-089 | `server/routes/ai.ts` L98–103, L178–183 | authenticated-active | Mock `/api/ai/generate`: “emergency SOC 2 control review” / “Initiate SOC 2 review” when AI key absent | SOC 2 | unknown | Consumed by active Assessments/Audit Lab **and** frozen/legacy callers | #26 wording |
 | C-090 | `server/routes/ai.ts` L435–562 | frozen | Gov-intel/grant mocks: NIST CSF/FedRAMP gaps; NIST 800-53 or FedRAMP High attestation; SOC 2 Type II report; “100% compliance with CISA/NIST SCRM”; EPA OECA / Clean Water Act | NIST CSF, FedRAMP, NIST 800-53, SOC 2, CISA, EPA | unknown | Served to frozen `GovIntelSuite` | Keep frozen or #26 |
@@ -277,7 +277,7 @@ Publication class uses default `featureFlags.ts` reachability at baseline SHA (`
 | C-096 | `src/pages/Assessments.tsx` L563 | authenticated-active | Banner: “Newer framework pack(s) available”; existing assessments keep stamped version | (pack versions) | unknown | Distinct from empty-snapshot copy in C-093 | #26 wording |
 | C-097 | `src/lib/vendor/validators.ts` L45 | authenticated-active | “Custom questionnaires aren't available yet — select at least one standard framework.” | (generic “standard framework”) | unknown | Surfaced by `AssessmentWizard.tsx` via `validateAssessmentWizard`. Distinct string from C-023b | #26 wording |
 
-**Row counts:** **112** claim rows (was **107** at `57f94a05`; **+5** this pass C-093–C-097; was 83 at `2033cf72`). Publication class: public-active **9**, authenticated-active **52**, frozen **37**, legacy **9**, test-only **4**, unknown **1** (`metadata.json`). **9+52+37+9+4+1 = 112.** Issue #26 is follow-up for wording only; every row’s rights state is **`unknown`** until owner/counsel evidence is attached. No rows were removed.
+**Row counts:** **112** claim rows (was **107** at `57f94a05`; pass 3 added C-093–C-097; pass 4 added **0** rows and folded `DemoContext.tsx` into C-087; was 83 at `2033cf72`). Publication class: public-active **9**, authenticated-active **52**, frozen **37**, legacy **9**, test-only **4**, unknown **1** (`metadata.json`). **9+52+37+9+4+1 = 112.** Issue #26 is follow-up for wording only; every row’s rights state is **`unknown`** until owner/counsel evidence is attached. No rows were removed.
 
 **Pack/bank vs claims:** Shipped questionnaire content remains 8 packs / 54 `controlKey`s (see inventory). Claims that name NYDFS, NAIC, GDPR, DORA, NIS2, NIST 800-53, FedRAMP, Solvency II, CCPA, ESG, Lloyd’s, HITRUST, EPA, CISA, ISO 14001, or Clean Water Act are **labels/surfaces**, not shipped packs.
 

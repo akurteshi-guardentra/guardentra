@@ -9,7 +9,7 @@ Evidence-backed inventory of shipped framework-labelled questionnaire content, p
 | Investigation date | 2026-08-18 |
 | Companion doc | [`FRAMEWORK_RIGHTS_REGISTER.md`](./FRAMEWORK_RIGHTS_REGISTER.md) |
 | Claims register | Issue #26 (blocked until this inventory is merged) |
-| Completeness correction | Codex REQUEST CHANGES on `2033cf72` (83→107) then again on `57f94a05ab3f6a4daeb47f0f32252ffd33ee4cfa` (107 not exhaustive). Claim rows and the search-disposition appendix below record pass 3. |
+| Completeness correction | Codex REQUEST CHANGES on `2033cf72` (83→107), `57f94a05` (107→112), then `23d7b746` (disposition missed `DemoContext.tsx`; folded into existing C-087, **total remains 112**). |
 
 This document inventories **what exists in the repository and product spine**. It does not establish legal ownership, publisher permission, or compliance outcomes. Git authorship is implementation provenance only. It inventories wording only; it does **not** rewrite, hide, or feature-gate product copy (Issue #26).
 
@@ -34,7 +34,7 @@ This document inventories **what exists in the repository and product spine**. I
 
 ## Claim-surface search methodology (completeness)
 
-A third, repository-wide pass was run after independent review found omitted **component** surfaces (`AssessmentReviewPanel.tsx`, `EvidenceSummaryCard.tsx`) that are imported by already-inventoried pages. The 107-row register was arithmetically correct but still not exhaustive under this rule. The pass is repeatable; **§ Search disposition** records that candidates were reviewed rather than dropped silently.
+A fourth pass was run after Codex found `src/lib/DemoContext.tsx` missing from the pass-3 disposition. Pass 3 added imported-component rows (C-093–C-097) but did **not** list every primary-name source path. Pass 4 re-ran the documented primary-name search and records the DemoContext disposition. The pass is repeatable; **§ Search disposition** lists candidates rather than dropping them silently.
 
 **Search roots (in scope):** `src/`, `server/`, `index.html`, `metadata.json`.  
 **Search roots (out of scope / not claim rows):** `.claude/worktrees/**`, `copilot-worktrees/**`, `node_modules/**`, `dist/**`, `docs/agent-ops/**`, internal architecture/roadmap docs that are not product UI.
@@ -75,9 +75,11 @@ Rights state for included rows remains **`unknown`**. No publisher authorization
 
 **Claim count** is maintained in [`FRAMEWORK_RIGHTS_REGISTER.md`](./FRAMEWORK_RIGHTS_REGISTER.md). Pack/bank counts below are unchanged: **54** `controlKey`s, **8** packs, **3** mapping subsystems.
 
-### Search disposition (pass 3)
+### Search disposition (pass 4)
 
-Re-run at rejected head `57f94a05`. Candidates are **paths/surfaces**, not raw grep lines. Every in-scope path with a primary-name hit, or with component-level authority-like **display** copy, is listed. Disposition is one of: existing claim ID(s), new claim ID, or exclusion-rule reason.
+Re-run at rejected head `23d7b746`. Candidates are **paths/surfaces**, not raw grep lines. Every in-scope path with a primary-name hit, or with component-level authority-like **display** copy, is listed. Disposition is one of: existing claim ID(s), new claim ID, or exclusion-rule reason.
+
+Pass 4 primary-name search (`src/`, `server/`, `index.html`, `metadata.json`; worktrees excluded) found **one previously undisposed path:** `src/lib/DemoContext.tsx`. It is folded into existing **C-087** (same frozen GovIntel EPA/DHS surface). **No new claim IDs.** All other primary-name hits matched an INCLUDED or EXCLUDED row below.
 
 **INCLUDED — already in the register (no new row)**
 
@@ -105,6 +107,7 @@ Re-run at rejected head `57f94a05`. Candidates are **paths/surfaces**, not raw g
 | `src/pages/Compliance.tsx` | C-050–C-052 |
 | `src/pages/VendorRisk.tsx` (page-level copy) | C-053, C-081–C-084 |
 | `src/pages/GovIntelSuite.tsx` | C-054–C-055, C-085–C-087 |
+| `src/lib/DemoContext.tsx` (`getAgencyName()` L23–28; rendered at GovIntelSuite L642) | **C-087** (same frozen EPA/DHS surface; no new row) |
 | `src/components/TrustScoreBreakdown.tsx` | C-056 |
 | `src/pages/PolicyDraftsman.tsx` | C-057, C-057b |
 | `src/pages/ContractNegotiator.tsx` | C-058, C-058b |
@@ -121,7 +124,7 @@ Re-run at rejected head `57f94a05`. Candidates are **paths/surfaces**, not raw g
 | `src/pages/AuditCalendar.tsx` | C-078 |
 | `server/routes/ai.ts` generate / gov-intel / evidence / gmail mocks | C-089–C-092 |
 
-**INCLUDED — new rows this pass**
+**INCLUDED — new rows in pass 3 (C-093–C-097). Pass 4 added none.**
 
 | Path / surface | New ID | Why it qualifies |
 |---|---|---|
@@ -143,6 +146,7 @@ Re-run at rejected head `57f94a05`. Candidates are **paths/surfaces**, not raw g
 | `src/components/RemediationEngine.tsx` | Generic “verified compliant” / “compliance attestations”; no named framework |
 | `src/components/EvidenceRecommendationCard.tsx` | No framework/authority-like display copy |
 | `src/pages/LiveAssistant.tsx` Gemini tool-schema descriptions | Not rendered in UI; AI tool contract sent to the model |
+| `src/App.tsx` `DemoProvider` wrapper | Provider wiring only; no framework/EPA display copy (display strings live in `DemoContext.tsx` / C-087) |
 | `src/pages/Connectors.tsx` comment about bumping framework progress | Non-displayed engineering comment |
 | `server/lib/audit/retention.ts` SOC 2 / DPA comment | Non-displayed legal/engineering comment |
 | `.claude/worktrees/**` | Isolated worktrees |
@@ -338,14 +342,14 @@ VendorPortal reads snapshot only (no live bank rebuild)
 | Class | What | Key paths |
 |---|---|---|
 | **active** | Shipped spine | `AssessmentWizard.tsx`, `VendorPortal.tsx`, `Onboarding.tsx`, `Settings.tsx` / `FrameworkPacksCard.tsx`, `Assessments.tsx` / `AssessmentReviewPanel.tsx`, `FastTrackTriage.tsx`, `AuditReadiness.tsx`, `Pricing.tsx`, `Documentation.tsx`, `Dashboard.tsx`, `assessmentLifecycle.ts`, `emptyAssessmentRecovery.ts`, `validators.ts`, `POST /api/ai/framework-map`, `POST /api/ai/generate` (mock SOC 2 review when AI key absent) |
-| **frozen** | Feature-flagged off (`featureFlags.ts` default `false`) | `Compliance.tsx`, `GovIntelSuite.tsx`, `PolicyDraftsman.tsx`, `Policies.tsx`, `ContractNegotiator.tsx`, `GmailAudit.tsx`, `TrustIntelligence.tsx` / `TrustScoreEngine.ts`, `AICopilotPanel.tsx` (`aiCopilot`), `TrustVault.tsx` (`trustVault`, public-preview copy), `AuditCalendar.tsx`, `SystemHealth.tsx` / `seedData.ts` (`healthLab`), `LiveAssistant.tsx` (`voiceStudio`; tool schema excluded from claims), AI mock `regulatoryTags` and gov-intel mocks in `server/routes/ai.ts` |
+| **frozen** | Feature-flagged off (`featureFlags.ts` default `false`) | `Compliance.tsx`, `GovIntelSuite.tsx` / `DemoContext.tsx` (`govIntel`), `PolicyDraftsman.tsx`, `Policies.tsx`, `ContractNegotiator.tsx`, `GmailAudit.tsx`, `TrustIntelligence.tsx` / `TrustScoreEngine.ts`, `AICopilotPanel.tsx` (`aiCopilot`), `TrustVault.tsx` (`trustVault`, public-preview copy), `AuditCalendar.tsx`, `SystemHealth.tsx` / `seedData.ts` (`healthLab`), `LiveAssistant.tsx` (`voiceStudio`; tool schema excluded from claims), AI mock `regulatoryTags` and gov-intel mocks in `server/routes/ai.ts` |
 | **legacy** | Retained routes/stores, not spine | `VendorRisk.tsx` (`/vendors/legacy`) plus evidence cards `EvidenceSummaryCard.tsx`, `EvidenceFindingCard.tsx`, `ActivityFeed.tsx` (present in `src/`; **no current importer**), pre-`controlKey` portal fallbacks, vendor evidence-review mocks in `server/routes/ai.ts` |
 | **test-only** | Vitest imports production bank | `questionBank.test.ts`, `frameworkPacks.test.ts`, `vendorAssessmentLifecycle.test.ts`, `Onboarding.test.tsx` |
 | **public** | Marketing + client bundle | `Landing.tsx` (including EPA/Clean Water Act feature card), `index.html`; bank constants ship in client JS |
 
 **Active routes (default flags):** `/onboarding`, `/assessments/new`, `/assessments/triage`, `/portal/:assessmentId`, `/settings`, `/audit-readiness`, `/pricing`, `/docs`, `/dashboard`, `/` (Landing).
 
-**Claim rows (companion register):** **112** (was 107 at `57f94a05`; was 83 at `2033cf72`). Class split: public-active 9, authenticated-active 52, frozen 37, legacy 9, test-only 4, unknown 1. **9+52+37+9+4+1 = 112.** All rights states **unknown**. See [`FRAMEWORK_RIGHTS_REGISTER.md`](./FRAMEWORK_RIGHTS_REGISTER.md).
+**Claim rows (companion register):** **112** (was 107 at `57f94a05`; was 83 at `2033cf72`). Class split: public-active 9, authenticated-active 52, frozen 37, legacy 9, test-only 4, unknown 1. **9+52+37+9+4+1 = 112.** All rights states **unknown**. Pass 4 added **no new rows**; `src/lib/DemoContext.tsx` is recorded on existing **C-087**. See [`FRAMEWORK_RIGHTS_REGISTER.md`](./FRAMEWORK_RIGHTS_REGISTER.md).
 
 **Paths added in this pass (not in the 107-row register as distinct surfaces):**
 
