@@ -273,7 +273,7 @@ export function Assessments() {
       const answers = questions
         .map((q) => `${q.question}: ${formatAssessmentAnswer(assessment.answers?.[q.id])}`)
         .join('\n');
-      const prompt = `Analyze vendor assessment for "${assessment.vendorName}" against "${frameworkLabel(assessment)}".
+      const prompt = `Review vendor questionnaire answers for "${assessment.vendorName}" using the selected GuardEntra assessment pack label "${frameworkLabel(assessment)}". This is not an audit of record or a compliance determination.
         Answers:
         ${answers}
 

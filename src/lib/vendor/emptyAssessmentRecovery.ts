@@ -12,6 +12,7 @@ import {
   resolvePackIdsForFrameworks,
 } from './frameworkPacks';
 import type { PortalQuestion } from './questionBank';
+import { SAFE_EMPTY_RECOVERY_NO_PACKS } from './safePackWording';
 
 type OrgPackDefaults = Partial<Record<FrameworkId, string>>;
 
@@ -85,7 +86,7 @@ export function buildRecoverEmptyAssessmentPatch(
   const packIds = resolveRecoveryPackIds(assessment, orgDefaults);
   if (!packIds.length) {
     throw new Error(
-      'No framework packs available to rebuild from. Archive this assessment or create a new one with a standard framework.'
+      SAFE_EMPTY_RECOVERY_NO_PACKS
     );
   }
   const questions = buildQuestionsForPackIds(packIds);

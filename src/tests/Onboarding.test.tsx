@@ -29,7 +29,7 @@ describe('Onboarding Flow (BDD)', () => {
     
     // Step 2: Scope
     await waitFor(() => {
-      expect(screen.getByText(/What do you report against/i)).toBeInTheDocument();
+      expect(screen.getByText(/Which assessment packs should vendors complete/i)).toBeInTheDocument();
     });
     
     // Select ISO 27001

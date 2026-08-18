@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { authHeaders } from '../lib/authHeaders';
+import { currentPackDisplayNames } from '../lib/vendor/frameworkPacks';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/src/lib/utils';
 import ReactMarkdown from 'react-markdown';
@@ -78,13 +79,7 @@ interface ComplianceFramework {
   };
 }
 
-const FALLBACK_FRAMEWORKS = [
-  'NYDFS Part 500',
-  'SOC 2 Type II',
-  'ISO/IEC 27001:2022',
-  'NIST CSF 2.0',
-  'GDPR (Article 32)',
-];
+const FALLBACK_FRAMEWORKS = currentPackDisplayNames();
 
 function normalizeEvidenceGaps(raw: unknown, source: string): EvidenceGapItem[] {
   if (!raw) return [];
@@ -322,8 +317,8 @@ export function AuditReadiness() {
         complianceProgress: matchingCompliance?.progress ?? null,
       };
 
-      const prompt = `Act as a strict regulatory auditor.
-Analyze organizational data for audit readiness against the ${frameworkName} framework.
+      const prompt = `Act as a readiness reviewer for GuardEntra-authored assessment packs. You are not an auditor of record and this is not a publisher catalog review or a compliance determination.
+Estimate questionnaire coverage against the selected GuardEntra pack label: ${frameworkName}.
 
 Context:
 - Risks: ${JSON.stringify(context.risks).slice(0, 6000)}
@@ -340,12 +335,12 @@ Return JSON with:
 - status ("Ready", "Near Ready", "Not Ready")
 - redFlags (string[])
 - recommendations (string[])
-- auditorOpinion (blunt professional summary)
-- coveragePercent (0-100) estimated control coverage for ${frameworkName}
-- controlCoverage: array of { id, name, status: Met|Partial|Gap, evidenceHint } — include 6-12 representative controls
+- auditorOpinion (plain-language readiness notes; do not claim an audit of record or a compliance determination)
+- coveragePercent (0-100) estimated questionnaire coverage for pack label ${frameworkName}
+- controlCoverage: array of { id, name, status: Met|Partial|Gap, evidenceHint } — include 6-12 representative questionnaire themes
 - evidenceGaps: array of { evidenceName, reason, priority: High|Medium|Low } merging known gaps and newly inferred ones
 
-Call out TPRM and incident-response gaps when relevant.`;
+Call out TPRM and incident-response gaps when relevant. Do not invent publisher control IDs.`;
 
       const responseSchema = {
         type: 'OBJECT',
@@ -633,15 +628,15 @@ Call out TPRM and incident-response gaps when relevant.`;
                     </div>
                   </div>
                   <p className="text-sm text-slate-500">
-                    Generated on {new Date(selectedAudit.createdAt).toLocaleString()} by Guardentra AI
-                    Auditor
+                    Generated on {new Date(selectedAudit.createdAt).toLocaleString()} by GuardEntra
+                    readiness estimate
                   </p>
                 </div>
                 <div className="flex items-center gap-8">
                   {typeof selectedAudit.coveragePercent === 'number' && (
                     <div className="text-right">
                       <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
-                        Control Coverage
+                        Estimated coverage
                       </p>
                       <p className="font-mono text-2xl font-bold text-sky-300">
                         {selectedAudit.coveragePercent}%
@@ -669,7 +664,7 @@ Call out TPRM and incident-response gaps when relevant.`;
                   <div className="rounded-2xl border border-white/5 bg-white/5 p-6 lg:col-span-2">
                     <h3 className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-500">
                       <Scale className="h-4 w-4 text-primary" />
-                      Official Auditor Opinion
+                      Readiness notes
                     </h3>
                     <div className="prose prose-invert prose-sm max-w-none italic leading-relaxed text-slate-300">
                       <ReactMarkdown>{selectedAudit.auditorOpinion}</ReactMarkdown>
@@ -680,7 +675,7 @@ Call out TPRM and incident-response gaps when relevant.`;
                     <div className="space-y-4 lg:col-span-2">
                       <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-sky-400">
                         <ListChecks className="h-4 w-4" />
-                        Control Coverage
+                        Estimated coverage
                       </h3>
                       <div className="grid gap-3 md:grid-cols-2">
                         {selectedAudit.controlCoverage!.map((c) => (

@@ -12,6 +12,7 @@ import {
   packsNeedingUpgradeNotice,
   type FrameworkPack,
 } from '../lib/vendor/frameworkPacks';
+import { SAFE_PACK_BASELINE } from '../lib/vendor/safePackWording';
 import {
   loadOrgFrameworkPackDefaults,
   saveOrgFrameworkPackDefaults,
@@ -133,7 +134,7 @@ export function FrameworkPacksCard() {
           Framework pack versions
         </CardTitle>
         <CardDescription>
-          Guardentra ships official templates. Existing assessments keep their stamped pack;
+          {SAFE_PACK_BASELINE} Existing assessments keep their stamped pack;
           only new questionnaires use the defaults you accept here.
         </CardDescription>
       </CardHeader>
@@ -182,7 +183,7 @@ export function FrameworkPacksCard() {
                         ) : (
                           <Sparkles className="h-3.5 w-3.5 mr-1" />
                         )}
-                        AI suggest mapping
+                        AI suggest pack mapping
                       </Button>
                     </div>
                     {aiSuggestions[pinnedPackId]?.length > 0 && (

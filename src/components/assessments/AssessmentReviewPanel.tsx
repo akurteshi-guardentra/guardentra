@@ -16,6 +16,7 @@ import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
 import { cn } from '../../lib/utils';
 import { FRAMEWORK_CATALOG } from '../../lib/vendor/constants';
+import { SAFE_EMPTY_RECOVERY_UI } from '../../lib/vendor/safePackWording';
 import {
   exceptionReasonLabel,
   type AssessmentException,
@@ -227,8 +228,7 @@ export function AssessmentReviewPanel({
                     </Button>
                   ) : (
                     <p className="text-xs text-amber-200/80">
-                      No recoverable packs on this assessment (custom-only or missing frameworks).
-                      Archive it and create a new assessment with a standard framework.
+                      {SAFE_EMPTY_RECOVERY_UI}
                     </p>
                   )}
                   <div className="space-y-2 border-t border-white/5 pt-4">

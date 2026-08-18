@@ -96,11 +96,11 @@ router.post('/analyze', async (req, res) => {
       }
       
       res.json({
-        analysis: "Mock AI Analysis: Based on the provided context, we recommend deploying automated hotfix #442 to the staging environment and initiating an emergency SOC 2 control review.",
+        analysis: "Mock AI analysis: Based on the provided context, review the vendor questionnaire answers and follow your internal change-control process. This is not an auditor opinion or a compliance determination.",
         confidence: 0.89,
         actionable_steps: [
           "Deploy hotfix #442",
-          "Initiate SOC 2 review",
+          "Review questionnaire answers",
           "Notify security team"
         ]
       });
@@ -176,11 +176,11 @@ router.post('/analyze', async (req, res) => {
       });
     }
     return res.json({
-      analysis: "Mock AI Analysis: Based on the provided context, we recommend deploying automated hotfix #442 to the staging environment and initiating an emergency SOC 2 control review.",
+      analysis: "Mock AI analysis: Based on the provided context, review the vendor questionnaire answers and follow your internal change-control process. This is not an auditor opinion or a compliance determination.",
       confidence: 0.89,
       actionable_steps: [
         "Deploy hotfix #442",
-        "Initiate SOC 2 review",
+        "Review questionnaire answers",
         "Notify security team"
       ]
     });
