@@ -19,7 +19,7 @@ const plans = [
       `Up to ${PLANS.starter.vendorCap} vendors`,
       `${PLANS.starter.seatCap} seats`,
       'Vendor questionnaire portal + evidence',
-      'Audit Lab (1 framework pack)',
+      'Audit Lab (1 assessment pack)',
       'Markdown TPRM register export',
     ],
     priceId: {
@@ -36,7 +36,7 @@ const plans = [
     features: [
       `Up to ${PLANS.growth.vendorCap} vendors`,
       `${PLANS.growth.seatCap} seats`,
-      'Multi-framework packs + bulk CSV',
+      'Multi-pack questionnaires + bulk CSV',
       'Priority email support',
       'AI review assists (soft usage cap)',
     ],

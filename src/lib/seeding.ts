@@ -14,13 +14,13 @@ export async function seedProfessionalData({ organizationId, industry, framework
     // 1. Seed Risks based on Industry and Frameworks
     const risks = [
       {
-        title: "NYDFS Part 500 Certification Drift",
-        category: "Regulatory Compliance",
+        title: "Incomplete vendor questionnaire coverage",
+        category: "Third-Party Risk",
         severity: "Critical",
         status: "Open",
         impact: 5,
         likelihood: 3,
-        mitigation: "Conduct weekly automated certification gap analysis and update CISO dashboard.",
+        mitigation: "Send GuardEntra-authored assessment packs and review unanswered items weekly.",
       },
       {
         title: "Inadequate vendor risk management program",
@@ -41,13 +41,13 @@ export async function seedProfessionalData({ organizationId, industry, framework
         mitigation: "Deployed data masking scripts and updated developer security training.",
       },
       {
-        title: "NAIC Data Security Model Law Alignment Gap",
-        category: "Insurance Compliance",
+        title: "Missing questionnaire evidence for high-impact vendors",
+        category: "Third-Party Risk",
         severity: "High",
         status: "In Progress",
         impact: 4,
         likelihood: 3,
-        mitigation: "Map internal controls to NAIC sections and automate evidence gathering.",
+        mitigation: "Collect vendor answers and supporting files through the assessment portal.",
       }
     ];
 
@@ -64,17 +64,17 @@ export async function seedProfessionalData({ organizationId, industry, framework
     const policies = [
       {
         title: "Cybersecurity Asset Management Policy",
-        category: "NYDFS Compliance",
+        category: "Governance",
         status: "Active",
         version: "1.0",
-        content: "# Cybersecurity Asset Management Policy\nThis policy defines requirements for maintaining a complete inventory of assets per NYDFS 500.13...",
+        content: "# Cybersecurity Asset Management Policy\nThis sample policy defines requirements for maintaining an inventory of information assets.",
       },
       {
-        title: "Incident Response Plan (NAIC Aligned)",
+        title: "Incident Response Plan",
         category: "Operations",
         status: "Active",
         version: "2.1",
-        content: "# Incident Response Plan\nSteps to be taken during a security incident: 1. Identification, 2. Containment... This plan aligns with NAIC 72-hour reporting requirements.",
+        content: "# Incident Response Plan\nSample steps during a security incident: 1. Identification, 2. Containment. This is sample text, not a publisher standard.",
       },
       {
         title: "Acceptable Use Policy",
@@ -110,7 +110,7 @@ export async function seedProfessionalData({ organizationId, industry, framework
         criticality: "High",
         status: "Active",
         riskScore: 92,
-        reputation: "Digital claims management with strong SOC 2 posture."
+        reputation: "Sample claims-management vendor for questionnaire workflow testing."
       },
       {
         name: "Amazon Web Services (AWS)",
@@ -132,10 +132,10 @@ export async function seedProfessionalData({ organizationId, industry, framework
 
     // 4. Seed Compliance/Audit Readiness
     const complianceItems = [
-      { name: 'NYDFS Part 500', description: 'NY Cybersecurity Regulation for Financial Services', progress: 88, status: 'Compliant', nextAudit: '2026-12-31' },
-      { name: 'NAIC Data Security', description: 'NAIC Model Law 668', progress: 72, status: 'In Progress', nextAudit: '2026-11-15' },
-      { name: 'ISO 27001:2022', description: 'Information Security Management System', progress: 95, status: 'Compliant', nextAudit: '2026-10-01' },
-      { name: 'SOC 2 Type II', description: 'Trust Services Criteria', progress: 82, status: 'In Progress', nextAudit: '2026-09-20' },
+      { name: 'NIST CSF 2.0', description: 'GuardEntra-authored assessment pack (NIST CSF 2.0-labelled).', progress: 0, status: 'In Progress', nextAudit: '2026-12-31' },
+      { name: 'ISO 27001:2022', description: 'GuardEntra-authored assessment pack (ISO 27001-labelled).', progress: 0, status: 'In Progress', nextAudit: '2026-11-15' },
+      { name: 'SOC 2', description: 'GuardEntra-authored assessment pack (SOC 2-labelled).', progress: 0, status: 'In Progress', nextAudit: '2026-10-01' },
+      { name: 'HIPAA', description: 'GuardEntra-authored assessment pack (HIPAA-labelled).', progress: 0, status: 'In Progress', nextAudit: '2026-09-20' },
     ];
 
     for (const comp of complianceItems) {
@@ -180,7 +180,7 @@ export async function seedProfessionalData({ organizationId, industry, framework
           : frameworkId === 'iso27001'
             ? 'ISO 27001:2022'
             : frameworkId === 'soc2'
-              ? 'SOC 2 Type II'
+              ? 'SOC 2'
               : String(frameworkId).toUpperCase();
       await addDoc(collection(db, 'audit_readiness'), {
         framework: frameworkName,
@@ -189,7 +189,7 @@ export async function seedProfessionalData({ organizationId, industry, framework
         status: "Near Ready",
         redFlags: ["Missing quarterly internal audit", "Policy version drift"],
         recommendations: ["Update ISMS docs", "Enable MFA for all admin accounts"],
-        auditorOpinion: "The organization demonstrates a strong commitment but lacks periodic verification evidence.",
+        auditorOpinion: "Sample readiness note for demo tenants. Not an auditor opinion or compliance determination.",
         organizationId,
         createdAt: new Date().toISOString()
       });
@@ -219,10 +219,10 @@ export async function seedProfessionalData({ organizationId, industry, framework
         description: "Quarterly review of current security controls and policies."
       },
       {
-        title: "SOC 2 Type II External Audit",
+        title: "Sample questionnaire review window",
         startDate: new Date(Date.now() + 86400000 * 20).toISOString(),
-        type: "External Audit",
-        description: "Main compliance audit window."
+        type: "Internal Review",
+        description: "Sample reminder to review vendor questionnaire answers."
       }
     ];
 
