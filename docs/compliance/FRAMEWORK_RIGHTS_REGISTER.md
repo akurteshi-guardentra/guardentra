@@ -8,6 +8,7 @@ Evidence register for provenance and rights **states** of shipped framework-labe
 | Baseline SHA | `0f07657620d853cd9228ed58cf29b7d7e9960b73` (`main`) |
 | Investigation date | 2026-08-18 |
 | Companion doc | [`FRAMEWORK_INVENTORY.md`](./FRAMEWORK_INVENTORY.md) |
+| Completeness correction | After Codex REQUEST CHANGES on `2033cf72`: claim rows expanded from **83** to **107** using the inclusion/exclusion rule in [`FRAMEWORK_INVENTORY.md`](./FRAMEWORK_INVENTORY.md) § Claim-surface search methodology. Pack/bank/mapping counts unchanged (54 / 8 / 3). |
 
 ## Important limitations
 
@@ -159,7 +160,7 @@ Issue #25 records **existing** claims and a provenance/rights state. Issue #26 l
 
 Unless a row cites other repository evidence, the rights state is **`unknown`**. Git authorship and code comments are not IP or publisher permission.
 
-Publication class uses default `featureFlags.ts` reachability at baseline SHA (`VITE_FEATURE_*` overrides are unverified).
+Publication class uses default `featureFlags.ts` reachability at baseline SHA (`VITE_FEATURE_*` overrides are unverified). Frozen, legacy, demo/mock, fallback, unwired, and test-only copies are classified — not omitted. Search/inclusion methodology: [`FRAMEWORK_INVENTORY.md`](./FRAMEWORK_INVENTORY.md) § Claim-surface search methodology.
 
 | ID | Path | Class | Claim (concise) | Frameworks named | Rights state | Evidence / notes | Follow-up |
 |---|---|---|---|---|---|---|---|
@@ -231,7 +232,7 @@ Publication class uses default `featureFlags.ts` reachability at baseline SHA (`
 | C-052 | `src/pages/Compliance.tsx` L197 | frozen | “Select a framework to automatically build control mappings and questionnaires.” | selected library item | unknown | Contradicts no-auto-download spine policy | Keep frozen or #26 |
 | C-053 | `src/pages/VendorRisk.tsx` L137–140 | legacy | Demo evidence: “SOC 2 Type II Security & Confidentiality Attestation Report” status Verified | SOC 2 Type II | unknown | `/vendors/legacy` frozen by default | Keep legacy or #26 |
 | C-054 | `src/pages/GovIntelSuite.tsx` L178–186 | frozen | `FRAMEWORK_MAP`: NIST CSF, NIST 800-53, ISO 27001, SOC 2 Type II, CISA SCRM, FedRAMP, GDPR, EPA | many | unknown | Demo matrix; Annex A-style *area names* are UI labels, not bank mappings | Keep frozen or #26 |
-| C-055 | `src/pages/GovIntelSuite.tsx` L1023 | frozen | “Weights SOC 2 coverage, FedRAMP status, NIST alignment…” | SOC 2, FedRAMP, NIST | unknown | Scoring copy | Keep frozen or #26 |
+| C-055 | `src/pages/GovIntelSuite.tsx` L1023, L1048 | frozen | “Weights SOC 2 coverage, FedRAMP status, NIST alignment…”; EPA row weights Clean Water Act reports | SOC 2, FedRAMP, NIST, EPA, Clean Water Act | unknown | Scoring copy | Keep frozen or #26 |
 | C-056 | `src/components/TrustScoreBreakdown.tsx` L32 | frozen | “Framework assessment progress (ISO 27001, SOC 2)” | ISO 27001, SOC 2 | unknown | Trust Intelligence frozen | Keep frozen or #26 |
 | C-057 | `src/pages/PolicyDraftsman.tsx` L151 | frozen | “mapping your risk landscape to global frameworks.” | (generic) | unknown | `/policies/draftsman` frozen | Keep frozen or #26 |
 | C-057b | `src/pages/PolicyDraftsman.tsx` L187–191 | frozen | Dropdown: ISO 27001:2022, SOC 2 Type II, NIST CSF 2.0, HIPAA/HITECH, GDPR Privacy | ISO, SOC 2, NIST CSF, HIPAA, GDPR | unknown | Frozen module | Keep frozen or #26 |
@@ -246,10 +247,34 @@ Publication class uses default `featureFlags.ts` reachability at baseline SHA (`
 | C-068 | `src/tests/frameworkPacks.test.ts` L15 | test-only | “ships side-by-side NIST and ISO versions” | NIST, ISO | unknown | Vitest assertion | Test-only |
 | C-068b | `src/tests/vendorAssessmentLifecycle.test.ts` L313 | test-only | Exception reason string: “SOC 2 CC6.1 evidence” | SOC 2 CC6.1 | unknown | **Not** a bank mapping; test fixture only | Test-only |
 | C-068c | `src/tests/Onboarding.test.tsx` L35–36 | test-only | Clicks on-screen “ISO 27001:2022” | ISO 27001:2022 | unknown | Tests production onboarding copy | Test-only |
+| C-069 | `src/components/AICopilotPanel.tsx` L50–54, L710 | frozen | Mock files: SOC 2 Type II, ISO 27001, EPA, GDPR; UI “Accepts SOC 2 reports, ISO receipts…” | SOC 2, ISO 27001, EPA, GDPR | unknown | `FEATURES.aiCopilot` default **false**; Layout mounts panel only when flag on. Demo/mock files, not live certificates | Keep frozen or #26 |
+| C-070 | `src/components/AICopilotPanel.tsx` L113–118 | frozen | Shortcuts: NAIC Data Security Model Law; ISO 27001 Access Control; SOC 2 Trust Service Criteria | NAIC, ISO 27001, SOC 2 TSC | unknown | Route-contextual chat chips | Keep frozen or #26 |
+| C-071 | `src/components/AICopilotPanel.tsx` L188–195 | frozen | Offline chat fallback: NAIC subcontractors must share “SOC 2 certificate”; clause template “verified SOC 2 or audit attestations” | NAIC, SOC 2 | unknown | Used when Gemini returns empty. Fallback ≠ unused | Keep frozen or #26 |
+| C-072 | `src/components/AICopilotPanel.tsx` L250–416, L855 | frozen | Evidence/remediation fallbacks: SOC 2 Type II approved; “ISO certificate is legitimate”; EPA/GDPR parsers; expired SOC 2 + NYDFS/NAIC regulator proof | SOC 2, ISO 27001, EPA, GDPR, NYDFS, NAIC | unknown | Offline evidence reviewer + gap `expired-soc2` | Keep frozen or #26 |
+| C-073 | `src/components/AICopilotPanel.tsx` L487–526 | frozen | Framework advisor: schema example “SOC 2 Type II” suitability; fallback recs “99% Required” / “92% Highly Useful” / “Essential”; DORA & NIS2; EPA; NIST CSF; ISO 14001; CISA | SOC 2, ISO 27001, GDPR, DORA, NIS2, EPA, NIST CSF, ISO 14001, CISA | unknown | `recommendFrameworks` failover when parse/AI fails. No matching packs for DORA/NIS2/EPA/ISO 14001/CISA | Keep frozen or #26 |
+| C-074 | `src/pages/TrustVault.tsx` L30 | frozen | Empty `compliance` collection → fallback tags `ISO 27001`, `SOC 2 Type II` | ISO 27001, SOC 2 Type II | unknown | `FEATURES.trustVault` default **false**; `/trust-vault` | Keep frozen or #26 |
+| C-075 | `src/pages/TrustVault.tsx` L63, L122–166 | frozen | Public-preview heading **“Verified Frameworks”**; Trust URL `https://guardentra.com/trust/{orgId}` | as in C-074 (or live `compliance.name`) | unknown | Preview labelled “What your customers see”. No public `/trust/:id` route found at baseline; copy still customer-facing if flag on | Keep frozen or #26 |
+| C-076 | `src/components/ActivityFeed.tsx` L381 | legacy | Form placeholder “e.g., ISO 27001 Audit Run” | ISO 27001 | unknown | Component remains in `src/`; **no current importer** (Dashboard import exists only in discarded worktrees) | Keep unwired or #26 |
+| C-077 | `src/lib/TrustScoreEngine.ts` L40, L61, L80 | frozen | Fallback insights: “NYDFS & ISO 27001”; “Secure SOC 2 Type II attestation”; “verified compliance” / “NAIC and NYDFS guidelines” | NYDFS, ISO 27001, SOC 2 Type II, NAIC | unknown | `getFallbackInsights`; Trust Intelligence frozen | Keep frozen or #26 |
+| C-078 | `src/pages/AuditCalendar.tsx` L284 | frozen | Milestone placeholder “e.g. ISO 27001 Final Audit” | ISO 27001 | unknown | `FEATURES.auditCalendar` default **false**; `/calendar` | Keep frozen or #26 |
+| C-079 | `src/lib/seeding.ts` L17–77, L113, L222 | authenticated-active | Extra sample seed beyond C-062: NYDFS Certification Drift; NAIC alignment gap; NYDFS/NAIC policy titles; vendor “strong SOC 2 posture”; calendar “SOC 2 Type II External Audit” | NYDFS, NAIC, SOC 2 | unknown | Same onboarding sample-data checkbox as C-062 | Tenant seed audit |
+| C-080 | `src/lib/seedData.ts` L9, L29 | frozen | Seed titles: “GDPR Data Subject Access Request backlog”; “ISO 27001 Surveillance Audit” | GDPR, ISO 27001 | unknown | Invoked from `SystemHealth.tsx` (`healthLab` frozen). Complements C-063 ISO/SOC/HIPAA fixtures | Keep frozen or #26 |
+| C-081 | `src/pages/VendorRisk.tsx` L151–157, L258 | legacy | Demo ISO/IEC 27001 certificate status **Verified**; activity “ISO 27001 Evidence upload recognized and validated” | ISO 27001 | unknown | `/vendors/legacy`; C-053 covers the SOC 2 demo artifact only | Keep legacy or #26 |
+| C-082 | `src/pages/VendorRisk.tsx` L790–792, L1102 | legacy | Banner “NAIC & NYDFS Part 500 Drift Identified” (14% deviation); Compliance Risk “adherence to NYDFS Part 500, NAIC Data Law” | NAIC, NYDFS | unknown | Hard-coded insurance-intel UI | Keep legacy or #26 |
+| C-083 | `src/pages/VendorRisk.tsx` L1028, L1155, L1196 | legacy | Briefing fallback “complete SOC 2 verification”; “GRC audits of SOC 2 audits, ISO certifications… real-world compliance criteria”; option “SOC 2 Type II Reports” | SOC 2, ISO | unknown | Evidence-review workspace | Keep legacy or #26 |
+| C-084 | `src/pages/VendorRisk.tsx` L568, L687–696 | legacy | AI prompts: regulatory impact “NYDFS/NAIC”; checklist NYDFS Part 500 + NAIC Model Law; findings e.g. “SOC2 Type II status” | NYDFS, NAIC, SOC 2 | unknown | Sent to `/api/ai/generate` from legacy vendor UI | Keep legacy or #26 |
+| C-085 | `src/pages/GovIntelSuite.tsx` L55–157 | frozen | Demo recommended actions: CISA telemetry audit; NIST 800-53 MFA re-verification; “review annual ISO 27001 certificate”; EPA civil safety exemptions; Clean Water Act reporting | CISA, NIST 800-53, ISO 27001, EPA, Clean Water Act | unknown | Complements C-054 `FRAMEWORK_MAP` | Keep frozen or #26 |
+| C-086 | `src/pages/GovIntelSuite.tsx` L200, L214–215 | frozen | Default frameworks string “NIST 800-53, FedRAMP, CISA SCRM”; demo docs status **VERIFIED** (CISA SCRM / NIST 800-53) | NIST 800-53, FedRAMP, CISA | unknown | Hard-coded demo documents | Keep frozen or #26 |
+| C-087 | `src/pages/GovIntelSuite.tsx` L328–394 | frozen | EPA/DHS Mode: EPA grant reviews; “CISA directives, and NIST 800-53 matrix overlays”; EPA sustainability audit readiness | EPA, CISA, NIST 800-53 | unknown | Demo rebrand copy | Keep frozen or #26 |
+| C-088 | `src/pages/Landing.tsx` L239–240 | public-active | Feature card: “EPA Civil penalties, and Clean Water Act reporting” | EPA, Clean Water Act | unknown | Public `/`; no EPA pack | #26 wording |
+| C-089 | `server/routes/ai.ts` L98–103, L178–183 | authenticated-active | Mock `/api/ai/generate`: “emergency SOC 2 control review” / “Initiate SOC 2 review” when AI key absent | SOC 2 | unknown | Consumed by active Assessments/Audit Lab **and** frozen/legacy callers | #26 wording |
+| C-090 | `server/routes/ai.ts` L435–562 | frozen | Gov-intel/grant mocks: NIST CSF/FedRAMP gaps; NIST 800-53 or FedRAMP High attestation; SOC 2 Type II report; “100% compliance with CISA/NIST SCRM”; EPA OECA / Clean Water Act | NIST CSF, FedRAMP, NIST 800-53, SOC 2, CISA, EPA | unknown | Served to frozen `GovIntelSuite` | Keep frozen or #26 |
+| C-091 | `server/routes/ai.ts` L727–728, L942 | legacy | Evidence-review mock: “SOC 2 Type II GRC analysis”; GDPR/HIPAA data-leak impact | SOC 2 Type II, GDPR, HIPAA | unknown | Default doc type `SOC 2 Reports`; consumed by `VendorRisk.tsx` | Keep legacy or #26 |
+| C-092 | `server/routes/ai.ts` L1044–1068 | frozen | Gmail-analyze mocks: `SOC 2 CC6.1`, `ISO 27001 A.12.6.1`, `NIST PR.AC-1`, `HIPAA §164.312`; subject “SOC 2 Type II Final Attestation Report” | SOC 2, ISO 27001, NIST, HIPAA, GDPR | unknown | SDO-style IDs are **demo strings**, not bank mappings. Complements mapping-table “Mock regulatory tags” | Keep frozen or #26 |
 
-**Row counts:** **83** claim rows. Publication class: public-active **8**, authenticated-active **47**, frozen **22**, legacy **1**, test-only **4**, unknown **1** (`metadata.json`). Issue #26 is follow-up for wording only; every row’s rights state is **`unknown`** until owner/counsel evidence is attached.
+**Row counts:** **107** claim rows (was **83** at `2033cf72`; **+24** completeness rows C-069–C-092). Publication class: public-active **9**, authenticated-active **49**, frozen **37**, legacy **7**, test-only **4**, unknown **1** (`metadata.json`). **9+49+37+7+4+1 = 107.** Issue #26 is follow-up for wording only; every row’s rights state is **`unknown`** until owner/counsel evidence is attached. No rows were removed.
 
-**Pack/bank vs claims:** Shipped questionnaire content remains 8 packs / 54 `controlKey`s (see inventory). Claims that name NYDFS, NAIC, GDPR, DORA, NIST 800-53, FedRAMP, Solvency II, CCPA, ESG, Lloyd’s, or HITRUST are **labels/surfaces**, not shipped packs.
+**Pack/bank vs claims:** Shipped questionnaire content remains 8 packs / 54 `controlKey`s (see inventory). Claims that name NYDFS, NAIC, GDPR, DORA, NIS2, NIST 800-53, FedRAMP, Solvency II, CCPA, ESG, Lloyd’s, HITRUST, EPA, CISA, ISO 14001, or Clean Water Act are **labels/surfaces**, not shipped packs.
 
 ---
 

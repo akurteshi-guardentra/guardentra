@@ -9,8 +9,9 @@ Evidence-backed inventory of shipped framework-labelled questionnaire content, p
 | Investigation date | 2026-08-18 |
 | Companion doc | [`FRAMEWORK_RIGHTS_REGISTER.md`](./FRAMEWORK_RIGHTS_REGISTER.md) |
 | Claims register | Issue #26 (blocked until this inventory is merged) |
+| Completeness correction | Codex REQUEST CHANGES on `2033cf72a6485657b43b018da23af175d23d40af`: 83-row register was internally consistent but not repository-exhaustive. This file records the search rule and publication-path coverage; claim rows live in the companion register. |
 
-This document inventories **what exists in the repository and product spine**. It does not establish legal ownership, publisher permission, or compliance outcomes. Git authorship is implementation provenance only.
+This document inventories **what exists in the repository and product spine**. It does not establish legal ownership, publisher permission, or compliance outcomes. Git authorship is implementation provenance only. It inventories wording only; it does **not** rewrite, hide, or feature-gate product copy (Issue #26).
 
 ---
 
@@ -28,6 +29,49 @@ This document inventories **what exists in the repository and product spine**. I
 - OSCAL engine / rights registry implementation (Issues #27–#31)
 - Customer-facing claim rewrites (Issue #26)
 - Off-repository counsel records, contracts, or Drive artifacts
+
+---
+
+## Claim-surface search methodology (completeness)
+
+A second, repository-wide pass was run after independent review found omitted surfaces (`AICopilotPanel.tsx`, `TrustVault.tsx`, and others). The pass is repeatable.
+
+**Search roots (in scope):** `src/`, `server/`, `index.html`, `metadata.json`.  
+**Search roots (out of scope / not claim rows):** `.claude/worktrees/**`, `copilot-worktrees/**`, `node_modules/**`, `dist/**`, `docs/agent-ops/**`, internal architecture/roadmap docs that are not product UI.
+
+**Primary name patterns (minimum):**  
+`NIST`, `NIST CSF`, `SOC 2`, `SOC2`, `ISO 27001`, `ISO27001`, `ISO 14001`, `PCI`, `PCI DSS`, `CIS`, `HIPAA`, `GDPR`, `DORA`, `NIS2`, `NAIC`, `EPA`, `CISA`, `FedRAMP`, `NYDFS`, `HITRUST`.
+
+**Secondary authority-like patterns (judged, not auto-included):**  
+`framework`, `certified`, `certification`, `verified`, `official`, `compliant`, `compliance`, `required`, `requirement`, `regulation`, `regulatory`, `standard`, `attestation`, `audit`.
+
+### Inclusion rule
+
+Include a claim row when **all** of the following are true:
+
+1. The string is (or would be, if the hosting feature flag were enabled) shown to a public visitor, authenticated org user, vendor, or API client — **or** it is mock/fallback/seed text that those surfaces would display.
+2. It names a framework, regulation, certification, auditor/attestation product, or publisher **or** it uses authority-like wording *about* those names (for example “Verified Frameworks”, “99% Required”, “official auditor”, “share their SOC 2 certificate”).
+3. Frozen, legacy, demo/mock, fallback, unwired-but-present, and test-only copies are **included and classified**, not dropped. “Frozen” and “mock” are not synonyms for irrelevant.
+
+Related strings on the **same UI/API block** may share one row. Split rows when the claim *type* differs (chat fallback vs scored recommendation vs public heading).
+
+### Exclusion rule
+
+Exclude (do **not** add a claim row) when the hit is:
+
+| Class of hit | Examples |
+|---|---|
+| Programming / types | TypeScript `Required<>`; `FrameworkId` / `packId` identifiers without display copy |
+| Generic portal attestations | VendorPortal accuracy/authority checkboxes that do **not** name an SDO |
+| Generic questionnaire English | “training is required annually” with no named framework |
+| Echo-only tests | Fixtures that only repeat an already-inventoried production label (`frameworkName: 'SOC 2'`) without a new SDO ID or authority claim — including `localAssessmentStore.test.ts`, `fastTrackPhase2Gate.test.ts`, `questionBank.test.ts` (`['ISO 27001']`), `useOrgAssessments.test.ts` |
+| Internal non-UI docs | `docs/agent-ops/**`, architecture/roadmap notes |
+| Isolated worktrees | `.claude/worktrees/**` |
+| Non-displayed legal/engineering comments | e.g. `server/lib/audit/retention.ts` “until legal confirms SOC 2 / DPA wording” |
+
+Rights state for included rows remains **`unknown`**. No publisher authorization or ownership is inferred.
+
+**Claim count** is maintained in [`FRAMEWORK_RIGHTS_REGISTER.md`](./FRAMEWORK_RIGHTS_REGISTER.md). Pack/bank counts below are unchanged: **54** `controlKey`s, **8** packs, **3** mapping subsystems.
 
 ---
 
@@ -216,21 +260,39 @@ VendorPortal reads snapshot only (no live bank rebuild)
 
 | Class | What | Key paths |
 |---|---|---|
-| **active** | Shipped spine | `AssessmentWizard.tsx`, `VendorPortal.tsx`, `Onboarding.tsx`, `Settings.tsx` / `FrameworkPacksCard.tsx`, `Assessments.tsx`, `FastTrackTriage.tsx`, `AuditReadiness.tsx`, `Pricing.tsx`, `Documentation.tsx`, `Dashboard.tsx`, `assessmentLifecycle.ts`, `POST /api/ai/framework-map` |
-| **frozen** | Feature-flagged off (`featureFlags.ts` default `false`) | `Compliance.tsx`, `GovIntelSuite.tsx`, `PolicyDraftsman.tsx`, `Policies.tsx`, `ContractNegotiator.tsx`, `GmailAudit.tsx`, `TrustIntelligence.tsx`, AI mock `regulatoryTags` in `server/routes/ai.ts` |
-| **legacy** | Retained routes/stores, not spine | `VendorRisk.tsx` (`/vendors/legacy`), pre-`controlKey` portal fallbacks |
+| **active** | Shipped spine | `AssessmentWizard.tsx`, `VendorPortal.tsx`, `Onboarding.tsx`, `Settings.tsx` / `FrameworkPacksCard.tsx`, `Assessments.tsx`, `FastTrackTriage.tsx`, `AuditReadiness.tsx`, `Pricing.tsx`, `Documentation.tsx`, `Dashboard.tsx`, `assessmentLifecycle.ts`, `POST /api/ai/framework-map`, `POST /api/ai/generate` (mock SOC 2 review when AI key absent) |
+| **frozen** | Feature-flagged off (`featureFlags.ts` default `false`) | `Compliance.tsx`, `GovIntelSuite.tsx`, `PolicyDraftsman.tsx`, `Policies.tsx`, `ContractNegotiator.tsx`, `GmailAudit.tsx`, `TrustIntelligence.tsx` / `TrustScoreEngine.ts`, `AICopilotPanel.tsx` (`aiCopilot`), `TrustVault.tsx` (`trustVault`, public-preview copy), `AuditCalendar.tsx`, `SystemHealth.tsx` / `seedData.ts` (`healthLab`), AI mock `regulatoryTags` and gov-intel mocks in `server/routes/ai.ts` |
+| **legacy** | Retained routes/stores, not spine | `VendorRisk.tsx` (`/vendors/legacy`), `ActivityFeed.tsx` (present in `src/`; **no current importer**), pre-`controlKey` portal fallbacks, vendor evidence-review mocks in `server/routes/ai.ts` |
 | **test-only** | Vitest imports production bank | `questionBank.test.ts`, `frameworkPacks.test.ts`, `vendorAssessmentLifecycle.test.ts`, `Onboarding.test.tsx` |
-| **public** | Marketing + client bundle | `Landing.tsx`, `index.html`; bank constants ship in client JS |
+| **public** | Marketing + client bundle | `Landing.tsx` (including EPA/Clean Water Act feature card), `index.html`; bank constants ship in client JS |
 
 **Active routes (default flags):** `/onboarding`, `/assessments/new`, `/assessments/triage`, `/portal/:assessmentId`, `/settings`, `/audit-readiness`, `/pricing`, `/docs`, `/dashboard`, `/` (Landing).
+
+**Claim rows (companion register):** **107** (was 83). Class split: public-active 9, authenticated-active 49, frozen 37, legacy 7, test-only 4, unknown 1. All rights states **unknown**. See [`FRAMEWORK_RIGHTS_REGISTER.md`](./FRAMEWORK_RIGHTS_REGISTER.md).
+
+**Paths added in the completeness pass (not in the 83-row register as distinct surfaces):**
+
+| Path | Publication class | Claim IDs |
+|---|---|---|
+| `src/components/AICopilotPanel.tsx` | frozen (`aiCopilot`) | C-069–C-073 |
+| `src/pages/TrustVault.tsx` | frozen (`trustVault`; public-preview copy) | C-074–C-075 |
+| `src/components/ActivityFeed.tsx` | legacy (unwired) | C-076 |
+| `src/lib/TrustScoreEngine.ts` | frozen (Trust Intelligence) | C-077 |
+| `src/pages/AuditCalendar.tsx` | frozen (`auditCalendar`) | C-078 |
+| `src/lib/seeding.ts` (extra vs C-062) | authenticated-active (sample-data checkbox) | C-079 |
+| `src/lib/seedData.ts` (extra vs C-063) | frozen (`healthLab`) | C-080 |
+| `src/pages/VendorRisk.tsx` (extra vs C-053) | legacy | C-081–C-084 |
+| `src/pages/GovIntelSuite.tsx` (extra vs C-054/C-055) | frozen | C-085–C-087 |
+| `src/pages/Landing.tsx` L239–240 | public-active | C-088 |
+| `server/routes/ai.ts` (extra mocks vs C-033 / mapping table) | mixed active/frozen/legacy | C-089–C-092 |
 
 ---
 
 ## Framework labels **not** shipped as packs
 
-These names appear in marketing, frozen modules, demo seed, or AI mocks but **do not** have a corresponding `FrameworkPack` or bank tag set at baseline SHA:
+These names appear in marketing, frozen modules, demo seed, fallbacks, or AI mocks but **do not** have a corresponding `FrameworkPack` or bank tag set at baseline SHA:
 
-NYDFS Part 500, NAIC Model Law, GDPR, DORA, CCPA/CPRA, Solvency II, NIST SP 800-53, FedRAMP, ESG Scorecard, HITRUST (choice label only in Q52).
+NYDFS Part 500, NAIC Model Law, GDPR, DORA, NIS2, CCPA/CPRA, Solvency II, NIST SP 800-53, FedRAMP, ESG Scorecard, HITRUST (choice label only in Q52), EPA / Clean Water Act, CISA SCRM, ISO 14001, Lloyd’s.
 
 Treat these as **claims / demo surfaces**, not inventory packs, until a separate pack and rights record exists.
 
