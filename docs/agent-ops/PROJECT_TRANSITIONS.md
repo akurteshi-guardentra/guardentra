@@ -136,3 +136,26 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
   - Live matrix used `rejected` as the no-notes terminal after remediate. Remediate → approved note-clearing **PASS** on PR #44 unit tests (`1e90a37` / merge `d233eaa`); a separate live remediate → approved assessment was not executed in this matrix.
 - **No malware scanner exists.** Authoritative `clean` still requires real scanner state + matching path + generation.
 - GitHub auto-closed #37 when PR #44 merged (before live verification). #37 was **reopened** for this ledger/governance close-out and **remains OPEN** until PR #43 merges. Do not start #41 or #42 yet. Do not change App Hosting traffic from this documentation task.
+
+## 2026-08-17 — P0-2 ledger close-out completed
+
+- Verifier: GitHub repository state.
+- Issue #37: previous `OPEN pending ledger` → **CLOSED / COMPLETED**.
+- PR #43: **MERGED** at `0f07657620d853cd9228ed58cf29b7d7e9960b73`.
+- Repository/live reconciliation: PR #43 is documentation-only; it records the already-deployed PR #44 recovery and does not create a new deployment.
+- Deployment: **NOT DEPLOYED by PR #43**. Last live-verified App Hosting revision remains `guardentra-build-2026-08-17-001` from PR #44 recovery.
+- Limitation remains: **no malware scanner exists**; do not fabricate authoritative `clean`.
+- Next authorized action: proceed to the next owner-authorized P0 workstream; historical entries above remain unchanged.
+
+## 2026-08-18 — P0-F1 inventory merged; P0-F2 dependency satisfied
+
+- Verifier: GitHub PR/issue/main state plus owner-provided Codex approval.
+- Issue #25: previous `OPEN / inventory in review` → **CLOSED / COMPLETED**.
+- PR #45: feature head `0455ac9e385e26b8087076823dbf2570d1de6880` → **MERGED** by squash at `f0f085d701340747963ef28e46ecd92eb9baf579` on `main` at 2026-08-18T22:11:01Z.
+- Exact PR files: `docs/compliance/FRAMEWORK_INVENTORY.md`, `docs/compliance/FRAMEWORK_RIGHTS_REGISTER.md` only.
+- Checks before merge: required GitHub `verify` PASS (workflow `32164889915`, job `95802062104`); optional Codex re-review reported **APPROVE** against exact feature head.
+- Inventory result on `main`: 54 `controlKey`s, 8 framework packs, 3 mapping subsystems, 112 claim rows. Rights/provenance states remain conservative `unknown` absent stronger owner/publisher/counsel evidence.
+- Deployment: **NOT DEPLOYED**. PR #45 is documentation-only; no Firebase rules, App Hosting, traffic, infrastructure, application behavior, or runtime transition is established by the merge.
+- Issue #26 dependency on #25 is now satisfied; issue remains open and has been reconciled to `status:ready`.
+- Repository/live reconciliation: `main` advanced to `f0f085d...`; last explicitly live-verified application state remains the PR #44 deployment recorded above.
+- Next authorized action: review/merge the separate ledger close-out PR if desired, then start #26 on a fresh one-writer branch. No deployment without separate explicit owner authorization.
