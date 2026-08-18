@@ -9,7 +9,7 @@ Evidence-backed inventory of shipped framework-labelled questionnaire content, p
 | Investigation date | 2026-08-18 |
 | Companion doc | [`FRAMEWORK_RIGHTS_REGISTER.md`](./FRAMEWORK_RIGHTS_REGISTER.md) |
 | Claims register | Issue #26 (blocked until this inventory is merged) |
-| Completeness correction | Codex REQUEST CHANGES on `2033cf72a6485657b43b018da23af175d23d40af`: 83-row register was internally consistent but not repository-exhaustive. This file records the search rule and publication-path coverage; claim rows live in the companion register. |
+| Completeness correction | Codex REQUEST CHANGES on `2033cf72` (83→107) then again on `57f94a05ab3f6a4daeb47f0f32252ffd33ee4cfa` (107 not exhaustive). Claim rows and the search-disposition appendix below record pass 3. |
 
 This document inventories **what exists in the repository and product spine**. It does not establish legal ownership, publisher permission, or compliance outcomes. Git authorship is implementation provenance only. It inventories wording only; it does **not** rewrite, hide, or feature-gate product copy (Issue #26).
 
@@ -34,10 +34,12 @@ This document inventories **what exists in the repository and product spine**. I
 
 ## Claim-surface search methodology (completeness)
 
-A second, repository-wide pass was run after independent review found omitted surfaces (`AICopilotPanel.tsx`, `TrustVault.tsx`, and others). The pass is repeatable.
+A third, repository-wide pass was run after independent review found omitted **component** surfaces (`AssessmentReviewPanel.tsx`, `EvidenceSummaryCard.tsx`) that are imported by already-inventoried pages. The 107-row register was arithmetically correct but still not exhaustive under this rule. The pass is repeatable; **§ Search disposition** records that candidates were reviewed rather than dropped silently.
 
 **Search roots (in scope):** `src/`, `server/`, `index.html`, `metadata.json`.  
 **Search roots (out of scope / not claim rows):** `.claude/worktrees/**`, `copilot-worktrees/**`, `node_modules/**`, `dist/**`, `docs/agent-ops/**`, internal architecture/roadmap docs that are not product UI.
+
+**Required extra check:** reusable components imported by inventoried active/legacy/frozen pages (assessment, evidence, compliance, framework, audit, review, trust, scoring, recommendation). Display copy in those components is in scope even when the *page* already has rows.
 
 **Primary name patterns (minimum):**  
 `NIST`, `NIST CSF`, `SOC 2`, `SOC2`, `ISO 27001`, `ISO27001`, `ISO 14001`, `PCI`, `PCI DSS`, `CIS`, `HIPAA`, `GDPR`, `DORA`, `NIS2`, `NAIC`, `EPA`, `CISA`, `FedRAMP`, `NYDFS`, `HITRUST`.
@@ -72,6 +74,81 @@ Exclude (do **not** add a claim row) when the hit is:
 Rights state for included rows remains **`unknown`**. No publisher authorization or ownership is inferred.
 
 **Claim count** is maintained in [`FRAMEWORK_RIGHTS_REGISTER.md`](./FRAMEWORK_RIGHTS_REGISTER.md). Pack/bank counts below are unchanged: **54** `controlKey`s, **8** packs, **3** mapping subsystems.
+
+### Search disposition (pass 3)
+
+Re-run at rejected head `57f94a05`. Candidates are **paths/surfaces**, not raw grep lines. Every in-scope path with a primary-name hit, or with component-level authority-like **display** copy, is listed. Disposition is one of: existing claim ID(s), new claim ID, or exclusion-rule reason.
+
+**INCLUDED — already in the register (no new row)**
+
+| Path / surface | Disposition |
+|---|---|
+| `index.html` | C-001 |
+| `metadata.json` | C-002 |
+| `src/pages/Landing.tsx` | C-003a–e, C-004, C-005, C-088 |
+| `src/pages/Onboarding.tsx` / `src/lib/vendor/constants.ts` (catalog + onboarding copy, incl. custom “standard framework pack” L45) | C-007–C-011, C-021 |
+| `src/lib/vendor/frameworkPacks.ts` | C-012–C-020 |
+| `src/pages/AssessmentWizard.tsx` | C-022–C-024, C-023b |
+| `src/lib/vendor/questionBank.ts` | C-025–C-029 |
+| `src/components/FrameworkPacksCard.tsx` | C-030–C-032 |
+| `server/routes/ai.ts` `POST /framework-map` | C-033 |
+| `src/pages/VendorPortal.tsx` | C-034–C-035 |
+| `src/pages/Assessments.tsx` AI-against-framework prompt | C-036 |
+| `src/components/assessments/AssessmentTrackerTable.tsx` | C-037 |
+| `src/lib/vendor/reportExport.ts` | C-038 |
+| `src/lib/vendor/fastTrackTriage.ts` | C-039–C-040 |
+| `src/pages/AuditReadiness.tsx` | C-041–C-044 |
+| `src/pages/Pricing.tsx` / `src/lib/plans.ts` | C-045–C-046 |
+| `src/pages/Documentation.tsx` | C-047 |
+| `src/pages/Dashboard.tsx` | C-048 |
+| `src/components/UserGuide.tsx` | C-049 |
+| `src/pages/Compliance.tsx` | C-050–C-052 |
+| `src/pages/VendorRisk.tsx` (page-level copy) | C-053, C-081–C-084 |
+| `src/pages/GovIntelSuite.tsx` | C-054–C-055, C-085–C-087 |
+| `src/components/TrustScoreBreakdown.tsx` | C-056 |
+| `src/pages/PolicyDraftsman.tsx` | C-057, C-057b |
+| `src/pages/ContractNegotiator.tsx` | C-058, C-058b |
+| `src/pages/Policies.tsx` | C-059 |
+| `src/pages/GmailAudit.tsx` | C-060a–b |
+| `src/pages/ImpactAssessment.tsx` | C-061 |
+| `src/lib/seeding.ts` | C-062, C-079 |
+| `src/lib/seedData.ts` | C-063, C-080 |
+| `src/tests/frameworkPacks.test.ts` / `vendorAssessmentLifecycle.test.ts` / `Onboarding.test.tsx` | C-068, C-068b, C-068c |
+| `src/components/AICopilotPanel.tsx` | C-069–C-073 |
+| `src/pages/TrustVault.tsx` | C-074–C-075 |
+| `src/components/ActivityFeed.tsx` | C-076 |
+| `src/lib/TrustScoreEngine.ts` | C-077 |
+| `src/pages/AuditCalendar.tsx` | C-078 |
+| `server/routes/ai.ts` generate / gov-intel / evidence / gmail mocks | C-089–C-092 |
+
+**INCLUDED — new rows this pass**
+
+| Path / surface | New ID | Why it qualifies |
+|---|---|---|
+| `src/components/assessments/AssessmentReviewPanel.tsx` (rendered by `Assessments.tsx`); recovery error in `emptyAssessmentRecovery.ts`; parent empty-snapshot strings in `Assessments.tsx` L256/L465 | **C-093** | User-facing “stamped or current framework packs”, “Rebuild from framework packs”, “standard framework” |
+| `src/components/EvidenceSummaryCard.tsx` (imported by `VendorRisk.tsx`) | **C-094** | “Document meets … framework criteria”; “crucial certifications missing” |
+| `src/components/EvidenceFindingCard.tsx` (imported by `VendorRisk.tsx`) | **C-095** | “mapped to specific GRC framework sections” |
+| `src/pages/Assessments.tsx` L563 pack-upgrade banner | **C-096** | “Newer framework pack(s) available” (distinct from empty-snapshot copy) |
+| `src/lib/vendor/validators.ts` L45 (surfaced by `AssessmentWizard.tsx`) | **C-097** | “select at least one standard framework” (distinct string from C-023b) |
+
+**EXCLUDED — reviewed, not a claim row**
+
+| Path / surface | Exclusion-rule reason |
+|---|---|
+| `src/lib/vendor/types.ts` `FrameworkId` / packId identifiers | Programming / types; no display copy |
+| VendorPortal accuracy/authority checkboxes | Generic portal attestations; no SDO named |
+| Questionnaire “required annually” bank wording without a named extra SDO | Generic questionnaire English (named SOC 2/HIPAA/ISO already C-026–C-029) |
+| `src/tests/localAssessmentStore.test.ts`, `fastTrackPhase2Gate.test.ts`, `questionBank.test.ts`, `useOrgAssessments.test.ts`, `emptyAssessmentRecovery.test.ts` | Echo-only tests of already-inventoried labels/errors |
+| `src/components/EvidenceGapCard.tsx` | Generic attestation / “verified GRC trust score” copy; no named framework, certification product, or SDO |
+| `src/components/RemediationEngine.tsx` | Generic “verified compliant” / “compliance attestations”; no named framework |
+| `src/components/EvidenceRecommendationCard.tsx` | No framework/authority-like display copy |
+| `src/pages/LiveAssistant.tsx` Gemini tool-schema descriptions | Not rendered in UI; AI tool contract sent to the model |
+| `src/pages/Connectors.tsx` comment about bumping framework progress | Non-displayed engineering comment |
+| `server/lib/audit/retention.ts` SOC 2 / DPA comment | Non-displayed legal/engineering comment |
+| `.claude/worktrees/**` | Isolated worktrees |
+| TypeScript `Required<>` | Programming / types |
+
+Rights state for included rows remains **`unknown`**. No publisher authorization or ownership is inferred.
 
 ---
 
@@ -260,17 +337,27 @@ VendorPortal reads snapshot only (no live bank rebuild)
 
 | Class | What | Key paths |
 |---|---|---|
-| **active** | Shipped spine | `AssessmentWizard.tsx`, `VendorPortal.tsx`, `Onboarding.tsx`, `Settings.tsx` / `FrameworkPacksCard.tsx`, `Assessments.tsx`, `FastTrackTriage.tsx`, `AuditReadiness.tsx`, `Pricing.tsx`, `Documentation.tsx`, `Dashboard.tsx`, `assessmentLifecycle.ts`, `POST /api/ai/framework-map`, `POST /api/ai/generate` (mock SOC 2 review when AI key absent) |
-| **frozen** | Feature-flagged off (`featureFlags.ts` default `false`) | `Compliance.tsx`, `GovIntelSuite.tsx`, `PolicyDraftsman.tsx`, `Policies.tsx`, `ContractNegotiator.tsx`, `GmailAudit.tsx`, `TrustIntelligence.tsx` / `TrustScoreEngine.ts`, `AICopilotPanel.tsx` (`aiCopilot`), `TrustVault.tsx` (`trustVault`, public-preview copy), `AuditCalendar.tsx`, `SystemHealth.tsx` / `seedData.ts` (`healthLab`), AI mock `regulatoryTags` and gov-intel mocks in `server/routes/ai.ts` |
-| **legacy** | Retained routes/stores, not spine | `VendorRisk.tsx` (`/vendors/legacy`), `ActivityFeed.tsx` (present in `src/`; **no current importer**), pre-`controlKey` portal fallbacks, vendor evidence-review mocks in `server/routes/ai.ts` |
+| **active** | Shipped spine | `AssessmentWizard.tsx`, `VendorPortal.tsx`, `Onboarding.tsx`, `Settings.tsx` / `FrameworkPacksCard.tsx`, `Assessments.tsx` / `AssessmentReviewPanel.tsx`, `FastTrackTriage.tsx`, `AuditReadiness.tsx`, `Pricing.tsx`, `Documentation.tsx`, `Dashboard.tsx`, `assessmentLifecycle.ts`, `emptyAssessmentRecovery.ts`, `validators.ts`, `POST /api/ai/framework-map`, `POST /api/ai/generate` (mock SOC 2 review when AI key absent) |
+| **frozen** | Feature-flagged off (`featureFlags.ts` default `false`) | `Compliance.tsx`, `GovIntelSuite.tsx`, `PolicyDraftsman.tsx`, `Policies.tsx`, `ContractNegotiator.tsx`, `GmailAudit.tsx`, `TrustIntelligence.tsx` / `TrustScoreEngine.ts`, `AICopilotPanel.tsx` (`aiCopilot`), `TrustVault.tsx` (`trustVault`, public-preview copy), `AuditCalendar.tsx`, `SystemHealth.tsx` / `seedData.ts` (`healthLab`), `LiveAssistant.tsx` (`voiceStudio`; tool schema excluded from claims), AI mock `regulatoryTags` and gov-intel mocks in `server/routes/ai.ts` |
+| **legacy** | Retained routes/stores, not spine | `VendorRisk.tsx` (`/vendors/legacy`) plus evidence cards `EvidenceSummaryCard.tsx`, `EvidenceFindingCard.tsx`, `ActivityFeed.tsx` (present in `src/`; **no current importer**), pre-`controlKey` portal fallbacks, vendor evidence-review mocks in `server/routes/ai.ts` |
 | **test-only** | Vitest imports production bank | `questionBank.test.ts`, `frameworkPacks.test.ts`, `vendorAssessmentLifecycle.test.ts`, `Onboarding.test.tsx` |
 | **public** | Marketing + client bundle | `Landing.tsx` (including EPA/Clean Water Act feature card), `index.html`; bank constants ship in client JS |
 
 **Active routes (default flags):** `/onboarding`, `/assessments/new`, `/assessments/triage`, `/portal/:assessmentId`, `/settings`, `/audit-readiness`, `/pricing`, `/docs`, `/dashboard`, `/` (Landing).
 
-**Claim rows (companion register):** **107** (was 83). Class split: public-active 9, authenticated-active 49, frozen 37, legacy 7, test-only 4, unknown 1. All rights states **unknown**. See [`FRAMEWORK_RIGHTS_REGISTER.md`](./FRAMEWORK_RIGHTS_REGISTER.md).
+**Claim rows (companion register):** **112** (was 107 at `57f94a05`; was 83 at `2033cf72`). Class split: public-active 9, authenticated-active 52, frozen 37, legacy 9, test-only 4, unknown 1. **9+52+37+9+4+1 = 112.** All rights states **unknown**. See [`FRAMEWORK_RIGHTS_REGISTER.md`](./FRAMEWORK_RIGHTS_REGISTER.md).
 
-**Paths added in the completeness pass (not in the 83-row register as distinct surfaces):**
+**Paths added in this pass (not in the 107-row register as distinct surfaces):**
+
+| Path | Publication class | Claim IDs |
+|---|---|---|
+| `src/components/assessments/AssessmentReviewPanel.tsx` (+ `emptyAssessmentRecovery.ts`, `Assessments.tsx` L256/L465) | authenticated-active | C-093 |
+| `src/components/EvidenceSummaryCard.tsx` | legacy (VendorRisk) | C-094 |
+| `src/components/EvidenceFindingCard.tsx` | legacy (VendorRisk) | C-095 |
+| `src/pages/Assessments.tsx` L563 pack-upgrade banner | authenticated-active | C-096 |
+| `src/lib/vendor/validators.ts` L45 | authenticated-active | C-097 |
+
+**Paths added in the first completeness pass (83→107):**
 
 | Path | Publication class | Claim IDs |
 |---|---|---|
