@@ -34,7 +34,9 @@ describe('vendor validators', () => {
   });
 
   it('rejects custom-only framework selection', () => {
-    expect(validateAssessmentWizard({ vendorId: 'v1', frameworks: ['custom'] })).toMatch(/custom/i);
+    expect(validateAssessmentWizard({ vendorId: 'v1', frameworks: ['custom'] })).toBe(
+      "Custom questionnaires aren't available yet — select at least one GuardEntra assessment pack."
+    );
     expect(
       validateAssessmentWizard({ vendorId: 'v1', frameworks: ['custom', 'soc2'] })
     ).toBeNull();

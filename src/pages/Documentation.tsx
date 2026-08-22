@@ -22,19 +22,19 @@ const LIVE = [
     name: 'Assessments',
     path: '/assessments',
     icon: ClipboardList,
-    desc: 'Build framework questionnaires, share the vendor portal link, and review answers.',
+    desc: 'Build GuardEntra-authored questionnaires, share the vendor portal link, and review answers.',
   },
   {
     name: 'Audit Lab',
     path: '/audit-readiness',
     icon: FileCheck,
-    desc: 'Framework readiness scores and evidence gaps for your organization.',
+    desc: 'Assessment-pack readiness estimates and evidence gaps. Estimates are not certifications.',
   },
   {
     name: 'Settings',
     path: '/settings',
     icon: Settings,
-    desc: 'Team invites and framework pack version defaults.',
+    desc: 'Team invites and assessment pack version defaults.',
   },
   {
     name: 'Pricing',

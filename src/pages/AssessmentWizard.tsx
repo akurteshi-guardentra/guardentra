@@ -12,6 +12,7 @@ import { FRAMEWORK_CATALOG } from '../lib/vendor/constants';
 import type { FrameworkId } from '../lib/vendor/types';
 import { displayRiskScore, effectiveRiskLevel, hasRealRiskScore, riskBandClasses } from '../lib/vendor/risk';
 import { validateAssessmentWizard } from '../lib/vendor/validators';
+import { SAFE_NO_QUESTIONS } from '../lib/vendor/safePackWording';
 import {
   QUESTION_CATEGORIES,
   type PortalQuestion,
@@ -186,7 +187,7 @@ export function AssessmentWizard() {
       return;
     }
     if (!previewQuestions.length) {
-      setError('No questions available for the selected frameworks. Pick at least one standard framework.');
+      setError(SAFE_NO_QUESTIONS);
       return;
     }
     setError('');
@@ -201,7 +202,7 @@ export function AssessmentWizard() {
   const createLocalAndOpen = async () => {
     if (!orgId || !selected) return;
     if (!previewQuestions.length) {
-      setError('No questions available for the selected frameworks. Pick at least one standard framework.');
+      setError(SAFE_NO_QUESTIONS);
       return;
     }
     const due = new Date();
@@ -274,7 +275,7 @@ export function AssessmentWizard() {
       return;
     }
     if (!previewQuestions.length) {
-      setError('No questions available for the selected frameworks. Pick at least one standard framework.');
+      setError(SAFE_NO_QUESTIONS);
       return;
     }
     if (!orgId || !selected) return;
@@ -562,7 +563,7 @@ export function AssessmentWizard() {
                   <div>
                     <h2 className="text-lg font-semibold text-white">Build the right assessment</h2>
                     <p className="text-sm text-slate-400">
-                      Select frameworks. GuardEntra removes duplicate questions automatically.
+                      Select assessment packs. GuardEntra removes duplicate questions automatically.
                     </p>
                   </div>
                 </div>

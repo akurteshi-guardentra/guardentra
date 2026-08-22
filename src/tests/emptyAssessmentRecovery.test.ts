@@ -49,7 +49,7 @@ describe('emptyAssessmentRecovery', () => {
     expect(canRecoverEmptyAssessment({ frameworks: ['custom'], questions: [] })).toBe(false);
     expect(() =>
       buildRecoverEmptyAssessmentPatch({ frameworks: ['custom'], questions: [] })
-    ).toThrow(/no framework packs/i);
+    ).toThrow(/no assessment packs/i);
     expect(() =>
       buildRecoverEmptyAssessmentPatch({
         frameworks: ['soc2'],

@@ -1,4 +1,5 @@
 import { EVIDENCE_ALLOWED_TYPES, EVIDENCE_MAX_BYTES } from './constants';
+import { SAFE_CUSTOM_UNAVAILABLE } from './safePackWording';
 import type { FrameworkId, RiskLevel, VendorStatus } from './types';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -42,7 +43,7 @@ export function validateAssessmentWizard(input: {
   if (!input.frameworks?.length) return 'Select at least one framework.';
   // Custom is a stub with no pack — solo-custom would create a zero-question assessment.
   if (input.frameworks.every((id) => id === 'custom')) {
-    return "Custom questionnaires aren't available yet — select at least one standard framework.";
+    return SAFE_CUSTOM_UNAVAILABLE;
   }
   return null;
 }

@@ -43,7 +43,7 @@ const steps: GuideStep[] = [
   {
     icon: FileText,
     title: "Digital Draftsman",
-    description: "Never start from a blank page again. The AI Draftsman cross-references your real-world risks with ISO 27001 or SOC2 to write custom policies.",
+    description: "Draft policy starting points from recorded risks. This helper does not map to publisher control catalogs and is not a compliance determination.",
     category: "Strategic"
   },
   {

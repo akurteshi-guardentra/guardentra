@@ -1,6 +1,6 @@
 /**
- * Guardentra-owned framework pack library.
- * Content team publishes new pack versions in-repo; customers never auto-download SDO standards.
+ * GuardEntra assessment pack library (implementation provenance only — not a rights record).
+ * Pack versions are published in-repo; publisher standards are never auto-downloaded.
  */
 import type { FrameworkId } from './types';
 import {
@@ -52,7 +52,7 @@ function controlKeysForFramework(frameworkId: FrameworkId, exclude: readonly str
 }
 
 /**
- * Official packs. Side-by-side versions are separate packIds — never rename in place.
+ * Shipped packs. Side-by-side versions are separate packIds — never rename in place.
  * Content workflow: edit bank/packs → bump QUESTION_BANK_VERSION → ship release notes.
  */
 export const FRAMEWORK_PACKS: FrameworkPack[] = [
@@ -63,7 +63,7 @@ export const FRAMEWORK_PACKS: FrameworkPack[] = [
     displayName: 'NIST CSF 1.1',
     releasedAt: '2018-04-16',
     changelog:
-      'Baseline CSF 1.1 control set. Superseded by CSF 2.0 (Govern function and expanded reporting).',
+      'GuardEntra-authored assessment pack (NIST CSF 1.1-labelled version). Superseded by the 2.0-labelled pack.',
     status: 'superseded',
     controlKeys: controlKeysForFramework('nist_csf_2', CSF_2_ONLY_KEYS),
   },
@@ -74,7 +74,7 @@ export const FRAMEWORK_PACKS: FrameworkPack[] = [
     displayName: 'NIST CSF 2.0',
     releasedAt: '2024-02-26',
     changelog:
-      'Adds Govern-oriented executive reporting, severity classification, and DR tabletop controls vs 1.1.',
+      'GuardEntra-authored assessment pack (NIST CSF 2.0-labelled version), including additional Govern-oriented questions versus the 1.1-labelled pack.',
     status: 'current',
   },
   {
@@ -83,7 +83,8 @@ export const FRAMEWORK_PACKS: FrameworkPack[] = [
     version: '2013',
     displayName: 'ISO 27001:2013',
     releasedAt: '2013-10-01',
-    changelog: 'ISO/IEC 27001:2013 Annex A baseline. Superseded by the 2022 revision.',
+    changelog:
+      'GuardEntra-authored assessment pack (ISO 27001:2013-labelled version). Superseded by the 2022-labelled pack.',
     status: 'superseded',
     controlKeys: controlKeysForFramework('iso27001', ISO_2022_ONLY_KEYS),
   },
@@ -93,7 +94,8 @@ export const FRAMEWORK_PACKS: FrameworkPack[] = [
     version: '2022',
     displayName: 'ISO 27001:2022',
     releasedAt: '2022-10-25',
-    changelog: 'Adds DLP, crisis communication, and expanded data-protection control coverage vs 2013.',
+    changelog:
+      'GuardEntra-authored assessment pack (ISO 27001:2022-labelled version), including additional DLP, crisis-communication, and data-protection questions versus the 2013-labelled pack.',
     status: 'current',
   },
   {
@@ -102,7 +104,7 @@ export const FRAMEWORK_PACKS: FrameworkPack[] = [
     version: 'current',
     displayName: 'SOC 2',
     releasedAt: '2026-01-01',
-    changelog: 'Guardentra SOC 2 Type II questionnaire pack.',
+    changelog: 'GuardEntra-authored assessment pack (SOC 2-labelled).',
     status: 'current',
   },
   {
@@ -111,7 +113,7 @@ export const FRAMEWORK_PACKS: FrameworkPack[] = [
     version: 'current',
     displayName: 'HIPAA',
     releasedAt: '2026-01-01',
-    changelog: 'Guardentra HIPAA Security Rule questionnaire pack.',
+    changelog: 'GuardEntra-authored assessment pack (HIPAA-labelled).',
     status: 'current',
   },
   {
@@ -120,7 +122,7 @@ export const FRAMEWORK_PACKS: FrameworkPack[] = [
     version: '4.0',
     displayName: 'PCI DSS 4.0',
     releasedAt: '2022-03-31',
-    changelog: 'PCI DSS v4.0 questionnaire pack.',
+    changelog: 'GuardEntra-authored assessment pack (PCI DSS 4.0-labelled).',
     status: 'current',
   },
   {
@@ -129,7 +131,7 @@ export const FRAMEWORK_PACKS: FrameworkPack[] = [
     version: 'current',
     displayName: 'CIS Controls',
     releasedAt: '2026-01-01',
-    changelog: 'CIS Controls questionnaire pack.',
+    changelog: 'GuardEntra-authored assessment pack (CIS Controls-labelled).',
     status: 'current',
   },
 ];
@@ -146,6 +148,10 @@ export function listPacksForFramework(frameworkId: FrameworkId): FrameworkPack[]
 
 export function getCurrentPack(frameworkId: FrameworkId): FrameworkPack | undefined {
   return FRAMEWORK_PACKS.find((p) => p.frameworkId === frameworkId && p.status === 'current');
+}
+
+export function currentPackDisplayNames(): string[] {
+  return FRAMEWORK_PACKS.filter((p) => p.status === 'current').map((p) => p.displayName);
 }
 
 /** Default packId for a framework family (`{id}@current` semantic via status). */

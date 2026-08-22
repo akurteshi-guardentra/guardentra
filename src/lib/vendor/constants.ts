@@ -1,6 +1,7 @@
 import type { FrameworkDefinition, FrameworkId, RiskLevel } from './types';
 import { countQuestionsForFramework } from './questionBank';
 import { getCurrentPack } from './frameworkPacks';
+import { SAFE_CUSTOM_CATALOG_DESC, SAFE_PACK_BASELINE } from './safePackWording';
 
 export const FRAMEWORK_CATALOG: FrameworkDefinition[] = [
   {
@@ -42,7 +43,7 @@ export const FRAMEWORK_CATALOG: FrameworkDefinition[] = [
   {
     id: 'custom',
     name: 'Custom Questionnaire',
-    description: 'Not available yet — use a standard framework pack',
+    description: SAFE_CUSTOM_CATALOG_DESC,
     questionCount: 0,
   },
 ];
@@ -56,22 +57,22 @@ export const ONBOARDING_FRAMEWORKS: {
   {
     id: 'iso27001',
     name: getCurrentPack('iso27001')?.displayName || 'ISO 27001:2022',
-    desc: 'The certification enterprise buyers ask for most often in security reviews.',
+    desc: SAFE_PACK_BASELINE,
   },
   {
     id: 'soc2',
-    name: 'SOC 2 Type II',
-    desc: 'Audited proof of how you handle security, availability and confidentiality over time.',
+    name: getCurrentPack('soc2')?.displayName || 'SOC 2',
+    desc: SAFE_PACK_BASELINE,
   },
   {
     id: 'nist_csf_2',
     name: getCurrentPack('nist_csf_2')?.displayName || 'NIST CSF 2.0',
-    desc: 'A practical control baseline. Common in US public sector and critical infrastructure.',
+    desc: SAFE_PACK_BASELINE,
   },
   {
     id: 'hipaa',
     name: 'HIPAA',
-    desc: 'Required if you or your vendors touch protected health information.',
+    desc: SAFE_PACK_BASELINE,
   },
 ];
 

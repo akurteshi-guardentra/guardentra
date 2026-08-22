@@ -27,7 +27,7 @@ export const PLANS: Record<PlanId, PlanDefinition> = {
     name: 'Growth',
     vendorCap: 150,
     seatCap: 10,
-    description: 'More vendors, more frameworks, more seats.',
+    description: 'More vendors, more assessment packs, more seats.',
   },
   gov: {
     id: 'gov',

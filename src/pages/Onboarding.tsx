@@ -293,10 +293,11 @@ export function Onboarding() {
             >
               <div className="space-y-2">
                 <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">Step 2 of 3 · Frameworks</Badge>
-                <h1 className="text-4xl font-bold text-white tracking-tight font-display">What do you report against?</h1>
+                <h1 className="text-4xl font-bold text-white tracking-tight font-display">Which assessment packs should vendors complete?</h1>
                 <p className="text-slate-400">
-                  Pick every framework you're accountable for — more than one is normal. Where
-                  two frameworks ask for the same control, your vendors answer it once instead
+                  GuardEntra-authored assessment packs aligned to selected security domains.
+                  Pick every pack you want vendors to complete — more than one is normal. Where
+                  two packs ask about the same control, your vendors answer it once instead
                   of repeating themselves, so questionnaires stay short as your scope grows.
                 </p>
               </div>

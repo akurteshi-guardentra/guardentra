@@ -4,6 +4,7 @@ import { Button } from '../components/ui/button';
 import { Link, useNavigate } from 'react-router-dom';
 import { SUPPORT_EMAIL, SUPPORT_MAILTO } from '../lib/brand';
 import { hasPersistedFirebaseSession, resolveSignedInRedirect } from '../lib/sessionRedirect';
+import { PUBLIC_PACK_DOMAIN_LABELS, SAFE_PACK_BASELINE } from '../lib/vendor/safePackWording';
 
 export function Landing() {
   const navigate = useNavigate();
@@ -89,9 +90,8 @@ export function Landing() {
               </span>
             </h1>
             <p className="max-w-4xl mx-auto text-lg md:text-xl text-slate-300 mb-14 leading-relaxed font-light">
-              Guardentra is an AI-powered Third-Party Risk Intelligence platform helping organizations assess vendors,
-              detect compliance gaps, and strengthen supply-chain resilience across cybersecurity, operational,
-              environmental, and regulatory risk.
+              Guardentra is a third-party risk platform helping organizations assess vendors,
+              identify questionnaire gaps, and strengthen supply-chain resilience. {SAFE_PACK_BASELINE}
             </p>
             <div className="flex flex-col sm:flex-row justify-center items-center gap-6">
               <Link to="/login">
@@ -115,25 +115,16 @@ export function Landing() {
             id="security"
             className="mt-28 py-10 border-y border-white/5 bg-white/[0.01] animate-landing-fade-delay"
           >
-            <p className="text-[10px] uppercase font-bold tracking-[0.4em] text-slate-600 mb-8">
-              SECURE INFRASTRUCTURE PARTNERS
+            <p className="text-[10px] uppercase font-bold tracking-[0.4em] text-slate-600 mb-4">
+              Assessment pack domains
             </p>
+            <p className="max-w-2xl mx-auto text-xs text-slate-500 mb-8">{SAFE_PACK_BASELINE}</p>
             <div className="flex flex-wrap justify-center items-center gap-12 md:gap-24 opacity-30 grayscale hover:grayscale-0 transition-all duration-700">
-              <div className="font-display font-black text-2xl tracking-tighter">
-                NYDFS<span className="text-indigo-400">PART500</span>
-              </div>
-              <div className="font-display font-black text-2xl tracking-tighter">
-                NAIC<span className="text-purple-400">CERT</span>
-              </div>
-              <div className="font-display font-black text-2xl tracking-tighter italic uppercase text-lg">
-                Lloyds<span className="text-indigo-400">READY</span>
-              </div>
-              <div className="font-display font-black text-2xl tracking-tighter uppercase">
-                SOC<span className="text-indigo-400">2</span>TYPE II
-              </div>
-              <div className="font-display font-black text-2xl tracking-tighter uppercase">
-                NIST<span className="text-indigo-400">SP</span>800-53
-              </div>
+              {PUBLIC_PACK_DOMAIN_LABELS.map((label) => (
+                <div key={label} className="font-display font-black text-2xl tracking-tighter uppercase">
+                  {label}
+                </div>
+              ))}
             </div>
           </div>
 
@@ -174,8 +165,8 @@ export function Landing() {
             <div className="space-y-8">
               {[
                 {
-                  t: 'Automated Regulatory Mapping',
-                  d: 'Instantly map your entire control environment to NYDFS Part 500 and NAIC Data Security mandates.',
+                  t: 'Vendor assessment questionnaires',
+                  d: `${SAFE_PACK_BASELINE} Questionnaires collect vendor answers; they do not certify compliance or map to unpublished regulatory catalogs.`,
                 },
                 {
                   t: 'Dynamic Third-Party Ledger',
@@ -236,8 +227,8 @@ export function Landing() {
               },
               {
                 icon: <Scale className="h-6 w-6 text-emerald-400" />,
-                title: 'Environmental Compliance Oversight',
-                desc: 'Audit water utility, transport, and hazardous suppliers. Track wastewater telemetry thresholds, EPA Civil penalties, and Clean Water Act reporting.',
+                title: 'Operational vendor review',
+                desc: 'Collect vendor answers about operational practices using GuardEntra-authored questionnaires. This is not a regulatory filing or enforcement product.',
               },
             ].map((feature, i) => (
               <div

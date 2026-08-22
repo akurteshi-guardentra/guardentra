@@ -163,7 +163,7 @@ export function Dashboard() {
               Quick start
             </CardTitle>
             <CardDescription>
-              Add your first vendor, then send a framework questionnaire through the assessment
+              Add your first vendor, then send a GuardEntra-authored questionnaire through the assessment
               portal.
             </CardDescription>
           </CardHeader>
@@ -184,7 +184,7 @@ export function Dashboard() {
             >
               <ClipboardList className="mb-2 h-5 w-5 text-indigo-400" />
               <p className="text-sm font-semibold text-white">2. Send an assessment</p>
-              <p className="mt-1 text-xs text-slate-500">Pick frameworks and share the portal link.</p>
+              <p className="mt-1 text-xs text-slate-500">Pick assessment packs and share the portal link.</p>
             </button>
             <button
               type="button"
@@ -193,7 +193,7 @@ export function Dashboard() {
             >
               <FileCheck className="mb-2 h-5 w-5 text-amber-400" />
               <p className="text-sm font-semibold text-white">3. Check Audit Lab</p>
-              <p className="mt-1 text-xs text-slate-500">Track framework readiness and evidence gaps.</p>
+              <p className="mt-1 text-xs text-slate-500">Track assessment-pack readiness estimates and evidence gaps.</p>
             </button>
           </CardContent>
         </Card>
