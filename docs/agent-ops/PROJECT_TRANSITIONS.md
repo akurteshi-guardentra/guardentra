@@ -136,3 +136,99 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
   - Live matrix used `rejected` as the no-notes terminal after remediate. Remediate → approved note-clearing **PASS** on PR #44 unit tests (`1e90a37` / merge `d233eaa`); a separate live remediate → approved assessment was not executed in this matrix.
 - **No malware scanner exists.** Authoritative `clean` still requires real scanner state + matching path + generation.
 - GitHub auto-closed #37 when PR #44 merged (before live verification). #37 was **reopened** for this ledger/governance close-out and **remains OPEN** until PR #43 merges. Do not start #41 or #42 yet. Do not change App Hosting traffic from this documentation task.
+
+## 2026-08-17 — P0-2 ledger close-out completed
+
+- Verifier: GitHub repository state.
+- Issue #37: previous `OPEN pending ledger` → **CLOSED / COMPLETED**.
+- PR #43: **MERGED** at `0f07657620d853cd9228ed58cf29b7d7e9960b73`.
+- Repository/live reconciliation: PR #43 is documentation-only; it records the already-deployed PR #44 recovery and does not create a new deployment.
+- Deployment: **NOT DEPLOYED by PR #43**. Last live-verified App Hosting revision remains `guardentra-build-2026-08-17-001` from PR #44 recovery.
+- Limitation remains: **no malware scanner exists**; do not fabricate authoritative `clean`.
+- Next authorized action: proceed to the next owner-authorized P0 workstream; historical entries above remain unchanged.
+
+## 2026-08-18 — P0-F1 inventory merged; P0-F2 dependency satisfied
+
+- Verifier: GitHub PR/issue/main state plus owner-provided Codex approval.
+- Issue #25: previous `OPEN / inventory in review` → **CLOSED / COMPLETED**.
+- PR #45: feature head `0455ac9e385e26b8087076823dbf2570d1de6880` → **MERGED** by squash at `f0f085d701340747963ef28e46ecd92eb9baf579` on `main` at 2026-08-18T22:11:01Z.
+- Exact PR files: `docs/compliance/FRAMEWORK_INVENTORY.md`, `docs/compliance/FRAMEWORK_RIGHTS_REGISTER.md` only.
+- Checks before merge: required GitHub `verify` PASS (workflow `32164889915`, job `95802062104`); optional Codex re-review reported **APPROVE** against exact feature head.
+- Inventory result on `main`: 54 `controlKey`s, 8 framework packs, 3 mapping subsystems, 112 claim rows. Rights/provenance states remain conservative `unknown` absent stronger owner/publisher/counsel evidence.
+- Deployment: **NOT DEPLOYED**. PR #45 is documentation-only; no Firebase rules, App Hosting, traffic, infrastructure, application behavior, or runtime transition is established by the merge.
+- Issue #26 dependency on #25 is now satisfied; issue remains open and has been reconciled to `status:ready`.
+- Repository/live reconciliation: `main` advanced to `f0f085d...`; last explicitly live-verified application state remains the PR #44 deployment recorded above.
+- Next authorized action: review/merge the separate ledger close-out PR if desired, then start #26 on a fresh one-writer branch. No deployment without separate explicit owner authorization.
+
+## 2026-08-19 — P0-F2 safe framework wording merged
+
+- Verifier: GitHub PR/issue/main state.
+- Issue #26: previous `OPEN / READY after #25` → **CLOSED / COMPLETED**.
+- PR #47: **MERGED** by squash at `a213981ae6f9e252fa5880f4f2a19b3d31663ca4` on `main`.
+- Scope: product wording corrections, `FRAMEWORK_CLAIM_DISPOSITION.md` (112 claim rows), safe pack wording helpers, and focused tests. Preserves conservative rights/provenance posture; does **not** claim official certification/partnership where unsupported.
+- Checks: required GitHub `verify` PASS before merge (as reported on PR #47).
+- Deployment: **NOT DEPLOYED to `guardentra-7f582` by this merge alone** for the purposes of this ledger refresh. Staging subsequently deployed `a213981` separately (see below). Production-equivalent `guardentra-7f582` traffic remained on prior build until/unless separately authorized.
+- Next authorized action: staging infrastructure and verification; merge ledger PR #46 when owner authorizes.
+
+## 2026-08-20 — Staging Firebase project established
+
+- Verifier: owner-authorized GCP/Firebase provisioning (`admin@guardentra.com`).
+- Transition: named staging project absent → **`guardentra-staging` established** (project number `965959469996`, org `280975227603`, billing linked).
+- Enabled: Firestore `(default)`, Firebase Auth (email/password, anonymous, Google), Storage bucket `guardentra-staging.firebasestorage.app`, web app, Secret Manager placeholders, Developer Connect to GitHub `test` branch.
+- Deployment: infrastructure provisioning only; **no change to `guardentra-7f582` runtime**.
+- Next: pre-deploy wiring (secrets, IAM, App Hosting backend).
+
+## 2026-08-20 — Git `test` branch aligned to release candidate
+
+- Verifier: Git remote state.
+- Branch `test`: established/verified at `a213981ae6f9e252fa5880f4f2a19b3d31663ca4` (matches `main` release candidate).
+- Deployment: **NOT DEPLOYED** (branch pointer only).
+
+## 2026-08-21 — Staging App Hosting deployment live
+
+- Verifier: Firebase App Hosting API + live HTTP checks.
+- Target: project `guardentra-staging`; backend `guardentra-staging`; region `us-central1`; Git branch `test`.
+- Release commit: `a213981ae6f9e252fa5880f4f2a19b3d31663ca4`.
+- Build: `build-2026-08-21-002` **READY**.
+- Rollout: `rollout-2026-08-21-001` **SUCCEEDED** at **100%**.
+- URL: `https://guardentra-staging--guardentra-staging.us-central1.hosted.app` — homepage **200**; `/api/health` **200**.
+- Runtime: `AUDIT_SPINE_ENABLED=false`; `APP_ENV=production` from shared `apphosting.yaml`.
+- Production reconciliation: **`guardentra-7f582` unchanged** — no staging operation deployed application code, rules, traffic, or data to production-equivalent project.
+- Next: deploy staging Firestore/Storage rules; portal E2E gate.
+
+## 2026-08-21 — Staging Firestore and Storage rules deployed
+
+- Verifier: Firebase Rules API releases + emulator/live denial checks.
+- Firestore release: `projects/guardentra-staging/releases/cloud.firestore` → ruleset `ca5b4258-18e2-4d79-880b-b1a4e9129585`.
+- Storage release: `projects/guardentra-staging/releases/firebase.storage/guardentra-staging.firebasestorage.app` → ruleset `6a4560f0-deac-4dd7-be16-a274e4bb8b56`.
+- Checks: Firestore emulator **42/42 PASS**; Storage emulator **19/19 PASS**; live unauthenticated/anonymous denial checks **PASS**.
+- Production reconciliation: **`guardentra-7f582` rules unchanged** (Firestore `c12a5117-1675-4775-b25b-ca463b36e7dc`; Storage `7bf9df8c-474f-4100-b5cc-77d019d7b2a9`).
+- Next: final staging portal E2E gate.
+
+## 2026-08-21 — Staging portal E2E troubleshooting (historical; superseded)
+
+- Verifier: Cursor staging gate attempt.
+- Symptom: `POST /api/portal/session` returned HTTP **500** (`PERMISSION_DENIED` — Admin SDK targeted wrong project until `GCLOUD_PROJECT`/`FIREBASE_STORAGE_BUCKET` set; App Hosting compute SA lacked Firestore/Auth access initially).
+- Secondary: `gcloud logging read` quote-parsing failure (**exit 2**) during mid-gate probe — tooling error only.
+- Status: **SUPERSEDED** — not a current blocker. Do not treat as live staging state.
+- Superseded by: runtime env on Cloud Run revision `guardentra-staging-00002-lrg`, IAM grants for App Hosting compute + Storage rules agents, and successful final E2E below.
+
+## 2026-08-21 — Final staging portal E2E PASS
+
+- Verifier: owner-authorized synthetic fixture gate (`STAGING_PORTAL_E2E` / `stagingTest` tagged data; no real PII).
+- Target: `guardentra-staging`; `PORTAL_API_BASE=https://guardentra-staging--guardentra-staging.us-central1.hosted.app`; staging Firebase client config (not `guardentra-7f582`).
+- Mode: **`[mode: scoped-token]`** — anonymous fallback would have been **FAIL**.
+- Results (**all PASS** at final verification): authenticated staging org login; portal token mint; scoped `portalAssessmentId` claim; Assessment A access; Assessment B isolation; Firestore cross-assessment read/write denial; Storage cross-assessment denial; scoped Assessment A Storage upload/read; submit; post-submit lock; invalid/missing assessment fail-closed.
+- Synthetic fixtures: created for gate, then **deleted** (`CLEANUP=DELETED_SYNTHETIC_FIXTURES`). No production IDs or customer data used.
+- Production reconciliation: **`guardentra-7f582` unchanged** — App Hosting `build-2026-08-18-002` at **100%** on branch `main`; rulesets unchanged.
+- Remaining follow-up (not part of this ledger merge): persist `GCLOUD_PROJECT` / `FIREBASE_STORAGE_BUCKET` in committed App Hosting config before next staging rollout.
+- Next authorized action: merge ledger PR #46; no production deploy implied.
+
+## 2026-08-23 — Ledger PR #46 refresh (documentation only)
+
+- Verifier: Cursor (`tool:cursor`); owner authorization: documentation-only refresh of existing PR #46.
+- Branch: `docs/p0-f1-merge-ledger-closeout` reconciled onto `origin/main` `a213981ae6f9e252fa5880f4f2a19b3d31663ca4`.
+- Files: `docs/agent-ops/PROJECT_STATE.md`, `docs/agent-ops/PROJECT_TRANSITIONS.md` only in this commit.
+- Deployment: **NOT DEPLOYED — DOCUMENTATION RECONCILIATION ONLY**.
+- Reconciliation: records P0-F2 merge, staging establishment/deployment/rules/portal E2E PASS, and unchanged production-equivalent `guardentra-7f582`. Clarifies intended architecture (`test` → `guardentra-staging`; `main` → `guardentra-prod`) vs current live legacy.
+- Next authorized action: owner merge of PR #46 when satisfied. No production deployment authorized by this PR.
