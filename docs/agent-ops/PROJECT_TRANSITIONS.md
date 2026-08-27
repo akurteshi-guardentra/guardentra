@@ -232,3 +232,24 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
 - Deployment: **NOT DEPLOYED — DOCUMENTATION RECONCILIATION ONLY**.
 - Reconciliation: records P0-F2 merge, staging establishment/deployment/rules/portal E2E PASS, and unchanged production-equivalent `guardentra-7f582`. Clarifies intended architecture (`test` → `guardentra-staging`; `main` → `guardentra-prod`) vs current live legacy.
 - Next authorized action: owner merge of PR #46 when satisfied. No production deployment authorized by this PR.
+
+## 2026-08-27 — Production release acceptance (guardentra-prod LIVE; domain unchanged)
+
+- Verifier: Cursor (`tool:cursor`). Owner phrases: `deploy production`, `deploy production rules`, then release-acceptance closeout (docs only; **no domain cutover**).
+- Transition: `guardentra-prod` absent/unverified → **provisioned + App Hosting LIVE + rules LIVE + scoped portal E2E PASS**; public domain **unchanged** on legacy.
+- Repository candidate / deployed application SHA: `29171a64078e3943149dccf63d8caa7650ad0125`.
+- App Hosting: project `guardentra-prod`; backend `guardentra-prod`; build `build-2026-08-27-001` **READY**; rollout **SUCCEEDED** at **100%**; revision `guardentra-prod-build-2026-08-27-001`; automatic rollouts **DISABLED**.
+- Hosted URL: `https://guardentra-prod--guardentra-prod.us-central1.hosted.app` — homepage **200**; `/api/health` **200**.
+- Firestore rules: release `projects/guardentra-prod/releases/cloud.firestore` → ruleset `2e9c308d-9889-4b16-8d55-63b4c77e5ce4`.
+- Storage rules: release `projects/guardentra-prod/releases/firebase.storage/guardentra-prod.firebasestorage.app` → ruleset `76913163-f67e-44d6-b262-6362447d8726`.
+- IAM: `roles/datastore.viewer` granted to `service-191663365586@gcp-sa-firebasestorage.iam.gserviceaccount.com` (Storage rules `firestore.get()`).
+- Portal security gate: **PASS** — mode **`[mode: scoped-token]`**; A→B isolation **PASS**; submit/lock **PASS**; Storage isolation **PASS**; synthetic assessment/org fixtures **deleted**.
+- Auth: Email/password ENABLED; Google ENABLED; Anonymous DISABLED.
+- **No malware scanner exists** / **NOT IMPLEMENTED**.
+- Legacy public domain: `https://guardentra.com` still on `guardentra-7f582` backend `guardentra`, traffic **100%** `build-2026-08-22-001`; custom domain `guardentra.com` **HOST_ACTIVE / OWNERSHIP_ACTIVE / CERT_ACTIVE**.
+- DNS snapshot (read-only): `guardentra.com` A `35.219.200.15` TTL ~1799s; `www` CNAME → `guardentra.com` TTL ~1799s; NS `dns1/dns2.registrar-servers.com` TTL ~1800s; TLS CN=`guardentra.com`, issuer Google Trust Services WR3.
+- Cutover: **NOT AUTHORIZED / NOT PERFORMED**.
+- Residual: synthetic Auth user `gate-noclaim-1787847305230@guardentra-test.invalid` (uid `yut6NIvWCeZXBYAQE2v71yXIPP52`) — **SYNTHETIC AUTH CLEANUP — OWNER AUTHORIZATION REQUIRED**.
+- This documentation PR: docs-only; **NOT DEPLOYED**; does not change DNS, App Hosting traffic, or rules.
+- Next authorized action: owner merge of this docs PR when satisfied; separate explicit command required for Auth cleanup and for any `guardentra.com` cutover.
+
