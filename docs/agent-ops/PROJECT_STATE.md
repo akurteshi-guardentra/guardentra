@@ -1,6 +1,6 @@
 # GuardEntra Project State
 
-Current verified snapshot: 2026-08-23  
+Current verified snapshot: 2026-09-01  
 Repository: `akurteshi-guardentra/guardentra`  
 Owner and merge/deployment authority: `@akurteshi-guardentra`
 
@@ -23,9 +23,9 @@ This is a navigation ledger, not independent proof. Verify claims using the issu
 
 | Item | Verified state |
 |---|---|
-| Default branch/current commit | `main` at `a213981ae6f9e252fa5880f4f2a19b3d31663ca4` |
-| Latest merged product/governance work | PR #24 P0-1; PR #35 live probe; PR #38 P0-2 investigation ledger; PR #39 rejected-head merge `85f718de43b19fa9a8d10312d726d2bf0899aaeb`; PR #40 squash-merged `8ea4b24e1a15b03e518de8d928d56d7491bc8599`; PR #44 squash-merged `d233eaa09fa7cd0b0c9f5a4518ae2850f7d34eb9`; PR #43 squash-merged `0f07657620d853cd9228ed58cf29b7d7e9960b73`; **PR #45 squash-merged** `f0f085d701340747963ef28e46ecd92eb9baf579`; **PR #47 squash-merged** `a213981ae6f9e252fa5880f4f2a19b3d31663ca4` |
-| Active governance work | Issue #33 project-state/tool-routing protocol remains the governance umbrella. PR #43 is **MERGED**. **PR #46** (`docs/p0-f1-merge-ledger-closeout`) is **OPEN / NOT MERGED** — documentation-only ledger refresh through P0-F2 merge and staging verification. |
+| Default branch/current commit | `main` at `29171a64078e3943149dccf63d8caa7650ad0125` (repository; see production application release SHA below) |
+| Latest merged product/governance work | PR #24 P0-1; PR #35 live probe; PR #38 P0-2 investigation ledger; PR #39 rejected-head merge `85f718de43b19fa9a8d10312d726d2bf0899aaeb`; PR #40 squash-merged `8ea4b24e1a15b03e518de8d928d56d7491bc8599`; PR #44 squash-merged `d233eaa09fa7cd0b0c9f5a4518ae2850f7d34eb9`; PR #43 squash-merged `0f07657620d853cd9228ed58cf29b7d7e9960b73`; PR #45 squash-merged `f0f085d701340747963ef28e46ecd92eb9baf579`; PR #47 squash-merged `a213981ae6f9e252fa5880f4f2a19b3d31663ca4`; **PR #46 squash/merged** into `29171a64078e3943149dccf63d8caa7650ad0125` |
+| Active governance work | Issue #33 project-state/tool-routing protocol remains the governance umbrella. PR #43 and PR #46 are **MERGED**. This docs PR records **guardentra-prod** release acceptance (application + rules live verified; domain cutover **not** authorized). |
 | P0-2 investigation | Issue #11 closed: confirmed defect investigated and recovery implemented under Option B. **No malware scanner exists**; authoritative `clean` still requires a future scanner workstream. |
 | P0-2 implementation | Issue #37 is **CLOSED / COMPLETED**. PR #44 merged and previously live-verified on `guardentra-7f582`; PR #43 ledger close-out merged. |
 | Framework inventory | Issue #25 is **CLOSED / COMPLETED**. PR #45 merged docs-only inventory: 54 controlKeys, 8 packs, 3 mapping subsystems, 112 claim rows; rights/provenance remain `unknown` or escalated unless stronger owner/publisher/counsel evidence is attached. |
@@ -39,9 +39,9 @@ This is a navigation ledger, not independent proof. Verify claims using the issu
 |---|---|---|
 | `dev` | `guardentra-dev` | **Not verified / not provisioned** |
 | `test` | `guardentra-staging` | **LIVE VERIFIED** — see staging section |
-| `main` | `guardentra-prod` | **Not verified / not provisioned** |
+| `main` | `guardentra-prod` | **LIVE VERIFIED** (hosted.app) — see production section; **domain cutover NOT done** |
 
-`guardentra-7f582` remains **production-equivalent live legacy** serving `https://guardentra.com`. It is **not** the intended final permanent production architecture. Cutover to `guardentra-prod` requires separate owner authorization.
+`guardentra-7f582` remains **production-equivalent live legacy** serving `https://guardentra.com`. Intended permanent production is `guardentra-prod` (application + rules live on App Hosting hosted URL). **Cutover of `guardentra.com` is NOT AUTHORIZED** until a separate owner command.
 
 ## Live runtime state — production-equivalent (`guardentra-7f582`)
 
@@ -49,7 +49,7 @@ This is a navigation ledger, not independent proof. Verify claims using the issu
 |---|---|---|
 | Public domain | `https://guardentra.com` | Homepage **200**; `/login` **200**. Performance baseline still needs measured evidence. |
 | Firebase project serving traffic | `guardentra-7f582` | Labelled demo/local-development but operationally production-equivalent |
-| App Hosting | backend `guardentra`, `us-central1`, branch `main`; **100%** `build-2026-08-18-002` | **Unchanged by staging work.** No staging operation deployed application code, rules, traffic, or data here. |
+| App Hosting | backend `guardentra`, `us-central1`, branch `main`; **100%** `build-2026-08-22-001` (verified 2026-08-27) | Still serves `guardentra.com`. Unchanged by `guardentra-prod` rollout/rules work. |
 | Firestore rules | `(default)` release `cloud.firestore` → `projects/guardentra-7f582/rulesets/c12a5117-1675-4775-b25b-ca463b36e7dc` | **Unchanged by staging work.** |
 | Storage rules | `firebase.storage/guardentra-7f582.firebasestorage.app` → `projects/guardentra-7f582/rulesets/7bf9df8c-474f-4100-b5cc-77d019d7b2a9` | **Unchanged by staging work.** |
 | P0-1 outcome | **DEPLOYED; BUNDLE VERIFIED** | `npm run verify:live` previously passed for `submittedSnapshot`, `correctionReopenedAt`, and `portalOpen:!1`; production end-to-end submission evidence remains separate. |
@@ -86,7 +86,43 @@ This is a navigation ledger, not independent proof. Verify claims using the issu
 
 Resolution note: later staging runtime env/traffic fixes (`GCLOUD_PROJECT`, Storage rules agent Firestore viewer IAM, traffic to revision `guardentra-staging-00002-lrg`) resolved the earlier portal-session **500**. Persist these env vars in App Hosting config before the next staging rollout so portal mint does not regress.
 
-PR #46 and this ledger refresh are **documentation-only**. **No deployment, Firebase rules change, App Hosting traffic change, or runtime transition is authorized or implied by this ledger update.**
+## Live runtime state — production (`guardentra-prod`)
+
+**Production application release SHA:** `29171a64078e3943149dccf63d8caa7650ad0125`. This is the deployed application SHA.
+
+Documentation-only repository commits may advance `main` without changing the deployed production application while automatic production rollouts remain **DISABLED**.
+
+| Layer | Live state | Reconciliation |
+|---|---|---|
+| Firebase project | `guardentra-prod` (project number `191663365586`) | **Provisioned** and owner-accessible; billing linked; org `280975227603` |
+| App Hosting | backend `guardentra-prod`, `us-central1`, GitHub `main` | Deployed application SHA `29171a64078e3943149dccf63d8caa7650ad0125`; build `build-2026-08-27-001` **READY**; rollout **SUCCEEDED** at **100%**; Cloud Run revision `guardentra-prod-build-2026-08-27-001` |
+| Automatic rollouts | **DISABLED** (`codebaseBranch=main`) | Manual first rollout only; auto-roll remains off |
+| Production hosted URL | `https://guardentra-prod--guardentra-prod.us-central1.hosted.app` | Homepage **200**; `/api/health` **200** |
+| Custom domain | **NONE** on this backend | `guardentra.com` remains on `guardentra-7f582` |
+| Runtime env | `APP_ENV=production`; `GCLOUD_PROJECT=guardentra-prod`; `GOOGLE_CLOUD_PROJECT=guardentra-prod`; `FIREBASE_STORAGE_BUCKET=guardentra-prod.firebasestorage.app`; `AUDIT_SPINE_ENABLED=false` | Set via App Hosting `overrideEnv` (no spine / no Cloud SQL) |
+| Auth providers | Email/password **ENABLED**; Google **ENABLED**; Anonymous **DISABLED** | Portal uses scoped custom tokens (`portalAssessmentId`), not anonymous |
+| Firestore rules | `projects/guardentra-prod/releases/cloud.firestore` → `projects/guardentra-prod/rulesets/2e9c308d-9889-4b16-8d55-63b4c77e5ce4` | Deployed 2026-08-27 from approved SHA rules |
+| Storage rules | `projects/guardentra-prod/releases/firebase.storage/guardentra-prod.firebasestorage.app` → `projects/guardentra-prod/rulesets/76913163-f67e-44d6-b262-6362447d8726` | Deployed 2026-08-27; Storage SA granted `roles/datastore.viewer` for `firestore.get()` |
+| Portal security gate | **LIVE VERIFIED — PASS** | Mode **`[mode: scoped-token]`**; A→A read/write **PASS**; A→B isolation **PASS**; submit/lock **PASS**; Storage A→A **PASS** / A→B **DENIED**; unauthenticated denials **PASS**; synthetic fixtures deleted |
+| Malware scanner | **NOT IMPLEMENTED** | MIME/size/type validation is **not** malware scanning; do not fabricate `clean` |
+
+### Production portal E2E (verified 2026-08-27)
+
+| Check | Result |
+|---|---|
+| Scoped-token mint (`portalAssessmentId`) | **PASS** |
+| Mode | **`scoped-token`** (anonymous disabled / not used) |
+| A→A Firestore read/write | **PASS** |
+| A→B Firestore read/write | **PASS** (denied) |
+| Submit + lock | **PASS** |
+| Storage A→A / A→B / unauth / invalid path | **PASS** |
+| Synthetic fixture cleanup | **PASS** (assessments/orgs + portal object deleted) |
+| Synthetic Auth cleanup | **PENDING** (owner-authorized deletion in progress) |
+| Synthetic gate users remaining | verify after cleanup |
+
+**Domain cutover:** **NOT AUTHORIZED / NOT PERFORMED.** Public traffic remains on `guardentra-7f582`.
+
+PR for this ledger refresh is **documentation-only**. **No App Hosting traffic change, DNS edit, or domain mapping is authorized or implied by this ledger update.**
 
 ## Delivery position
 
@@ -100,28 +136,29 @@ PR #46 and this ledger refresh are **documentation-only**. **No deployment, Fire
 | Framework engine | #29–#31 | Not ready | Requires hardening and OSCAL-first authorization |
 | Licensed adapters | #32 | Blocked | Requires executed permission and technical gates |
 | Security spine | #12–#17 | Planned | Continue in dependency order after P0 gates |
-| Staging verification | Infrastructure + portal E2E | **LIVE VERIFIED** on `guardentra-staging` | Persist staging Admin env in App Hosting; optional `guardentra-dev` / `guardentra-prod` provisioning requires separate authorization |
+| Staging verification | Infrastructure + portal E2E | **LIVE VERIFIED** on `guardentra-staging` | Persist staging Admin env in App Hosting config |
+| Production (`guardentra-prod`) | App + rules + scoped portal E2E | **LIVE VERIFIED** on hosted.app (deployed application SHA `29171a6…` / `build-2026-08-27-001`) | Synthetic Auth cleanup (owner-authorized); domain migration prep; separate cutover authorization |
 
 ## Current blockers and risks
 
-1. `https://guardentra.com` still runs on production-equivalent legacy project `guardentra-7f582`, not the intended permanent `guardentra-prod`.
-2. Permanent production project `guardentra-prod` is **not yet verified/provisioned**.
+1. `https://guardentra.com` still runs on production-equivalent legacy project `guardentra-7f582`, not `guardentra-prod` hosted URL.
+2. Domain cutover / DNS change for `guardentra.com` is **NOT AUTHORIZED**.
 3. Dev project `guardentra-dev` may still be absent / not verified.
-4. Production end-to-end P0-1 submission evidence is not recorded, although bundle verification passes.
+4. Production end-to-end customer submission evidence on the public domain is not recorded (prod hosted.app security gate **PASS**; public-domain cutover pending).
 5. PR #7 is stale.
 6. Framework rights/provenance remain `unknown` or escalated for inventoried claim rows unless owner/publisher/counsel evidence is attached; product wording must stay conservative.
 7. There is no malware scanner. MIME/size/extension is not a scan. Authoritative `clean` still requires real scanner state plus matching path and generation.
 8. Staging portal mint depends on runtime Admin project env (`GCLOUD_PROJECT`, `FIREBASE_STORAGE_BUCKET`); these are live on revision `guardentra-staging-00002-lrg` but are **not yet codified in committed App Hosting config**.
+9. Residual synthetic Auth user on `guardentra-prod`: `gate-noclaim-*@guardentra-test.invalid` — owner authorized deletion 2026-09-01; verify count **0** after cleanup completes.
 
-**Removed stale blocker:** separate staging does not exist — **staging exists and is live verified.**
+**Removed stale blocker:** permanent production project absent — **`guardentra-prod` is provisioned, application LIVE, rules LIVE, portal E2E PASS** (domain still on legacy).
 
 ## Next authorized actions
 
-1. Review and, only with owner authorization, **merge PR #46**. Do not deploy from that PR.
-2. Persist staging Admin env in App Hosting (or staging-only override) via a separate authorized PR — not part of PR #46.
-3. **No production deployment** to `guardentra-7f582` or `guardentra-prod` without a separate explicit owner command (`deploy production`).
-4. Migration/cutover from `guardentra-7f582` to `guardentra-prod` requires separate owner authorization.
-5. Do not merge PR #36. Do not delete `fix/p0-2-evidence-before-scan`. Do not reopen PR #39.
+1. Review and, only with owner authorization, **merge this documentation PR**. Do not deploy from it.
+2. Persist staging Admin env in App Hosting (or staging-only override) via a separate authorized PR.
+3. **No `guardentra.com` cutover** without a separate explicit owner command after reviewing DNS/rollback evidence and completing domain migration preparation.
+4. Do not merge PR #36. Do not delete `fix/p0-2-evidence-before-scan`. Do not reopen PR #39.
 
 ## Daily reporting
 
