@@ -253,3 +253,12 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
 - This documentation PR: docs-only; **NOT DEPLOYED**; does not change DNS, App Hosting traffic, or rules.
 - Next authorized action: owner merge of this docs PR when satisfied; separate explicit command required for Auth cleanup and for any `guardentra.com` cutover.
 
+## 2026-09-01 — PR #48 finalize: production SHA ledger clarification (docs only; no cutover)
+
+- Verifier: Cursor (`tool:cursor`). Owner authorization: finalize PR #48 ledger wording; merge when CI green; **no public traffic cutover**.
+- **Production application release SHA:** `29171a64078e3943149dccf63d8caa7650ad0125`. This is the deployed application SHA. Documentation-only repository commits may advance `main` without changing the deployed production application while automatic production rollouts remain **DISABLED**.
+- Synthetic Auth cleanup (uid `yut6NIvWCeZXBYAQE2v71yXIPP52`): owner authorized 2026-09-01; **BLOCKED** this session — GCP/Firebase OAuth reauth required (`invalid_rapt` / non-interactive refresh failure). Re-run after interactive `gcloud auth login --update-adc`.
+- Domain migration preparation (`Migrate a domain` on `guardentra-prod`): **BLOCKED** same credential failure; no custom domain API create performed this session.
+- Public traffic: `guardentra.com` remains on legacy `guardentra-7f582` / backend `guardentra` / build `build-2026-08-22-001`.
+- Deployment: docs merge must **NOT** trigger application rollout (automatic rollouts **DISABLED** on `guardentra-prod`).
+
