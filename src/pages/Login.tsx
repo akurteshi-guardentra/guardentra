@@ -5,8 +5,6 @@ import { signInWithGoogle, signInWithEmail, signUpWithEmail, resetPassword } fro
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Shield, Loader2, Mail, Lock, User, AlertCircle } from 'lucide-react';
-import { isLocallyOnboarded } from '../lib/onboardingFlag';
-
 export function Login() {
   const { user, profile, loading: authLoading } = useAuth();
   const [isSignUp, setIsSignUp] = useState(false);
@@ -18,9 +16,10 @@ export function Login() {
   const [resetMessage, setResetMessage] = useState('');
   const isInIframe = window.self !== window.top;
 
-  // Wait until auth + profile are resolved. A signed-in user with profile still
-  // null must not be sent to /onboarding (that flash hit already-onboarded accounts).
-  if (authLoading || (user && !profile && !isLocallyOnboarded(user.uid))) {
+  // Wait until auth + profile are resolved. Cloud profile.onboarded is
+  // authoritative; the local flag is only a loading-time cache to avoid an
+  // onboarding flash while the snapshot arrives after a durable completion.
+  if (authLoading || (user && !profile)) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
         <Loader2 className="h-8 w-8 text-indigo-500 animate-spin" />
@@ -28,8 +27,9 @@ export function Login() {
     );
   }
 
-  if (user) {
-    const done = profile?.onboarded || isLocallyOnboarded(user.uid);
+  if (user && profile) {
+    // Prefer cloud. Local alone never manufactures success when cloud says incomplete.
+    const done = !!profile.onboarded;
     return <Navigate to={done ? '/dashboard' : '/onboarding'} replace />;
   }
 

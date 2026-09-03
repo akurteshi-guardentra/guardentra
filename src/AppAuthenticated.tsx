@@ -4,7 +4,6 @@ import { AuthProvider, useAuth } from './lib/AuthContext';
 import { ComingLater } from './pages/ComingLater';
 import { RouteErrorBoundary } from './components/spine/RouteErrorBoundary';
 import { isFeatureEnabled, type FeatureKey } from './lib/featureFlags';
-import { isLocallyOnboarded } from './lib/onboardingFlag';
 // Spine pages: eager so Vendor → Assess / Impact / triage never white-screens
 // on a stale lazy chunk after deploy.
 import { VendorsDirectory } from './pages/VendorsDirectory';
@@ -62,7 +61,9 @@ function FeatureGate({ flag, children }: { flag: FeatureKey; children: React.Rea
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, profile, loading } = useAuth();
 
-  if (loading || (user && !profile && !isLocallyOnboarded(user.uid))) {
+  // Wait for auth + profile. Local onboarded flag is never enough alone to
+  // skip waiting — cloud users/{uid}.onboarded is authoritative.
+  if (loading || (user && !profile)) {
     return <RouteFallback />;
   }
 
@@ -72,7 +73,6 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   const needsOnboarding =
     !profile?.onboarded &&
-    !isLocallyOnboarded(user.uid) &&
     window.location.pathname !== '/onboarding' &&
     window.location.pathname !== '/login';
 

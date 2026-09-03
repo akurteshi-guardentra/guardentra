@@ -3,6 +3,7 @@ import { auth, db } from '../firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { bootstrapUserProfile } from './orgBootstrap';
+import { clearLocallyOnboarded, setLocallyOnboarded } from './onboardingFlag';
 import { isPortalUid } from './vendor/portalAuth';
 
 interface UserProfile {
@@ -125,6 +126,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 const data = userSnap.data() as UserProfile;
                 console.log('AuthContext: Profile loaded. Onboarded:', data.onboarded);
                 sawCloudProfile = true;
+                // Keep local cache aligned with durable cloud state (cache only).
+                if (data.onboarded) {
+                  setLocallyOnboarded(currentUser.uid);
+                } else {
+                  clearLocallyOnboarded(currentUser.uid);
+                }
                 setProfile(data);
                 setLoading(false);
               } else if (sawCloudProfile) {
