@@ -16,6 +16,7 @@ import { ONBOARDING_FRAMEWORKS } from '../lib/vendor/constants';
 import type { FrameworkId } from '../lib/vendor/types';
 import { currentDefaultsForFrameworks, saveOrgFrameworkPackDefaults } from '../lib/vendor/orgFrameworkPacks';
 import { clearLocallyOnboarded, setLocallyOnboarded } from '../lib/onboardingFlag';
+import { clearOnboardingAck, hasOnboardingAck } from '../lib/onboardingAck';
 
 const ONBOARDING_ICONS: Record<string, typeof Shield> = {
   iso27001: Shield,
@@ -25,7 +26,7 @@ const ONBOARDING_ICONS: Record<string, typeof Shield> = {
 };
 
 export function Onboarding() {
-  const { profile, user, loading } = useAuth();
+  const { profile, user, loading, acknowledgeDurableOnboarding } = useAuth();
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [orgName, setOrgName] = useState('');
@@ -36,16 +37,16 @@ export function Onboarding() {
   const [finishPhase, setFinishPhase] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Cloud profile.onboarded is authoritative. Local cache never redirects alone
-  // when the cloud profile says incomplete.
+  // Cloud profile.onboarded is authoritative. A session ack (after durable write)
+  // prevents clearing cache / bouncing while the listener catches up.
   React.useEffect(() => {
     if (loading) return;
-    if (profile?.onboarded) {
-      if (user) setLocallyOnboarded(user.uid);
+    if (profile?.onboarded || (user && hasOnboardingAck(user.uid))) {
+      if (user && profile?.onboarded) setLocallyOnboarded(user.uid);
       navigate('/dashboard');
       return;
     }
-    if (profile && !profile.onboarded && user) {
+    if (profile && !profile.onboarded && user && !hasOnboardingAck(user.uid)) {
       clearLocallyOnboarded(user.uid);
     }
   }, [profile?.onboarded, profile, loading, user, navigate]);
@@ -156,7 +157,9 @@ export function Onboarding() {
         updatedAt: new Date().toISOString(),
       });
 
-      setLocallyOnboarded(user.uid);
+      // Optimistic AuthContext acknowledgement BEFORE navigate — bridges the
+      // Firestore listener race without making localStorage authoritative.
+      acknowledgeDurableOnboarding();
       localStorage.setItem('guardentra_fallback_org_id', activeOrgId);
 
       if (import.meta.env.DEV) {
@@ -171,6 +174,7 @@ export function Onboarding() {
       console.error('Onboarding finish failed:', err);
       // Do not set local onboarded cache; do not navigate as success.
       clearLocallyOnboarded(user.uid);
+      clearOnboardingAck(user.uid);
       const message =
         err instanceof Error && err.message
           ? err.message
@@ -458,7 +462,7 @@ export function Onboarding() {
                     onClick={async () => {
                       if (!user) return;
                       await updateDoc(doc(db, 'users', user.uid), { onboarded: true });
-                      setLocallyOnboarded(user.uid);
+                      acknowledgeDurableOnboarding();
                       navigate('/dashboard');
                     }}
                     className="text-[10px] text-slate-600 hover:text-slate-400 uppercase tracking-widest"

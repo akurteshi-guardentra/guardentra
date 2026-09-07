@@ -1,6 +1,7 @@
 import React, { Suspense, lazy, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/AuthContext';
+import { hasOnboardingAck } from './lib/onboardingAck';
 import { ComingLater } from './pages/ComingLater';
 import { RouteErrorBoundary } from './components/spine/RouteErrorBoundary';
 import { isFeatureEnabled, type FeatureKey } from './lib/featureFlags';
@@ -61,8 +62,8 @@ function FeatureGate({ flag, children }: { flag: FeatureKey; children: React.Rea
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, profile, loading } = useAuth();
 
-  // Wait for auth + profile. Local onboarded flag is never enough alone to
-  // skip waiting — cloud users/{uid}.onboarded is authoritative.
+  // Wait for auth + profile. Cloud users/{uid}.onboarded is authoritative;
+  // session ack only bridges the post-write listener race.
   if (loading || (user && !profile)) {
     return <RouteFallback />;
   }
@@ -71,8 +72,10 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/login" />;
   }
 
+  const completionAck = hasOnboardingAck(user.uid);
   const needsOnboarding =
     !profile?.onboarded &&
+    !completionAck &&
     window.location.pathname !== '/onboarding' &&
     window.location.pathname !== '/login';
 

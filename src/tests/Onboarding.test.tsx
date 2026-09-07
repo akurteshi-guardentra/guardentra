@@ -9,6 +9,12 @@ import {
   isLocallyOnboarded,
   setLocallyOnboarded,
 } from '../lib/onboardingFlag';
+import {
+  __resetOnboardingAcksForTests,
+  acknowledgeOnboardingComplete,
+  clearOnboardingAck,
+  hasOnboardingAck,
+} from '../lib/onboardingAck';
 import { frameworkComplianceDocId } from '../lib/seeding';
 
 const navigateMock = vi.fn();
@@ -31,6 +37,7 @@ const authState = vi.hoisted(() => ({
     onboarded: false,
   } as any,
   loading: false,
+  acknowledgeDurableOnboarding: () => {},
 }));
 
 vi.mock('../lib/AuthContext', () => ({
@@ -38,6 +45,7 @@ vi.mock('../lib/AuthContext', () => ({
     user: authState.user,
     profile: authState.profile,
     loading: authState.loading,
+    acknowledgeDurableOnboarding: () => authState.acknowledgeDurableOnboarding(),
   }),
   AuthProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
@@ -86,6 +94,7 @@ describe('issue #41 onboarding durability', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     navigateMock.mockReset();
+    __resetOnboardingAcksForTests();
     clearLocallyOnboarded('user-1');
     authState.user = { uid: 'user-1', email: 'admin@example.com', displayName: 'Admin' };
     authState.profile = {
@@ -96,6 +105,11 @@ describe('issue #41 onboarding durability', () => {
       onboarded: false,
     };
     authState.loading = false;
+    authState.acknowledgeDurableOnboarding = () => {
+      acknowledgeOnboardingComplete('user-1');
+      setLocallyOnboarded('user-1');
+      authState.profile = { ...authState.profile, onboarded: true };
+    };
     vi.mocked(firestore.updateDoc).mockResolvedValue(undefined as any);
     vi.mocked(firestore.setDoc).mockResolvedValue(undefined as any);
   });
