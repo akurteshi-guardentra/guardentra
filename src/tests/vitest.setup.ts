@@ -51,6 +51,7 @@ vi.mock('firebase/firestore', () => ({
     return vi.fn();
   }),
   addDoc: vi.fn(),
+  setDoc: vi.fn(() => Promise.resolve()),
   updateDoc: vi.fn(() => Promise.resolve()),
   doc: vi.fn((db, coll, id) => ({ id, collection: coll, path: `${coll}/${id}` })),
   getDocs: vi.fn(() => Promise.resolve({ docs: [], size: 0, empty: true })),

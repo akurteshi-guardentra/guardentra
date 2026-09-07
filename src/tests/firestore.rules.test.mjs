@@ -501,6 +501,157 @@ async function main() {
     }
   });
 
+  // --- Issue #41 sample-seed writeBatch under live rules (PR #49) ---
+  console.log('\nSample-seed writeBatch (issue #41 / PR #49):');
+
+  const ORG_A = 'org-seed-a';
+  const ORG_B = 'org-seed-b';
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const fs = ctx.firestore();
+    await setDoc(doc(fs, 'users/seed-admin-a'), { organizationId: ORG_A, role: 'admin' });
+    await setDoc(doc(fs, 'users/seed-admin-b'), { organizationId: ORG_B, role: 'admin' });
+    await setDoc(doc(fs, `organizations/${ORG_A}`), {
+      name: 'Seed A',
+      industry: 'SaaS',
+      seatCount: 1,
+      vendorCount: 0,
+      vendorCap: 25,
+    });
+    await setDoc(doc(fs, `organizations/${ORG_B}`), {
+      name: 'Seed B',
+      industry: 'SaaS',
+      seatCount: 1,
+      vendorCount: 0,
+      vendorCap: 25,
+    });
+  });
+
+  const seedDb = testEnv.authenticatedContext('seed-admin-a', { email: 'a@example.com' }).firestore();
+
+  function sampleSeedBatch(targetOrg) {
+    const batch = writeBatch(seedDb);
+    const stamp = '2026-09-07T00:00:00.000Z';
+    const id = (col, slug) => `${targetOrg}__sample_v1__${col}__${slug}`;
+    batch.set(doc(seedDb, `risks/${id('risks', 'r1')}`), {
+      organizationId: targetOrg,
+      title: 'Sample risk',
+      category: 'Third-Party Risk',
+      severity: 'High',
+      status: 'Open',
+      impact: 4,
+      likelihood: 3,
+      isSample: true,
+      sampleSeedVersion: 'v1',
+      createdAt: stamp,
+    });
+    batch.set(doc(seedDb, `policies/${id('policies', 'p1')}`), {
+      organizationId: targetOrg,
+      title: 'Sample policy',
+      category: 'Governance',
+      status: 'Active',
+      version: '1.0',
+      isSample: true,
+      sampleSeedVersion: 'v1',
+      createdAt: stamp,
+      updatedAt: stamp,
+    });
+    batch.set(doc(seedDb, `vendors/${id('vendors', 'v1')}`), {
+      organizationId: targetOrg,
+      name: 'Sample Vendor',
+      category: 'Infrastructure',
+      criticality: 'High',
+      status: 'Active',
+      riskScore: 80,
+      isSample: true,
+      sampleSeedVersion: 'v1',
+      createdAt: stamp,
+    });
+    batch.set(doc(seedDb, `compliance/${id('compliance', 'c1')}`), {
+      organizationId: targetOrg,
+      name: 'ISO 27001:2022',
+      status: 'In Progress',
+      progress: 0,
+      isSample: true,
+      sampleSeedVersion: 'v1',
+      createdAt: stamp,
+    });
+    batch.set(doc(seedDb, `incidents/${id('incidents', 'i1')}`), {
+      organizationId: targetOrg,
+      title: 'Sample incident',
+      severity: 'Medium',
+      status: 'Resolved',
+      isSample: true,
+      sampleSeedVersion: 'v1',
+      createdAt: stamp,
+    });
+    batch.set(doc(seedDb, `audit_readiness/${id('audit_readiness', 'iso27001')}`), {
+      organizationId: targetOrg,
+      framework: 'ISO 27001:2022',
+      frameworkId: 'iso27001',
+      readinessScore: 72,
+      status: 'Near Ready',
+      isSample: true,
+      sampleSeedVersion: 'v1',
+      createdAt: stamp,
+    });
+    batch.set(doc(seedDb, `connectors/${id('connectors', 'aws')}`), {
+      organizationId: targetOrg,
+      name: 'Main AWS Account',
+      type: 'AWS',
+      status: 'Connected',
+      findings: 1,
+      health: 90,
+      isSample: true,
+      sampleSeedVersion: 'v1',
+      createdAt: stamp,
+    });
+    batch.set(doc(seedDb, `calendar_events/${id('calendar_events', 'e1')}`), {
+      organizationId: targetOrg,
+      title: 'Internal ISMS Review',
+      startDate: stamp,
+      type: 'Internal Review',
+      isSample: true,
+      sampleSeedVersion: 'v1',
+      createdAt: stamp,
+    });
+    batch.set(doc(seedDb, `identities/${id('identities', 'devon')}`), {
+      organizationId: targetOrg,
+      name: 'Devon Lane',
+      email: 'devon@guardentra.com',
+      device: 'MacBook',
+      accessLevel: 'Global Admin',
+      dataSensitivity: 'Level 5',
+      deviceHealth: 100,
+      riskScore: 5,
+      isSample: true,
+      sampleSeedVersion: 'v1',
+    });
+    batch.set(
+      doc(seedDb, `organizations/${targetOrg}`),
+      { sampleSeedVersion: 'v1', sampleSeededAt: stamp },
+      { merge: true },
+    );
+    return batch;
+  }
+
+  await check('Org A admin sample-seed writeBatch spanning sample collections SUCCEEDS', () =>
+    assertSucceeds(sampleSeedBatch(ORG_A).commit()),
+  );
+
+  await check('deterministic retry of the same Org A sample-seed batch SUCCEEDS (no rule deny)', () =>
+    assertSucceeds(sampleSeedBatch(ORG_A).commit()),
+  );
+
+  await check('retry leaves a single deterministic sample risk doc (no duplicate random ids)', async () => {
+    const snap = await getDoc(doc(seedDb, `risks/${ORG_A}__sample_v1__risks__r1`));
+    if (!snap.exists()) throw new Error('expected deterministic sample risk missing after retry');
+    if (snap.data()?.sampleSeedVersion !== 'v1') throw new Error('sampleSeedVersion missing');
+  });
+
+  await check('Org A admin CANNOT write Org B sample data in a cross-tenant batch', () =>
+    assertFails(sampleSeedBatch(ORG_B).commit()),
+  );
+
   await testEnv.cleanup();
   console.log(`\nResult: ${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);

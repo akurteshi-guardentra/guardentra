@@ -1,10 +1,10 @@
 import React, { Suspense, lazy, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/AuthContext';
+import { hasOnboardingAck } from './lib/onboardingAck';
 import { ComingLater } from './pages/ComingLater';
 import { RouteErrorBoundary } from './components/spine/RouteErrorBoundary';
 import { isFeatureEnabled, type FeatureKey } from './lib/featureFlags';
-import { isLocallyOnboarded } from './lib/onboardingFlag';
 // Spine pages: eager so Vendor → Assess / Impact / triage never white-screens
 // on a stale lazy chunk after deploy.
 import { VendorsDirectory } from './pages/VendorsDirectory';
@@ -62,7 +62,9 @@ function FeatureGate({ flag, children }: { flag: FeatureKey; children: React.Rea
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, profile, loading } = useAuth();
 
-  if (loading || (user && !profile && !isLocallyOnboarded(user.uid))) {
+  // Wait for auth + profile. Cloud users/{uid}.onboarded is authoritative;
+  // session ack only bridges the post-write listener race.
+  if (loading || (user && !profile)) {
     return <RouteFallback />;
   }
 
@@ -70,9 +72,10 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/login" />;
   }
 
+  const completionAck = hasOnboardingAck(user.uid);
   const needsOnboarding =
     !profile?.onboarded &&
-    !isLocallyOnboarded(user.uid) &&
+    !completionAck &&
     window.location.pathname !== '/onboarding' &&
     window.location.pathname !== '/login';
 

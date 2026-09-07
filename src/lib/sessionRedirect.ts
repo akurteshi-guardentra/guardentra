@@ -16,7 +16,7 @@ export function hasPersistedFirebaseSession(): boolean {
 
 /** Resolves dashboard/onboarding path for an already-signed-in user, or null. */
 export async function resolveSignedInRedirect(): Promise<string | null> {
-  const [{ auth, db }, { onAuthStateChanged }, { doc, getDoc }, { isLocallyOnboarded }] =
+  const [{ auth, db }, { onAuthStateChanged }, { doc, getDoc }, { clearLocallyOnboarded, setLocallyOnboarded }] =
     await Promise.all([
       import('../firebase'),
       import('firebase/auth'),
@@ -25,7 +25,8 @@ export async function resolveSignedInRedirect(): Promise<string | null> {
     ]);
 
   const user = await new Promise<(typeof auth)['currentUser']>((resolve) => {
-    const unsub = onAuthStateChanged(auth, (u) => {
+    let unsub: () => void = () => {};
+    unsub = onAuthStateChanged(auth, (u) => {
       unsub();
       resolve(u);
     });
@@ -33,15 +34,18 @@ export async function resolveSignedInRedirect(): Promise<string | null> {
 
   if (!user) return null;
 
-  if (isLocallyOnboarded(user.uid)) return '/dashboard';
-
+  // Cloud profile is authoritative. Do not short-circuit on the local cache —
+  // a stale local flag must not skip a genuinely incomplete cloud profile.
   try {
     const snap = await getDoc(doc(db, 'users', user.uid));
     if (snap.exists()) {
-      // Known profile: honor onboarded. Missing/false → onboarding.
-      // Do not treat a failed/empty read as onboarding for marketing redirects —
-      // that caused a blink of /onboarding for returning users.
-      return snap.data()?.onboarded ? '/dashboard' : '/onboarding';
+      const onboarded = !!snap.data()?.onboarded;
+      if (onboarded) {
+        setLocallyOnboarded(user.uid);
+        return '/dashboard';
+      }
+      clearLocallyOnboarded(user.uid);
+      return '/onboarding';
     }
   } catch {
     // Profile read failed — stay on Landing; Login/Auth will resolve the gate.
