@@ -10,8 +10,14 @@
 #
 # App Hosting builds from a connected GitHub branch. Per docs/ENVIRONMENTS.md the
 # mapping is dev → sandbox, test → staging, main → production, so create one
-# backend per environment and point each at its own Firebase project. This file is
-# shared by all of them; anything environment-specific belongs in the secrets below.
+# backend per environment and point each at its own Firebase project.
+#
+# This file holds safe *common* defaults only. Environment-specific Firebase web
+# identifiers live in:
+#   apphosting.staging.yaml      (Environment name = staging)
+#   apphosting.prod.yaml         (Environment name = prod — current live)
+#   apphosting.production.yaml   (Environment name = production — preferred rename)
+# Deployed Vite builds must never fall back field-by-field to firebase-applet-config.json.
 
 runConfig:
   cpu: 1
@@ -45,12 +51,10 @@ env:
     availability:
       - RUNTIME
 
-  # Vite inlines VITE_* at build time, so this must be BUILD, not RUNTIME —
-  # setting it only at runtime produces a bundle that throws on boot
-  # ("Missing Firebase Web API key", src/firebase.ts).
-  # A Firebase Web API key is a public identifier, not a password (docs/SECRETS.md),
-  # but it is kept in Secret Manager so it never lands in git. Restrict it by HTTP
-  # referrer and API in Google Cloud regardless.
+  # Vite inlines VITE_* at build time, so this must be BUILD, not RUNTIME.
+  # Only the API key remains in the shared file (Secret Manager, per backend).
+  # projectId / authDomain / storageBucket / messagingSenderId / appId MUST come
+  # from apphosting.<env>.yaml — never from demo firebase-applet-config.json.
   - variable: VITE_FIREBASE_API_KEY
     secret: VITE_FIREBASE_API_KEY
     availability:

@@ -150,15 +150,18 @@ PR for this ledger refresh is **documentation-only**. **No App Hosting traffic c
 7. There is no malware scanner. MIME/size/extension is not a scan. Authoritative `clean` still requires real scanner state plus matching path and generation.
 8. Staging portal mint depends on runtime Admin project env (`GCLOUD_PROJECT`, `FIREBASE_STORAGE_BUCKET`); these are live on revision `guardentra-staging-00002-lrg` but are **not yet codified in committed App Hosting config**.
 9. Residual synthetic Auth user on `guardentra-prod`: `gate-noclaim-*@guardentra-test.invalid` — owner authorized deletion 2026-09-01; verify count **0** after cleanup completes.
+10. **P0 Firebase client environment isolation (2026-09-07 audit):** staging App Hosting BUILD env supplied only `VITE_FIREBASE_API_KEY` while `src/firebase.ts` field-by-field fell back to demo `guardentra-7f582` identifiers → classification **MIXED**. Staging backend Environment name was **unset** (so `apphosting.staging.yaml` cannot apply until set to `staging`). Production BUILD overrideEnv includes the full `VITE_FIREBASE_*` name set → classification **SAFE** (secret *values* not re-printed; console overrides still take precedence over yaml). Fix lands in PR on `fix/p0-firebase-environment-isolation` — **NOT DEPLOYED**; do not claim staging remediations until a post-fix staging rollout is verified.
 
 **Removed stale blocker:** permanent production project absent — **`guardentra-prod` is provisioned, application LIVE, rules LIVE, portal E2E PASS** (domain still on legacy).
 
 ## Next authorized actions
 
-1. Review and, only with owner authorization, **merge this documentation PR**. Do not deploy from it.
-2. Persist staging Admin env in App Hosting (or staging-only override) via a separate authorized PR.
-3. **No `guardentra.com` cutover** without a separate explicit owner command after reviewing DNS/rollback evidence and completing domain migration preparation.
-4. Do not merge PR #36. Do not delete `fix/p0-2-evidence-before-scan`. Do not reopen PR #39.
+1. Merge the P0 Firebase environment-isolation PR when CI is green (**no deploy** from merge alone).
+2. Operator: set App Hosting Environment name `guardentra-staging` → `staging` (required for `apphosting.staging.yaml`). Optional preferred rename: `guardentra-prod` Environment `prod` → `production`.
+3. Separate owner command required to **deploy staging** and verify onboarding against `guardentra-staging` only.
+4. Persist staging Admin env in App Hosting (covered by env-specific yaml once Environment name is set).
+5. **No `guardentra.com` cutover** without a separate explicit owner command.
+6. Do not merge PR #36. Do not delete `fix/p0-2-evidence-before-scan`. Do not reopen PR #39.
 
 ## Daily reporting
 
