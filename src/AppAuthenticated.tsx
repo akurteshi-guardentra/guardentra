@@ -2,6 +2,7 @@ import React, { Suspense, lazy, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/AuthContext';
 import { hasOnboardingAck } from './lib/onboardingAck';
+import { ProfileLoadErrorPanel } from './components/ProfileLoadErrorPanel';
 import { ComingLater } from './pages/ComingLater';
 import { RouteErrorBoundary } from './components/spine/RouteErrorBoundary';
 import { isFeatureEnabled, type FeatureKey } from './lib/featureFlags';
@@ -60,7 +61,13 @@ function FeatureGate({ flag, children }: { flag: FeatureKey; children: React.Rea
 }
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading, profileError } = useAuth();
+
+  // Hosted profile load exhausted retries with no cloud profile — recoverable UI,
+  // never invent onboarding / local_org_*.
+  if (user && profileError && !profile) {
+    return <ProfileLoadErrorPanel />;
+  }
 
   // Wait for auth + profile. Cloud users/{uid}.onboarded is authoritative;
   // session ack only bridges the post-write listener race.
