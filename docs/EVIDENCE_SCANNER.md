@@ -59,6 +59,11 @@ A different Storage generation supersedes the prior trust record and starts a ne
 lifecycle (`shouldReplaceTrustRecord`). The same generation is terminal-immutable:
 only an identical `clean` | `quarantined` | `scan_failed` verdict may be replayed.
 
+Scanner terminals require a matching `scan_pending` record for the live generation
+(`canPersistScannerVerdict`). Premature Eventarc/finalize must not call the engine
+or write `clean` / `quarantined` / `scan_failed`; later metadata validation may
+still create `scan_pending` and the normal enqueue scan proceeds.
+
 Approval of `approved` re-checks live Storage metadata and requires
 `reviewerTrustMatchesObject` against the current object generation. A scanner
 event whose `generation` does not match the live object is rejected as

@@ -307,22 +307,57 @@ export function shouldReplaceTrustRecord(
   return true;
 }
 
+/** Scanner-authored terminal states — never produced by metadata validation. */
+export const SCANNER_VERDICT_STATES = ['clean', 'quarantined', 'scan_failed'] as const;
+export type ScannerVerdictState = (typeof SCANNER_VERDICT_STATES)[number];
+
+export function isScannerVerdictState(value: unknown): value is ScannerVerdictState {
+  return typeof value === 'string' && (SCANNER_VERDICT_STATES as readonly string[]).includes(value);
+}
+
+export type ScannerPreScanDecision =
+  | { action: 'scan' }
+  | { action: 'replay'; record: EvidenceTrustRecord }
+  | { action: 'reject'; reason: 'scan_pending_required' };
+
 /**
- * Terminal `clean` may persist only after metadata validation recorded
- * matching `scan_pending` for this Storage generation, or as an idempotent
- * same-generation `clean` replay (G2). Premature clean must not land first:
- * same-gen metadata `quarantined` cannot replace it.
+ * Any scanner terminal (`clean` | `quarantined` | `scan_failed`) may persist
+ * only after metadata validation recorded matching `scan_pending` for this
+ * Storage generation, or as an idempotent same-generation terminal replay (G2).
+ * No trust / uploaded / validation_pending / validated / wrong-generation
+ * `scan_pending` must not receive a scanner verdict.
  */
-export function canPersistScannerClean(
+export function canPersistScannerVerdict(
   existing: EvidenceTrustRecord | undefined,
   next: Pick<EvidenceTrustRecord, 'state' | 'generation'>
 ): boolean {
-  if (next.state !== 'clean') return true;
+  if (!isScannerVerdictState(next.state)) return false;
   if (!existing) return false;
   const existingGen = trustGenerationToken(existing.generation);
   const nextGen = trustGenerationToken(next.generation);
   if (!existingGen || !nextGen || existingGen !== nextGen) return false;
-  return existing.state === 'scan_pending' || existing.state === 'clean';
+  if (existing.state === 'scan_pending') return true;
+  return existing.state === next.state;
+}
+
+/**
+ * Admit scanner work before `scanBuffer()`. Premature Eventarc/finalize must
+ * not invoke the malware engine or write a terminal verdict. Same-generation
+ * completed terminals replay the existing record without rescan or rewrite.
+ */
+export function decideScannerPreScan(
+  existing: EvidenceTrustRecord | undefined,
+  generation: string
+): ScannerPreScanDecision {
+  if (!existing) return { action: 'reject', reason: 'scan_pending_required' };
+  const existingGen = trustGenerationToken(existing.generation);
+  const nextGen = trustGenerationToken(generation);
+  if (!existingGen || !nextGen || existingGen !== nextGen) {
+    return { action: 'reject', reason: 'scan_pending_required' };
+  }
+  if (existing.state === 'scan_pending') return { action: 'scan' };
+  if (TERMINAL.has(existing.state)) return { action: 'replay', record: existing };
+  return { action: 'reject', reason: 'scan_pending_required' };
 }
 
 /** Drop `undefined` so Admin `tx.update` / Firestore does not reject the payload. */
@@ -369,14 +404,6 @@ export function requiredSatisfyingEvidenceItems(input: {
     }
   }
   return out;
-}
-
-/** Scanner-authored terminal states — never produced by metadata validation. */
-export const SCANNER_VERDICT_STATES = ['clean', 'quarantined', 'scan_failed'] as const;
-export type ScannerVerdictState = (typeof SCANNER_VERDICT_STATES)[number];
-
-export function isScannerVerdictState(value: unknown): value is ScannerVerdictState {
-  return typeof value === 'string' && (SCANNER_VERDICT_STATES as readonly string[]).includes(value);
 }
 
 /**

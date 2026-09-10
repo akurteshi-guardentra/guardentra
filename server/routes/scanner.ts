@@ -62,8 +62,9 @@ router.post('/evidence-scan', scannerLimiter, async (req, res) => {
         : undefined;
 
     // GCS Pub/Sub / Eventarc push (object finalize). Finalize can race ahead of
-    // metadata validate; scanPortalEvidenceObject refuses terminal clean unless
-    // matching scan_pending already exists for this generation.
+    // metadata validate; scanPortalEvidenceObject refuses every terminal verdict
+    // unless matching scan_pending already exists for this generation, and does
+    // not invoke the malware engine on that premature path.
     if ((!assessmentId || !storagePath) && req.body?.message?.data) {
       try {
         const raw = Buffer.from(String(req.body.message.data), 'base64').toString('utf8');

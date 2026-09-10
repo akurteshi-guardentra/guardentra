@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   approvalBlockedByUntrustedEvidence,
   buildScannerTrustRecord,
-  canPersistScannerClean,
+  canPersistScannerVerdict,
+  decideScannerPreScan,
   classifyStorageMetadata,
   effectiveEvidenceState,
   evidenceStateLabel,
@@ -278,33 +279,53 @@ describe('scanner trust payload and clean gate', () => {
     expect(omitUndefinedDeep(record).scanner?.signature).toBe('Win.Test.EICAR');
   });
 
-  it('H2-A: clean cannot persist without matching scan_pending generation', () => {
-    const clean = { state: 'clean' as const, generation: '9' };
-    expect(canPersistScannerClean(undefined, clean)).toBe(false);
+  it('H2-A: no scanner terminal may persist without matching scan_pending generation', () => {
+    const pending = { state: 'scan_pending' as const, storagePath: 'p', generation: '9', updatedAt: 't' };
+    for (const state of ['clean', 'quarantined', 'scan_failed'] as const) {
+      const next = { state, generation: '9' };
+      expect(canPersistScannerVerdict(undefined, next)).toBe(false);
+      expect(
+        canPersistScannerVerdict(
+          { state: 'uploaded', storagePath: 'p', generation: '9', updatedAt: 't' },
+          next,
+        ),
+      ).toBe(false);
+      expect(
+        canPersistScannerVerdict(
+          { state: 'validation_pending', storagePath: 'p', generation: '9', updatedAt: 't' },
+          next,
+        ),
+      ).toBe(false);
+      expect(
+        canPersistScannerVerdict(
+          { state: 'validated', storagePath: 'p', generation: '9', updatedAt: 't' },
+          next,
+        ),
+      ).toBe(false);
+      expect(canPersistScannerVerdict({ ...pending, generation: '8' }, next)).toBe(false);
+      expect(canPersistScannerVerdict(pending, next)).toBe(true);
+      expect(
+        canPersistScannerVerdict(
+          { state, storagePath: 'p', generation: '9', updatedAt: 't' },
+          next,
+        ),
+      ).toBe(true);
+    }
     expect(
-      canPersistScannerClean(
-        { state: 'uploaded', storagePath: 'p', generation: '9', updatedAt: 't' },
-        clean,
+      canPersistScannerVerdict(
+        { state: 'quarantined', storagePath: 'p', generation: '9', updatedAt: 't' },
+        { state: 'clean', generation: '9' },
       ),
     ).toBe(false);
-    expect(
-      canPersistScannerClean(
-        { state: 'scan_pending', storagePath: 'p', generation: '8', updatedAt: 't' },
-        clean,
-      ),
-    ).toBe(false);
-    expect(
-      canPersistScannerClean(
-        { state: 'scan_pending', storagePath: 'p', generation: '9', updatedAt: 't' },
-        clean,
-      ),
-    ).toBe(true);
-    expect(
-      canPersistScannerClean(
-        { state: 'clean', storagePath: 'p', generation: '9', updatedAt: 't' },
-        clean,
-      ),
-    ).toBe(true);
+    expect(decideScannerPreScan(undefined, '9')).toEqual({
+      action: 'reject',
+      reason: 'scan_pending_required',
+    });
+    expect(decideScannerPreScan({ state: 'uploaded', storagePath: 'p', generation: '9', updatedAt: 't' }, '9')).toEqual({
+      action: 'reject',
+      reason: 'scan_pending_required',
+    });
+    expect(decideScannerPreScan(pending, '9')).toEqual({ action: 'scan' });
   });
 });
 
