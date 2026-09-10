@@ -58,3 +58,22 @@ env:
     value: "1:965959469996:web:25526a3a432460c6ef0809"
     availability:
       - BUILD
+
+  # Authoritative evidence scanner — enable after ClamAV + secret exist (docs/EVIDENCE_SCANNER.md).
+  # Do not enable without a reachable CLAMAV_HOST; missing ClamAV fail-closes to scan_failed.
+  # - variable: EVIDENCE_SCANNER_ENABLED
+  #   value: "true"
+  #   availability:
+  #     - RUNTIME
+  # - variable: EVIDENCE_SCANNER_SECRET
+  #   secret: EVIDENCE_SCANNER_SECRET
+  #   availability:
+  #     - RUNTIME
+  # - variable: CLAMAV_HOST
+  #   value: clamav.internal
+  #   availability:
+  #     - RUNTIME
+  # - variable: CLAMAV_PORT
+  #   value: "3310"
+  #   availability:
+  #     - RUNTIME

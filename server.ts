@@ -13,6 +13,7 @@ import notifyRoutes from "./server/routes/notify.ts";
 import portalRoutes from "./server/routes/portal.ts";
 import orgEvidenceRoutes from "./server/routes/orgEvidence.ts";
 import auditRoutes from "./server/routes/audit.ts";
+import scannerRoutes from "./server/routes/scanner.ts";
 import { requireFirebaseAuth } from "./server/middleware/requireFirebaseAuth.ts";
 import { startAuditWorker } from "./server/lib/audit/worker.ts";
 import { closeAuditPool } from "./server/lib/audit/pool.ts";
@@ -53,6 +54,9 @@ export async function createApp() {
   // verifies the assessment is open itself. See server/routes/portal.ts.
   app.use("/api/portal", portalRoutes);
   app.use("/api/org", orgEvidenceRoutes);
+  // Internal malware scanner (shared secret). Not behind Firebase Auth —
+  // Eventarc/PubSub and post-validate enqueue use EVIDENCE_SCANNER_SECRET.
+  app.use("/api/internal", scannerRoutes);
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

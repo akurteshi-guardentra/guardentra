@@ -2,8 +2,9 @@
  * P0-2 Option B: evidence trust states and fail-closed helpers.
  *
  * MIME/size/Storage metadata may reach `validated`, then `scan_pending`.
- * `clean` is reserved for a future malware-scanner result and is never
- * produced by validation. Missing/unknown/malformed are untrusted.
+ * `clean` / malware `quarantined` / scanner `scan_failed` are written only by
+ * the trusted backend malware scanner (Admin SDK). Metadata validation never
+ * produces `clean`. Missing/unknown/malformed are untrusted.
  *
  * Authoritative state lives in `evidenceTrustByStoragePath` written by the
  * backend only. Never fall back to client `scanStatus`.
@@ -32,6 +33,13 @@ export type EvidenceTrustRecord = {
   updatedAt: string;
   /** Metadata validation outcome; never a malware-scan claim. */
   validation?: 'validated' | 'rejected';
+  /** Present when a trusted backend scanner wrote the record. */
+  scanner?: {
+    engine: string;
+    verdict: 'clean' | 'infected' | 'error';
+    signature?: string;
+    scannedAt: string;
+  };
 };
 
 export type EvidenceTrustMap = Record<string, EvidenceTrustRecord | EvidenceState>;
@@ -207,11 +215,11 @@ export function evidenceStateLabel(state: EvidenceState | 'missing' | 'unknown' 
     case 'validated':
       return 'Metadata validated';
     case 'scan_pending':
-      return 'Scan pending (no malware scanner)';
+      return 'Scan pending';
     case 'quarantined':
       return 'Quarantined';
     case 'scan_failed':
-      return 'Validation failed';
+      return 'Scan failed';
     case 'clean':
       return 'Authoritative clean';
     case 'missing':
@@ -265,6 +273,15 @@ export function shouldReplaceTrustRecord(
   next: EvidenceTrustRecord
 ): boolean {
   if (!existing) return true;
+  // Object replacement: a different Storage generation always supersedes the prior
+  // trust record (including a prior clean) so stale generations cannot approve.
+  if (
+    existing.generation != null &&
+    next.generation != null &&
+    String(existing.generation) !== String(next.generation)
+  ) {
+    return true;
+  }
   if (TERMINAL.has(existing.state) && existing.state !== next.state) {
     if (STATE_RANK[next.state] < STATE_RANK[existing.state]) return false;
   }
@@ -272,6 +289,50 @@ export function shouldReplaceTrustRecord(
     return false;
   }
   return true;
+}
+
+/** Scanner-authored terminal states — never produced by metadata validation. */
+export const SCANNER_VERDICT_STATES = ['clean', 'quarantined', 'scan_failed'] as const;
+export type ScannerVerdictState = (typeof SCANNER_VERDICT_STATES)[number];
+
+export function isScannerVerdictState(value: unknown): value is ScannerVerdictState {
+  return typeof value === 'string' && (SCANNER_VERDICT_STATES as readonly string[]).includes(value);
+}
+
+/**
+ * Build an authoritative scanner trust record bound to a specific object generation.
+ * Callers must persist via Admin SDK only.
+ */
+export function buildScannerTrustRecord(input: {
+  storagePath: string;
+  generation: string;
+  verdict: 'clean' | 'infected' | 'error';
+  engine: string;
+  signature?: string;
+  contentType?: string;
+  sizeBytes?: number;
+  scannedAt?: string;
+}): EvidenceTrustRecord {
+  const scannedAt = input.scannedAt || new Date().toISOString();
+  let state: ScannerVerdictState;
+  if (input.verdict === 'clean') state = 'clean';
+  else if (input.verdict === 'infected') state = 'quarantined';
+  else state = 'scan_failed';
+
+  return {
+    state,
+    storagePath: input.storagePath,
+    generation: String(input.generation),
+    contentType: input.contentType,
+    sizeBytes: input.sizeBytes,
+    updatedAt: scannedAt,
+    scanner: {
+      engine: input.engine,
+      verdict: input.verdict,
+      signature: input.signature,
+      scannedAt,
+    },
+  };
 }
 
 export function mergeTrustMapEntry(

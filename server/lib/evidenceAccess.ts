@@ -319,6 +319,25 @@ export async function handlePortalValidate(req: Request, res: Response, deps: Ev
       storagePath,
       validation: saved.validation,
     });
+
+    // Authoritative malware scan (async). Only enqueued for scan_pending —
+    // metadata quarantine/failure already terminal for Option B validation.
+    if (saved.state === 'scan_pending') {
+      try {
+        const { enqueuePortalEvidenceScan } = await import('./malwareScanner/scanObject.ts');
+        enqueuePortalEvidenceScan({
+          assessmentId,
+          storagePath,
+          generation: saved.generation,
+          organizationId:
+            assessment.organizationId != null
+              ? String(assessment.organizationId)
+              : undefined,
+        });
+      } catch (err) {
+        console.error('[evidence-scanner] enqueue failed', err);
+      }
+    }
   } catch (err) {
     sendError(res, err, 'Could not validate evidence.');
   }
