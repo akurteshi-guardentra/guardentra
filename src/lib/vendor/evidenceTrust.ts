@@ -308,6 +308,44 @@ export function shouldReplaceTrustRecord(
 }
 
 /**
+ * Terminal `clean` may persist only after metadata validation recorded
+ * matching `scan_pending` for this Storage generation, or as an idempotent
+ * same-generation `clean` replay (G2). Premature clean must not land first:
+ * same-gen metadata `quarantined` cannot replace it.
+ */
+export function canPersistScannerClean(
+  existing: EvidenceTrustRecord | undefined,
+  next: Pick<EvidenceTrustRecord, 'state' | 'generation'>
+): boolean {
+  if (next.state !== 'clean') return true;
+  if (!existing) return false;
+  const existingGen = trustGenerationToken(existing.generation);
+  const nextGen = trustGenerationToken(next.generation);
+  if (!existingGen || !nextGen || existingGen !== nextGen) return false;
+  return existing.state === 'scan_pending' || existing.state === 'clean';
+}
+
+/** Drop `undefined` so Admin `tx.update` / Firestore does not reject the payload. */
+export function omitUndefinedDeep<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => omitUndefinedDeep(item)) as T;
+  }
+  if (value && typeof value === 'object') {
+    const proto = Object.getPrototypeOf(value);
+    if (proto !== Object.prototype && proto !== null) {
+      return value;
+    }
+    const out: Record<string, unknown> = {};
+    for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+      if (nested === undefined) continue;
+      out[key] = omitUndefinedDeep(nested);
+    }
+    return out as T;
+  }
+  return value;
+}
+
+/**
  * Trusted evidence objects that currently satisfy a required evidence
  * requirement. Approval must re-bind each of these to live Storage generation.
  */
@@ -361,7 +399,12 @@ export function buildScannerTrustRecord(input: {
   else if (input.verdict === 'infected') state = 'quarantined';
   else state = 'scan_failed';
 
-  return {
+  const signature =
+    typeof input.signature === 'string' && input.signature.length > 0
+      ? input.signature
+      : undefined;
+
+  return omitUndefinedDeep({
     state,
     storagePath: input.storagePath,
     generation: String(input.generation),
@@ -371,10 +414,10 @@ export function buildScannerTrustRecord(input: {
     scanner: {
       engine: input.engine,
       verdict: input.verdict,
-      signature: input.signature,
+      signature,
       scannedAt,
     },
-  };
+  });
 }
 
 export function mergeTrustMapEntry(

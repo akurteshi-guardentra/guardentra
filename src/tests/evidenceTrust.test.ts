@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   approvalBlockedByUntrustedEvidence,
+  buildScannerTrustRecord,
+  canPersistScannerClean,
   classifyStorageMetadata,
   effectiveEvidenceState,
   evidenceStateLabel,
@@ -12,6 +14,7 @@ import {
   isTrustedEvidence,
   lookupTrustRecord,
   mergeTrustMapEntry,
+  omitUndefinedDeep,
   optionBRecordedState,
   reviewerTrustMatchesObject,
   trustedEvidenceFileNames,
@@ -241,6 +244,67 @@ describe('legacy trust-map keys', () => {
     expect(merged[canonical]).toMatchObject({ state: 'scan_pending', storagePath: path, generation: '1' });
     expect(merged[pr39]).toBeUndefined();
     expect(Object.keys(merged).filter((k) => lookupTrustRecord(path, { [k]: merged[k] }))).toHaveLength(1);
+  });
+});
+
+describe('scanner trust payload and clean gate', () => {
+  it('H1-A: clean build omits undefined optional Firestore fields including signature', () => {
+    const record = buildScannerTrustRecord({
+      storagePath: 'portal/asm1/a.pdf',
+      generation: '7',
+      verdict: 'clean',
+      engine: 'clamav',
+    });
+    expect(record.scanner).not.toHaveProperty('signature');
+    expect(record).not.toHaveProperty('contentType');
+    expect(record).not.toHaveProperty('sizeBytes');
+    const payload = omitUndefinedDeep({
+      ...record,
+      scanner: { ...record.scanner, signature: undefined },
+    });
+    expect(payload.scanner).not.toHaveProperty('signature');
+    expect(JSON.stringify(payload)).not.toContain('signature');
+  });
+
+  it('H1-B: infected build keeps signature when present', () => {
+    const record = buildScannerTrustRecord({
+      storagePath: 'portal/asm1/eicar.txt',
+      generation: '8',
+      verdict: 'infected',
+      engine: 'clamav',
+      signature: 'Win.Test.EICAR',
+    });
+    expect(record.scanner?.signature).toBe('Win.Test.EICAR');
+    expect(omitUndefinedDeep(record).scanner?.signature).toBe('Win.Test.EICAR');
+  });
+
+  it('H2-A: clean cannot persist without matching scan_pending generation', () => {
+    const clean = { state: 'clean' as const, generation: '9' };
+    expect(canPersistScannerClean(undefined, clean)).toBe(false);
+    expect(
+      canPersistScannerClean(
+        { state: 'uploaded', storagePath: 'p', generation: '9', updatedAt: 't' },
+        clean,
+      ),
+    ).toBe(false);
+    expect(
+      canPersistScannerClean(
+        { state: 'scan_pending', storagePath: 'p', generation: '8', updatedAt: 't' },
+        clean,
+      ),
+    ).toBe(false);
+    expect(
+      canPersistScannerClean(
+        { state: 'scan_pending', storagePath: 'p', generation: '9', updatedAt: 't' },
+        clean,
+      ),
+    ).toBe(true);
+    expect(
+      canPersistScannerClean(
+        { state: 'clean', storagePath: 'p', generation: '9', updatedAt: 't' },
+        clean,
+      ),
+    ).toBe(true);
   });
 });
 

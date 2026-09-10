@@ -61,7 +61,9 @@ router.post('/evidence-scan', scannerLimiter, async (req, res) => {
         ? String(req.body.organizationId).trim()
         : undefined;
 
-    // GCS Pub/Sub / Eventarc push (object finalize)
+    // GCS Pub/Sub / Eventarc push (object finalize). Finalize can race ahead of
+    // metadata validate; scanPortalEvidenceObject refuses terminal clean unless
+    // matching scan_pending already exists for this generation.
     if ((!assessmentId || !storagePath) && req.body?.message?.data) {
       try {
         const raw = Buffer.from(String(req.body.message.data), 'base64').toString('utf8');
@@ -91,7 +93,7 @@ router.post('/evidence-scan', scannerLimiter, async (req, res) => {
       const status =
         result.reason === 'assessment_not_found'
           ? 404
-          : result.reason === 'malformed_storage_path' ||
+            : result.reason === 'malformed_storage_path' ||
               result.reason === 'cross_assessment_path' ||
               result.reason === 'cross_tenant' ||
               result.reason === 'invalid_portal_path'
