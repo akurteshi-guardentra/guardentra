@@ -1,9 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { onAuthStateChanged } from 'firebase/auth';
 import { onSnapshot } from 'firebase/firestore';
-import { AuthProvider, useAuth, shouldUseLocalProfileFallback } from '../lib/AuthContext';
+import {
+  AuthProvider,
+  useAuth,
+  shouldUseLocalProfileFallback,
+  HOSTED_PROFILE_MAX_ATTEMPTS,
+  HOSTED_PROFILE_RETRY_BASE_MS,
+  HOSTED_PROFILE_LOAD_ERROR,
+} from '../lib/AuthContext';
 import { __resetOnboardingAcksForTests } from '../lib/onboardingAck';
 import { clearLocallyOnboarded } from '../lib/onboardingFlag';
 
@@ -16,6 +23,10 @@ vi.mock('../lib/orgBootstrap', () => ({
     bootstrapMock(uid, fields),
 }));
 
+vi.mock('../lib/firebase-utils', () => ({
+  logOut: vi.fn(async () => undefined),
+}));
+
 type SnapshotHandler = {
   next: (snap: { exists: () => boolean; data: () => Record<string, unknown> }) => void | Promise<void>;
   error?: (err: { code?: string; message?: string }) => void;
@@ -24,6 +35,7 @@ type SnapshotHandler = {
 const harness = vi.hoisted(() => ({
   authCb: null as null | ((user: unknown) => void),
   snapshot: null as null | SnapshotHandler,
+  snapshotCalls: 0,
   user: {
     uid: 'cloud-user-1',
     email: 'admin@example.com',
@@ -32,7 +44,18 @@ const harness = vi.hoisted(() => ({
 }));
 
 function Probe() {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading, profileError, retryProfileLoad } = useAuth();
+  if (user && profileError && !profile) {
+    return (
+      <div>
+        <div>ProfileLoadError</div>
+        <div>{profileError}</div>
+        <button type="button" onClick={() => retryProfileLoad()}>
+          Retry
+        </button>
+      </div>
+    );
+  }
   if (loading || (user && !profile)) return <div>Loading</div>;
   if (!user) return <div>LoggedOut</div>;
   return (
@@ -97,6 +120,12 @@ async function emitMissingProfile() {
   });
 }
 
+async function emitListenerError(code = 'unavailable') {
+  await act(async () => {
+    harness.snapshot?.error?.({ code, message: code });
+  });
+}
+
 const cloudOnboarded = {
   email: 'admin@example.com',
   displayName: 'Admin',
@@ -109,6 +138,23 @@ const cloudIncomplete = {
   ...cloudOnboarded,
   onboarded: false,
 };
+
+function installAuthMocks() {
+  harness.authCb = null;
+  harness.snapshot = null;
+  harness.snapshotCalls = 0;
+
+  vi.mocked(onAuthStateChanged).mockImplementation(((_auth: unknown, cb: (user: unknown) => void) => {
+    harness.authCb = cb;
+    return vi.fn();
+  }) as unknown as typeof onAuthStateChanged);
+
+  vi.mocked(onSnapshot).mockImplementation(((_ref: unknown, next: SnapshotHandler['next'], error?: SnapshotHandler['error']) => {
+    harness.snapshotCalls += 1;
+    harness.snapshot = { next, error };
+    return vi.fn();
+  }) as unknown as typeof onSnapshot);
+}
 
 describe('shouldUseLocalProfileFallback', () => {
   it('disables local fallback for staging and prod project ids', () => {
@@ -129,20 +175,9 @@ describe('AuthContext hosted onboarding bounce', () => {
     __resetOnboardingAcksForTests();
     clearLocallyOnboarded(harness.user.uid);
     bootstrapMock.mockReset();
-    harness.authCb = null;
-    harness.snapshot = null;
     localStorage.clear();
     vi.stubEnv('VITE_FIREBASE_PROJECT_ID', 'guardentra-staging');
-
-    vi.mocked(onAuthStateChanged).mockImplementation(((_auth: unknown, cb: (user: unknown) => void) => {
-      harness.authCb = cb;
-      return vi.fn();
-    }) as unknown as typeof onAuthStateChanged);
-
-    vi.mocked(onSnapshot).mockImplementation(((_ref: unknown, next: SnapshotHandler['next'], error?: SnapshotHandler['error']) => {
-      harness.snapshot = { next, error };
-      return vi.fn();
-    }) as unknown as typeof onSnapshot);
+    installAuthMocks();
   });
 
   afterEach(() => {
@@ -234,6 +269,78 @@ describe('AuthContext hosted onboarding bounce', () => {
     await emitCloudProfile(cloudIncomplete);
     await waitFor(() => expect(screen.getByText('OnboardingPage')).toBeInTheDocument());
   });
+
+  it('G: hosted listener error before profile → retry, no local_org, no onboarding', async () => {
+    renderApp('/');
+    await signIn();
+    expect(harness.snapshotCalls).toBe(1);
+
+    await emitListenerError('unavailable');
+    expect(screen.getByText('Loading')).toBeInTheDocument();
+    expect(screen.queryByText('OnboardingPage')).toBeNull();
+    expect(localStorage.getItem(`guardentra.localProfile.v1.${harness.user.uid}`)).toBeNull();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(HOSTED_PROFILE_RETRY_BASE_MS);
+    });
+    expect(harness.snapshotCalls).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText('OnboardingPage')).toBeNull();
+    expect(localStorage.getItem(`guardentra.localProfile.v1.${harness.user.uid}`)).toBeNull();
+  });
+
+  it('H: hosted transient error after onboarded=true keeps cloud profile usable', async () => {
+    renderApp('/');
+    await signIn();
+    await emitCloudProfile(cloudOnboarded);
+    await waitFor(() => expect(screen.getByText(/DashboardPage/)).toBeInTheDocument());
+
+    await emitListenerError('unavailable');
+    expect(screen.getByText(/DashboardPage/)).toBeInTheDocument();
+    expect(screen.queryByText('OnboardingPage')).toBeNull();
+    expect(screen.queryByText('ProfileLoadError')).toBeNull();
+    expect(localStorage.getItem(`guardentra.localProfile.v1.${harness.user.uid}`)).toBeNull();
+  });
+
+  it('I: hosted repeated listener failures → recoverable error, not spinner/onboarding', async () => {
+    renderApp('/');
+    await signIn();
+
+    for (let i = 0; i < HOSTED_PROFILE_MAX_ATTEMPTS; i++) {
+      await emitListenerError('unavailable');
+      if (i < HOSTED_PROFILE_MAX_ATTEMPTS - 1) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(HOSTED_PROFILE_RETRY_BASE_MS * 2 ** i + 10);
+        });
+      }
+    }
+
+    await waitFor(() => expect(screen.getByText('ProfileLoadError')).toBeInTheDocument());
+    expect(screen.getByText(HOSTED_PROFILE_LOAD_ERROR)).toBeInTheDocument();
+    expect(screen.queryByText('OnboardingPage')).toBeNull();
+    expect(screen.queryByText('Loading')).toBeNull();
+    expect(localStorage.getItem(`guardentra.localProfile.v1.${harness.user.uid}`)).toBeNull();
+  });
+
+  it('J: Retry after error → cloud onboarded=true → Dashboard', async () => {
+    renderApp('/');
+    await signIn();
+
+    for (let i = 0; i < HOSTED_PROFILE_MAX_ATTEMPTS; i++) {
+      await emitListenerError('unavailable');
+      if (i < HOSTED_PROFILE_MAX_ATTEMPTS - 1) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(HOSTED_PROFILE_RETRY_BASE_MS * 2 ** i + 10);
+        });
+      }
+    }
+
+    await waitFor(() => expect(screen.getByText('ProfileLoadError')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.getByText('Loading')).toBeInTheDocument());
+    await emitCloudProfile(cloudOnboarded);
+    await waitFor(() => expect(screen.getByText(/DashboardPage/)).toBeInTheDocument());
+    expect(screen.queryByText('ProfileLoadError')).toBeNull();
+  });
 });
 
 describe('AuthContext local/demo fallback still available', () => {
@@ -242,20 +349,9 @@ describe('AuthContext local/demo fallback still available', () => {
     __resetOnboardingAcksForTests();
     clearLocallyOnboarded(harness.user.uid);
     bootstrapMock.mockReset();
-    harness.authCb = null;
-    harness.snapshot = null;
     localStorage.clear();
     vi.stubEnv('VITE_FIREBASE_PROJECT_ID', 'guardentra-7f582');
-
-    vi.mocked(onAuthStateChanged).mockImplementation(((_auth: unknown, cb: (user: unknown) => void) => {
-      harness.authCb = cb;
-      return vi.fn();
-    }) as unknown as typeof onAuthStateChanged);
-
-    vi.mocked(onSnapshot).mockImplementation(((_ref: unknown, next: SnapshotHandler['next'], error?: SnapshotHandler['error']) => {
-      harness.snapshot = { next, error };
-      return vi.fn();
-    }) as unknown as typeof onSnapshot);
+    installAuthMocks();
   });
 
   afterEach(() => {

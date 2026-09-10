@@ -2,11 +2,12 @@ import React, { useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../lib/AuthContext';
 import { signInWithGoogle, signInWithEmail, signUpWithEmail, resetPassword } from '../lib/firebase-utils';
+import { ProfileLoadErrorPanel } from '../components/ProfileLoadErrorPanel';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Shield, Loader2, Mail, Lock, User, AlertCircle } from 'lucide-react';
 export function Login() {
-  const { user, profile, loading: authLoading } = useAuth();
+  const { user, profile, loading: authLoading, profileError } = useAuth();
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -15,6 +16,10 @@ export function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const [resetMessage, setResetMessage] = useState('');
   const isInIframe = window.self !== window.top;
+
+  if (user && profileError && !profile) {
+    return <ProfileLoadErrorPanel />;
+  }
 
   // Wait until auth + profile are resolved. Cloud profile.onboarded is
   // authoritative; the local flag is only a loading-time cache to avoid an
