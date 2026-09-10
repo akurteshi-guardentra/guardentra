@@ -11,6 +11,8 @@ import {
 } from './onboardingAck';
 import { clearLocallyOnboarded, setLocallyOnboarded } from './onboardingFlag';
 import { isPortalUid } from './vendor/portalAuth';
+import { DEMO_FIREBASE_PROJECT_ID } from './firebaseClientConfig';
+import { OperationType, handleFirestoreError, isDbMissingError } from './firestoreError';
 
 export interface UserProfile {
   email: string;
@@ -44,9 +46,23 @@ const AuthContext = createContext<AuthContextType>({
   acknowledgeDurableOnboarding: () => {},
 });
 
-import { OperationType, handleFirestoreError, isDbMissingError } from './firestoreError';
-
 const LOCAL_PROFILE_KEY = 'guardentra.localProfile.v1';
+const HOSTED_FIREBASE_PROJECT_IDS = new Set(['guardentra-staging', 'guardentra-prod']);
+
+/**
+ * Local profile fallback (local_org_*, onboarded often false) is for demo/local
+ * only. Hosted staging/prod must treat users/{uid} as authoritative — a timeout
+ * or transient error must not manufacture an incomplete profile that bounces a
+ * completed cloud user to /onboarding after logout/login.
+ */
+export function shouldUseLocalProfileFallback(
+  projectId: string = String(import.meta.env.VITE_FIREBASE_PROJECT_ID || ''),
+): boolean {
+  const id = projectId.trim();
+  if (HOSTED_FIREBASE_PROJECT_IDS.has(id)) return false;
+  // Demo, emulator, unset, or unknown local sandbox may fall back.
+  return true;
+}
 
 function readLocalProfile(uid: string): UserProfile | null {
   try {
@@ -82,6 +98,19 @@ function buildLocalProfile(currentUser: User, opts?: { onboarded?: boolean }): U
   return profile;
 }
 
+function applyLocalProfileFallback(
+  currentUser: User,
+  opts?: { onboarded?: boolean },
+): UserProfile | null {
+  if (!shouldUseLocalProfileFallback()) {
+    console.warn(
+      'AuthContext: Cloud profile unavailable; refusing local profile fallback for hosted Firebase project ' +
+        `(${String(import.meta.env.VITE_FIREBASE_PROJECT_ID || DEMO_FIREBASE_PROJECT_ID)}).`,
+    );
+    return null;
+  }
+  return buildLocalProfile(currentUser, opts);
+}
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -134,6 +163,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setLoading(true);
         try {
           timeoutId = setTimeout(() => {
+            if (!shouldUseLocalProfileFallback()) {
+              console.warn(
+                'AuthContext: Firestore profile still pending after timeout — keeping cloud-authoritative wait (no local_org fallback).',
+              );
+              // Leave loading=true / profile=null so ProtectedRoute stays on the
+              // spinner until users/{uid} arrives. Never invent onboarded=false.
+              return;
+            }
             console.warn('AuthContext: Firestore profile timeout — using local profile fallback.');
             const local = buildLocalProfile(currentUser);
             setProfile(local);
@@ -190,7 +227,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                       /* logged above; intentionally not re-thrown */
                     }
                   }
-                  const local = buildLocalProfile(currentUser, { onboarded: false });
+                  const local = applyLocalProfileFallback(currentUser, { onboarded: false });
                   setProfile(local);
                   setLoading(false);
                 }
@@ -203,15 +240,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 timeoutId = null;
               }
               if (isDbMissingError(error) || error.code === 'permission-denied') {
-                const local = buildLocalProfile(currentUser);
+                const local = applyLocalProfileFallback(currentUser);
                 setProfile(local);
               }
+              // Hosted: keep profile null so the UI waits / shows loader rather than
+              // routing a real cloud user through incomplete local onboarding.
               setLoading(false);
-            }
+            },
           );
         } catch (error) {
           console.error('Error setting up profile listener:', error);
-          const local = buildLocalProfile(currentUser);
+          const local = applyLocalProfileFallback(currentUser);
           setProfile(local);
           setLoading(false);
         }
