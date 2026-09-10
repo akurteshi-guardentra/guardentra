@@ -29,9 +29,24 @@ Replace placeholder IDs in `.firebaserc` once projects exist (`guardentra-dev`, 
 
 ## Client config
 
-- Committed demo config: [`firebase-applet-config.json`](../firebase-applet-config.json) — **demo project identifiers only** (`projectId`, `authDomain`, `appId`, …). The Web **`apiKey` is not committed** (empty in git); GitHub secret scanning flags `AIzaSy…` keys.
-- **Required:** set at least `VITE_FIREBASE_API_KEY` in `.env.local` / App Hosting build env (copy from [`.env.example`](../.env.example)). [`src/firebase.ts`](../src/firebase.ts) reads `VITE_FIREBASE_*` first, then fills other fields from the JSON; it fails loud if the API key is missing.
-- Get the key from Firebase Console → Project settings → Your apps. Restrict it in Google Cloud (HTTP referrers + API allowlist). See **[`docs/SECRETS.md`](./SECRETS.md)** (GitHub alert + rotate checklist).
+**Hard rule:** every deployed client Firebase configuration must be coherent and belong to exactly one Firebase project. Staging/production Vite builds must **not** fall back field-by-field to demo JSON.
+
+| Environment | Firebase project | Client config source |
+|-------------|------------------|----------------------|
+| **local / demo** | `guardentra-7f582` | `VITE_FIREBASE_API_KEY` + committed [`firebase-applet-config.json`](../firebase-applet-config.json) identifiers (dev only) |
+| **staging** | `guardentra-staging` | Complete `VITE_FIREBASE_*` from `apphosting.staging.yaml` (+ API key secret) |
+| **production** | `guardentra-prod` | Complete `VITE_FIREBASE_*` from `apphosting.prod.yaml` / `apphosting.production.yaml` (+ API key secret) |
+
+- Committed demo config: [`firebase-applet-config.json`](../firebase-applet-config.json) — **demo project identifiers only**. The Web **`apiKey` is not committed** (empty in git).
+- Resolver: [`src/lib/firebaseClientConfig.ts`](../src/lib/firebaseClientConfig.ts) (used by [`src/firebase.ts`](../src/firebase.ts) and portal auth).
+  - **Production Vite builds:** require the full set — `VITE_FIREBASE_API_KEY`, `PROJECT_ID`, `AUTH_DOMAIN`, `STORAGE_BUCKET`, `MESSAGING_SENDER_ID`, `APP_ID`. Fail closed when any are missing. No demo merge. Rejects resolving to `guardentra-7f582` in production builds.
+  - **Local/dev:** demo identifiers remain available when no project identifiers are set. Partial env overrides are rejected (would mix environments).
+- **App Hosting:** [`apphosting.yaml`](../apphosting.yaml) holds safe common defaults only (including the API key secret name). Environment-specific identifier files are mandatory:
+  - `apphosting.staging.yaml` — backend Environment name must be `staging`
+  - `apphosting.prod.yaml` — current live backend Environment name is `prod`
+  - `apphosting.production.yaml` — preferred if Environment is renamed to `production`
+- Staging and production Firebase identifiers must **never** cross environments.
+- Get keys from Firebase Console → Project settings → Your apps. Restrict in Google Cloud (HTTP referrers + API allowlist). See **[`docs/SECRETS.md`](./SECRETS.md)**.
 - Never commit prod service-account JSON, live Web API keys, or server API secrets.
 
 ## Server / Cloud Run

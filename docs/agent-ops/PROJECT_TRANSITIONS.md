@@ -262,3 +262,13 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
 - Public traffic: `guardentra.com` remains on legacy `guardentra-7f582` / backend `guardentra` / build `build-2026-08-22-001`.
 - Deployment: docs merge must **NOT** trigger application rollout (automatic rollouts **DISABLED** on `guardentra-prod`).
 
+## 2026-09-07 — P0 Firebase client environment isolation (code PR; NOT DEPLOYED)
+
+- Verifier: Cursor (`tool:cursor`). Owner authorization: audit, implement fix, commit, push, open PR; **DO NOT MERGE / DEPLOY**.
+- Confirmed defect: `src/firebase.ts` resolved `VITE_FIREBASE_* || firebase-applet-config.json` per field; shared `apphosting.yaml` supplied only `VITE_FIREBASE_API_KEY` at BUILD → staging Vite bundles could mix staging API key with demo `guardentra-7f582` projectId/authDomain/bucket/appId (onboarding permission-denied / empty staging tenant).
+- Staging before fix: **MIXED** (live build `build-2026-09-07-001` / SHA `9f5e67b…` BUILD vite vars = `VITE_FIREBASE_API_KEY` only). App Hosting Environment name: **unset**.
+- Production before fix: **SAFE** (BUILD overrideEnv includes full `VITE_FIREBASE_*` name set on backend `guardentra-prod`; Environment name = `prod`). Values not printed.
+- Fix strategy: fail-closed coherent resolver (`src/lib/firebaseClientConfig.ts`); `apphosting.staging.yaml` + `apphosting.prod.yaml` (+ preferred `apphosting.production.yaml`); docs update.
+- Deployment: **NOT DEPLOYED**. Rules/DNS/IAM/data: **unchanged**.
+- Remaining operator actions: set staging Environment name → `staging`; merge PR when authorized; separate **deploy staging** command; optional rename prod Environment `prod` → `production`.
+

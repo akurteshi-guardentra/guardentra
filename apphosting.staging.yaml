@@ -1,0 +1,60 @@
+# Staging overrides for App Hosting backend Environment name = "staging".
+#
+# Merged over apphosting.yaml at build time. Non-secret Firebase web identifiers
+# are committed here so the Vite client never falls back to guardentra-7f582.
+# VITE_FIREBASE_API_KEY remains a Secret Manager reference (per-project value).
+#
+# Operator prerequisite (do not skip): set the guardentra-staging App Hosting
+# backend Environment name to exactly "staging". Until that is set, only
+# apphosting.yaml applies and these BUILD vars are ignored.
+
+env:
+  - variable: APP_ENV
+    value: staging
+    availability:
+      - RUNTIME
+
+  - variable: GCLOUD_PROJECT
+    value: guardentra-staging
+    availability:
+      - RUNTIME
+
+  - variable: GOOGLE_CLOUD_PROJECT
+    value: guardentra-staging
+    availability:
+      - RUNTIME
+
+  - variable: FIREBASE_STORAGE_BUCKET
+    value: guardentra-staging.firebasestorage.app
+    availability:
+      - RUNTIME
+
+  - variable: VITE_FIREBASE_API_KEY
+    secret: VITE_FIREBASE_API_KEY
+    availability:
+      - BUILD
+
+  - variable: VITE_FIREBASE_PROJECT_ID
+    value: guardentra-staging
+    availability:
+      - BUILD
+
+  - variable: VITE_FIREBASE_AUTH_DOMAIN
+    value: guardentra-staging.firebaseapp.com
+    availability:
+      - BUILD
+
+  - variable: VITE_FIREBASE_STORAGE_BUCKET
+    value: guardentra-staging.firebasestorage.app
+    availability:
+      - BUILD
+
+  - variable: VITE_FIREBASE_MESSAGING_SENDER_ID
+    value: "965959469996"
+    availability:
+      - BUILD
+
+  - variable: VITE_FIREBASE_APP_ID
+    value: "1:965959469996:web:25526a3a432460c6ef0809"
+    availability:
+      - BUILD
