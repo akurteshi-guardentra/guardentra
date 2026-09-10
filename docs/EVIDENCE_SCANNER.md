@@ -39,9 +39,15 @@ App Hosting `/api/internal/evidence-scan` URL.
 ## Malware engine
 
 - **Production:** ClamAV via `clamd` TCP INSTREAM (`CLAMAV_HOST`, `CLAMAV_PORT` default 3310).
-- **Tests/local only:** `EVIDENCE_SCANNER_MODE=eicar_only` (EICAR detection). Not for production.
+- **Tests/local only:** `EVIDENCE_SCANNER_MODE=eicar_only` (EICAR detection). Hosted
+  `APP_ENV` values `staging` / `prod` / `production` reject test-only modes and
+  missing/invalid `CLAMAV_HOST`/`CLAMAV_PORT` at startup when the scanner is enabled.
+  Do not silently downgrade a hosted scanner to eicar-only.
 
-If the scanner is enabled but ClamAV is unreachable, verdict is **`scan_failed`** (fail closed).
+If the scanner is enabled in a hosted environment without ClamAV config, startup
+fails closed. If ClamAV is configured but unreachable at scan time, the verdict
+is **`scan_failed`** (fail closed). The app remains deployable with
+`EVIDENCE_SCANNER_ENABLED=false` until scanner infrastructure is configured.
 
 ## Trust write path
 
@@ -49,7 +55,14 @@ If the scanner is enabled but ClamAV is unreachable, verdict is **`scan_failed`*
 
 Fields include `state`, `storagePath`, `generation`, `updatedAt`, `scanner.{engine,verdict,signature,scannedAt}`.
 
-Generation mismatch with a prior `clean` always allows replacement (`shouldReplaceTrustRecord`).
+A different Storage generation supersedes the prior trust record and starts a new
+lifecycle (`shouldReplaceTrustRecord`). The same generation is terminal-immutable:
+only an identical `clean` | `quarantined` | `scan_failed` verdict may be replayed.
+
+Approval of `approved` re-checks live Storage metadata and requires
+`reviewerTrustMatchesObject` against the current object generation. A scanner
+event whose `generation` does not match the live object is rejected as
+`stale_generation` and does not write trust.
 
 ## Staging secrets / IAM (not applied by this PR)
 

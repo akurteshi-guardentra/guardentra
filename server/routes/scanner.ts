@@ -4,7 +4,10 @@ import {
   liveScannerDeps,
   scanPortalEvidenceObject,
 } from '../lib/malwareScanner/scanObject.ts';
-import { parsePortalEvidencePath } from '../lib/malwareScanner/types.ts';
+import {
+  MIN_EVIDENCE_SCANNER_SECRET_LENGTH,
+  parsePortalEvidencePath,
+} from '../lib/malwareScanner/types.ts';
 
 const router = Router();
 
@@ -23,7 +26,7 @@ function timingSafeEqualString(a: string, b: string): boolean {
 
 function requireScannerAuth(req: { headers: Record<string, unknown> }): boolean {
   const expected = String(process.env.EVIDENCE_SCANNER_SECRET || '').trim();
-  if (!expected || expected.length < 16) return false;
+  if (!expected || expected.length < MIN_EVIDENCE_SCANNER_SECRET_LENGTH) return false;
   const header = String(req.headers['x-evidence-scanner-secret'] || '').trim();
   const bearer = String(req.headers.authorization || '');
   const token = bearer.startsWith('Bearer ') ? bearer.slice(7).trim() : header;

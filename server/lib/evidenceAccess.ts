@@ -13,6 +13,7 @@ import {
   lookupTrustRecord,
   mergeTrustMapEntry,
   optionBRecordedState,
+  requiredSatisfyingEvidenceItems,
   reviewerTrustMatchesObject,
   shouldReplaceTrustRecord,
   trustMapAliasKeys,
@@ -483,6 +484,42 @@ export async function handleOrgDecision(req: Request, res: Response, deps: Evide
           409,
           'Required evidence is not trusted. Approval is blocked until an authoritative clean result exists.'
         );
+      }
+      if (outcome === 'approved') {
+        const satisfying = requiredSatisfyingEvidenceItems({
+          questions,
+          evidenceByQuestion: current.evidenceByQuestion as Record<string, unknown[]>,
+          evidenceTrustByStoragePath: current.evidenceTrustByStoragePath as EvidenceTrustMap,
+        });
+        for (const item of satisfying) {
+          const storagePath = String(item.storagePath || '').trim();
+          if (!storagePath) {
+            throw new HttpError(
+              409,
+              'Required evidence is missing a storage path. Approval is blocked.'
+            );
+          }
+          const meta = await deps.getStorageMetadata(storagePath);
+          const trust = lookupTrustRecord(
+            storagePath,
+            current.evidenceTrustByStoragePath as EvidenceTrustMap
+          );
+          if (
+            !meta ||
+            meta.generation == null ||
+            String(meta.generation) === '' ||
+            !reviewerTrustMatchesObject({
+              trust,
+              storagePath,
+              generation: meta.generation,
+            })
+          ) {
+            throw new HttpError(
+              409,
+              'Required evidence does not match the current Storage object generation. Approval is blocked.'
+            );
+          }
+        }
       }
       return buildOrgDecisionPatch({
         outcome,

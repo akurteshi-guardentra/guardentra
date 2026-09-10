@@ -268,27 +268,69 @@ export function isPortalEvidencePath(assessmentId: string, storagePath: string):
   return Boolean(rest) && !rest.includes('/');
 }
 
+function trustGenerationToken(value: string | number | undefined): string {
+  return value != null ? String(value) : '';
+}
+
+/**
+ * Generation-aware, fail-closed trust replacement.
+ *
+ * A proven different Storage generation starts a new trust lifecycle
+ * (prior clean cannot approve the replacement object).
+ *
+ * For the same generation — or when a generation change cannot be proven —
+ * a terminal state (`clean` | `quarantined` | `scan_failed`) is immutable.
+ * Only an identical terminal verdict may be replayed (idempotent). Same-gen
+ * upgrades such as quarantined→clean or scan_failed→clean are rejected.
+ */
 export function shouldReplaceTrustRecord(
   existing: EvidenceTrustRecord | undefined,
   next: EvidenceTrustRecord
 ): boolean {
   if (!existing) return true;
-  // Object replacement: a different Storage generation always supersedes the prior
-  // trust record (including a prior clean) so stale generations cannot approve.
-  if (
-    existing.generation != null &&
-    next.generation != null &&
-    String(existing.generation) !== String(next.generation)
-  ) {
+
+  const existingGen = trustGenerationToken(existing.generation);
+  const nextGen = trustGenerationToken(next.generation);
+  const provenDifferentGeneration = Boolean(existingGen) && Boolean(nextGen) && existingGen !== nextGen;
+
+  if (provenDifferentGeneration) {
     return true;
   }
-  if (TERMINAL.has(existing.state) && existing.state !== next.state) {
-    if (STATE_RANK[next.state] < STATE_RANK[existing.state]) return false;
+
+  if (TERMINAL.has(existing.state)) {
+    return existing.state === next.state;
   }
+
   if (existing.updatedAt && next.updatedAt && existing.updatedAt > next.updatedAt) {
     return false;
   }
   return true;
+}
+
+/**
+ * Trusted evidence objects that currently satisfy a required evidence
+ * requirement. Approval must re-bind each of these to live Storage generation.
+ */
+export function requiredSatisfyingEvidenceItems(input: {
+  questions: Array<{ id?: string; required?: boolean }>;
+  evidenceByQuestion?: Record<string, unknown[]>;
+  evidenceTrustByStoragePath?: EvidenceTrustMap | null;
+}): EvidenceItem[] {
+  const evidenceByQuestion = input.evidenceByQuestion;
+  if (!evidenceByQuestion) return [];
+  const map = input.evidenceTrustByStoragePath;
+  const seen = new Set<string>();
+  const out: EvidenceItem[] = [];
+  for (const q of input.questions) {
+    if (!q.id || q.required === false) continue;
+    for (const item of filterTrustedEvidence(evidenceByQuestion[q.id], map)) {
+      const storagePath = String(item.storagePath || '').trim();
+      if (!storagePath || seen.has(storagePath)) continue;
+      seen.add(storagePath);
+      out.push(item);
+    }
+  }
+  return out;
 }
 
 /** Scanner-authored terminal states — never produced by metadata validation. */
