@@ -71,7 +71,7 @@ event whose `generation` does not match the live object is rejected as
 
 ## Staging ClamAV infrastructure (operator-verified)
 
-Operator-verified infrastructure evidence from Action #4 on **2026-09-11**.
+Operator-verified infrastructure evidence (Actions #4–#8A).
 This is **not** independently GitHub-verified cloud state.
 
 | Item | Value |
@@ -89,18 +89,49 @@ This is **not** independently GitHub-verified cloud state.
 | Firewall | `allow-guardentra-staging-clamav` — source `10.128.0.0/20`, target tag `guardentra-clamav`, `tcp:3310` |
 | clamav-daemon | active |
 | clamav-freshclam | active |
-| Clean-file scan | PASS (Infected files: 0) |
-| Direct VPC egress (repo) | `PRIVATE_RANGES_ONLY` on `default`/`default` in `apphosting.staging.yaml` |
-| `CLAMAV_HOST` / `CLAMAV_PORT` (repo) | `10.128.0.2` / `3310` (RUNTIME; endpoint bind only) |
+| Clean-file scan (on VM) | PASS (Infected files: 0) |
+| Direct VPC egress (repo + live) | `PRIVATE_RANGES_ONLY` on `default`/`default` |
+| `CLAMAV_HOST` / `CLAMAV_PORT` | `10.128.0.2` / `3310` (RUNTIME) |
+
+### Action #7B — exact-commit staging rollout
+
+| Item | Value |
+|------|-------|
+| Source commit | `ebcf6cae16a03b1f66e889d3548054d8ca005739` (PR #52) |
+| Rollout | `rollout-2026-09-12-001` (SUCCEEDED) |
+| Build | `build-2026-09-12-001` (READY) |
+| Cloud Run revision | `guardentra-staging-build-2026-09-12-001` (100% traffic) |
+
+### Private connectivity (operator-verified)
+
+| Item | Value |
+|------|-------|
+| Connectivity test | `guardentra-staging-clamav-3310` |
+| Result | **REACHABLE** |
+| Source | `guardentra-staging-build-2026-09-12-001` |
+| Destination | `10.128.0.2:3310` TCP |
+| ClamAV VM | `guardentra-staging-clamav-01` |
+
+### Action #8A — scanner secret (Secret Manager)
+
+| Item | Value |
+|------|-------|
+| Secret ID | `EVIDENCE_SCANNER_SECRET` |
+| Status | **CREATED** in `guardentra-staging` Secret Manager |
+| Version | `1` enabled |
+| Secret value | **NEVER LOGGED / NOT STORED IN REPO** (symbolic `secret:` reference only) |
+| Runtime SA | `firebase-app-hosting-compute@guardentra-staging.iam.gserviceaccount.com` |
+| IAM | `roles/secretmanager.secretAccessor` |
+| Scope | `EVIDENCE_SCANNER_SECRET` only |
 
 ### Explicitly still offline
 
 | Control | Status |
 |---------|--------|
-| `EVIDENCE_SCANNER_ENABLED` | **NOT ENABLED** (remains commented in `apphosting.staging.yaml`) |
-| `EVIDENCE_SCANNER_SECRET` | **NOT CREATED** |
+| `EVIDENCE_SCANNER_ENABLED` | **NOT ENABLED** (remains commented) |
+| Automatic scanning | **OFF** |
+| Manual authenticated GuardEntra → ClamAV scan | **NOT YET PROVEN** |
 | Eventarc | **NOT CONFIGURED** |
-| App Hosting deployment from this action | **NO** |
 | Production | **UNCHANGED** |
 
 ### Production
@@ -109,15 +140,15 @@ This is **not** independently GitHub-verified cloud state.
 enablement to `apphosting.prod.yaml` / `apphosting.production.yaml` until a
 separate owner-authorized production workstream.
 
-## Staging secrets / IAM (not applied by this action)
+## Staging secrets / IAM
 
-| Item | Purpose |
-|------|---------|
-| `EVIDENCE_SCANNER_ENABLED=true` | Turn on enqueue + scan (**not set**) |
-| `EVIDENCE_SCANNER_SECRET` | Shared secret for `/api/internal/evidence-scan` (≥16 chars) (**not created**) |
-| `CLAMAV_HOST` / `CLAMAV_PORT` | Bound in staging YAML to `10.128.0.2:3310` (does not enable scanning) |
-| App Hosting runtime SA | Storage objectViewer/get + Firestore write on assessments |
-| Eventarc (optional) | Object finalize → scan endpoint (**not configured**) |
+| Item | Purpose / status |
+|------|------------------|
+| `EVIDENCE_SCANNER_ENABLED=true` | Turn on enqueue + scan — **not set** |
+| `EVIDENCE_SCANNER_SECRET` | Secret Manager secret **created**; App Hosting YAML uses symbolic `secret:` reference only |
+| `CLAMAV_HOST` / `CLAMAV_PORT` | Bound to `10.128.0.2:3310` |
+| App Hosting runtime SA | Secret Accessor on this secret; Storage/Firestore for trust writes |
+| Eventarc (optional) | Object finalize → scan endpoint — **not configured** |
 
 ## Local verify
 
