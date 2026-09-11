@@ -69,32 +69,39 @@ Approval of `approved` re-checks live Storage metadata and requires
 event whose `generation` does not match the live object is rejected as
 `stale_generation` and does not write trust.
 
-## Staging VPC target (repo config only — not a deploy)
+## Staging ClamAV infrastructure (operator-verified)
 
-`apphosting.staging.yaml` records Direct VPC egress so a future staging App Hosting
-revision can reach a private ClamAV host. **Scanner remains disabled** until
-private TCP connectivity is proven. Production App Hosting files are **out of scope**.
+Operator-verified infrastructure evidence from Action #4 on **2026-09-11**.
+This is **not** independently GitHub-verified cloud state.
 
 | Item | Value |
 |------|-------|
-| network | `default` |
-| subnetwork | `default` |
-| region | `us-central1` |
+| ClamAV VM | **PROVISIONED — OPERATOR VERIFIED 2026-09-11** |
+| Project | `guardentra-staging` |
+| VM | `guardentra-staging-clamav-01` |
+| Region / zone | `us-central1` / `us-central1-a` |
+| Static private IP | `10.128.0.2` |
+| External IP | **NONE** |
+| Network / subnet | `default` / `default` |
 | CIDR | `10.128.0.0/20` |
-| Direct VPC egress | `PRIVATE_RANGES_ONLY` |
-| ClamAV | will use a private IP |
 | TCP port | `3310` |
-| Scanner | **disabled** (`EVIDENCE_SCANNER_*` / `CLAMAV_*` stay commented) |
+| Cloud NAT | existing `guardentra-staging-nat` reused (`guardentra-staging-nat-router`) |
+| Firewall | `allow-guardentra-staging-clamav` — source `10.128.0.0/20`, target tag `guardentra-clamav`, `tcp:3310` |
+| clamav-daemon | active |
+| clamav-freshclam | active |
+| Clean-file scan | PASS (Infected files: 0) |
+| Direct VPC egress (repo) | `PRIVATE_RANGES_ONLY` on `default`/`default` in `apphosting.staging.yaml` |
+| `CLAMAV_HOST` / `CLAMAV_PORT` (repo) | `10.128.0.2` / `3310` (RUNTIME; endpoint bind only) |
 
-### NOT YET PROVISIONED
+### Explicitly still offline
 
-The following are **not** created, enabled, or deployed by this repository change:
-
-- ClamAV VM
-- Static private IP
-- Scanner secret (`EVIDENCE_SCANNER_SECRET`)
-- Scanner enablement (`EVIDENCE_SCANNER_ENABLED`)
-- Eventarc (Storage finalize → scan endpoint)
+| Control | Status |
+|---------|--------|
+| `EVIDENCE_SCANNER_ENABLED` | **NOT ENABLED** (remains commented in `apphosting.staging.yaml`) |
+| `EVIDENCE_SCANNER_SECRET` | **NOT CREATED** |
+| Eventarc | **NOT CONFIGURED** |
+| App Hosting deployment from this action | **NO** |
+| Production | **UNCHANGED** |
 
 ### Production
 
@@ -102,17 +109,15 @@ The following are **not** created, enabled, or deployed by this repository chang
 enablement to `apphosting.prod.yaml` / `apphosting.production.yaml` until a
 separate owner-authorized production workstream.
 
-## Staging secrets / IAM (not applied by this PR)
+## Staging secrets / IAM (not applied by this action)
 
 | Item | Purpose |
 |------|---------|
-| `EVIDENCE_SCANNER_ENABLED=true` | Turn on enqueue + scan |
-| `EVIDENCE_SCANNER_SECRET` | Shared secret for `/api/internal/evidence-scan` (≥16 chars) |
-| `CLAMAV_HOST` / `CLAMAV_PORT` | Reachable ClamAV daemon |
+| `EVIDENCE_SCANNER_ENABLED=true` | Turn on enqueue + scan (**not set**) |
+| `EVIDENCE_SCANNER_SECRET` | Shared secret for `/api/internal/evidence-scan` (≥16 chars) (**not created**) |
+| `CLAMAV_HOST` / `CLAMAV_PORT` | Bound in staging YAML to `10.128.0.2:3310` (does not enable scanning) |
 | App Hosting runtime SA | Storage objectViewer/get + Firestore write on assessments |
-| Eventarc (optional) | Object finalize → scan endpoint |
-
-Deploy ClamAV as a sidecar/Cloud Run service on the same VPC or private IP as App Hosting.
+| Eventarc (optional) | Object finalize → scan endpoint (**not configured**) |
 
 ## Local verify
 
