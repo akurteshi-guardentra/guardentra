@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   approvalBlockedByUntrustedEvidence,
+  buildScannerTrustRecord,
+  canPersistScannerVerdict,
+  decideScannerPreScan,
   classifyStorageMetadata,
   effectiveEvidenceState,
   evidenceStateLabel,
@@ -12,6 +15,7 @@ import {
   isTrustedEvidence,
   lookupTrustRecord,
   mergeTrustMapEntry,
+  omitUndefinedDeep,
   optionBRecordedState,
   reviewerTrustMatchesObject,
   trustedEvidenceFileNames,
@@ -241,6 +245,87 @@ describe('legacy trust-map keys', () => {
     expect(merged[canonical]).toMatchObject({ state: 'scan_pending', storagePath: path, generation: '1' });
     expect(merged[pr39]).toBeUndefined();
     expect(Object.keys(merged).filter((k) => lookupTrustRecord(path, { [k]: merged[k] }))).toHaveLength(1);
+  });
+});
+
+describe('scanner trust payload and clean gate', () => {
+  it('H1-A: clean build omits undefined optional Firestore fields including signature', () => {
+    const record = buildScannerTrustRecord({
+      storagePath: 'portal/asm1/a.pdf',
+      generation: '7',
+      verdict: 'clean',
+      engine: 'clamav',
+    });
+    expect(record.scanner).not.toHaveProperty('signature');
+    expect(record).not.toHaveProperty('contentType');
+    expect(record).not.toHaveProperty('sizeBytes');
+    const payload = omitUndefinedDeep({
+      ...record,
+      scanner: { ...record.scanner, signature: undefined },
+    });
+    expect(payload.scanner).not.toHaveProperty('signature');
+    expect(JSON.stringify(payload)).not.toContain('signature');
+  });
+
+  it('H1-B: infected build keeps signature when present', () => {
+    const record = buildScannerTrustRecord({
+      storagePath: 'portal/asm1/eicar.txt',
+      generation: '8',
+      verdict: 'infected',
+      engine: 'clamav',
+      signature: 'Win.Test.EICAR',
+    });
+    expect(record.scanner?.signature).toBe('Win.Test.EICAR');
+    expect(omitUndefinedDeep(record).scanner?.signature).toBe('Win.Test.EICAR');
+  });
+
+  it('H2-A: no scanner terminal may persist without matching scan_pending generation', () => {
+    const pending = { state: 'scan_pending' as const, storagePath: 'p', generation: '9', updatedAt: 't' };
+    for (const state of ['clean', 'quarantined', 'scan_failed'] as const) {
+      const next = { state, generation: '9' };
+      expect(canPersistScannerVerdict(undefined, next)).toBe(false);
+      expect(
+        canPersistScannerVerdict(
+          { state: 'uploaded', storagePath: 'p', generation: '9', updatedAt: 't' },
+          next,
+        ),
+      ).toBe(false);
+      expect(
+        canPersistScannerVerdict(
+          { state: 'validation_pending', storagePath: 'p', generation: '9', updatedAt: 't' },
+          next,
+        ),
+      ).toBe(false);
+      expect(
+        canPersistScannerVerdict(
+          { state: 'validated', storagePath: 'p', generation: '9', updatedAt: 't' },
+          next,
+        ),
+      ).toBe(false);
+      expect(canPersistScannerVerdict({ ...pending, generation: '8' }, next)).toBe(false);
+      expect(canPersistScannerVerdict(pending, next)).toBe(true);
+      expect(
+        canPersistScannerVerdict(
+          { state, storagePath: 'p', generation: '9', updatedAt: 't' },
+          next,
+        ),
+      ).toBe(true);
+    }
+    expect(
+      canPersistScannerVerdict(
+        { state: 'quarantined', storagePath: 'p', generation: '9', updatedAt: 't' },
+        { state: 'clean', generation: '9' },
+      ),
+    ).toBe(false);
+    expect(decideScannerPreScan(undefined, '9')).toEqual({
+      action: 'reject',
+      reason: 'scan_pending_required',
+    });
+    expect(decideScannerPreScan({ state: 'uploaded', storagePath: 'p', generation: '9', updatedAt: 't' }, '9')).toEqual({
+      action: 'reject',
+      reason: 'scan_pending_required',
+    });
+    expect(decideScannerPreScan(pending, '9')).toEqual({ action: 'scan' });
   });
 });
 

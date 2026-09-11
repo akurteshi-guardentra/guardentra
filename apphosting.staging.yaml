@@ -7,6 +7,21 @@
 # Operator prerequisite (do not skip): set the guardentra-staging App Hosting
 # backend Environment name to exactly "staging". Until that is set, only
 # apphosting.yaml applies and these BUILD vars are ignored.
+#
+# Direct VPC egress (staging only). Does not enable the evidence scanner.
+# Operator-verified: App Hosting → ClamAV private TCP/3310 is REACHABLE
+# (connectivity test guardentra-staging-clamav-3310; revision
+# guardentra-staging-build-2026-09-12-001 → 10.128.0.2:3310).
+# EVIDENCE_SCANNER_SECRET exists in staging Secret Manager and is referenced below.
+# EVIDENCE_SCANNER_ENABLED remains disabled — automatic scanning stays OFF until
+# owner-authorized enablement after manual authenticated scanner validation.
+
+runConfig:
+  vpcAccess:
+    egress: PRIVATE_RANGES_ONLY
+    networkInterfaces:
+      - network: default
+        subnetwork: default
 
 env:
   - variable: APP_ENV
@@ -58,3 +73,28 @@ env:
     value: "1:965959469996:web:25526a3a432460c6ef0809"
     availability:
       - BUILD
+
+  # Authoritative evidence scanner config (docs/EVIDENCE_SCANNER.md).
+  # Private App Hosting → ClamAV TCP/3310 reachability: operator-verified REACHABLE.
+  # EVIDENCE_SCANNER_SECRET: exists in staging Secret Manager; symbolic reference only.
+  # EVIDENCE_SCANNER_ENABLED: remains DISABLED — automatic scanning OFF.
+  # Manual authenticated GuardEntra → ClamAV scan validation must pass before enablement.
+  # - variable: EVIDENCE_SCANNER_ENABLED
+  #   value: "true"
+  #   availability:
+  #     - RUNTIME
+
+  - variable: EVIDENCE_SCANNER_SECRET
+    secret: EVIDENCE_SCANNER_SECRET
+    availability:
+      - RUNTIME
+
+  - variable: CLAMAV_HOST
+    value: "10.128.0.2"
+    availability:
+      - RUNTIME
+
+  - variable: CLAMAV_PORT
+    value: "3310"
+    availability:
+      - RUNTIME
