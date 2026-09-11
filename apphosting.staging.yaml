@@ -7,6 +7,16 @@
 # Operator prerequisite (do not skip): set the guardentra-staging App Hosting
 # backend Environment name to exactly "staging". Until that is set, only
 # apphosting.yaml applies and these BUILD vars are ignored.
+#
+# Direct VPC egress (staging only). Does not enable the evidence scanner.
+# Scanner env vars below stay commented until private TCP to ClamAV is proven.
+
+runConfig:
+  vpcAccess:
+    egress: PRIVATE_RANGES_ONLY
+    networkInterfaces:
+      - network: default
+        subnetwork: default
 
 env:
   - variable: APP_ENV

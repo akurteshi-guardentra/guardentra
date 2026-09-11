@@ -69,6 +69,39 @@ Approval of `approved` re-checks live Storage metadata and requires
 event whose `generation` does not match the live object is rejected as
 `stale_generation` and does not write trust.
 
+## Staging VPC target (repo config only — not a deploy)
+
+`apphosting.staging.yaml` records Direct VPC egress so a future staging App Hosting
+revision can reach a private ClamAV host. **Scanner remains disabled** until
+private TCP connectivity is proven. Production App Hosting files are **out of scope**.
+
+| Item | Value |
+|------|-------|
+| network | `default` |
+| subnetwork | `default` |
+| region | `us-central1` |
+| CIDR | `10.128.0.0/20` |
+| Direct VPC egress | `PRIVATE_RANGES_ONLY` |
+| ClamAV | will use a private IP |
+| TCP port | `3310` |
+| Scanner | **disabled** (`EVIDENCE_SCANNER_*` / `CLAMAV_*` stay commented) |
+
+### NOT YET PROVISIONED
+
+The following are **not** created, enabled, or deployed by this repository change:
+
+- ClamAV VM
+- Static private IP
+- Scanner secret (`EVIDENCE_SCANNER_SECRET`)
+- Scanner enablement (`EVIDENCE_SCANNER_ENABLED`)
+- Eventarc (Storage finalize → scan endpoint)
+
+### Production
+
+**Out of scope.** Do not add Direct VPC, ClamAV, scanner secrets, or scanner
+enablement to `apphosting.prod.yaml` / `apphosting.production.yaml` until a
+separate owner-authorized production workstream.
+
 ## Staging secrets / IAM (not applied by this PR)
 
 | Item | Purpose |
