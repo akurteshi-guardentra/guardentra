@@ -8,13 +8,18 @@
 # backend Environment name to exactly "staging". Until that is set, only
 # apphosting.yaml applies and these BUILD vars are ignored.
 #
-# Direct VPC egress (staging only). Does not enable the evidence scanner.
+# Direct VPC egress (staging only) for private ClamAV.
 # Operator-verified: App Hosting → ClamAV private TCP/3310 is REACHABLE
-# (connectivity test guardentra-staging-clamav-3310; revision
-# guardentra-staging-build-2026-09-12-001 → 10.128.0.2:3310).
-# EVIDENCE_SCANNER_SECRET exists in staging Secret Manager and is referenced below.
-# EVIDENCE_SCANNER_ENABLED remains disabled — automatic scanning stays OFF until
-# owner-authorized enablement after manual authenticated scanner validation.
+# (connectivity test guardentra-staging-clamav-3310 → 10.128.0.2:3310).
+# EVIDENCE_SCANNER_SECRET: Secret Manager injected (revision
+# guardentra-staging-build-2026-09-12-002); symbolic reference only.
+# Manual authenticated GuardEntra → ClamAV validation PASSED (Action #8E):
+#   clean → clean/clamav/clean; EICAR → quarantined/clamav/infected;
+#   generation binding / stale_generation protection passed.
+# EVIDENCE_SCANNER_ENABLED: ENABLED for STAGING E2E validation only.
+# Enabling this flag does not establish durable event delivery.
+# Eventarc / durable background triggering is NOT configured yet.
+# Production remains disabled / unchanged.
 
 runConfig:
   vpcAccess:
@@ -74,15 +79,16 @@ env:
     availability:
       - BUILD
 
-  # Authoritative evidence scanner config (docs/EVIDENCE_SCANNER.md).
-  # Private App Hosting → ClamAV TCP/3310 reachability: operator-verified REACHABLE.
-  # EVIDENCE_SCANNER_SECRET: exists in staging Secret Manager; symbolic reference only.
-  # EVIDENCE_SCANNER_ENABLED: remains DISABLED — automatic scanning OFF.
-  # Manual authenticated GuardEntra → ClamAV scan validation must pass before enablement.
-  # - variable: EVIDENCE_SCANNER_ENABLED
-  #   value: "true"
-  #   availability:
-  #     - RUNTIME
+  # Authoritative evidence scanner (docs/EVIDENCE_SCANNER.md) — STAGING ONLY.
+  # Private App Hosting → ClamAV TCP/3310: proven REACHABLE.
+  # EVIDENCE_SCANNER_SECRET: Secret Manager reference (LIVE on build-2026-09-12-002).
+  # Manual authenticated scan proof PASSED (Action #8E).
+  # EVIDENCE_SCANNER_ENABLED: on for staging E2E validation of post-validate enqueue.
+  # Eventarc durable triggering: NOT configured. Production: unchanged.
+  - variable: EVIDENCE_SCANNER_ENABLED
+    value: "true"
+    availability:
+      - RUNTIME
 
   - variable: EVIDENCE_SCANNER_SECRET
     secret: EVIDENCE_SCANNER_SECRET

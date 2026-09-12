@@ -93,14 +93,14 @@ This is **not** independently GitHub-verified cloud state.
 | Direct VPC egress (repo + live) | `PRIVATE_RANGES_ONLY` on `default`/`default` |
 | `CLAMAV_HOST` / `CLAMAV_PORT` | `10.128.0.2` / `3310` (RUNTIME) |
 
-### Action #7B — exact-commit staging rollout
+### Action #7B — exact-commit staging rollout (VPC + ClamAV host)
 
 | Item | Value |
 |------|-------|
 | Source commit | `ebcf6cae16a03b1f66e889d3548054d8ca005739` (PR #52) |
 | Rollout | `rollout-2026-09-12-001` (SUCCEEDED) |
 | Build | `build-2026-09-12-001` (READY) |
-| Cloud Run revision | `guardentra-staging-build-2026-09-12-001` (100% traffic) |
+| Cloud Run revision | `guardentra-staging-build-2026-09-12-001` (100% traffic at #7B) |
 
 ### Private connectivity (operator-verified)
 
@@ -108,8 +108,7 @@ This is **not** independently GitHub-verified cloud state.
 |------|-------|
 | Connectivity test | `guardentra-staging-clamav-3310` |
 | Result | **REACHABLE** |
-| Source | `guardentra-staging-build-2026-09-12-001` |
-| Destination | `10.128.0.2:3310` TCP |
+| Source | App Hosting revision → `10.128.0.2:3310` TCP |
 | ClamAV VM | `guardentra-staging-clamav-01` |
 
 ### Action #8A — scanner secret (Secret Manager)
@@ -124,14 +123,52 @@ This is **not** independently GitHub-verified cloud state.
 | IAM | `roles/secretmanager.secretAccessor` |
 | Scope | `EVIDENCE_SCANNER_SECRET` only |
 
-### Explicitly still offline
+### Action #8D — secret-reference revision live
+
+| Item | Value |
+|------|-------|
+| Project | `guardentra-staging` |
+| Rollout | `rollout-2026-09-12-002` (SUCCEEDED) |
+| Build | `build-2026-09-12-002` (READY) |
+| Revision | `guardentra-staging-build-2026-09-12-002` (100% traffic) |
+| Source SHA | `483204bb9291371d6faf36ffa70909f13d58291b` |
+| Secret reference | **LIVE** (`EVIDENCE_SCANNER_SECRET` → Secret Manager) |
+| Automatic scanner before #8F | **OFF** (`EVIDENCE_SCANNER_ENABLED` absent) |
+
+### Action #8E — manual authenticated GuardEntra → ClamAV proof
+
+| Item | Value |
+|------|-------|
+| Status | **PASS** |
+| Health | HTTP 200 before / 200 after |
+| No secret | HTTP **401** |
+| Wrong secret | HTTP **401** |
+| Stale generation | HTTP **409** `stale_generation` |
+| Clean fixture | `state=clean`, `engine=clamav`, `verdict=clean`, replay **PASS** |
+| EICAR fixture | `state=quarantined`, `engine=clamav`, `verdict=infected`, signature `Eicar-Test-Signature`, replay **PASS** |
+| Fixture assessment | `scanner-e2e-1789239115031` |
+| Cleanup | temporary Storage objects deleted; temporary Firestore assessment deleted; temporary script removed |
+| Secret value | **NEVER LOGGED / NOT COMMITTED** |
+
+### Action #8F-A — enable staging flag in config (not deployed)
+
+| Item | Value |
+|------|-------|
+| `EVIDENCE_SCANNER_ENABLED` | **ENABLED IN STAGING CONFIG** (`value: "true"`, RUNTIME) |
+| Deployment | **NOT YET DEPLOYED** |
+| Eventarc | **NOT CONFIGURED** |
+| Production | **UNCHANGED** |
+
+Enabling the staging flag does not establish durable event delivery.
+Durable Eventarc/background triggering remains a separate completion gate.
+
+### Explicitly still offline / incomplete
 
 | Control | Status |
 |---------|--------|
-| `EVIDENCE_SCANNER_ENABLED` | **NOT ENABLED** (remains commented) |
-| Automatic scanning | **OFF** |
-| Manual authenticated GuardEntra → ClamAV scan | **NOT YET PROVEN** |
-| Eventarc | **NOT CONFIGURED** |
+| Staging config flag | **ENABLED** in `apphosting.staging.yaml` (this commit) |
+| Staging live automatic scanning | **NOT LIVE** until a separate authorized rollout of this SHA |
+| Eventarc durable trigger | **NOT CONFIGURED** |
 | Production | **UNCHANGED** |
 
 ### Production
@@ -144,7 +181,7 @@ separate owner-authorized production workstream.
 
 | Item | Purpose / status |
 |------|------------------|
-| `EVIDENCE_SCANNER_ENABLED=true` | Turn on enqueue + scan — **not set** |
+| `EVIDENCE_SCANNER_ENABLED=true` | **ENABLED in staging YAML** — not live until next authorized rollout |
 | `EVIDENCE_SCANNER_SECRET` | Secret Manager secret **created**; App Hosting YAML uses symbolic `secret:` reference only |
 | `CLAMAV_HOST` / `CLAMAV_PORT` | Bound to `10.128.0.2:3310` |
 | App Hosting runtime SA | Secret Accessor on this secret; Storage/Firestore for trust writes |
