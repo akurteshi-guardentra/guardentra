@@ -315,18 +315,14 @@ export async function handlePortalValidate(req: Request, res: Response, deps: Ev
       validation: validation === 'validated' ? 'validated' : 'rejected',
     };
     const saved = await deps.writeTrustRecord(assessmentId, storagePath, record);
-    res.json({
-      state: saved.state,
-      storagePath,
-      validation: saved.validation,
-    });
 
-    // Authoritative malware scan (async). Only enqueued for scan_pending —
+    // Authoritative malware scan enqueue. Only for scan_pending —
     // metadata quarantine/failure already terminal for Option B validation.
+    // In cloud_tasks mode, durable createTask MUST complete before HTTP 200.
     if (saved.state === 'scan_pending') {
       try {
         const { enqueuePortalEvidenceScan } = await import('./malwareScanner/scanObject.ts');
-        enqueuePortalEvidenceScan({
+        await enqueuePortalEvidenceScan({
           assessmentId,
           storagePath,
           generation: saved.generation,
@@ -337,8 +333,22 @@ export async function handlePortalValidate(req: Request, res: Response, deps: Ev
         });
       } catch (err) {
         console.error('[evidence-scanner] enqueue failed', err);
+        // Leave scan_pending fail-closed; client may retry evidence-validate.
+        res.status(503).json({
+          error: 'Evidence scan enqueue failed; retry validation.',
+          state: saved.state,
+          storagePath,
+          validation: saved.validation,
+        });
+        return;
       }
     }
+
+    res.json({
+      state: saved.state,
+      storagePath,
+      validation: saved.validation,
+    });
   } catch (err) {
     sendError(res, err, 'Could not validate evidence.');
   }

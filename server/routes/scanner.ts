@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { createRateLimiter } from '../middleware/rateLimit.ts';
+import { verifyEvidenceScanTaskOidc } from '../lib/malwareScanner/taskAuth.ts';
 import {
+  cloudTasksAckStatus,
   liveScannerDeps,
   scanPortalEvidenceObject,
 } from '../lib/malwareScanner/scanObject.ts';
@@ -34,16 +36,11 @@ function requireScannerAuth(req: { headers: Record<string, unknown> }): boolean 
 }
 
 /**
- * Internal authoritative scan endpoint.
+ * Internal authoritative scan endpoint (manual / diagnostic / Eventarc proxy).
  *
- * Auth: shared secret (EVIDENCE_SCANNER_SECRET) — for GCS Eventarc/OIDC proxies
- * or the App Hosting service itself after validate enqueue.
- *
- * Body (preferred):
- *   { assessmentId, storagePath, generation? }
- *
- * Also accepts GCS Pub/Sub push envelopes:
- *   { message: { data: base64(JSON({ name: "projects/.../objects/portal/..." })) } }
+ * Auth: shared secret (EVIDENCE_SCANNER_SECRET).
+ * Body (preferred): { assessmentId, storagePath, generation? }
+ * Also accepts GCS Pub/Sub push envelopes.
  */
 router.post('/evidence-scan', scannerLimiter, async (req, res) => {
   try {
@@ -107,6 +104,58 @@ router.post('/evidence-scan', scannerLimiter, async (req, res) => {
   } catch (err) {
     console.error('[evidence-scanner] route error', err);
     res.status(500).json({ error: 'Evidence scan failed' });
+  }
+});
+
+/**
+ * Durable Cloud Tasks worker.
+ *
+ * Auth: Google-signed OIDC only (audience + task service account).
+ * Does NOT accept EVIDENCE_SCANNER_SECRET.
+ * Invokes the same scanPortalEvidenceObject() trust path.
+ */
+router.post('/evidence-scan-task', scannerLimiter, async (req, res) => {
+  try {
+    const oidc = await verifyEvidenceScanTaskOidc(req);
+    if (!oidc.ok) {
+      const status =
+        oidc.reason === 'missing_token' || oidc.reason === 'invalid_token'
+          ? 401
+          : 403;
+      res.status(status).json({ error: 'Task authentication required', reason: oidc.reason });
+      return;
+    }
+
+    const assessmentId = String(req.body?.assessmentId || '').trim();
+    const storagePath = String(req.body?.storagePath || '').trim();
+    const generation =
+      req.body?.generation != null ? String(req.body.generation).trim() : '';
+    const organizationId =
+      req.body?.organizationId != null
+        ? String(req.body.organizationId).trim()
+        : undefined;
+
+    if (!assessmentId || !storagePath || !generation) {
+      // Malformed durable payload — ACK so Cloud Tasks does not infinite-retry.
+      res.status(200).json({
+        ok: false,
+        reason: 'malformed_task_payload',
+        assessmentId,
+        storagePath,
+      });
+      return;
+    }
+
+    const result = await scanPortalEvidenceObject(
+      { assessmentId, storagePath, generation, organizationId },
+      liveScannerDeps(),
+    );
+    const status = cloudTasksAckStatus(result);
+    res.status(status).json(result);
+  } catch (err) {
+    console.error('[evidence-scanner] task worker error', err);
+    // Transient unexpected failure before durable terminal — NACK for retry.
+    res.status(500).json({ error: 'Evidence scan task failed' });
   }
 });
 

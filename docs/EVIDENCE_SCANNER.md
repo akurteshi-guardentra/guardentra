@@ -7,8 +7,9 @@ portal upload (Storage portal/{assessmentId}/{file})
   → POST /api/portal/evidence-validate
       → metadata classify → scan_pending | quarantined | scan_failed
       → Admin write assessments/{id}.evidenceTrustByStoragePath
-      → if scan_pending: enqueue scanner (when EVIDENCE_SCANNER_ENABLED)
-  → scanner (ClamAV)
+      → if scan_pending + enabled:
+           await durable enqueue (Cloud Tasks) OR inline setImmediate
+  → scanner worker (ClamAV)
       → clean | quarantined | scan_failed
       → Admin write trust record bound to Storage generation
   → reviewer download / approved decision require authoritative clean
@@ -22,19 +23,37 @@ Metadata validation **never** writes `clean`.
 | Path | Role |
 |------|------|
 | `src/lib/vendor/evidenceTrust.ts` | States, generation binding, `buildScannerTrustRecord` |
-| `server/lib/malwareScanner/` | ClamAV engine + scan/write |
-| `server/routes/scanner.ts` | `POST /api/internal/evidence-scan` |
-| `server/lib/evidenceAccess.ts` | Validate → enqueue |
+| `server/lib/malwareScanner/` | ClamAV engine + scan/write + Cloud Tasks adapter |
+| `server/routes/scanner.ts` | `POST /api/internal/evidence-scan` (shared secret) + `POST /api/internal/evidence-scan-task` (OIDC) |
+| `server/lib/evidenceAccess.ts` | Validate → await enqueue |
 
-## Trigger mechanisms
+## Trigger / delivery mechanisms
 
-1. **Post-validate enqueue** (in-process `setImmediate`) after `scan_pending`.
-2. **HTTP** `POST /api/internal/evidence-scan` with `Authorization: Bearer $EVIDENCE_SCANNER_SECRET`  
-   (or `x-evidence-scanner-secret`). Accepts direct JSON or GCS Pub/Sub push envelopes.
+1. **Post-validate enqueue** after `scan_pending` is persisted:
+   - `EVIDENCE_SCANNER_DELIVERY=inline` (default): process-local `setImmediate` — **not durable** across process exit.
+   - `EVIDENCE_SCANNER_DELIVERY=cloud_tasks`: **await** Cloud Tasks `createTask` **before** HTTP 200. Incomplete cloud_tasks config fails closed.
+2. **HTTP** `POST /api/internal/evidence-scan` with `Authorization: Bearer $EVIDENCE_SCANNER_SECRET`
+   (or `x-evidence-scanner-secret`) — manual/diagnostic / optional Eventarc proxy.
+3. **HTTP** `POST /api/internal/evidence-scan-task` — Cloud Tasks worker. Google-signed **OIDC only**
+   (audience + task service account). Does **not** accept the scanner shared secret.
 
-Recommended staging/prod: Eventarc **google.cloud.storage.object.v1.finalized** on the
-project bucket → authenticated push (or OIDC proxy that adds the shared secret) to the
-App Hosting `/api/internal/evidence-scan` URL.
+### Cloud Tasks contract (implementation in progress — infra not provisioned in #8H-A)
+
+| Variable | Purpose |
+|----------|---------|
+| `EVIDENCE_SCANNER_DELIVERY` | `inline` (default) \| `cloud_tasks` |
+| `EVIDENCE_SCANNER_TASK_PROJECT` | GCP project for the queue |
+| `EVIDENCE_SCANNER_TASK_LOCATION` | Queue region (e.g. `us-central1`) |
+| `EVIDENCE_SCANNER_TASK_QUEUE` | Queue id |
+| `EVIDENCE_SCANNER_TASK_TARGET_URL` | Absolute URL to `/api/internal/evidence-scan-task` |
+| `EVIDENCE_SCANNER_TASK_AUDIENCE` | Exact OIDC audience |
+| `EVIDENCE_SCANNER_TASK_SERVICE_ACCOUNT` | Exact task SA email for OIDC |
+
+Task body fields **only**: `assessmentId`, `storagePath`, `generation`, optional `organizationId`.
+**Never** includes `EVIDENCE_SCANNER_SECRET`, Firebase ID tokens, or other credentials.
+Task id is a deterministic hash of `(assessmentId, storagePath, generation)`; `ALREADY_EXISTS` = success.
+
+Eventarc remains optional and **not configured**. Cloud Tasks is the durability path for post-validate scans.
 
 ## Malware engine
 
@@ -150,25 +169,63 @@ This is **not** independently GitHub-verified cloud state.
 | Cleanup | temporary Storage objects deleted; temporary Firestore assessment deleted; temporary script removed |
 | Secret value | **NEVER LOGGED / NOT COMMITTED** |
 
-### Action #8F-A — enable staging flag in config (not deployed)
+### Action #8F-A — enable staging flag in config
 
 | Item | Value |
 |------|-------|
 | `EVIDENCE_SCANNER_ENABLED` | **ENABLED IN STAGING CONFIG** (`value: "true"`, RUNTIME) |
-| Deployment | **NOT YET DEPLOYED** |
+| Commit | `5c3887097845d020c2d47dd1fa3a069739568cdc` |
+
+### Action #8F-C — staging rollout (scanner flag LIVE)
+
+| Item | Value |
+|------|-------|
+| Rollout | `rollout-2026-09-13-001` (SUCCEEDED) |
+| Build | `build-2026-09-13-001` (READY) |
+| Revision | `guardentra-staging-build-2026-09-13-001` (100% traffic) |
+| Source SHA | `5c3887097845d020c2d47dd1fa3a069739568cdc` |
+| `EVIDENCE_SCANNER_ENABLED` | **`true` LIVE** |
+| Delivery at this revision | **inline** `setImmediate` (happy path only; not durable) |
+
+### Action #8G — staging portal automatic scan E2E
+
+| Item | Value |
+|------|-------|
+| Status | **PASS** |
+| Revision | `guardentra-staging-build-2026-09-13-001` |
+| Source | `5c3887097845d020c2d47dd1fa3a069739568cdc` |
+| Portal session | **PASS** |
+| Firebase client Storage upload | **PASS** |
+| Clean | `scan_pending` → `clean` / `clamav` / `clean` |
+| EICAR | `scan_pending` → `quarantined` / `clamav` / `infected` (`Eicar-Test-Signature`) |
+| Direct `/api/internal/evidence-scan` calls | **ZERO** |
+| Harness `EVIDENCE_SCANNER_SECRET` access | **ZERO** |
+| Generation binding | **PASS** |
+| Validate replay | **PASS** |
+| Cleanup | **PASS** |
+| Durability | **NOT YET PROVEN** (inline enqueue) |
+
+### Action #8H-A — durable Cloud Tasks delivery (repo only)
+
+| Item | Value |
+|------|-------|
+| Status | **IMPLEMENTATION IN PROGRESS** (this commit) |
+| Code | Cloud Tasks adapter + OIDC worker route + await-before-200 enqueue |
+| Cloud Tasks API / queue / IAM | **NOT PROVISIONED** (separate action) |
+| Staging deploy of cloud_tasks mode | **NOT DONE** |
 | Eventarc | **NOT CONFIGURED** |
 | Production | **UNCHANGED** |
 
-Enabling the staging flag does not establish durable event delivery.
-Durable Eventarc/background triggering remains a separate completion gate.
+Enabling the staging flag / proving #8G does **not** establish durable delivery.
+Durable Cloud Tasks infra + staging `EVIDENCE_SCANNER_DELIVERY=cloud_tasks` remain separate gates.
 
 ### Explicitly still offline / incomplete
 
 | Control | Status |
 |---------|--------|
-| Staging config flag | **ENABLED** in `apphosting.staging.yaml` (this commit) |
-| Staging live automatic scanning | **NOT LIVE** until a separate authorized rollout of this SHA |
-| Eventarc durable trigger | **NOT CONFIGURED** |
+| Staging automatic happy path (#8G) | **PROVEN** (inline) |
+| Durable Cloud Tasks delivery | **CODE READY** — infra/config/deploy **NOT** done |
+| Eventarc | **NOT CONFIGURED** |
 | Production | **UNCHANGED** |
 
 ### Production
@@ -181,10 +238,11 @@ separate owner-authorized production workstream.
 
 | Item | Purpose / status |
 |------|------------------|
-| `EVIDENCE_SCANNER_ENABLED=true` | **ENABLED in staging YAML** — not live until next authorized rollout |
+| `EVIDENCE_SCANNER_ENABLED=true` | **LIVE** on staging revision `…-2026-09-13-001` |
 | `EVIDENCE_SCANNER_SECRET` | Secret Manager secret **created**; App Hosting YAML uses symbolic `secret:` reference only |
 | `CLAMAV_HOST` / `CLAMAV_PORT` | Bound to `10.128.0.2:3310` |
 | App Hosting runtime SA | Secret Accessor on this secret; Storage/Firestore for trust writes |
+| Cloud Tasks queue / task SA | **NOT CREATED** (required before `EVIDENCE_SCANNER_DELIVERY=cloud_tasks`) |
 | Eventarc (optional) | Object finalize → scan endpoint — **not configured** |
 
 ## Local verify
