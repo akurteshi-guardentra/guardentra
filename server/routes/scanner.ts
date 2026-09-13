@@ -112,9 +112,11 @@ router.post('/evidence-scan', scannerLimiter, async (req, res) => {
  *
  * Auth: Google-signed OIDC only (audience + task service account).
  * Does NOT accept EVIDENCE_SCANNER_SECRET.
+ * Does NOT use the shared IP scannerLimiter — Cloud Tasks dispatch bounds
+ * delivery; an IP limiter would NACK legitimate tasks after unauthenticated floods.
  * Invokes the same scanPortalEvidenceObject() trust path.
  */
-router.post('/evidence-scan-task', scannerLimiter, async (req, res) => {
+router.post('/evidence-scan-task', async (req, res) => {
   try {
     const oidc = await verifyEvidenceScanTaskOidc(req);
     if (!oidc.ok) {

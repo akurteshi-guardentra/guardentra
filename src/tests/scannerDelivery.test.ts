@@ -51,17 +51,24 @@ function mockRes() {
   const res: {
     statusCode: number;
     body: unknown;
+    headers: Record<string, string>;
     status: (n: number) => typeof res;
     json: (b: unknown) => typeof res;
+    setHeader: (k: string, v: string) => typeof res;
   } = {
     statusCode: 200,
     body: null,
+    headers: {},
     status(n) {
       this.statusCode = n;
       return this;
     },
     json(b) {
       this.body = b;
+      return this;
+    },
+    setHeader(k, v) {
+      this.headers[k] = v;
       return this;
     },
   };
@@ -471,21 +478,81 @@ describe('Cloud Tasks worker ACK mapping', () => {
 });
 
 describe('task worker route auth + scan', () => {
-  function invokeRoute(
-    path: string,
-    req: { headers?: Record<string, unknown>; body?: Record<string, unknown> },
-  ) {
+  function routeLayer(path: string) {
     const layer = (scannerRouter as any).stack.find(
       (l: any) => l.route?.path === path && l.route?.methods?.post,
     );
     expect(layer).toBeTruthy();
+    return layer;
+  }
+
+  /** Invoke only the final route handler (skips middleware). */
+  function invokeHandler(
+    path: string,
+    req: { headers?: Record<string, unknown>; body?: Record<string, unknown>; ip?: string },
+  ) {
+    const layer = routeLayer(path);
     const handler = layer.route.stack[layer.route.stack.length - 1].handle;
     const res = mockRes();
     return handler(req as any, res as any, () => undefined).then(() => res);
   }
 
+  /** Run the full Express route stack (middleware + handler). */
+  async function invokeFullRoute(
+    path: string,
+    req: { headers?: Record<string, unknown>; body?: Record<string, unknown>; ip?: string },
+  ) {
+    const layer = routeLayer(path);
+    const res = mockRes();
+    const request = { ip: '127.0.0.1', headers: {}, body: {}, ...req } as any;
+    const stack = layer.route.stack as Array<{ handle: Function }>;
+
+    await new Promise<void>((resolve, reject) => {
+      let idx = 0;
+      const next = (err?: unknown) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        if (idx >= stack.length) {
+          resolve();
+          return;
+        }
+        const step = stack[idx++];
+        let advanced = false;
+        const stepNext = (e?: unknown) => {
+          advanced = true;
+          next(e);
+        };
+        try {
+          const out = step.handle(request, res as any, stepNext);
+          if (out && typeof (out as Promise<unknown>).then === 'function') {
+            (out as Promise<unknown>).then(() => resolve(), reject);
+          } else if (!advanced) {
+            // Sync middleware ended the chain (e.g. 429) without calling next.
+            resolve();
+          }
+        } catch (e) {
+          reject(e);
+        }
+      };
+      next();
+    });
+    return res;
+  }
+
+  it('task route does not mount the shared IP scannerLimiter', () => {
+    const task = routeLayer('/evidence-scan-task');
+    const manual = routeLayer('/evidence-scan');
+    expect(task.route.stack.length).toBe(1);
+    expect(manual.route.stack.length).toBeGreaterThan(1);
+    // Manual route keeps rate-limit middleware ahead of the handler.
+    expect(manual.route.stack[0].handle.length).toBe(3);
+    expect(task.route.stack[0].handle.length).toBe(2);
+  });
+
   it('rejects shared-secret on task route (missing OIDC)', async () => {
-    const res = await invokeRoute('/evidence-scan-task', {
+    const res = await invokeHandler('/evidence-scan-task', {
       headers: {
         authorization: `Bearer ${TASK_ENV.EVIDENCE_SCANNER_SECRET}`,
         'x-evidence-scanner-secret': TASK_ENV.EVIDENCE_SCANNER_SECRET,
@@ -500,11 +567,43 @@ describe('task worker route auth + scan', () => {
   });
 
   it('keeps manual shared-secret route protected', async () => {
-    const res = await invokeRoute('/evidence-scan', {
+    const res = await invokeHandler('/evidence-scan', {
       headers: {},
       body: { assessmentId: 'asmA', storagePath: 'portal/asmA/a.pdf' },
     });
     expect(res.statusCode).toBe(401);
+  });
+
+  it('manual evidence-scan remains rate limited; task route does not 429 from IP floods', async () => {
+    const floodIp = '203.0.113.50';
+    let saw429 = false;
+    for (let i = 0; i < 130; i++) {
+      const res = await invokeFullRoute('/evidence-scan', {
+        ip: floodIp,
+        headers: {},
+        body: { assessmentId: 'asmA', storagePath: 'portal/asmA/a.pdf' },
+      });
+      if (res.statusCode === 429) {
+        saw429 = true;
+        break;
+      }
+    }
+    expect(saw429).toBe(true);
+
+    // Same client IP flooding the task route must not be blocked by the scanner IP limiter.
+    for (let i = 0; i < 130; i++) {
+      const res = await invokeFullRoute('/evidence-scan-task', {
+        ip: floodIp,
+        headers: {},
+        body: {
+          assessmentId: 'asmA',
+          storagePath: 'portal/asmA/a.pdf',
+          generation: '1',
+        },
+      });
+      expect(res.statusCode).not.toBe(429);
+      expect([401, 403]).toContain(res.statusCode);
+    }
   });
 });
 

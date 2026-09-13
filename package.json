@@ -4,6 +4,9 @@
   "version": "1.2.0",
   "deployment": "2026-04-29-1736",
   "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "tsx server.ts",
     "lint": "tsc --noEmit",
