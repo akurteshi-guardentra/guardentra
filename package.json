@@ -4,6 +4,9 @@
   "version": "1.2.0",
   "deployment": "2026-04-29-1736",
   "type": "module",
+  "engines": {
+    "node": "22.x || 24.x"
+  },
   "scripts": {
     "dev": "tsx server.ts",
     "lint": "tsc --noEmit",
@@ -24,6 +27,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@google-cloud/tasks": "^7.1.0",
     "@google/genai": "^2.3.0",
     "@stripe/stripe-js": "^9.5.0",
     "@types/d3": "^7.4.3",
@@ -35,6 +39,7 @@
     "firebase": "^12.13.0",
     "firebase-admin": "^13.10.0",
     "framer-motion": "^12.38.0",
+    "google-auth-library": "^11.0.2",
     "i18next": "^26.2.0",
     "i18next-browser-languagedetector": "^8.2.1",
     "lucide-react": "^1.16.0",

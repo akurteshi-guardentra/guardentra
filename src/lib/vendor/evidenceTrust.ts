@@ -2,8 +2,9 @@
  * P0-2 Option B: evidence trust states and fail-closed helpers.
  *
  * MIME/size/Storage metadata may reach `validated`, then `scan_pending`.
- * `clean` is reserved for a future malware-scanner result and is never
- * produced by validation. Missing/unknown/malformed are untrusted.
+ * `clean` / malware `quarantined` / scanner `scan_failed` are written only by
+ * the trusted backend malware scanner (Admin SDK). Metadata validation never
+ * produces `clean`. Missing/unknown/malformed are untrusted.
  *
  * Authoritative state lives in `evidenceTrustByStoragePath` written by the
  * backend only. Never fall back to client `scanStatus`.
@@ -32,6 +33,13 @@ export type EvidenceTrustRecord = {
   updatedAt: string;
   /** Metadata validation outcome; never a malware-scan claim. */
   validation?: 'validated' | 'rejected';
+  /** Present when a trusted backend scanner wrote the record. */
+  scanner?: {
+    engine: string;
+    verdict: 'clean' | 'infected' | 'error';
+    signature?: string;
+    scannedAt: string;
+  };
 };
 
 export type EvidenceTrustMap = Record<string, EvidenceTrustRecord | EvidenceState>;
@@ -207,11 +215,11 @@ export function evidenceStateLabel(state: EvidenceState | 'missing' | 'unknown' 
     case 'validated':
       return 'Metadata validated';
     case 'scan_pending':
-      return 'Scan pending (no malware scanner)';
+      return 'Scan pending';
     case 'quarantined':
       return 'Quarantined';
     case 'scan_failed':
-      return 'Validation failed';
+      return 'Scan failed';
     case 'clean':
       return 'Authoritative clean';
     case 'missing':
@@ -260,18 +268,183 @@ export function isPortalEvidencePath(assessmentId: string, storagePath: string):
   return Boolean(rest) && !rest.includes('/');
 }
 
+function trustGenerationToken(value: string | number | undefined): string {
+  return value != null ? String(value) : '';
+}
+
+/**
+ * Generation-aware, fail-closed trust replacement.
+ *
+ * A proven different Storage generation starts a new trust lifecycle
+ * (prior clean cannot approve the replacement object).
+ *
+ * For the same generation — or when a generation change cannot be proven —
+ * a terminal state (`clean` | `quarantined` | `scan_failed`) is immutable.
+ * Only an identical terminal verdict may be replayed (idempotent). Same-gen
+ * upgrades such as quarantined→clean or scan_failed→clean are rejected.
+ */
 export function shouldReplaceTrustRecord(
   existing: EvidenceTrustRecord | undefined,
   next: EvidenceTrustRecord
 ): boolean {
   if (!existing) return true;
-  if (TERMINAL.has(existing.state) && existing.state !== next.state) {
-    if (STATE_RANK[next.state] < STATE_RANK[existing.state]) return false;
+
+  const existingGen = trustGenerationToken(existing.generation);
+  const nextGen = trustGenerationToken(next.generation);
+  const provenDifferentGeneration = Boolean(existingGen) && Boolean(nextGen) && existingGen !== nextGen;
+
+  if (provenDifferentGeneration) {
+    return true;
   }
+
+  if (TERMINAL.has(existing.state)) {
+    return existing.state === next.state;
+  }
+
   if (existing.updatedAt && next.updatedAt && existing.updatedAt > next.updatedAt) {
     return false;
   }
   return true;
+}
+
+/** Scanner-authored terminal states — never produced by metadata validation. */
+export const SCANNER_VERDICT_STATES = ['clean', 'quarantined', 'scan_failed'] as const;
+export type ScannerVerdictState = (typeof SCANNER_VERDICT_STATES)[number];
+
+export function isScannerVerdictState(value: unknown): value is ScannerVerdictState {
+  return typeof value === 'string' && (SCANNER_VERDICT_STATES as readonly string[]).includes(value);
+}
+
+export type ScannerPreScanDecision =
+  | { action: 'scan' }
+  | { action: 'replay'; record: EvidenceTrustRecord }
+  | { action: 'reject'; reason: 'scan_pending_required' };
+
+/**
+ * Any scanner terminal (`clean` | `quarantined` | `scan_failed`) may persist
+ * only after metadata validation recorded matching `scan_pending` for this
+ * Storage generation, or as an idempotent same-generation terminal replay (G2).
+ * No trust / uploaded / validation_pending / validated / wrong-generation
+ * `scan_pending` must not receive a scanner verdict.
+ */
+export function canPersistScannerVerdict(
+  existing: EvidenceTrustRecord | undefined,
+  next: Pick<EvidenceTrustRecord, 'state' | 'generation'>
+): boolean {
+  if (!isScannerVerdictState(next.state)) return false;
+  if (!existing) return false;
+  const existingGen = trustGenerationToken(existing.generation);
+  const nextGen = trustGenerationToken(next.generation);
+  if (!existingGen || !nextGen || existingGen !== nextGen) return false;
+  if (existing.state === 'scan_pending') return true;
+  return existing.state === next.state;
+}
+
+/**
+ * Admit scanner work before `scanBuffer()`. Premature Eventarc/finalize must
+ * not invoke the malware engine or write a terminal verdict. Same-generation
+ * completed terminals replay the existing record without rescan or rewrite.
+ */
+export function decideScannerPreScan(
+  existing: EvidenceTrustRecord | undefined,
+  generation: string
+): ScannerPreScanDecision {
+  if (!existing) return { action: 'reject', reason: 'scan_pending_required' };
+  const existingGen = trustGenerationToken(existing.generation);
+  const nextGen = trustGenerationToken(generation);
+  if (!existingGen || !nextGen || existingGen !== nextGen) {
+    return { action: 'reject', reason: 'scan_pending_required' };
+  }
+  if (existing.state === 'scan_pending') return { action: 'scan' };
+  if (TERMINAL.has(existing.state)) return { action: 'replay', record: existing };
+  return { action: 'reject', reason: 'scan_pending_required' };
+}
+
+/** Drop `undefined` so Admin `tx.update` / Firestore does not reject the payload. */
+export function omitUndefinedDeep<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => omitUndefinedDeep(item)) as T;
+  }
+  if (value && typeof value === 'object') {
+    const proto = Object.getPrototypeOf(value);
+    if (proto !== Object.prototype && proto !== null) {
+      return value;
+    }
+    const out: Record<string, unknown> = {};
+    for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+      if (nested === undefined) continue;
+      out[key] = omitUndefinedDeep(nested);
+    }
+    return out as T;
+  }
+  return value;
+}
+
+/**
+ * Trusted evidence objects that currently satisfy a required evidence
+ * requirement. Approval must re-bind each of these to live Storage generation.
+ */
+export function requiredSatisfyingEvidenceItems(input: {
+  questions: Array<{ id?: string; required?: boolean }>;
+  evidenceByQuestion?: Record<string, unknown[]>;
+  evidenceTrustByStoragePath?: EvidenceTrustMap | null;
+}): EvidenceItem[] {
+  const evidenceByQuestion = input.evidenceByQuestion;
+  if (!evidenceByQuestion) return [];
+  const map = input.evidenceTrustByStoragePath;
+  const seen = new Set<string>();
+  const out: EvidenceItem[] = [];
+  for (const q of input.questions) {
+    if (!q.id || q.required === false) continue;
+    for (const item of filterTrustedEvidence(evidenceByQuestion[q.id], map)) {
+      const storagePath = String(item.storagePath || '').trim();
+      if (!storagePath || seen.has(storagePath)) continue;
+      seen.add(storagePath);
+      out.push(item);
+    }
+  }
+  return out;
+}
+
+/**
+ * Build an authoritative scanner trust record bound to a specific object generation.
+ * Callers must persist via Admin SDK only.
+ */
+export function buildScannerTrustRecord(input: {
+  storagePath: string;
+  generation: string;
+  verdict: 'clean' | 'infected' | 'error';
+  engine: string;
+  signature?: string;
+  contentType?: string;
+  sizeBytes?: number;
+  scannedAt?: string;
+}): EvidenceTrustRecord {
+  const scannedAt = input.scannedAt || new Date().toISOString();
+  let state: ScannerVerdictState;
+  if (input.verdict === 'clean') state = 'clean';
+  else if (input.verdict === 'infected') state = 'quarantined';
+  else state = 'scan_failed';
+
+  const signature =
+    typeof input.signature === 'string' && input.signature.length > 0
+      ? input.signature
+      : undefined;
+
+  return omitUndefinedDeep({
+    state,
+    storagePath: input.storagePath,
+    generation: String(input.generation),
+    contentType: input.contentType,
+    sizeBytes: input.sizeBytes,
+    updatedAt: scannedAt,
+    scanner: {
+      engine: input.engine,
+      verdict: input.verdict,
+      signature,
+      scannedAt,
+    },
+  });
 }
 
 export function mergeTrustMapEntry(

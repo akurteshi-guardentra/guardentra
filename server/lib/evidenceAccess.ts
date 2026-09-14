@@ -13,6 +13,7 @@ import {
   lookupTrustRecord,
   mergeTrustMapEntry,
   optionBRecordedState,
+  requiredSatisfyingEvidenceItems,
   reviewerTrustMatchesObject,
   shouldReplaceTrustRecord,
   trustMapAliasKeys,
@@ -314,6 +315,35 @@ export async function handlePortalValidate(req: Request, res: Response, deps: Ev
       validation: validation === 'validated' ? 'validated' : 'rejected',
     };
     const saved = await deps.writeTrustRecord(assessmentId, storagePath, record);
+
+    // Authoritative malware scan enqueue. Only for scan_pending —
+    // metadata quarantine/failure already terminal for Option B validation.
+    // In cloud_tasks mode, durable createTask MUST complete before HTTP 200.
+    if (saved.state === 'scan_pending') {
+      try {
+        const { enqueuePortalEvidenceScan } = await import('./malwareScanner/scanObject.ts');
+        await enqueuePortalEvidenceScan({
+          assessmentId,
+          storagePath,
+          generation: saved.generation,
+          organizationId:
+            assessment.organizationId != null
+              ? String(assessment.organizationId)
+              : undefined,
+        });
+      } catch (err) {
+        console.error('[evidence-scanner] enqueue failed', err);
+        // Leave scan_pending fail-closed; client may retry evidence-validate.
+        res.status(503).json({
+          error: 'Evidence scan enqueue failed; retry validation.',
+          state: saved.state,
+          storagePath,
+          validation: saved.validation,
+        });
+        return;
+      }
+    }
+
     res.json({
       state: saved.state,
       storagePath,
@@ -464,6 +494,42 @@ export async function handleOrgDecision(req: Request, res: Response, deps: Evide
           409,
           'Required evidence is not trusted. Approval is blocked until an authoritative clean result exists.'
         );
+      }
+      if (outcome === 'approved') {
+        const satisfying = requiredSatisfyingEvidenceItems({
+          questions,
+          evidenceByQuestion: current.evidenceByQuestion as Record<string, unknown[]>,
+          evidenceTrustByStoragePath: current.evidenceTrustByStoragePath as EvidenceTrustMap,
+        });
+        for (const item of satisfying) {
+          const storagePath = String(item.storagePath || '').trim();
+          if (!storagePath) {
+            throw new HttpError(
+              409,
+              'Required evidence is missing a storage path. Approval is blocked.'
+            );
+          }
+          const meta = await deps.getStorageMetadata(storagePath);
+          const trust = lookupTrustRecord(
+            storagePath,
+            current.evidenceTrustByStoragePath as EvidenceTrustMap
+          );
+          if (
+            !meta ||
+            meta.generation == null ||
+            String(meta.generation) === '' ||
+            !reviewerTrustMatchesObject({
+              trust,
+              storagePath,
+              generation: meta.generation,
+            })
+          ) {
+            throw new HttpError(
+              409,
+              'Required evidence does not match the current Storage object generation. Approval is blocked.'
+            );
+          }
+        }
       }
       return buildOrgDecisionPatch({
         outcome,
