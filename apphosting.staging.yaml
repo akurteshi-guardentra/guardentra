@@ -17,9 +17,8 @@
 #   clean → clean/clamav/clean; EICAR → quarantined/clamav/infected;
 #   generation binding / stale_generation protection passed.
 # EVIDENCE_SCANNER_ENABLED: ENABLED for STAGING E2E validation only.
-# Enabling this flag does not establish durable event delivery.
-# Eventarc / durable background triggering is NOT configured yet.
-# Production remains disabled / unchanged.
+# EVIDENCE_SCANNER_DELIVERY=cloud_tasks: durable enqueue after scan_pending
+# (Action #8H-D). Eventarc is NOT configured. Production remains unchanged.
 
 runConfig:
   vpcAccess:
@@ -84,7 +83,8 @@ env:
   # EVIDENCE_SCANNER_SECRET: Secret Manager reference (LIVE on build-2026-09-12-002).
   # Manual authenticated scan proof PASSED (Action #8E).
   # EVIDENCE_SCANNER_ENABLED: on for staging E2E validation of post-validate enqueue.
-  # Eventarc durable triggering: NOT configured. Production: unchanged.
+  # Durable delivery: Cloud Tasks (Action #8H-D). Eventarc: NOT configured.
+  # Production: unchanged.
   - variable: EVIDENCE_SCANNER_ENABLED
     value: "true"
     availability:
@@ -102,5 +102,42 @@ env:
 
   - variable: CLAMAV_PORT
     value: "3310"
+    availability:
+      - RUNTIME
+
+  # Durable Cloud Tasks scanner delivery (staging only — Action #8H-D).
+  # TARGET_URL and AUDIENCE must match exactly for OIDC verification.
+  - variable: EVIDENCE_SCANNER_DELIVERY
+    value: cloud_tasks
+    availability:
+      - RUNTIME
+
+  - variable: EVIDENCE_SCANNER_TASK_PROJECT
+    value: guardentra-staging
+    availability:
+      - RUNTIME
+
+  - variable: EVIDENCE_SCANNER_TASK_LOCATION
+    value: us-central1
+    availability:
+      - RUNTIME
+
+  - variable: EVIDENCE_SCANNER_TASK_QUEUE
+    value: evidence-malware-scan
+    availability:
+      - RUNTIME
+
+  - variable: EVIDENCE_SCANNER_TASK_TARGET_URL
+    value: https://guardentra-staging--guardentra-staging.us-central1.hosted.app/api/internal/evidence-scan-task
+    availability:
+      - RUNTIME
+
+  - variable: EVIDENCE_SCANNER_TASK_AUDIENCE
+    value: https://guardentra-staging--guardentra-staging.us-central1.hosted.app/api/internal/evidence-scan-task
+    availability:
+      - RUNTIME
+
+  - variable: EVIDENCE_SCANNER_TASK_SERVICE_ACCOUNT
+    value: evidence-scan-task@guardentra-staging.iam.gserviceaccount.com
     availability:
       - RUNTIME
