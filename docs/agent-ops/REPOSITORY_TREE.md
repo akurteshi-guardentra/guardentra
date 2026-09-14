@@ -1,6 +1,6 @@
 # GuardEntra Repository Map
 
-Verified against GitHub `main` at `2ca586db1f10266577cbc0a29ff363ac2b2377aa` on 2026-08-14. This is a navigation map, not a complete file listing or proof that a feature works, is deployed, secure, or complete.
+Repository map reconciled on 2026-09-15 from GitHub `main` baseline `a322f96146976a98a2b2ee800fdac7cce1af0380`; entries may include governance paths introduced by this Issue #53 change set. This is a navigation map, not a complete file listing or proof that a feature works, is deployed, secure, or complete.
 
 ## When to read this map
 
@@ -25,10 +25,11 @@ Update it after a merge that adds, removes, or renames a top-level path, agent-o
 | `.github/pull_request_template.md` | Mandatory PR evidence and impact fields |
 | `AGENTS.md` | Root authority, execution, evidence, and review rules |
 | `docs/` | Architecture, roadmap, known issues, environment, Phase 2, migration, and operational documentation |
-| `docs/agent-ops/` | Source-of-truth, current project-state ledger, append-only transition log, tool/prompt routing, task packet, handoff, completion evidence, repository map, and cross-review log |
+| `docs/agent-ops/` | Source-of-truth, current project-state ledger, append-only transition log, agentic management model, tool/prompt routing, task packet, handoff, completion evidence, repository map, and cross-review log |
 | `docs/agent-ops/PROJECT_STATE.md` | Current verified position; repository and live deployment state remain separate |
 | `docs/agent-ops/PROJECT_TRANSITIONS.md` | Append-only verified issue, merge, deployment, rollback, and correction history |
-| `docs/agent-ops/TOOL_PROMPT_ROUTER.md` | Task classification, tool selection, and prompt/output contracts |
+| `docs/agent-ops/AGENTIC_MANAGEMENT_MODEL.md` | L0–L5 management hierarchy (Owner → Chief Dispatcher → Managers → Leads → Execution → Assurance); no AI merge/deploy authority |
+| `docs/agent-ops/TOOL_PROMPT_ROUTER.md` | Task classification, management routing, tool selection, and prompt/output contracts |
 | `firestore.rules` / `storage.rules` | Repository source for Firebase security rules; deployed state must be checked separately |
 | `firebase.json` / `.firebaserc` | Firebase targets and local/deploy configuration |
 | `apphosting.yaml` / `Dockerfile` | Hosting/runtime build and deployment configuration |

@@ -2,18 +2,42 @@
 
 Solo-owner model: `@akurteshi-guardentra` is merge authority. Independent review is optional and must not block merge after required CI passes.
 
+Management hierarchy: `docs/agent-ops/AGENTIC_MANAGEMENT_MODEL.md`.
+
+## Management routing
+
+```text
+OWNER (L0)
+  ↓
+CHIEF DISPATCHER (L1)
+  ↓
+MANAGEMENT AGENT (L2)
+  ↓
+DOMAIN LEAD (L3)
+  ↓
+ONE WRITING AGENT / BRANCH (L4, tool:*)
+  ↓
+TESTS + COMPLETION EVIDENCE
+  ↓
+OPTIONAL / RISK-BASED ASSURANCE REVIEW (L5, review:*)
+  ↓
+OWNER FINAL DECISION (merge / deploy / stop)
+```
+
+The Chief Dispatcher and Managers plan and route work. They do **not** gain merge or deployment authority unless the owner command explicitly authorizes that stage. One `tool:*` writer owns each feature branch at a time.
+
 ## Procedure
 
 1. Confirm an approved GitHub issue exists; allow untracked chat requests only for read-only analysis.
-2. Read `PROJECT_STATE.md`; reconcile it with the issue, current GitHub base, and any live-state or pasted tool evidence.
+2. Read `docs/agent-ops/PROJECT_STATE.md` and `docs/agent-ops/AGENTIC_MANAGEMENT_MODEL.md`; reconcile with the issue, current GitHub base, and any live-state or pasted tool evidence.
 3. Resolve requirement/source IDs, acceptance criteria, dependencies, and relevant ADRs.
-4. Classify affected layers and risk.
+4. Classify affected layers and risk; select L2 management owner and L3 domain lead as needed.
 5. Select exactly one writing tool (`tool:*`). Record an optional reviewer (`review:*`) only when risk, uncertainty, or owner preference warrants it.
 6. Identify owner authorization boundaries (especially for T3/T4 work).
-7. Complete `TASK_PACKET_TEMPLATE.md`.
+7. Complete `docs/agent-ops/TASK_PACKET_TEMPLATE.md`.
 8. Create a feature branch from the verified current base only after authorization.
 9. Writer implements, tests, documents, and commits a coherent checkpoint.
-10. Writer completes `COMPLETION_EVIDENCE_TEMPLATE.md`.
+10. Writer completes `docs/agent-ops/COMPLETION_EVIDENCE_TEMPLATE.md`.
 11. Optional reviewer (if requested) checks the recorded SHA, source documents, diff, tests, and live-state evidence where applicable.
 12. Corrections return to the assigned writer; stop after three failed cycles.
 13. **Required CI** gates merge. Owner merges after CI pass and exact diff verification. Deployment requires separate authorization and verification.
@@ -43,11 +67,11 @@ See `AGENTS.md` for prohibited actions at each stage.
 ## Dispatcher prompt
 
 ```text
-You are the GuardEntra dispatcher. Do not edit files, launch applications, merge, push, or deploy unless the owner command explicitly authorizes that stage.
+You are the GuardEntra Chief Dispatcher (L1). Do not edit files, launch applications, merge, push, or deploy unless the owner command explicitly authorizes that stage.
 
-Read AGENTS.md, docs/agent-ops/SOURCE_OF_TRUTH.md, TOOLCHAIN.md, this workflow, and the complete GitHub issue.
+Read AGENTS.md, docs/agent-ops/SOURCE_OF_TRUTH.md, docs/agent-ops/AGENTIC_MANAGEMENT_MODEL.md, docs/agent-ops/TOOLCHAIN.md, this workflow, and the complete GitHub issue.
 
-Return: readiness decision, task classification, risk/access tier, requirement/source IDs, affected layers, recommended single writing tool (tool:*) with reason, optional reviewer (review:*) if warranted, owner authorization needed, tests/evidence, documentation updates, blockers, and a completed task packet.
+Return: readiness decision, management owner (L2), domain lead (L3), task classification, risk/access tier, requirement/source IDs, affected layers, recommended single writing tool (tool:*) with reason, optional reviewer (review:*) if warranted, owner authorization needed, tests/evidence, documentation updates, blockers, and a completed task packet.
 
 If essential information is missing or conflicting, mark the task NOT READY.
 ```
@@ -61,9 +85,9 @@ When the owner pastes output from Cursor, Antigravity, Cloud/Claude, Firebase, a
 
 1. Identify source, issue, branch/commit, and claimed end state.
 2. Separate `CLAIMED` from GitHub-verified, test-verified, merged, deployed, and live-verified facts.
-3. Reconcile repository and live state using `SOURCE_OF_TRUTH.md`.
+3. Reconcile repository and live state using `docs/agent-ops/SOURCE_OF_TRUTH.md`.
 4. Return current position, blockers, decision, and next authorized step.
-5. Generate the next prompt from `TOOL_PROMPT_ROUTER.md`.
-6. When evidence warrants a durable transition, update `PROJECT_STATE.md` and append `PROJECT_TRANSITIONS.md` through a documentation PR.
+5. Generate the next prompt from `docs/agent-ops/TOOL_PROMPT_ROUTER.md`.
+6. When evidence warrants a durable transition, update `docs/agent-ops/PROJECT_STATE.md` and append `docs/agent-ops/PROJECT_TRANSITIONS.md` through a documentation PR.
 
 Never silently promote a pasted report to verified state. Never equate merged with deployed.

@@ -71,13 +71,13 @@ These phrases define **exactly** what an agent may do:
 Before editing, the assigned writer must:
 
 1. Read the complete GitHub issue and this file.
-2. Read `docs/agent-ops/SOURCE_OF_TRUTH.md`, `PROJECT_STATE.md`, `TOOLCHAIN.md`, `TOOL_DISPATCH.md`, and `TOOL_PROMPT_ROUTER.md`.
+2. Read `docs/agent-ops/SOURCE_OF_TRUTH.md`, `docs/agent-ops/PROJECT_STATE.md`, `docs/agent-ops/TOOLCHAIN.md`, `docs/agent-ops/TOOL_DISPATCH.md`, `docs/agent-ops/TOOL_PROMPT_ROUTER.md`, and `docs/agent-ops/AGENTIC_MANAGEMENT_MODEL.md`.
 3. Read the relevant requirements, ADRs, repository planning documents, security/data documents, and existing tests.
 4. Record the repository, branch, starting commit SHA, issue, requirement IDs, and source locators.
-5. Classify the work and risk.
+5. Classify the work and risk; identify management level (L0–L5) per `docs/agent-ops/AGENTIC_MANAGEMENT_MODEL.md`.
 6. Complete `docs/agent-ops/TASK_PACKET_TEMPLATE.md`.
 7. State intended files/services, tests, evidence, documentation impact, rollback, and unresolved decisions.
-8. Reconcile the issue and any pasted tool report against `PROJECT_STATE.md`; treat unverified claims as `CLAIMED`, not fact.
+8. Reconcile the issue and any pasted tool report against `docs/agent-ops/PROJECT_STATE.md`; treat unverified claims as `CLAIMED`, not fact.
 9. Stop if the task is ambiguous, lacks acceptance criteria, requests secrets, conflicts with an approved control, or requires authority not granted by the issue.
 
 ### Lightweight documentation path
@@ -113,7 +113,7 @@ No contributor may say `complete`, `done`, `finished`, `shipped`, `fixed`, or eq
 
 Use `docs/agent-ops/COMPLETION_EVIDENCE_TEMPLATE.md` verbatim. A truthful negative state is permitted, but it classifies the work as a checkpoint rather than delivered, merged, or deployed.
 
-After a verified merge, deployment, rollback, issue transition, confirmed bug, or source-of-truth correction, update `PROJECT_STATE.md` through a PR and append a dated entry to `PROJECT_TRANSITIONS.md`. Never rewrite historical transition entries to hide a correction. A ledger update records evidence; it does not grant merge or deployment authority.
+After a verified merge, deployment, rollback, issue transition, confirmed bug, or source-of-truth correction, update `docs/agent-ops/PROJECT_STATE.md` through a PR and append a dated entry to `docs/agent-ops/PROJECT_TRANSITIONS.md`. Never rewrite historical transition entries to hide a correction. A ledger update records evidence; it does not grant merge or deployment authority.
 
 Every handoff and PR must also include issue/requirement IDs, behavior changed, security/privacy/data/migration/documentation impact, known limitations, rollback steps, optional reviewer (if any), and remaining owner decisions.
 
@@ -129,4 +129,4 @@ Every handoff and PR must also include issue/requirement IDs, behavior changed, 
 
 Tools are selected per issue, based on task type, access, and current demonstrated results. Neither Claude Code nor Codex is permanently primary.
 
-See `docs/agent-ops/TOOLCHAIN.md` and `docs/agent-ops/TOOL_PROMPT_ROUTER.md`. Specialist prompts grant expertise and output format only; they do not grant authority.
+Route through the management hierarchy in `docs/agent-ops/AGENTIC_MANAGEMENT_MODEL.md` before selecting an implementation tool (`docs/agent-ops/TOOLCHAIN.md`, `docs/agent-ops/TOOL_DISPATCH.md`, `docs/agent-ops/TOOL_PROMPT_ROUTER.md`). Specialist prompts grant expertise and output format only; they do not grant authority.
