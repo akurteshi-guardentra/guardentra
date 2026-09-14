@@ -1,10 +1,12 @@
 # GuardEntra Project State
 
-Current verified snapshot: 2026-09-08
+Current verified snapshot: 2026-09-15
 Repository: `akurteshi-guardentra/guardentra`
 Owner and merge/deployment authority: `@akurteshi-guardentra`
 
-This is a navigation ledger, not independent proof. Verify claims using the issue, PR, commit, CI, or live platform evidence defined in `SOURCE_OF_TRUTH.md`. Update it through a PR after a material verified transition.
+This is a navigation ledger, not independent proof. Verify claims using the issue, PR, commit, CI, or live platform evidence defined in `docs/agent-ops/SOURCE_OF_TRUTH.md`. Update it through a PR after a material verified transition.
+
+Management hierarchy: `docs/agent-ops/AGENTIC_MANAGEMENT_MODEL.md` (L0 Owner → L1 Chief Dispatcher → L2 Managers → L3 Leads → L4 Execution → L5 Assurance). Hierarchy does not grant AI merge/deploy authority.
 
 ## State vocabulary
 
@@ -23,10 +25,12 @@ This is a navigation ledger, not independent proof. Verify claims using the issu
 
 | Item | Verified state |
 |---|---|
-| Default branch/current commit | `main` at `29171a64078e3943149dccf63d8caa7650ad0125` (repository; see production application release SHA below) |
-| Latest merged product/governance work | PR #24 P0-1; PR #35 live probe; PR #38 P0-2 investigation ledger; PR #39 rejected-head merge `85f718de43b19fa9a8d10312d726d2bf0899aaeb`; PR #40 squash-merged `8ea4b24e1a15b03e518de8d928d56d7491bc8599`; PR #44 squash-merged `d233eaa09fa7cd0b0c9f5a4518ae2850f7d34eb9`; PR #43 squash-merged `0f07657620d853cd9228ed58cf29b7d7e9960b73`; PR #45 squash-merged `f0f085d701340747963ef28e46ecd92eb9baf579`; PR #47 squash-merged `a213981ae6f9e252fa5880f4f2a19b3d31663ca4`; **PR #46 squash/merged** into `29171a64078e3943149dccf63d8caa7650ad0125` |
-| Active governance work | Issue #33 project-state/tool-routing protocol remains the governance umbrella. PR #43 and PR #46 are **MERGED**. Production application/rules live on `guardentra-prod`; public domain cutover is **COMPLETE** (see production section). Open product work: PR #50 P0 Firebase environment isolation (**NOT DEPLOYED**). |
-| P0-2 investigation | Issue #11 closed: confirmed defect investigated and recovery implemented under Option B. **No malware scanner exists**; authoritative `clean` still requires a future scanner workstream. |
+| Default branch/current commit | `main` at `a322f96146976a98a2b2ee800fdac7cce1af0380` (merge of PR #52; repository tip) |
+| Latest merged product/governance work | Prior: PR #24/#35/#38/#39/#40/#43/#44/#45/#46/#47. **PR #50 MERGED** (`de6ae269814b53250daf9a4ffb955d8788a02b17`) — coherent Firebase client / env-specific App Hosting config fix in repository history. **PR #52 MERGED** (authoritative evidence malware scanner + durable Cloud Tasks delivery) — feature tip `39fde456312586b1fff36a9cd68c13656ca6fa39`; merge commit `a322f96146976a98a2b2ee800fdac7cce1af0380`; post-merge CI run **#170** / `34902620059` **SUCCESS**. |
+| Active governance work | Issue #33 remains the governance umbrella. Issue #53 / Action #9A: agentic management baseline + post-P0 ledger reconciliation (docs). Production application release SHA remains separate from repository tip (see production section). |
+| P0 Firebase client environment isolation | **PR #50 MERGED** at `de6ae269814b53250daf9a4ffb955d8788a02b17`. Repository fix present. Staging App Hosting yaml includes persisted Admin/project and coherent `VITE_FIREBASE_*` config; that baseline was subsequently included in the **#8H-D** staging release of tip `39fde45…`. Dedicated post-PR-50 onboarding regression E2E: **UNVERIFIED**. |
+| P0 authoritative evidence scanner | **CLOSED** as a workstream. Code **MERGED** into `main`. **Staging: LIVE VERIFIED** (`cloud_tasks`). **Production: NOT DEPLOYED** (no scanner production deployment authorized). |
+| P0-2 investigation | Issue #11 closed: Option B trust states. Scanner workstream completed via PR #52 (environment-specific deployment status below). |
 | P0-2 implementation | Issue #37 is **CLOSED / COMPLETED**. PR #44 merged and previously live-verified on `guardentra-7f582`; PR #43 ledger close-out merged. |
 | Framework inventory | Issue #25 is **CLOSED / COMPLETED**. PR #45 merged docs-only inventory: 54 controlKeys, 8 packs, 3 mapping subsystems, 112 claim rows; rights/provenance remain `unknown` or escalated unless stronger owner/publisher/counsel evidence is attached. |
 | Framework claims / safe wording | Issue #26 is **CLOSED / COMPLETED**. PR #47 merged at `a213981ae6f9e252fa5880f4f2a19b3d31663ca4`. Product wording uses GuardEntra-authored assessment packs aligned to selected security domains; **no claim** of official certification, partnership, or publisher endorsement where unsupported. Disposition matrix: `docs/compliance/FRAMEWORK_CLAIM_DISPOSITION.md`. |
@@ -60,13 +64,16 @@ Production public domain is **`guardentra-prod`**: apex `https://guardentra.com`
 | Layer | Live state | Reconciliation |
 |---|---|---|
 | Firebase project | `guardentra-staging` (project number `965959469996`) | Established and owner-accessible; billing linked |
-| App Hosting | backend `guardentra-staging`, `us-central1`, branch `test` | Release commit `a213981ae6f9e252fa5880f4f2a19b3d31663ca4`; build `build-2026-08-21-002` **READY**; rollout `rollout-2026-08-21-001` **SUCCEEDED** at **100%** |
+| App Hosting | backend `guardentra-staging`, `us-central1` | Exact-SHA rollout of scanner tip: build `build-2026-09-14-001` **READY**; rollout `rollout-2026-09-14-001` **SUCCEEDED**; traffic **100%** on revision `guardentra-staging-build-2026-09-14-001` |
+| Deployed source SHA | `39fde456312586b1fff36a9cd68c13656ca6fa39` | Matches PR #52 feature tip (pre-merge deploy; later merge commit `a322f96…` is repository tip) |
 | Staging URL | `https://guardentra-staging--guardentra-staging.us-central1.hosted.app` | Homepage **200**; `/api/health` **200** |
-| Active Cloud Run revision | `guardentra-staging-00002-lrg` at **100%** traffic | Runtime env includes `GCLOUD_PROJECT=guardentra-staging`, `FIREBASE_STORAGE_BUCKET=guardentra-staging.firebasestorage.app`, `AUDIT_SPINE_ENABLED=false`, `APP_ENV=production` (shared `apphosting.yaml` semantics) |
-| Firestore rules | `projects/guardentra-staging/releases/cloud.firestore` → `projects/guardentra-staging/rulesets/ca5b4258-18e2-4d79-880b-b1a4e9129585` | Emulator **42/42 PASS**; live unauthenticated/anonymous denial checks **PASS** |
+| Runtime | `google-22` / Node.js (`nodejs_20260901_RC00`) | Compatible with `@google-cloud/tasks` Node ≥22 requirement |
+| Authoritative evidence scanner | **LIVE VERIFIED** | `EVIDENCE_SCANNER_ENABLED=true`; delivery **`cloud_tasks`**; ClamAV `10.128.0.2:3310` **REACHABLE**; secret ref **PRESENT/REFERENCED** (value never logged) |
+| Cloud Tasks | queue `evidence-malware-scan` / `us-central1` / **RUNNING** | Task OIDC SA `evidence-scan-task@guardentra-staging.iam.gserviceaccount.com`; **no user-managed service-account key created during #8H-C/#8H-D** (not a complete SA key inventory); durability **LIVE VERIFIED** (queue pause → `scan_pending` + task exists → resume → terminal) |
+| Durable proof (#8H-E) | **PASS** | Clean → `clean` / clamav / clean; EICAR → `quarantined` / clamav / infected (`Eicar-Test-Signature`); generation binding **PASS**; idempotent deterministic task id **PASS**. Informational: live G1 stale task dispatch was not directly observed via `describe`; automated `stale_generation` ACK remains PASS |
+| Firestore rules | `projects/guardentra-staging/releases/cloud.firestore` → `projects/guardentra-staging/rulesets/ca5b4258-18e2-4d79-880b-b1a4e9129585` | Emulator rules tests **PASS**; live unauthenticated/anonymous denial checks **PASS** (historical matrix) |
 | Storage rules | `projects/guardentra-staging/releases/firebase.storage/guardentra-staging.firebasestorage.app` → `projects/guardentra-staging/rulesets/6a4560f0-deac-4dd7-be16-a274e4bb8b56` | Emulator **19/19 PASS**; live unauthenticated/anonymous denial checks **PASS** |
-| Git `test` branch | `a213981ae6f9e252fa5880f4f2a19b3d31663ca4` | Matches `main` at release candidate |
-| Staging portal E2E | **LIVE VERIFIED — PASS** | Final gate 2026-08-21 against staging Firebase client config and `PORTAL_API_BASE` above. Mode: **`[mode: scoped-token]`** — no anonymous fallback counted as pass. Synthetic fixtures tagged `STAGING_PORTAL_E2E` / `stagingTest`; **deleted after verification**. Earlier portal-session HTTP **500** during troubleshooting is **SUPERSEDED** (see transitions). |
+| Staging portal E2E (historical) | **LIVE VERIFIED — PASS** (2026-08-21) | Mode **`[mode: scoped-token]`**. Synthetic fixtures deleted. Superseded for scanner path by #8G/#8H-E proofs |
 
 ### Final staging portal E2E (verified behavior)
 
@@ -84,7 +91,7 @@ Production public domain is **`guardentra-prod`**: apex `https://guardentra.com`
 | Post-submit lock | **PASS** |
 | Invalid/missing assessment fail-closed | **PASS** (HTTP 500 on missing assessment at time of final verification) |
 
-Resolution note: later staging runtime env/traffic fixes (`GCLOUD_PROJECT`, Storage rules agent Firestore viewer IAM, traffic to revision `guardentra-staging-00002-lrg`) resolved the earlier portal-session **500**. Persist these env vars in App Hosting config before the next staging rollout so portal mint does not regress.
+Resolution note: later staging runtime env/traffic fixes (`GCLOUD_PROJECT`, Storage rules agent Firestore viewer IAM) resolved the earlier portal-session **500**. **Repository config:** `apphosting.staging.yaml` now persists `GCLOUD_PROJECT=guardentra-staging`, `GOOGLE_CLOUD_PROJECT=guardentra-staging`, `FIREBASE_STORAGE_BUCKET=guardentra-staging.firebasestorage.app`, and coherent staging `VITE_FIREBASE_*` settings. **#8H-D staging rollout** deployed exact PR #52 feature tip `39fde45…` (includes that staging config baseline). **Dedicated post-PR-50 onboarding regression E2E:** **UNVERIFIED** unless separately evidenced — do not claim it from config presence or scanner deploy alone.
 
 ## Live runtime state — production (`guardentra-prod`)
 
@@ -104,7 +111,7 @@ Documentation-only repository commits may advance `main` without changing the de
 | Firestore rules | `projects/guardentra-prod/releases/cloud.firestore` → `projects/guardentra-prod/rulesets/2e9c308d-9889-4b16-8d55-63b4c77e5ce4` | Deployed 2026-08-27 from approved SHA rules |
 | Storage rules | `projects/guardentra-prod/releases/firebase.storage/guardentra-prod.firebasestorage.app` → `projects/guardentra-prod/rulesets/76913163-f67e-44d6-b262-6362447d8726` | Deployed 2026-08-27; Storage SA granted `roles/datastore.viewer` for `firestore.get()` |
 | Portal security gate | **LIVE VERIFIED — PASS** | Mode **`[mode: scoped-token]`**; A→A read/write **PASS**; A→B isolation **PASS**; submit/lock **PASS**; Storage A→A **PASS** / A→B **DENIED**; unauthenticated denials **PASS**; synthetic fixtures deleted |
-| Malware scanner | **NOT IMPLEMENTED** | MIME/size/type validation is **not** malware scanning; do not fabricate `clean` |
+| Malware scanner | **NOT DEPLOYED** on production | Scanner code is **MERGED** on `main` (PR #52) but **not** rolled out to `guardentra-prod`. Production remains MIME/size trust path until a separate owner-authorized production scanner deploy. Do not fabricate `clean` on production. Do not describe production as scanner-enabled. |
 
 ### Production portal E2E (verified 2026-08-27)
 
@@ -129,14 +136,14 @@ Ledger updates in this PR remain documentation of verified state. They do **not*
 | Track | Issues | Current position | Next gate |
 |---|---|---|---|
 | P0-1 vendor lock | #10, PRs #23/#24 | Code/rules/application deployed on `guardentra-7f582`; bundle markers live verified | Safely record production end-to-end submission evidence |
-| P0-2 scan/review | #11 and #37 closed/completed | PR #44 merged/deployed on `guardentra-7f582`; live matrix PASS; PR #43 ledger close-out merged. **No malware scanner exists.** | Future scanner workstream if authorized; do not fabricate `clean` |
+| P0-2 scan/review | #11 and #37 closed/completed; **PR #52 MERGED** | Code on `main`. **Staging scanner LIVE VERIFIED** (`cloud_tasks`, revision `guardentra-staging-build-2026-09-14-001`). **Production scanner NOT DEPLOYED**. | Separate owner authorization required for any production scanner infrastructure/config/deploy |
 | Framework inventory | #25 | **COMPLETED / MERGED** via PR #45 | Preserve inventory as source evidence |
 | Framework claims / safe wording | #26 | **COMPLETED / MERGED** via PR #47 | Hardening (#27–#28) not ready |
 | Framework hardening | #27–#28 | Not ready | Requires approved design |
 | Framework engine | #29–#31 | Not ready | Requires hardening and OSCAL-first authorization |
 | Licensed adapters | #32 | Blocked | Requires executed permission and technical gates |
 | Security spine | #12–#17 | Planned | Continue in dependency order after P0 gates |
-| Staging verification | Infrastructure + portal E2E | **LIVE VERIFIED** on `guardentra-staging` | Persist staging Admin env in App Hosting config |
+| Staging verification | Infrastructure + portal E2E + scanner | **LIVE VERIFIED** on `guardentra-staging` (`cloud_tasks`; revision `guardentra-staging-build-2026-09-14-001`) | Keep production scanner **NOT DEPLOYED** until separately authorized; dedicated post-PR-50 onboarding regression remains **UNVERIFIED** |
 | Production (`guardentra-prod`) | App + rules + scoped portal E2E + public domain | **LIVE VERIFIED**; domain cutover **COMPLETE** (deployed application SHA `29171a6…` / `build-2026-08-27-001`) | Synthetic Auth cleanup (owner-authorized); keep DNS/domain/rollback resources unchanged |
 
 ## Current blockers and risks
@@ -146,21 +153,21 @@ Ledger updates in this PR remain documentation of verified state. They do **not*
 3. Production end-to-end customer submission evidence on the public domain is not fully recorded as a separate gate (prod portal security gate **PASS**; domain cutover **COMPLETE**).
 4. PR #7 is stale.
 5. Framework rights/provenance remain `unknown` or escalated for inventoried claim rows unless owner/publisher/counsel evidence is attached; product wording must stay conservative.
-6. There is no malware scanner. MIME/size/extension is not a scan. Authoritative `clean` still requires real scanner state plus matching path and generation.
-7. Staging portal mint depends on runtime Admin project env (`GCLOUD_PROJECT`, `FIREBASE_STORAGE_BUCKET`); these are live on revision `guardentra-staging-00002-lrg` and are being codified via PR #50 env-specific App Hosting yaml (still **NOT DEPLOYED**).
+6. **Production malware scanner is NOT DEPLOYED.** Staging is LIVE VERIFIED. Authoritative `clean` on production still requires a separate owner-authorized scanner rollout; do not fabricate `clean` from MIME/size alone.
+7. Staging Admin/project env is **persisted** in `apphosting.staging.yaml` and was part of the #8H-D staging release baseline. Dedicated post-PR-50 onboarding regression E2E remains **UNVERIFIED**.
 8. Residual synthetic Auth user on `guardentra-prod`: `gate-noclaim-*@guardentra-test.invalid` — owner authorized deletion 2026-09-01; verify count **0** after cleanup completes.
-9. **P0 Firebase client environment isolation (2026-09-07 audit):** staging App Hosting BUILD env supplied only `VITE_FIREBASE_API_KEY` while `src/firebase.ts` field-by-field fell back to demo `guardentra-7f582` identifiers → classification **MIXED**. Staging backend Environment name was **unset** (so `apphosting.staging.yaml` cannot apply until set to `staging`). Production BUILD overrideEnv includes the full `VITE_FIREBASE_*` name set → classification **SAFE** (secret *values* not re-printed; console overrides still take precedence over yaml). Fix lands in PR #50 — **NOT DEPLOYED**; do not claim staging remediations until a post-fix staging rollout is verified.
+9. **P0 Firebase client environment isolation:** repository fix **MERGED** via PR #50 (`de6ae269814b53250daf9a4ffb955d8788a02b17`). Do not equate merge or staging scanner deploy with a dedicated onboarding E2E proof.
+10. **Local shell hygiene:** staging `GCLOUD_PROJECT` / `GOOGLE_CLOUD_PROJECT` leftover in a developer shell can contaminate Vitest region-router expectations. Clear overrides before local verification (see `docs/agent-ops/TOOLCHAIN.md`).
 
-**Removed stale blockers:** permanent production project absent; public-domain cutover pending — **`guardentra-prod` is provisioned, application LIVE, rules LIVE, portal E2E PASS, and domain cutover COMPLETE**. Legacy `guardentra-7f582` retained for rollback only.
+**Removed stale blockers:** permanent production project absent; public-domain cutover pending; global “no malware scanner exists” (replaced by environment-specific staging LIVE / production NOT DEPLOYED).
 
 ## Next authorized actions
 
-1. Merge the P0 Firebase environment-isolation PR (#50) when CI is green (**no deploy** from merge alone).
-2. Operator: set App Hosting Environment name `guardentra-staging` → `staging` (required for `apphosting.staging.yaml`). Optional preferred rename: `guardentra-prod` Environment `prod` → `production`.
-3. Separate owner command required to **deploy staging** (PR #50 head) and verify onboarding against `guardentra-staging` only.
-4. Persist staging Admin env in App Hosting (covered by env-specific yaml once Environment name is set).
-5. Production domain cutover is complete. Do not modify production DNS, custom-domain resources, or legacy rollback resources without separate owner authorization.
-6. Do not merge PR #36. Do not delete `fix/p0-2-evidence-before-scan`. Do not reopen PR #39.
+1. Complete Issue #53 / Action #9A docs PR when owner authorizes commit/PR/merge (**docs only**; no deploy).
+2. Separate owner command required for any **production** scanner infrastructure, App Hosting scanner enablement, or production deploy.
+3. Production domain cutover is complete. Do not modify production DNS, custom-domain resources, or legacy rollback resources without separate owner authorization.
+4. Do not merge PR #36. Do not delete `fix/p0-2-evidence-before-scan`. Do not reopen PR #39.
+5. Do not install Agency Agents until separately authorized.
 
 ## Daily reporting
 

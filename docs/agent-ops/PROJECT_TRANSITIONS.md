@@ -272,3 +272,17 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
 - Deployment: **NOT DEPLOYED**. Rules/DNS/IAM/data: **unchanged**.
 - Remaining operator actions: set staging Environment name → `staging`; merge PR when authorized; separate **deploy staging** command; optional rename prod Environment `prod` → `production`.
 
+
+## 2026-09-15 — PR #52 merge + staging durable Cloud Tasks scanner LIVE VERIFIED (P0 scanner workstream CLOSED)
+
+- Verifier: Cursor (`tool:cursor`). Owner authorized merge of PR #52; production deploy **not** authorized.
+- Transition: P0 authoritative evidence malware scanner repository work → **MERGED**; staging durable delivery → **LIVE VERIFIED**; production scanner → remains **NOT DEPLOYED**.
+- Feature tip: `39fde456312586b1fff36a9cd68c13656ca6fa39`.
+- Merge commit / `main` tip: `a322f96146976a98a2b2ee800fdac7cce1af0380`.
+- Post-merge CI: run **#170** / `34902620059` **SUCCESS**.
+- Staging App Hosting: revision `guardentra-staging-build-2026-09-14-001`; build `build-2026-09-14-001`; rollout `rollout-2026-09-14-001`; traffic **100%**; source SHA matches feature tip; delivery `cloud_tasks`; queue `evidence-malware-scan` **RUNNING**.
+- Durability (#8H-E): queue pause → portal validate → `scan_pending` + Cloud Task exists outside process → resume → terminal. Clean **PASS** (clamav/clean). EICAR **PASS** (quarantined/infected/Eicar-Test-Signature). Generation binding **PASS**. Idempotent deterministic task identity **PASS**.
+- Informational limitation retained: live G1 stale-generation Cloud Task was not directly observed via `describe` during first pass; final G2 binding **PASS**; exact-tip automated `stale_generation` ACK **PASS**.
+- Production (`guardentra-prod`): **UNCHANGED** — still `build-2026-08-27-001` at **100%**; scanner **NOT DEPLOYED**; no production secrets/DNS/IAM/Eventarc changes from this workstream.
+- P0 authoritative evidence scanner workstream: **CLOSED**.
+- This documentation update (Issue #53 / Action #9A): docs/governance only when committed; **NOT DEPLOYED**; does not authorize production scanner rollout.

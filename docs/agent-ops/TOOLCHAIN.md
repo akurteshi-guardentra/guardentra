@@ -33,3 +33,17 @@ Solo-owner model: `@akurteshi-guardentra` is merge authority. **Optional** `revi
 The dispatcher or owner assigns one writer per issue/branch. Selection is based on the issue, required access, relevant skill, and recent verified performance—not vendor benchmarks or an assistant recommending itself.
 
 Do not introduce `writer:*` or `reviewer:*` GitHub labels. Use `tool:*` and optional `review:*` only.
+
+## Local shell environment hygiene
+
+Before local verification (`npm test`, `npm run test:vitest`, emulator rules tests, or any check that resolves Firebase/GCP project IDs from the process environment), agents must inspect whether the shell inherited project overrides from prior staging/production work.
+
+**Observed failure (2026-09-14 post-merge verification):** a local Vitest run initially failed `orgRegion` isolation because the shell retained `GCLOUD_PROJECT=guardentra-staging` and `GOOGLE_CLOUD_PROJECT=guardentra-staging` from earlier staging Cloud Tasks work. Both EU and US region bindings fell back to the same project ID. After clearing those shell variables, **321/321** Vitest tests passed. GitHub CI on merge SHA `a322f96146976a98a2b2ee800fdac7cce1af0380` was already SUCCESS without that contamination.
+
+**Rule:**
+
+1. Inspect presence of `GCLOUD_PROJECT`, `GOOGLE_CLOUD_PROJECT`, and region-specific Firebase project overrides before repository default tests.
+2. Do not blindly inherit staging or production project variables into repository tests that assume clean defaults.
+3. If a test expects repository defaults, clear only the relevant shell overrides or run tests in a clean shell.
+4. Never remove or mutate live cloud environment configuration as part of this check.
+5. Never print secret values while inspecting environment hygiene.

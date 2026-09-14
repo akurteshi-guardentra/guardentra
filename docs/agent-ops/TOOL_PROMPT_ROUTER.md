@@ -1,6 +1,23 @@
 # GuardEntra Tool Prompt Router
 
-Read `AGENTS.md`, `SOURCE_OF_TRUTH.md`, `PROJECT_STATE.md`, the issue, and relevant tests/ADRs first. Tool selection grants capability, not authority.
+Read `AGENTS.md`, `docs/agent-ops/SOURCE_OF_TRUTH.md`, `docs/agent-ops/PROJECT_STATE.md`, `docs/agent-ops/AGENTIC_MANAGEMENT_MODEL.md`, the issue, and relevant tests/ADRs first. Tool selection grants capability, not authority. Specialist personas do **not** gain merge or deployment authority.
+
+## Management level before tool
+
+Map the task type to a management level, then select one writing tool (`tool:*`).
+
+| Task type | Management routing | Primary pattern |
+|---|---|---|
+| Product requirement ambiguity | Product / Program Manager (L2) | Clarify acceptance criteria before code |
+| Architecture | Engineering Manager / Architecture Lead (L2/L3) | ADR before implementation |
+| Authentication / IAM / tenant isolation | Security Manager + IAM Lead (L2/L3) | Negative tests; optional security review |
+| Backend / API / database | Engineering Manager + Backend Lead (L2/L3) | Cursor / Claude / Codex as one writer |
+| Firebase / App Hosting / GCP | Release or Engineering Manager + DevOps/Firebase Lead (L2/L3) | Live-state vs repository distinctions |
+| Testing | QA Lead (L3) | Emulator / Vitest / Jest evidence |
+| Release / deployment | Release Manager (L2) | Exact-SHA evidence; owner deploy command |
+| React/TypeScript UI | Engineering Manager + Frontend Lead (L2/L3) | Cursor |
+| Security review | Security Manager + Assurance (L2/L5) | Threats, boundaries, blockers |
+| Documentation / ledger | Chief Dispatcher or assigned writer (L1/L4) | Exact paths; no silent live claims |
 
 ## Routing matrix
 
@@ -35,11 +52,14 @@ Return:
 Repository: https://github.com/akurteshi-guardentra/guardentra
 Issue: <number and URL>
 Verified base: <branch and SHA>
+Management owner: <L2>
+Domain lead: <L3>
 Assigned writer: <tool:*>
 Authorized end state: <investigate / commit / commit and PR / commit, PR, and merge / deploy staging / deploy production>
 
-Read AGENTS.md, SOURCE_OF_TRUTH.md, PROJECT_STATE.md, TOOL_DISPATCH.md,
-TOOL_PROMPT_ROUTER.md, and the complete issue.
+Read AGENTS.md, docs/agent-ops/SOURCE_OF_TRUTH.md, docs/agent-ops/PROJECT_STATE.md,
+docs/agent-ops/AGENTIC_MANAGEMENT_MODEL.md, docs/agent-ops/TOOL_DISPATCH.md,
+docs/agent-ops/TOOL_PROMPT_ROUTER.md, and the complete issue.
 
 Objective:
 <one bounded result>
