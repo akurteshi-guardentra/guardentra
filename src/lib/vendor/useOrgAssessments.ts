@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { addDoc, collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
-import { isFirestoreUnavailableError } from './localVendorStore';
+import {
+  HOSTED_ASSESSMENT_LOAD_FAILED,
+  isFirestoreUnavailableError,
+  shouldUseLocalPersistenceFallback,
+} from './localVendorStore';
 import {
   listLocalAssessments,
   removeLocalAssessment,
@@ -10,18 +14,20 @@ import {
 import { promoteLocalVendors } from './useOrgVendors';
 import type { FrameworkId } from './types';
 
-export type AssessmentDataMode = 'firestore' | 'local';
+export type AssessmentDataMode = 'firestore' | 'local' | 'unavailable';
 
 export const ASSESSMENT_RETRY_INTERVAL_MS = 30000;
 
 /** Write any local-only assessments (created while Firestore was unreachable) for real,
  * then drop them from the local store — otherwise they'd stay invisible to teammates
  * forever even after Firestore reconnects.
- * Remaps vendorId from local_* → cloud id when vendors were promoted in the same pass. */
+ * Remaps vendorId from local_* → cloud id when vendors were promoted in the same pass.
+ * Hosted environments never promote leftover localStorage into Firestore. */
 export async function promoteLocalAssessments(
   orgId: string,
   vendorIdMap?: Map<string, string>
 ): Promise<void> {
+  if (!shouldUseLocalPersistenceFallback()) return;
   // Ensure local vendors exist in cloud first so assessment.vendorId can be remapped.
   const resolvedMap = vendorIdMap ?? (await promoteLocalVendors(orgId));
   const localOnly = listLocalAssessments(orgId).filter((a) => a.id.startsWith('local_asm_'));
@@ -84,20 +90,30 @@ function normalizeCloudDoc(id: string, data: Record<string, unknown>): StoredAss
 }
 
 /**
- * Org assessments with Firestore → local fallback (same pattern as vendors).
+ * Org assessments. Demo/dev may fall back to localStorage; hosted fail-closes.
  */
 export function useOrgAssessments(orgId?: string | null) {
   const [assessments, setAssessments] = useState<StoredAssessment[]>([]);
   const [mode, setMode] = useState<AssessmentDataMode>('firestore');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [retryTick, setRetryTick] = useState(0);
   const modeRef = useRef<AssessmentDataMode>('firestore');
 
   const refreshLocal = useCallback(() => {
     if (!orgId) return;
+    if (!shouldUseLocalPersistenceFallback()) {
+      setAssessments([]);
+      modeRef.current = 'unavailable';
+      setMode('unavailable');
+      setError(HOSTED_ASSESSMENT_LOAD_FAILED);
+      setLoading(false);
+      return;
+    }
     setAssessments(listLocalAssessments(orgId));
     modeRef.current = 'local';
     setMode('local');
+    setError('');
     setLoading(false);
   }, [orgId]);
 
@@ -113,10 +129,30 @@ export function useOrgAssessments(orgId?: string | null) {
     }
 
     setLoading(true);
+    setError('');
     let settled = false;
     let unsub: (() => void) | null = null;
+    const allowLocal = shouldUseLocalPersistenceFallback();
+
+    const failClosed = () => {
+      if (settled && modeRef.current === 'unavailable') return;
+      settled = true;
+      if (unsub) {
+        unsub();
+        unsub = null;
+      }
+      setAssessments([]);
+      modeRef.current = 'unavailable';
+      setMode('unavailable');
+      setError(HOSTED_ASSESSMENT_LOAD_FAILED);
+      setLoading(false);
+    };
 
     const fallBackLocal = () => {
+      if (!allowLocal) {
+        failClosed();
+        return;
+      }
       if (settled && modeRef.current === 'local') return;
       settled = true;
       if (unsub) {
@@ -126,7 +162,7 @@ export function useOrgAssessments(orgId?: string | null) {
       refreshLocal();
     };
 
-    const failSafe = window.setTimeout(fallBackLocal, 3500);
+    const failSafe = window.setTimeout(allowLocal ? fallBackLocal : failClosed, 3500);
 
     try {
       const q = query(collection(db, 'assessments'), where('organizationId', '==', orgId));
@@ -137,33 +173,45 @@ export function useOrgAssessments(orgId?: string | null) {
           settled = true;
           window.clearTimeout(failSafe);
           const wasLocal = modeRef.current === 'local';
-          if (wasLocal) {
+          if (wasLocal && allowLocal) {
             await promoteLocalAssessments(orgId);
           }
           const rows = snap.docs.map((d) => normalizeCloudDoc(d.id, d.data() as Record<string, unknown>));
           rows.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-          // Merge any remaining local-only rows (e.g. promotion above partially failed)
-          // so local creates still show when cloud is empty-but-listening.
+          if (!allowLocal) {
+            setAssessments(rows);
+            modeRef.current = 'firestore';
+            setMode('firestore');
+            setError('');
+            setLoading(false);
+            return;
+          }
+          // Demo/dev only: merge remaining local-only rows so local creates still show
+          // when cloud is empty-but-listening after a partial promote.
           const local = listLocalAssessments(orgId);
           const cloudIds = new Set(rows.map((r) => r.id));
           const merged = [...rows, ...local.filter((l) => !cloudIds.has(l.id))];
           setAssessments(merged);
           modeRef.current = 'firestore';
           setMode('firestore');
+          setError('');
           setLoading(false);
         },
         (err) => {
           console.error('useOrgAssessments listen failed', err);
           window.clearTimeout(failSafe);
-          if (isFirestoreUnavailableError(err) || true) {
+          if (allowLocal && (isFirestoreUnavailableError(err) || true)) {
             fallBackLocal();
+          } else {
+            failClosed();
           }
         }
       );
     } catch (err) {
       console.error('useOrgAssessments setup failed', err);
       window.clearTimeout(failSafe);
-      fallBackLocal();
+      if (allowLocal) fallBackLocal();
+      else failClosed();
     }
 
     return () => {
@@ -172,13 +220,11 @@ export function useOrgAssessments(orgId?: string | null) {
     };
   }, [orgId, refreshLocal, retryTick]);
 
-  // Auto-retry while stuck in local mode, so a transient outage can self-heal
-  // without requiring a page reload.
   useEffect(() => {
-    if (mode !== 'local') return;
+    if (mode !== 'local' && mode !== 'unavailable') return;
     const interval = window.setInterval(retryFirestore, ASSESSMENT_RETRY_INTERVAL_MS);
     return () => window.clearInterval(interval);
   }, [mode, retryFirestore]);
 
-  return { assessments, mode, loading, refreshLocal, retryFirestore, modeRef };
+  return { assessments, mode, loading, error, refreshLocal, retryFirestore, modeRef };
 }

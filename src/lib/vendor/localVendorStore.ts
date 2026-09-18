@@ -2,6 +2,34 @@ import type { RiskLevel, Vendor } from './types';
 
 const STORAGE_KEY = 'guardentra.localVendors.v1';
 
+/** Staging/prod must treat Firestore as the only durable store. */
+export const HOSTED_FIREBASE_PROJECT_IDS = new Set(['guardentra-staging', 'guardentra-prod']);
+
+export const HOSTED_VENDOR_SAVE_FAILED =
+  'Unable to save this vendor to the cloud. It was not saved. Check your connection and try again.';
+
+export const HOSTED_ASSESSMENT_SAVE_FAILED =
+  'Unable to save this assessment to the cloud. It was not saved. Check your connection and try again.';
+
+export const HOSTED_VENDOR_LOAD_FAILED =
+  'Unable to load vendors from the cloud. Local browser storage is not used as a substitute on hosted GuardEntra.';
+
+export const HOSTED_ASSESSMENT_LOAD_FAILED =
+  'Unable to load assessments from the cloud. Local browser storage is not used as a substitute on hosted GuardEntra.';
+
+/**
+ * Local/demo vendor+assessment persistence is for non-hosted development/demo
+ * only. Hosted staging/prod must fail closed — never treat localStorage as a
+ * successful save or an authoritative list.
+ */
+export function shouldUseLocalPersistenceFallback(
+  projectId: string = String(import.meta.env.VITE_FIREBASE_PROJECT_ID || ''),
+): boolean {
+  const id = projectId.trim();
+  if (HOSTED_FIREBASE_PROJECT_IDS.has(id)) return false;
+  return true;
+}
+
 type StoreShape = Record<string, Vendor[]>;
 
 function readStore(): StoreShape {
@@ -115,4 +143,28 @@ export function isFirestoreUnavailableError(err: unknown): boolean {
     code === 'failed-precondition' ||
     code === 'not-found'
   );
+}
+
+/** Cloud timeout/unavailability may use localStorage only in demo/dev. */
+export function mayFallbackVendorCreateToLocal(
+  err: unknown,
+  projectId?: string,
+): boolean {
+  return shouldUseLocalPersistenceFallback(projectId) && isFirestoreUnavailableError(err);
+}
+
+export function mayCreateLocalAssessment(
+  vendorMode: string,
+  vendorId: string,
+  projectId?: string,
+): boolean {
+  if (!shouldUseLocalPersistenceFallback(projectId)) return false;
+  return vendorMode === 'local' || vendorId.startsWith('local_');
+}
+
+export function mayFallbackAssessmentCreateToLocal(
+  err: unknown,
+  projectId?: string,
+): boolean {
+  return shouldUseLocalPersistenceFallback(projectId) && isFirestoreUnavailableError(err);
 }

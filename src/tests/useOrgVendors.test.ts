@@ -64,6 +64,7 @@ const snapshot = (docs: { id: string; data: Record<string, unknown> }[]) => ({
 
 beforeEach(() => {
   vi.useFakeTimers();
+  vi.stubEnv('VITE_FIREBASE_PROJECT_ID', 'guardentra-7f582');
   localStorage.clear();
   onNext = null;
   onError = null;
@@ -74,6 +75,8 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllEnvs();
+  vi.stubEnv('VITE_FIREBASE_API_KEY', 'AIzaSyDummyVitestFirebaseKey000');
   vi.clearAllMocks();
 });
 
@@ -199,6 +202,84 @@ describe('useOrgVendors — local/Firestore fallback', () => {
       await flush();
     });
 
+    expect(addedDocs).toHaveLength(0);
+  });
+});
+
+describe('useOrgVendors — hosted fail-closed', () => {
+  beforeEach(() => {
+    vi.stubEnv('VITE_FIREBASE_PROJECT_ID', 'guardentra-staging');
+  });
+
+  it('does not claim local success after a Firestore timeout', async () => {
+    createLocalVendor(ORG, { name: 'Leftover Local Vendor' } as never);
+    const { result } = renderHook(() => useOrgVendors(ORG));
+
+    await act(async () => {
+      vi.advanceTimersByTime(3600);
+    });
+
+    expect(result.current.mode).toBe('unavailable');
+    expect(result.current.vendors).toEqual([]);
+    expect(result.current.error).toMatch(/not used as a substitute/i);
+    expect(result.current.vendors.some((v) => v.id.startsWith('local_'))).toBe(false);
+  });
+
+  it('does not present leftover local rows after a Firestore rejection', async () => {
+    createLocalVendor(ORG, { name: 'Rejected Local Vendor' } as never);
+    const { result } = renderHook(() => useOrgVendors(ORG));
+
+    await act(async () => {
+      onError?.({ code: 'unavailable', message: 'backend unavailable' });
+    });
+
+    expect(result.current.mode).toBe('unavailable');
+    expect(result.current.vendors.map((v) => v.name)).not.toContain('Rejected Local Vendor');
+    expect(listLocalVendors(ORG).some((v) => v.name === 'Rejected Local Vendor')).toBe(true);
+  });
+
+  it('keeps a successful cloud snapshot authoritative', async () => {
+    createLocalVendor(ORG, { name: 'Should Stay Local Only' } as never);
+    const { result } = renderHook(() => useOrgVendors(ORG));
+
+    await act(async () => {
+      onNext?.(snapshot([{ id: 'cloud_ok', data: { name: 'Cloud Vendor', organizationId: ORG } }]));
+      await flush();
+    });
+
+    expect(result.current.mode).toBe('firestore');
+    expect(result.current.vendors).toHaveLength(1);
+    expect(result.current.vendors[0]).toMatchObject({ id: 'cloud_ok', name: 'Cloud Vendor' });
+    expect(result.current.vendors.map((v) => v.name)).not.toContain('Should Stay Local Only');
+    expect(addedDocs).toHaveLength(0);
+  });
+
+  it('refresh after a failed save still does not promote leftover local rows', async () => {
+    createLocalVendor(ORG, { name: 'Unsaved After Timeout' } as never);
+    const { result } = renderHook(() => useOrgVendors(ORG));
+
+    await act(async () => {
+      vi.advanceTimersByTime(3600);
+    });
+    expect(result.current.mode).toBe('unavailable');
+
+    await act(async () => {
+      result.current.refreshLocal();
+    });
+    expect(result.current.mode).toBe('unavailable');
+    expect(result.current.vendors).toEqual([]);
+
+    await act(async () => {
+      vi.advanceTimersByTime(30_000);
+    });
+    await act(async () => {
+      onNext?.(snapshot([{ id: 'cloud_after', data: { name: 'Cloud After Retry', organizationId: ORG } }]));
+      await flush();
+    });
+
+    expect(result.current.mode).toBe('firestore');
+    expect(result.current.vendors.map((v) => v.id)).toEqual(['cloud_after']);
+    expect(result.current.vendors.some((v) => v.id.startsWith('local_'))).toBe(false);
     expect(addedDocs).toHaveLength(0);
   });
 });
