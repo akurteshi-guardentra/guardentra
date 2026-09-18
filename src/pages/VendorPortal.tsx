@@ -18,7 +18,7 @@ import {
   Download,
 } from 'lucide-react';
 import { db } from '../firebase';
-import { getPortalAuth } from '../lib/vendor/portalAuth';
+import { getPortalAuth, getPortalAuthHeaders } from '../lib/vendor/portalAuth';
 import { Button } from '../components/ui/button';
 import { cn } from '../lib/utils';
 import type { AnswerValue } from '../lib/vendor/types';
@@ -367,17 +367,20 @@ export function VendorPortal() {
       setTrustHints((prev) => ({ ...prev, [uploaded.storagePath]: displayState }));
       scheduleSave(answers, comments, next);
       if (assessment?.organizationId) {
-        void emitAuditBestEffort({
-          tenantId: assessment.organizationId,
-          eventType: 'evidence.uploaded',
-          objectType: 'assessment',
-          objectId: assessmentId,
-          payload: {
-            questionId: currentQuestion.id,
-            fileName: uploaded.fileName,
-            contentType: uploaded.contentType,
+        void emitAuditBestEffort(
+          {
+            tenantId: assessment.organizationId,
+            eventType: 'evidence.uploaded',
+            objectType: 'assessment',
+            objectId: assessmentId,
+            payload: {
+              questionId: currentQuestion.id,
+              fileName: uploaded.fileName,
+              contentType: uploaded.contentType,
+            },
           },
-        });
+          { getAuthHeaders: getPortalAuthHeaders }
+        );
       }
     } catch (err: any) {
       setUploadError(err?.message || 'Upload failed. Check Storage rules / anonymous auth.');
@@ -444,17 +447,20 @@ export function VendorPortal() {
       setProposals(nextProps);
       scheduleSave(answers, comments, evidence, nextProps);
       if (assessment?.organizationId) {
-        void emitAuditBestEffort({
-          tenantId: assessment.organizationId,
-          eventType: 'answer.proposed',
-          objectType: 'assessment',
-          objectId: assessmentId,
-          payload: {
-            questionId: currentQuestion.id,
-            confidence: proposal.confidence,
-            sourceFileName: proposal.sourceFileName,
+        void emitAuditBestEffort(
+          {
+            tenantId: assessment.organizationId,
+            eventType: 'answer.proposed',
+            objectType: 'assessment',
+            objectId: assessmentId,
+            payload: {
+              questionId: currentQuestion.id,
+              confidence: proposal.confidence,
+              sourceFileName: proposal.sourceFileName,
+            },
           },
-        });
+          { getAuthHeaders: getPortalAuthHeaders }
+        );
       }
     } catch (err: any) {
       setUploadError(err?.message || 'Could not propose answers from evidence.');
@@ -485,13 +491,16 @@ export function VendorPortal() {
     }
     scheduleSave(nextAnswers, comments, evidence, nextProps);
     if (assessment?.organizationId && assessmentId) {
-      void emitAuditBestEffort({
-        tenantId: assessment.organizationId,
-        eventType: status === 'rejected' ? 'answer.saved' : 'answer.confirmed',
-        objectType: 'assessment',
-        objectId: assessmentId,
-        payload: { questionId: currentQuestion.id, status },
-      });
+      void emitAuditBestEffort(
+        {
+          tenantId: assessment.organizationId,
+          eventType: status === 'rejected' ? 'answer.saved' : 'answer.confirmed',
+          objectType: 'assessment',
+          objectId: assessmentId,
+          payload: { questionId: currentQuestion.id, status },
+        },
+        { getAuthHeaders: getPortalAuthHeaders }
+      );
     }
   };
 
@@ -528,17 +537,20 @@ export function VendorPortal() {
       await updateDoc(doc(db, 'assessments', assessmentId), patch);
       if (assessment?.organizationId && assessment?.vendorId) {
         void syncVendorAfterAssessmentSubmit(assessment.organizationId, assessment.vendorId, false);
-        void emitAuditBestEffort({
-          tenantId: assessment.organizationId,
-          eventType: 'assessment.submitted',
-          objectType: 'assessment',
-          objectId: assessmentId,
-          payload: {
-            vendorId: assessment.vendorId,
-            questionCount: questions.length,
-            attestedByName: attestedByName.trim(),
+        void emitAuditBestEffort(
+          {
+            tenantId: assessment.organizationId,
+            eventType: 'assessment.submitted',
+            objectType: 'assessment',
+            objectId: assessmentId,
+            payload: {
+              vendorId: assessment.vendorId,
+              questionCount: questions.length,
+              attestedByName: attestedByName.trim(),
+            },
           },
-        });
+          { getAuthHeaders: getPortalAuthHeaders }
+        );
       }
       setIsSuccess(true);
     } catch (err) {
@@ -1148,13 +1160,16 @@ export function VendorPortal() {
                       className="bg-primary text-white hover:bg-primary/90"
                       onClick={() => {
                         if (assessment?.organizationId && assessmentId && currentQuestion) {
-                          void emitAuditBestEffort({
-                            tenantId: assessment.organizationId,
-                            eventType: 'answer.saved',
-                            objectType: 'assessment',
-                            objectId: assessmentId,
-                            payload: { questionId: currentQuestion.id },
-                          });
+                          void emitAuditBestEffort(
+                            {
+                              tenantId: assessment.organizationId,
+                              eventType: 'answer.saved',
+                              objectType: 'assessment',
+                              objectId: assessmentId,
+                              payload: { questionId: currentQuestion.id },
+                            },
+                            { getAuthHeaders: getPortalAuthHeaders }
+                          );
                         }
                         goNext();
                       }}
