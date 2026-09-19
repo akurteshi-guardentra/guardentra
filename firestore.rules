@@ -28,6 +28,86 @@ service cloud.firestore {
         request.resource.data.organizationId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId;
     }
 
+    function orgIdUnchanged() {
+      return request.resource.data.organizationId == resource.data.organizationId;
+    }
+
+    function parentVendorUnchanged() {
+      return !('vendorId' in resource.data)
+        || request.resource.data.vendorId == resource.data.vendorId;
+    }
+
+    function parentAssessmentUnchanged() {
+      return !('assessmentId' in resource.data)
+        || request.resource.data.assessmentId == resource.data.assessmentId;
+    }
+
+    function isAllowedBootstrapRole(role) {
+      return role == 'admin' || role == 'member';
+    }
+
+    // Founder path: brand-new tenant only. Same-batch org+profile create cannot
+    // see the sibling org write, so "org does not exist yet" is the authority
+    // signal. An existing tenant id can never be claimed this way.
+    function isNewOrgFounderCreate() {
+      return request.resource.data.role == 'admin'
+        && request.resource.data.organizationId is string
+        && request.resource.data.organizationId.size() > 0
+        && !exists(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId));
+    }
+
+    function pendingInviteData() {
+      return get(/databases/$(database)/documents/org_invites/$(request.resource.data.inviteId)).data;
+    }
+
+    // Join path: organizationId + role come from a pending invite addressed to
+    // this user's token email — never from an arbitrary client-chosen tenant.
+    function pendingInviteAllowsJoin() {
+      return request.resource.data.keys().hasAll(['inviteId'])
+        && request.resource.data.inviteId is string
+        && exists(/databases/$(database)/documents/org_invites/$(request.resource.data.inviteId))
+        && pendingInviteData().status == 'pending'
+        && pendingInviteData().email == request.auth.token.email
+        && pendingInviteData().organizationId == request.resource.data.organizationId
+        && exists(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId))
+        && request.resource.data.role == (
+          ('role' in pendingInviteData() && pendingInviteData().role == 'admin')
+            ? 'admin'
+            : 'member'
+        );
+    }
+
+    function isValidUserCreate(userId) {
+      return isAuthenticated()
+        && request.auth.uid == userId
+        && request.resource.data.organizationId is string
+        && request.resource.data.role is string
+        && isAllowedBootstrapRole(request.resource.data.role)
+        && (isNewOrgFounderCreate() || pendingInviteAllowsJoin());
+    }
+
+    function childAssessmentBoundIfPresent() {
+      return !('assessmentId' in request.resource.data)
+        || !(request.resource.data.assessmentId is string)
+        || request.resource.data.assessmentId.size() == 0
+        || (
+          exists(/databases/$(database)/documents/assessments/$(request.resource.data.assessmentId))
+          && get(/databases/$(database)/documents/assessments/$(request.resource.data.assessmentId)).data.organizationId
+            == request.resource.data.organizationId
+        );
+    }
+
+    function childVendorBoundIfPresent() {
+      return !('vendorId' in request.resource.data)
+        || !(request.resource.data.vendorId is string)
+        || request.resource.data.vendorId.size() == 0
+        || (
+          exists(/databases/$(database)/documents/vendors/$(request.resource.data.vendorId))
+          && get(/databases/$(database)/documents/vendors/$(request.resource.data.vendorId)).data.organizationId
+            == request.resource.data.organizationId
+        );
+    }
+
     function isAdmin() {
       return isAuthenticated() &&
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
@@ -131,12 +211,9 @@ service cloud.firestore {
     // Users Collection
     match /users/{userId} {
       allow read: if isAuthenticated() && (request.auth.uid == userId || isOrgMember(resource.data.organizationId));
-      // Create is still client-trusted for role + organizationId (bootstrapUserProfile /
-      // a malicious SDK caller). Tightening that needs invite-bound create and/or
-      // Admin-SDK provisioning — see KNOWN_ISSUES #6 residual. Role and orgId are
-      // immutable after create so an admin cannot hop into another tenant by updating
-      // their own profile (KI#6 audit, 2026-08-03; emulator cases in firestore.rules.test.mjs).
-      allow create: if isAuthenticated() && request.auth.uid == userId;
+      // Issue #61: create is invite-bound or new-tenant founder only. Role and
+      // organizationId stay immutable after create (KI#6).
+      allow create: if isValidUserCreate(userId);
       allow update: if isAuthenticated() && request.auth.uid == userId
         && request.resource.data.role == resource.data.role
         && request.resource.data.organizationId == resource.data.organizationId;
@@ -161,7 +238,9 @@ service cloud.firestore {
     // Organizations Collection
     match /organizations/{orgId} {
       allow read: if isAuthenticated() && isOrgMember(orgId);
-      allow create: if isAuthenticated();
+      // Only a user with no profile yet may create an org (founder bootstrap).
+      allow create: if isAuthenticated()
+        && !exists(/databases/$(database)/documents/users/$(request.auth.uid));
       // Deeper token/role review (task #27) found this allowed ANY member to write
       // ANY field, including name/industry — so Onboarding.tsx's isOrgCreator check
       // (KI#8: stop an invited member from overwriting the shared org's settings) was
@@ -194,13 +273,23 @@ service cloud.firestore {
       // soft-metering posture as vendorCount — a client writing through the SDK directly
       // could still skip the increment (KNOWN_ISSUES.md #12 covers the equivalent gap for
       // vendors); this stops the ordinary path, not a determined bypass.
-      allow create: if isCreatingForOwnOrg() && isAdmin() && request.resource.data.email is string &&
-        orgField(request.resource.data.organizationId, 'seatCount', 1) <
+      // Issue #61: invite role is allowlisted — forged privileged values cannot
+      // be stored for later self-elevation at join time.
+      allow create: if isCreatingForOwnOrg() && isAdmin()
+        && request.resource.data.email is string
+        && request.resource.data.role is string
+        && isAllowedBootstrapRole(request.resource.data.role)
+        && orgField(request.resource.data.organizationId, 'seatCount', 1) <
         orgField(request.resource.data.organizationId, 'seatCap', 3);
       allow update: if isAuthenticated() && (
         (resource.data.email == request.auth.token.email &&
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptedByUid', 'acceptedAt'])) ||
-        (isDocOrgMember() && isAdmin())
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptedByUid', 'acceptedAt']) &&
+         request.resource.data.organizationId == resource.data.organizationId &&
+         request.resource.data.role == resource.data.role &&
+         request.resource.data.email == resource.data.email) ||
+        (isDocOrgMember() && isAdmin()
+          && request.resource.data.organizationId == resource.data.organizationId
+          && isAllowedBootstrapRole(request.resource.data.role))
       );
       allow delete: if isDocOrgMember() && isAdmin();
     }
@@ -209,7 +298,7 @@ service cloud.firestore {
     match /risks/{riskId} {
       allow read: if isDocOrgMember();
       allow create: if isCreatingForOwnOrg() && riskFieldsValid();
-      allow update: if isDocOrgMember() && riskFieldsValid();
+      allow update: if isDocOrgMember() && orgIdUnchanged() && riskFieldsValid();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
@@ -217,7 +306,7 @@ service cloud.firestore {
     match /incidents/{incidentId} {
       allow read: if isDocOrgMember();
       allow create: if isCreatingForOwnOrg() && incidentFieldsValid();
-      allow update: if isDocOrgMember() && incidentFieldsValid();
+      allow update: if isDocOrgMember() && orgIdUnchanged() && incidentFieldsValid();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
@@ -225,7 +314,7 @@ service cloud.firestore {
     match /compliance/{complianceId} {
       allow read: if isDocOrgMember();
       allow create: if isCreatingForOwnOrg() && complianceFieldsValid();
-      allow update: if isDocOrgMember() && complianceFieldsValid();
+      allow update: if isDocOrgMember() && orgIdUnchanged() && complianceFieldsValid();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
@@ -233,7 +322,7 @@ service cloud.firestore {
     match /connectors/{connectorId} {
       allow read: if isDocOrgMember();
       allow create: if isCreatingForOwnOrg() && connectorFieldsValid();
-      allow update: if isDocOrgMember() && connectorFieldsValid();
+      allow update: if isDocOrgMember() && orgIdUnchanged() && connectorFieldsValid();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
@@ -241,7 +330,7 @@ service cloud.firestore {
     match /policies/{policyId} {
       allow read: if isDocOrgMember();
       allow create: if isCreatingForOwnOrg() && policyFieldsValid();
-      allow update: if isDocOrgMember() && policyFieldsValid();
+      allow update: if isDocOrgMember() && orgIdUnchanged() && policyFieldsValid();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
@@ -274,7 +363,7 @@ service cloud.firestore {
       allow create: if isCreatingForOwnOrg() && vendorFieldsValid() &&
         orgField(request.resource.data.organizationId, 'vendorCount', 0) <
         orgField(request.resource.data.organizationId, 'vendorCap', 25);
-      allow update: if isDocOrgMember() && vendorFieldsValid();
+      allow update: if isDocOrgMember() && orgIdUnchanged() && vendorFieldsValid();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
@@ -291,18 +380,18 @@ service cloud.firestore {
     // Doc id = vendorId; org members may create/update their org's triage docs.
     match /vendor_triage/{vendorId} {
       allow read: if isDocOrgMember();
-      allow create: if isCreatingForOwnOrg();
+      allow create: if isCreatingForOwnOrg() && childVendorBoundIfPresent();
       allow update: if isDocOrgMember()
-        && request.resource.data.organizationId == resource.data.organizationId
-        && request.resource.data.vendorId == resource.data.vendorId;
+        && orgIdUnchanged()
+        && parentVendorUnchanged();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
     // Vendor Assessments Collections (handle both names)
     match /vendor_assessments/{assessmentId} {
       allow read: if isDocOrgMember();
-      allow create: if isCreatingForOwnOrg();
-      allow update: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg() && childVendorBoundIfPresent();
+      allow update: if isDocOrgMember() && orgIdUnchanged() && parentVendorUnchanged();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
@@ -400,8 +489,8 @@ service cloud.firestore {
 
     match /assessments/{assessmentId} {
       allow read: if isDocOrgMember() || (isPortalSessionFor(assessmentId) && isPortalReadableAssessment());
-      allow create: if isCreatingForOwnOrg();
-      allow update: if (isDocOrgMember() && orgPreservesSentSnapshot() && orgPreservesFinalDecision() && orgPreservesEvidenceTrust() && orgDeniesClientDecisionWrites()) ||
+      allow create: if isCreatingForOwnOrg() && childVendorBoundIfPresent();
+      allow update: if (isDocOrgMember() && orgIdUnchanged() && parentVendorUnchanged() && orgPreservesSentSnapshot() && orgPreservesFinalDecision() && orgPreservesEvidenceTrust() && orgDeniesClientDecisionWrites()) ||
         (isPortalSessionFor(assessmentId) && portalSubmitTransition() && portalSubmitFieldsChanged()) ||
         (portalMayWriteAssessment(assessmentId) && onlyPortalAssessmentFieldsChanged());
       allow delete: if isDocOrgMember() && isAdmin();
@@ -419,16 +508,16 @@ service cloud.firestore {
     // the assessment this response belongs to.
     match /assessment_responses/{responseId} {
       allow read: if isDocOrgMember() || isPortalSessionFor(resource.data.assessmentId);
-      allow create: if isAuthenticated() && request.resource.data.organizationId is string;
-      allow update: if isDocOrgMember() ||
+      allow create: if isCreatingForOwnOrg() && childAssessmentBoundIfPresent();
+      allow update: if (isDocOrgMember() && orgIdUnchanged() && parentAssessmentUnchanged()) ||
         (isPortalSessionFor(resource.data.assessmentId) && onlyPortalResponseFieldsChanged());
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
     match /evidence/{evidenceId} {
       allow read: if isDocOrgMember();
-      allow create: if isAuthenticated() && request.resource.data.organizationId is string;
-      allow update: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg() && childAssessmentBoundIfPresent();
+      allow update: if isDocOrgMember() && orgIdUnchanged() && parentAssessmentUnchanged();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
@@ -443,7 +532,7 @@ service cloud.firestore {
     match /audit_readiness/{auditId} {
       allow read: if isDocOrgMember();
       allow create: if isCreatingForOwnOrg() && auditReadinessFieldsValid();
-      allow update: if isDocOrgMember() && auditReadinessFieldsValid();
+      allow update: if isDocOrgMember() && orgIdUnchanged() && auditReadinessFieldsValid();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
@@ -451,7 +540,7 @@ service cloud.firestore {
     match /executive_reports/{reportId} {
       allow read: if isDocOrgMember();
       allow create: if isCreatingForOwnOrg() && genericAIDocFieldsValid();
-      allow update: if isDocOrgMember() && genericAIDocFieldsValid();
+      allow update: if isDocOrgMember() && orgIdUnchanged() && genericAIDocFieldsValid();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
@@ -459,7 +548,7 @@ service cloud.firestore {
     match /calendar_events/{eventId} {
       allow read: if isDocOrgMember();
       allow create: if isCreatingForOwnOrg() && calendarEventFieldsValid();
-      allow update: if isDocOrgMember() && calendarEventFieldsValid();
+      allow update: if isDocOrgMember() && orgIdUnchanged() && calendarEventFieldsValid();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
@@ -467,7 +556,7 @@ service cloud.firestore {
     match /identities/{identityId} {
       allow read: if isDocOrgMember();
       allow create: if isCreatingForOwnOrg() && identityFieldsValid();
-      allow update: if isDocOrgMember() && identityFieldsValid();
+      allow update: if isDocOrgMember() && orgIdUnchanged() && identityFieldsValid();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
@@ -482,7 +571,7 @@ service cloud.firestore {
     match /evidence_reviews/{reviewId} {
       allow read: if isDocOrgMember();
       allow create: if isCreatingForOwnOrg() && genericAIDocFieldsValid();
-      allow update: if isDocOrgMember() && genericAIDocFieldsValid();
+      allow update: if isDocOrgMember() && orgIdUnchanged() && genericAIDocFieldsValid();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
@@ -490,7 +579,7 @@ service cloud.firestore {
     match /remediations/{remediationId} {
       allow read: if isDocOrgMember();
       allow create: if isCreatingForOwnOrg() && remediationFieldsValid();
-      allow update: if isDocOrgMember() && remediationFieldsValid();
+      allow update: if isDocOrgMember() && orgIdUnchanged() && remediationFieldsValid();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
