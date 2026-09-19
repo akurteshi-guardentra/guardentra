@@ -47,9 +47,13 @@ import {
 import { downloadVendorRegisterReport } from '../lib/vendor/reportExport';
 import { sendEmail } from '../lib/notifications';
 import {
+  HOSTED_VENDOR_LOAD_FAILED,
+  HOSTED_VENDOR_SAVE_FAILED,
   createLocalVendor,
   isFirestoreUnavailableError,
   listLocalVendors,
+  mayFallbackVendorCreateToLocal,
+  shouldUseLocalPersistenceFallback,
 } from '../lib/vendor/localVendorStore';
 import { useOrgAssessments } from '../lib/vendor/useOrgAssessments';
 import { DEFAULT_VENDOR_CAP, getPlan } from '../lib/plans';
@@ -98,8 +102,8 @@ export function VendorsDirectory() {
 
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dataMode, setDataMode] = useState<'firestore' | 'local'>('firestore');
-  const dataModeRef = useRef<'firestore' | 'local'>('firestore');
+  const [dataMode, setDataMode] = useState<'firestore' | 'local' | 'unavailable'>('firestore');
+  const dataModeRef = useRef<'firestore' | 'local' | 'unavailable'>('firestore');
   const [dataError, setDataError] = useState('');
   const [search, setSearch] = useState('');
   const [riskFilter, setRiskFilter] = useState<string>('all');
@@ -135,6 +139,13 @@ export function VendorsDirectory() {
   } | null>(null);
 
   const refreshLocal = (id: string) => {
+    if (!shouldUseLocalPersistenceFallback()) {
+      setVendors([]);
+      dataModeRef.current = 'unavailable';
+      setDataMode('unavailable');
+      setLoading(false);
+      return;
+    }
     setVendors(listLocalVendors(id));
     dataModeRef.current = 'local';
     setDataMode('local');
@@ -176,7 +187,25 @@ export function VendorsDirectory() {
     let settled = false;
     let unsub: (() => void) | null = null;
 
+    const failClosed = (message: string) => {
+      if (settled && dataModeRef.current === 'unavailable') return;
+      settled = true;
+      if (unsub) {
+        unsub();
+        unsub = null;
+      }
+      setVendors([]);
+      dataModeRef.current = 'unavailable';
+      setDataMode('unavailable');
+      setDataError(message);
+      setLoading(false);
+    };
+
     const fallBackLocal = (message: string) => {
+      if (!shouldUseLocalPersistenceFallback()) {
+        failClosed(HOSTED_VENDOR_LOAD_FAILED);
+        return;
+      }
       if (settled && dataModeRef.current === 'local') return;
       settled = true;
       if (unsub) {
@@ -189,9 +218,13 @@ export function VendorsDirectory() {
 
     // Firestore can hang without calling error when the (default) DB is missing.
     const failSafe = window.setTimeout(() => {
-      fallBackLocal(
-        'Cloud database timed out — using local browser storage so you can still add, search, filter, and bulk-import vendors.'
-      );
+      if (shouldUseLocalPersistenceFallback()) {
+        fallBackLocal(
+          'Cloud database timed out — using local browser storage so you can still add, search, filter, and bulk-import vendors.'
+        );
+      } else {
+        failClosed(HOSTED_VENDOR_LOAD_FAILED);
+      }
     }, 3500);
 
     const q = query(collection(db, 'vendors'), where('organizationId', '==', orgId));
@@ -212,6 +245,10 @@ export function VendorsDirectory() {
       (err) => {
         console.error('Vendors listener failed:', err);
         window.clearTimeout(failSafe);
+        if (!shouldUseLocalPersistenceFallback()) {
+          failClosed(HOSTED_VENDOR_LOAD_FAILED);
+          return;
+        }
         if (isFirestoreUnavailableError(err)) {
           fallBackLocal(
             'Cloud Firestore is unavailable (database may not exist). Using local browser storage so you can still add, search, filter, and bulk-import vendors.'
@@ -300,8 +337,11 @@ export function VendorsDirectory() {
       return local.id as string;
     };
 
-    // Once local mode is active, never block the UI on a hanging Firestore write.
+    // Demo/dev local mode only — hosted never treats browser storage as a save.
     if (dataModeRef.current === 'local') {
+      if (!shouldUseLocalPersistenceFallback()) {
+        throw new Error(HOSTED_VENDOR_SAVE_FAILED);
+      }
       const id = saveLocal();
       void emitAuditBestEffort({
         tenantId: orgId,
@@ -312,6 +352,9 @@ export function VendorsDirectory() {
         payload: { name: input.name, category: input.category, criticality: input.criticality, local: true },
       });
       return id;
+    }
+    if (dataModeRef.current === 'unavailable' && !shouldUseLocalPersistenceFallback()) {
+      throw new Error(HOSTED_VENDOR_SAVE_FAILED);
     }
 
     try {
@@ -358,7 +401,7 @@ export function VendorsDirectory() {
       });
       return createdId;
     } catch (ex) {
-      if (isFirestoreUnavailableError(ex)) {
+      if (mayFallbackVendorCreateToLocal(ex)) {
         setDataError(
           'Cloud Firestore write failed. Switched to local browser storage for this session.'
         );
@@ -372,6 +415,9 @@ export function VendorsDirectory() {
           payload: { name: input.name, category: input.category, criticality: input.criticality, local: true },
         });
         return id;
+      }
+      if (isFirestoreUnavailableError(ex)) {
+        throw new Error(HOSTED_VENDOR_SAVE_FAILED);
       }
       throw ex;
     }
@@ -620,7 +666,7 @@ export function VendorsDirectory() {
 
   return (
     <VendorsPageHeader
-      dataMode={dataMode}
+      dataMode={dataMode === 'local' ? 'local' : 'firestore'}
       onOpenBulk={openBulkModal}
       onOpenAdd={() => {
         setFormError('');
@@ -634,7 +680,11 @@ export function VendorsDirectory() {
       {dataError && (
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
           <p className="font-medium text-amber-200">
-            {dataMode === 'local' ? 'Local vendor mode' : 'Vendors data warning'}
+            {dataMode === 'local'
+              ? 'Local vendor mode'
+              : dataMode === 'unavailable'
+                ? 'Cloud vendors unavailable'
+                : 'Vendors data warning'}
           </p>
           <p className="mt-1 text-amber-100/80">{dataError}</p>
         </div>

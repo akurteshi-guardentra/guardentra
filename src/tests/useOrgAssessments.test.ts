@@ -19,6 +19,7 @@ const flush = async () => {
 };
 
 let onNext: ((snap: unknown) => void) | null = null;
+let onError: ((err: unknown) => void) | null = null;
 let listenCount = 0;
 let addDocShouldFail = false;
 const addedDocs: Record<string, unknown>[] = [];
@@ -33,9 +34,10 @@ vi.mock('firebase/firestore', () => ({
     addedDocs.push(data);
     return { id: `cloud_${addedDocs.length}` };
   }),
-  onSnapshot: vi.fn((_q: unknown, next: (s: unknown) => void) => {
+  onSnapshot: vi.fn((_q: unknown, next: (s: unknown) => void, err?: (e: unknown) => void) => {
     listenCount += 1;
     onNext = next;
+    onError = err ?? null;
     return () => {};
   }),
 }));
@@ -56,8 +58,10 @@ const makeLocal = (vendorName: string) =>
 
 beforeEach(() => {
   vi.useFakeTimers();
+  vi.stubEnv('VITE_FIREBASE_PROJECT_ID', 'guardentra-7f582');
   localStorage.clear();
   onNext = null;
+  onError = null;
   listenCount = 0;
   addDocShouldFail = false;
   addedDocs.length = 0;
@@ -65,6 +69,8 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllEnvs();
+  vi.stubEnv('VITE_FIREBASE_API_KEY', 'AIzaSyDummyVitestFirebaseKey000');
   vi.clearAllMocks();
 });
 
@@ -149,5 +155,87 @@ describe('useOrgAssessments — promotion and merge', () => {
     // reviewer always saw "No response provided."
     expect(result.current.assessments[0].answers).toEqual({ q_1: 'Yes', q_2: ['ISO 27001'] });
     expect(result.current.assessments[0].comments).toEqual({ q_1: 'via SSO' });
+  });
+});
+
+describe('useOrgAssessments — hosted fail-closed', () => {
+  beforeEach(() => {
+    vi.stubEnv('VITE_FIREBASE_PROJECT_ID', 'guardentra-staging');
+  });
+
+  it('does not claim local success after a Firestore timeout', async () => {
+    makeLocal('Leftover Local Assessment');
+    const { result } = renderHook(() => useOrgAssessments(ORG));
+
+    await act(async () => {
+      vi.advanceTimersByTime(3600);
+    });
+
+    expect(result.current.mode).toBe('unavailable');
+    expect(result.current.assessments).toEqual([]);
+    expect(result.current.error).toMatch(/not used as a substitute/i);
+  });
+
+  it('does not present leftover local rows after a Firestore rejection', async () => {
+    makeLocal('Rejected Local Assessment');
+    const { result } = renderHook(() => useOrgAssessments(ORG));
+
+    await act(async () => {
+      onError?.({ code: 'unavailable', message: 'backend unavailable' });
+    });
+
+    expect(result.current.mode).toBe('unavailable');
+    expect(result.current.assessments.map((a) => a.vendorName)).not.toContain('Rejected Local Assessment');
+    expect(listLocalAssessments(ORG).some((a) => a.vendorName === 'Rejected Local Assessment')).toBe(true);
+  });
+
+  it('successful cloud snapshot stays cloud-only and does not merge local rows', async () => {
+    makeLocal('Must Not Appear As Authoritative');
+    const { result } = renderHook(() => useOrgAssessments(ORG));
+
+    await act(async () => {
+      onNext?.(
+        snapshot([
+          { id: 'cloud_ok', data: { vendorName: 'Cloud Assessment', organizationId: ORG, portalOpen: true } },
+        ]),
+      );
+      await flush();
+    });
+
+    expect(result.current.mode).toBe('firestore');
+    expect(result.current.assessments).toHaveLength(1);
+    expect(result.current.assessments[0].id).toBe('cloud_ok');
+    expect(result.current.assessments.map((a) => a.vendorName)).not.toContain('Must Not Appear As Authoritative');
+    expect(addedDocs).toHaveLength(0);
+    expect(listLocalAssessments(ORG).some((a) => a.vendorName === 'Must Not Appear As Authoritative')).toBe(true);
+  });
+
+  it('refresh after a failed save cannot present the unsaved local record as authoritative', async () => {
+    makeLocal('Unsaved After Timeout');
+    const { result } = renderHook(() => useOrgAssessments(ORG));
+
+    await act(async () => {
+      vi.advanceTimersByTime(3600);
+    });
+    expect(result.current.mode).toBe('unavailable');
+
+    await act(async () => {
+      result.current.refreshLocal();
+    });
+    expect(result.current.mode).toBe('unavailable');
+    expect(result.current.assessments).toEqual([]);
+
+    await act(async () => {
+      vi.advanceTimersByTime(30_000);
+    });
+    await act(async () => {
+      onNext?.(snapshot([]));
+      await flush();
+    });
+
+    expect(result.current.mode).toBe('firestore');
+    expect(result.current.assessments).toEqual([]);
+    expect(addedDocs).toHaveLength(0);
+    expect(listLocalAssessments(ORG).some((a) => a.vendorName === 'Unsaved After Timeout')).toBe(true);
   });
 });

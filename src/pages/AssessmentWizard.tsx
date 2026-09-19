@@ -25,7 +25,12 @@ import {
 import { loadOrgFrameworkPackDefaults } from '../lib/vendor/orgFrameworkPacks';
 import { useOrgVendors } from '../lib/vendor/useOrgVendors';
 import { createLocalAssessment } from '../lib/vendor/localAssessmentStore';
-import { isFirestoreUnavailableError } from '../lib/vendor/localVendorStore';
+import {
+  HOSTED_ASSESSMENT_SAVE_FAILED,
+  isFirestoreUnavailableError,
+  mayCreateLocalAssessment,
+  mayFallbackAssessmentCreateToLocal,
+} from '../lib/vendor/localVendorStore';
 import { syncVendorAfterAssessmentCreate } from '../lib/vendor/syncVendorAssessment';
 import { buildCreateAssessmentFields } from '../lib/vendor/assessmentLifecycle';
 import { sendEmail } from '../lib/notifications';
@@ -200,6 +205,10 @@ export function AssessmentWizard() {
   };
 
   const createLocalAndOpen = async () => {
+    if (!mayCreateLocalAssessment(vendorMode, vendorId)) {
+      setError(HOSTED_ASSESSMENT_SAVE_FAILED);
+      return;
+    }
     if (!orgId || !selected) return;
     if (!previewQuestions.length) {
       setError(SAFE_NO_QUESTIONS);
@@ -290,8 +299,12 @@ export function AssessmentWizard() {
         .map((id) => FRAMEWORK_CATALOG.find((f) => f.id === id)?.name || id)
         .join(', ');
 
-      if (vendorMode === 'local' || vendorId.startsWith('local_')) {
+      if (mayCreateLocalAssessment(vendorMode, vendorId)) {
         await createLocalAndOpen();
+        return;
+      }
+      if (vendorMode === 'local' || vendorId.startsWith('local_') || vendorMode === 'unavailable') {
+        setError(HOSTED_ASSESSMENT_SAVE_FAILED);
         return;
       }
 
@@ -386,13 +399,15 @@ export function AssessmentWizard() {
         `/assessments?vendorId=${encodeURIComponent(vendorId)}&created=${encodeURIComponent(ref.id)}`
       );
     } catch (ex: unknown) {
-      if (isFirestoreUnavailableError(ex)) {
+      if (mayFallbackAssessmentCreateToLocal(ex)) {
         try {
           await createLocalAndOpen();
           return;
         } catch (localEx: unknown) {
           setError(localEx instanceof Error ? localEx.message : 'Failed to create local assessment.');
         }
+      } else if (isFirestoreUnavailableError(ex) || vendorMode === 'unavailable') {
+        setError(HOSTED_ASSESSMENT_SAVE_FAILED);
       } else {
         setError(ex instanceof Error ? ex.message : 'Failed to create assessment.');
       }
@@ -422,6 +437,10 @@ export function AssessmentWizard() {
           {vendorMode === 'local' ? (
             <span className="ml-2 inline-flex rounded-full border border-amber-500/30 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300">
               Local vendors
+            </span>
+          ) : vendorMode === 'unavailable' ? (
+            <span className="ml-2 inline-flex rounded-full border border-rose-500/30 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-rose-300">
+              Cloud vendors unavailable
             </span>
           ) : null}
         </>

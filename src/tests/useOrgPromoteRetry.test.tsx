@@ -34,6 +34,7 @@ function emptySnap() {
 
 describe('promoteLocalVendors (KI#5)', () => {
   beforeEach(() => {
+    vi.stubEnv('VITE_FIREBASE_PROJECT_ID', 'guardentra-7f582');
     localStorage.clear();
     addDocMock.mockReset();
     addDocMock.mockResolvedValue({ id: 'cloud_v1' } as never);
@@ -100,6 +101,7 @@ describe('promoteLocalVendors (KI#5)', () => {
 
 describe('promoteLocalAssessments (KI#5)', () => {
   beforeEach(() => {
+    vi.stubEnv('VITE_FIREBASE_PROJECT_ID', 'guardentra-7f582');
     localStorage.clear();
     addDocMock.mockReset();
     addDocMock.mockResolvedValue({ id: 'cloud_a1' } as never);
@@ -157,6 +159,7 @@ describe('promoteLocalAssessments (KI#5)', () => {
 
 describe('useOrgVendors retry → promote on reconnect (KI#5)', () => {
   beforeEach(() => {
+    vi.stubEnv('VITE_FIREBASE_PROJECT_ID', 'guardentra-7f582');
     localStorage.clear();
     addDocMock.mockReset();
     addDocMock.mockResolvedValue({ id: 'cloud_v' } as never);
@@ -205,6 +208,7 @@ describe('useOrgVendors retry → promote on reconnect (KI#5)', () => {
 
 describe('useOrgAssessments retry → promote on reconnect (KI#5)', () => {
   beforeEach(() => {
+    vi.stubEnv('VITE_FIREBASE_PROJECT_ID', 'guardentra-7f582');
     localStorage.clear();
     addDocMock.mockReset();
     addDocMock.mockResolvedValue({ id: 'cloud_a' } as never);
@@ -249,5 +253,33 @@ describe('useOrgAssessments retry → promote on reconnect (KI#5)', () => {
     expect(addDocMock).toHaveBeenCalled();
     expect(listLocalAssessments('org1')).toEqual([]);
     expect(subscribeCount).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('hosted environments never silently promote local-only rows', () => {
+  beforeEach(() => {
+    vi.stubEnv('VITE_FIREBASE_PROJECT_ID', 'guardentra-prod');
+    localStorage.clear();
+    addDocMock.mockReset();
+    addDocMock.mockResolvedValue({ id: 'cloud_should_not' } as never);
+  });
+
+  it('does not write leftover local vendors into hosted Firestore', async () => {
+    createLocalVendor('org1', { name: 'Leftover', category: 'SaaS', criticality: 'High' });
+    const idMap = await promoteLocalVendors('org1');
+    expect(idMap.size).toBe(0);
+    expect(addDocMock).not.toHaveBeenCalled();
+    expect(listLocalVendors('org1')).toHaveLength(1);
+  });
+
+  it('does not write leftover local assessments into hosted Firestore', async () => {
+    createLocalAssessment('org1', {
+      vendorId: 'v1',
+      vendorName: 'Leftover',
+      frameworks: ['soc2'],
+    });
+    await promoteLocalAssessments('org1');
+    expect(addDocMock).not.toHaveBeenCalled();
+    expect(listLocalAssessments('org1')).toHaveLength(1);
   });
 });

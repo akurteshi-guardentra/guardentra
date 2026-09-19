@@ -2,6 +2,7 @@ import React from 'react';
 import { Plus } from 'lucide-react';
 import { Button } from '../ui/button';
 import { PageShell } from '../spine/PageShell';
+import type { AssessmentDataMode } from '../../lib/vendor/useOrgAssessments';
 
 export function AssessmentsPageHeader({
   mode,
@@ -9,7 +10,7 @@ export function AssessmentsPageHeader({
   children,
   fastTrackStage = 'review',
 }: {
-  mode: 'firestore' | 'local';
+  mode: AssessmentDataMode;
   onCreate: () => void;
   children?: React.ReactNode;
   fastTrackStage?: 'review' | 'monitor';
@@ -28,6 +29,11 @@ export function AssessmentsPageHeader({
           {mode === 'local' ? (
             <span className="ml-2 inline-flex rounded-full border border-amber-500/30 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300">
               Local store
+            </span>
+          ) : null}
+          {mode === 'unavailable' ? (
+            <span className="ml-2 inline-flex rounded-full border border-rose-500/30 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-rose-400">
+              Cloud unavailable
             </span>
           ) : null}
         </>
