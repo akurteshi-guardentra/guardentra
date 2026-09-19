@@ -20,6 +20,17 @@ interface NewProfileFields {
   displayName: string;
 }
 
+export type BootstrapJoinRole = 'admin' | 'member';
+
+/**
+ * Invite role is server/invite-authoritative. Unknown or privileged-looking
+ * client-supplied values collapse to member — only an invite that already
+ * carries role=admin may grant admin.
+ */
+export function resolveBootstrapJoinRole(inviteRole: unknown): BootstrapJoinRole {
+  return inviteRole === 'admin' ? 'admin' : 'member';
+}
+
 /**
  * Create the Firestore profile for a brand-new authenticated user (their
  * users/{uid} doc doesn't exist yet). If there's a pending org_invites entry
@@ -34,6 +45,9 @@ interface NewProfileFields {
  * Scope: this only runs for a user with no existing profile. An existing
  * user cannot currently use an invite to join a second organization —
  * multi-org membership per user is a bigger feature, not attempted here.
+ *
+ * Issue #61: organizationId and role are never taken from caller input.
+ * Join writes inviteId so Firestore rules can re-verify the pending invite.
  */
 export async function bootstrapUserProfile(uid: string, fields: NewProfileFields): Promise<void> {
   const userRef = doc(db, 'users', uid);
@@ -70,8 +84,9 @@ export async function bootstrapUserProfile(uid: string, fields: NewProfileFields
     batch.set(userRef, {
       email: fields.email,
       displayName: fields.displayName,
-      role: pendingInvite.role || 'member',
+      role: resolveBootstrapJoinRole(pendingInvite.role),
       organizationId: pendingInvite.organizationId,
+      inviteId: pendingInvite.id,
       onboarded: false,
       createdAt: new Date().toISOString(),
     });

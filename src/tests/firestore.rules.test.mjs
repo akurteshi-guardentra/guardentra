@@ -163,12 +163,24 @@ async function main() {
   );
 
   await check(
-    "orgBootstrap.ts's corrected order: profile first, then the seat increment succeeds",
+    "orgBootstrap.ts's corrected order: invited profile first, then the seat increment succeeds",
     async () => {
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        await setDoc(doc(ctx.firestore(), 'org_invites/inv-j2'), {
+          email: 'j2@example.com',
+          status: 'pending',
+          organizationId: ORG,
+          role: 'member',
+        });
+      });
       const joinerDb = testEnv.authenticatedContext('joiner-2', { email: 'j2@example.com' }).firestore();
       // Step 1 — the batch, profile only (invite update omitted; covered elsewhere).
       const batch = writeBatch(joinerDb);
-      batch.set(doc(joinerDb, 'users/joiner-2'), { organizationId: ORG, role: 'member' });
+      batch.set(doc(joinerDb, 'users/joiner-2'), {
+        organizationId: ORG,
+        role: 'member',
+        inviteId: 'inv-j2',
+      });
       await assertSucceeds(batch.commit());
       // Step 2 — now that the profile exists, isOrgMember() resolves and the
       // counter-only update passes the admin-or-counters rule.
@@ -650,6 +662,201 @@ async function main() {
 
   await check('Org A admin CANNOT write Org B sample data in a cross-tenant batch', () =>
     assertFails(sampleSeedBatch(ORG_B).commit()),
+  );
+
+  console.log('\nIssue #61 tenant enrollment / ownership integrity:');
+
+  const attackerDb = testEnv
+    .authenticatedContext('attacker-fresh', { email: 'attacker@example.com' })
+    .firestore();
+  const founderDb = testEnv
+    .authenticatedContext('founder-1', { email: 'founder@example.com' })
+    .firestore();
+  const invitedDb = testEnv
+    .authenticatedContext('invited-61', { email: 'invited61@example.com' })
+    .firestore();
+
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const fs = ctx.firestore();
+    await setDoc(doc(fs, 'organizations/victim-org'), {
+      name: 'Victim',
+      seatCount: 1,
+      vendorCount: 1,
+      vendorCap: 25,
+    });
+    await setDoc(doc(fs, 'vendors/victim-vendor'), {
+      organizationId: 'victim-org',
+      name: 'Victim Vendor',
+    });
+    await setDoc(doc(fs, 'assessments/victim-asm'), {
+      organizationId: 'victim-org',
+      vendorId: 'victim-vendor',
+    });
+    await setDoc(doc(fs, 'org_invites/inv-member-61'), {
+      email: 'invited61@example.com',
+      status: 'pending',
+      organizationId: ORG,
+      role: 'member',
+    });
+    await setDoc(doc(fs, `vendors/${ORG}-v-owned`), {
+      organizationId: ORG,
+      name: 'Owned Vendor',
+      category: 'SaaS',
+      criticality: 'Low',
+      riskScore: 1,
+    });
+    await setDoc(doc(fs, `assessments/${ORG}-asm-owned`), {
+      organizationId: ORG,
+      vendorId: `${ORG}-v-owned`,
+      status: 'Sent',
+    });
+    await setDoc(doc(fs, `risks/${ORG}-risk-owned`), {
+      organizationId: ORG,
+      title: 'Owned risk',
+    });
+    // Ensure invite-create seat headroom after earlier suite increments.
+    await setDoc(
+      doc(fs, `organizations/${ORG}`),
+      { seatCount: 1, seatCap: 10 },
+      { merge: true },
+    );
+  });
+
+  await check('fresh user CANNOT self-enroll into an arbitrary existing tenant', () =>
+    assertFails(
+      setDoc(doc(attackerDb, 'users/attacker-fresh'), {
+        organizationId: ORG,
+        role: 'member',
+      }),
+    ),
+  );
+
+  await check('fresh user CANNOT self-assign admin on an existing tenant', () =>
+    assertFails(
+      setDoc(doc(attackerDb, 'users/attacker-fresh'), {
+        organizationId: ORG,
+        role: 'admin',
+      }),
+    ),
+  );
+
+  await check('member invite CANNOT be used to self-assign admin', () =>
+    assertFails(
+      setDoc(doc(invitedDb, 'users/invited-61'), {
+        organizationId: ORG,
+        role: 'admin',
+        inviteId: 'inv-member-61',
+      }),
+    ),
+  );
+
+  await check('valid invited bootstrap (member + inviteId) SUCCEEDS', () =>
+    assertSucceeds(
+      setDoc(doc(invitedDb, 'users/invited-61'), {
+        organizationId: ORG,
+        role: 'member',
+        inviteId: 'inv-member-61',
+      }),
+    ),
+  );
+
+  await check('founder bootstrap of a brand-new org + admin profile SUCCEEDS', async () => {
+    const batch = writeBatch(founderDb);
+    batch.set(doc(founderDb, 'organizations/founder-org-61'), {
+      name: "Founder's Organization",
+      autoCreated: true,
+      seatCount: 1,
+      vendorCount: 0,
+      vendorCap: 25,
+    });
+    batch.set(doc(founderDb, 'users/founder-1'), {
+      organizationId: 'founder-org-61',
+      role: 'admin',
+      email: 'founder@example.com',
+    });
+    await assertSucceeds(batch.commit());
+  });
+
+  await check('existing member CANNOT reassign a tenant document to another org', () =>
+    assertFails(
+      updateDoc(doc(db, `risks/${ORG}-risk-owned`), { organizationId: 'victim-org' }),
+    ),
+  );
+
+  await check('existing member CANNOT re-parent an assessment onto another tenant vendor', () =>
+    assertFails(
+      updateDoc(doc(db, `assessments/${ORG}-asm-owned`), {
+        organizationId: ORG,
+        vendorId: 'victim-vendor',
+      }),
+    ),
+  );
+
+  await check('child evidence CANNOT be created for another tenant', () =>
+    assertFails(
+      setDoc(doc(db, 'evidence/forged-ev'), {
+        organizationId: 'victim-org',
+        assessmentId: 'victim-asm',
+      }),
+    ),
+  );
+
+  await check('child response CANNOT forge a parent assessment in another tenant', () =>
+    assertFails(
+      setDoc(doc(db, 'assessment_responses/forged-r'), {
+        organizationId: ORG,
+        assessmentId: 'victim-asm',
+        answer: 'x',
+      }),
+    ),
+  );
+
+  await check('child assessment CANNOT bind a vendor owned by another tenant', () =>
+    assertFails(
+      setDoc(doc(db, 'assessments/forged-asm'), {
+        organizationId: ORG,
+        vendorId: 'victim-vendor',
+      }),
+    ),
+  );
+
+  await check('org member CAN create evidence bound to their own assessment', () =>
+    assertSucceeds(
+      setDoc(doc(db, 'evidence/own-ev'), {
+        organizationId: ORG,
+        assessmentId: `${ORG}-asm-owned`,
+      }),
+    ),
+  );
+
+  await check('already-enrolled user CANNOT create a second organization', () =>
+    assertFails(
+      setDoc(doc(db, 'organizations/second-org-61'), { name: 'Second org' }),
+    ),
+  );
+
+  await check('admin CANNOT create an invite with a forged privileged role', () =>
+    assertFails(
+      setDoc(doc(db, 'org_invites/inv-forged-role'), {
+        organizationId: ORG,
+        email: 'forged@example.com',
+        role: 'superadmin',
+        status: 'pending',
+        createdAt: '2026-09-18T00:00:00.000Z',
+      }),
+    ),
+  );
+
+  await check('admin CAN create a member invite with an allowlisted role', () =>
+    assertSucceeds(
+      setDoc(doc(db, 'org_invites/inv-ok-role'), {
+        organizationId: ORG,
+        email: 'ok61@example.com',
+        role: 'member',
+        status: 'pending',
+        createdAt: '2026-09-18T00:00:00.000Z',
+      }),
+    ),
   );
 
   await testEnv.cleanup();

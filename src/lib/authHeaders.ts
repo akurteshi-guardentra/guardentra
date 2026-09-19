@@ -1,6 +1,18 @@
 import { auth } from '../firebase';
 
-/** Authorization header for /api/* when the user is signed in. */
+/**
+ * Shape shared by every /api/* header provider (this default-app one and the
+ * portal-app one in `lib/vendor/portalAuth.ts`). Keeping one shared type is what
+ * lets callers like `auditClient.ts` accept either provider interchangeably
+ * without ever mixing which Firebase app's token backs a given request
+ * (GitHub #63 — vendor-portal audit calls were reading the default app's
+ * `auth.currentUser` instead of the portal app's).
+ */
+export type AuthHeaderProvider = (
+  extra?: Record<string, string>
+) => Promise<Record<string, string>>;
+
+/** Authorization header for /api/* when the org/admin user is signed in on the default Firebase app. */
 export async function authHeaders(
   extra: Record<string, string> = {},
   opts?: { organizationId?: string | null }
