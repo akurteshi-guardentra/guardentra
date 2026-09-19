@@ -1,0 +1,3 @@
+# GuardEntra local orchestration state (never commit)
+state/
+*.log
