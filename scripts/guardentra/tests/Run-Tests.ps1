@@ -494,6 +494,97 @@ Assert-True ($schemaDoc -match 'R4') 'schema doc is R4'
 Assert-True ($schemaDoc -match 'nonce-ledger' -or $schemaDoc -match 'source_ref') 'schema documents provenance'
 Assert-True ($schemaDoc -notmatch 'Record with ``\.\\scripts\\guardentra\.ps1 authorize') 'schema has no authorize mint instruction'
 
+# --- #77 native git stderr regression (real git + temp local remote; no GuardEntra branch mutation) ---
+function Invoke-GuardentraTestGitSetup {
+    param([Parameter(Mandatory)][string[]]$GitArgs, [string]$WorkDir = '')
+    # Setup only: tolerate native stderr under PS 5.1 Stop without weakening the
+    # suite-wide preference outside this helper. Production path is Invoke-GuardentraGit.
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $errPath = [System.IO.Path]::GetTempFileName()
+    try {
+        if ($WorkDir) {
+            $out = & git -C $WorkDir @GitArgs 2>$errPath
+        }
+        else {
+            $out = & git @GitArgs 2>$errPath
+        }
+        $code = $LASTEXITCODE
+        if ($null -eq $code) { $code = 0 }
+        if ($code -ne 0) {
+            $errText = ''
+            if (Test-Path -LiteralPath $errPath) { $errText = [System.IO.File]::ReadAllText($errPath) }
+            $combined = @(($out | Out-String), $errText) -join [Environment]::NewLine
+            throw "native-git test setup failed ($($GitArgs -join ' ')): $combined"
+        }
+    }
+    finally {
+        $ErrorActionPreference = $prevEap
+        if (Test-Path -LiteralPath $errPath) {
+            Remove-Item -LiteralPath $errPath -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+$nativeRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('guardentra-native-git-' + [guid]::NewGuid().ToString('n'))
+$bareRepo = Join-Path $nativeRoot 'remote.git'
+$seedRepo = Join-Path $nativeRoot 'seed'
+$workRepo = Join-Path $nativeRoot 'work'
+$prevGuardentraRoot = $script:GuardentraRoot
+try {
+    New-Item -ItemType Directory -Force -Path $nativeRoot | Out-Null
+    Invoke-GuardentraTestGitSetup -GitArgs @('init', '--bare', $bareRepo)
+    Invoke-GuardentraTestGitSetup -GitArgs @('init', $seedRepo)
+    Invoke-GuardentraTestGitSetup -WorkDir $seedRepo -GitArgs @('config', 'user.email', 'native-git-test@guardentra.local')
+    Invoke-GuardentraTestGitSetup -WorkDir $seedRepo -GitArgs @('config', 'user.name', 'GuardEntra Native Git Test')
+    Invoke-GuardentraTestGitSetup -WorkDir $seedRepo -GitArgs @('checkout', '-b', 'main')
+    Set-Content -LiteralPath (Join-Path $seedRepo 'README.md') -Value 'seed-v1' -Encoding utf8
+    Invoke-GuardentraTestGitSetup -WorkDir $seedRepo -GitArgs @('add', 'README.md')
+    Invoke-GuardentraTestGitSetup -WorkDir $seedRepo -GitArgs @('commit', '-m', 'seed')
+    Invoke-GuardentraTestGitSetup -WorkDir $seedRepo -GitArgs @('remote', 'add', 'origin', $bareRepo)
+    Invoke-GuardentraTestGitSetup -WorkDir $seedRepo -GitArgs @('push', '-u', 'origin', 'main')
+    Invoke-GuardentraTestGitSetup -GitArgs @('clone', $bareRepo, $workRepo)
+    Invoke-GuardentraTestGitSetup -WorkDir $workRepo -GitArgs @('config', 'user.email', 'native-git-test@guardentra.local')
+    Invoke-GuardentraTestGitSetup -WorkDir $workRepo -GitArgs @('config', 'user.name', 'GuardEntra Native Git Test')
+
+    # Advance origin so a subsequent fetch emits normal native stderr on success.
+    Set-Content -LiteralPath (Join-Path $seedRepo 'README.md') -Value 'seed-v2' -Encoding utf8
+    Invoke-GuardentraTestGitSetup -WorkDir $seedRepo -GitArgs @('add', 'README.md')
+    Invoke-GuardentraTestGitSetup -WorkDir $seedRepo -GitArgs @('commit', '-m', 'advance-for-fetch-stderr')
+    Invoke-GuardentraTestGitSetup -WorkDir $seedRepo -GitArgs @('push', 'origin', 'main')
+
+    $script:GuardentraRoot = $workRepo
+    # Keep Stop so this proves the wrapper survives PS 5.1 NativeCommandError.
+    $ErrorActionPreference = 'Stop'
+
+    $fetchOk = $null
+    try {
+        $fetchOk = Invoke-GuardentraGit -GitArgs @('fetch', 'origin')
+        Assert-True ($true) 'native git fetch with stderr does not terminate wrapper'
+    }
+    catch {
+        $script:Failed++; $script:Failures.Add("native git fetch with stderr does not terminate wrapper (threw: $($_.Exception.Message))")
+        Write-Host "FAIL native git fetch with stderr does not terminate wrapper (threw: $($_.Exception.Message))"
+    }
+    if ($null -ne $fetchOk) {
+        Assert-True ($fetchOk.ExitCode -eq 0) 'native git fetch exit code is 0'
+        Assert-True ($fetchOk.Output -match '(?i)From |FETCH_HEAD|\bmain\b|\*') 'native git success stderr/stdout diagnostics retained'
+    }
+
+    $failGit = Invoke-GuardentraGit -GitArgs @('rev-parse', '--verify', 'refs/heads/does-not-exist-issue-77')
+    Assert-True ($failGit.ExitCode -ne 0) 'native git failure returns non-zero exit code'
+    Assert-True (-not [string]::IsNullOrWhiteSpace($failGit.Output)) 'native git failure diagnostics available'
+    $redactedNative = Protect-GuardentraSecrets -Text ("token=ghp_abcdefghijklmnopqrstuv`n$($failGit.Output)")
+    Assert-True ($redactedNative -match 'REDACTED') 'native git diagnostics remain redacted'
+    Assert-True ($redactedNative -notmatch 'ghp_abcdefghijklmnopqrstuv') 'secret token not left unredacted'
+}
+finally {
+    $script:GuardentraRoot = $prevGuardentraRoot
+    if (Test-Path -LiteralPath $nativeRoot) {
+        Remove-Item -LiteralPath $nativeRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 Reset-GuardentraTestProviders
 if (Test-Path $tmpRoot) { Remove-Item $tmpRoot -Recurse -Force -ErrorAction SilentlyContinue }
 $script:GuardentraStateRoot = Join-Path $PSScriptRoot '..\state\issues'
