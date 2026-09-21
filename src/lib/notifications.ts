@@ -7,8 +7,12 @@ export interface EmailInput {
   html?: string;
 }
 
-/** Queues an email via the server's /api/notify/mail proxy (server/routes/notify.ts),
- * which writes to the Firestore `mail` collection for the Trigger Email extension. */
+/**
+ * Queues an email via POST /api/notify/mail (server/routes/notify.ts → Admin SDK
+ * `mail/{id}` for firebase/firestore-send-email). Proves queue write only —
+ * not delivery. Actual SMTP acceptance is extension + provider (staging: SendGrid)
+ * — see docs/STAGING_EMAIL_DELIVERY.md. Never send SMTP credentials from the client.
+ */
 export async function sendEmail(input: EmailInput): Promise<void> {
   const response = await fetch('/api/notify/mail', {
     method: 'POST',
