@@ -517,12 +517,30 @@ function Invoke-GuardentraTestGitSetup {
             $combined = @(($out | Out-String), $errText) -join [Environment]::NewLine
             throw "native-git test setup failed ($($GitArgs -join ' ')): $combined"
         }
+        return ($out | Out-String).Trim()
     }
     finally {
         $ErrorActionPreference = $prevEap
         if (Test-Path -LiteralPath $errPath) {
             Remove-Item -LiteralPath $errPath -Force -ErrorAction SilentlyContinue
         }
+    }
+}
+
+# Ensure a freshly `git init`-ed repo is checked out on `main`, creating it
+# only if a different (or unborn) branch is currently active. Unconditionally
+# running `checkout -b main` previously failed ("a branch named 'main'
+# already exists") whenever the caller's own git config already sets
+# init.defaultBranch=main, because `init` then puts the repo's unborn HEAD on
+# `main` before this fixture ever runs (#82 — Cursor Bugbot finding on PR
+# #79). Querying the actual current branch name first makes this safe
+# regardless of the caller's init.defaultBranch, with no git-version-specific
+# flag dependency (e.g. --initial-branch).
+function Set-GuardentraTestSeedMainBranch {
+    param([Parameter(Mandatory)][string]$RepoDir)
+    $current = (Invoke-GuardentraTestGitSetup -WorkDir $RepoDir -GitArgs @('symbolic-ref', '--short', 'HEAD')).Trim()
+    if ($current -ne 'main') {
+        Invoke-GuardentraTestGitSetup -WorkDir $RepoDir -GitArgs @('checkout', '-b', 'main')
     }
 }
 
@@ -537,7 +555,7 @@ try {
     Invoke-GuardentraTestGitSetup -GitArgs @('init', $seedRepo)
     Invoke-GuardentraTestGitSetup -WorkDir $seedRepo -GitArgs @('config', 'user.email', 'native-git-test@guardentra.local')
     Invoke-GuardentraTestGitSetup -WorkDir $seedRepo -GitArgs @('config', 'user.name', 'GuardEntra Native Git Test')
-    Invoke-GuardentraTestGitSetup -WorkDir $seedRepo -GitArgs @('checkout', '-b', 'main')
+    Set-GuardentraTestSeedMainBranch -RepoDir $seedRepo
     Set-Content -LiteralPath (Join-Path $seedRepo 'README.md') -Value 'seed-v1' -Encoding utf8
     Invoke-GuardentraTestGitSetup -WorkDir $seedRepo -GitArgs @('add', 'README.md')
     Invoke-GuardentraTestGitSetup -WorkDir $seedRepo -GitArgs @('commit', '-m', 'seed')
@@ -582,6 +600,176 @@ finally {
     $script:GuardentraRoot = $prevGuardentraRoot
     if (Test-Path -LiteralPath $nativeRoot) {
         Remove-Item -LiteralPath $nativeRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# --- #82: seed-repo init must stay safe when init.defaultBranch=main is
+# already set (real git repo + disposable temp dir; no GuardEntra branch
+# mutation). Uses `-c` scoped to these invocations only -- never mutates the
+# machine's real git config. ---
+$forcedRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('guardentra-native-git-forced-main-' + [guid]::NewGuid().ToString('n'))
+$forcedSeed = Join-Path $forcedRoot 'seed'
+try {
+    New-Item -ItemType Directory -Force -Path $forcedRoot | Out-Null
+    Invoke-GuardentraTestGitSetup -GitArgs @('-c', 'init.defaultBranch=main', 'init', $forcedSeed)
+    Invoke-GuardentraTestGitSetup -WorkDir $forcedSeed -GitArgs @('config', 'user.email', 'native-git-test@guardentra.local')
+    Invoke-GuardentraTestGitSetup -WorkDir $forcedSeed -GitArgs @('config', 'user.name', 'GuardEntra Native Git Test')
+
+    $forcedInitialBranch = (Invoke-GuardentraTestGitSetup -WorkDir $forcedSeed -GitArgs @('symbolic-ref', '--short', 'HEAD')).Trim()
+    Assert-True ($forcedInitialBranch -eq 'main') 'forced init.defaultBranch=main seeds an unborn main branch'
+
+    $guardThrew = $false
+    try {
+        Set-GuardentraTestSeedMainBranch -RepoDir $forcedSeed
+    }
+    catch {
+        $guardThrew = $true
+        $script:Failed++; $script:Failures.Add("seed fixture guard is safe under init.defaultBranch=main (threw: $($_.Exception.Message))")
+        Write-Host "FAIL seed fixture guard is safe under init.defaultBranch=main (threw: $($_.Exception.Message))"
+    }
+    Assert-True (-not $guardThrew) 'seed fixture guard does not throw when main is already the current branch'
+
+    Set-Content -LiteralPath (Join-Path $forcedSeed 'README.md') -Value 'forced-main-v1' -Encoding utf8
+    Invoke-GuardentraTestGitSetup -WorkDir $forcedSeed -GitArgs @('add', 'README.md')
+    Invoke-GuardentraTestGitSetup -WorkDir $forcedSeed -GitArgs @('commit', '-m', 'forced-main-seed')
+
+    $branchesText = Invoke-GuardentraTestGitSetup -WorkDir $forcedSeed -GitArgs @('branch', '--list')
+    $mainMatches = [regex]::Matches($branchesText, '(?m)^\*?\s*main\s*$')
+    Assert-True ($mainMatches.Count -eq 1) 'exactly one main branch exists after forced init.defaultBranch=main seeding'
+}
+finally {
+    if (Test-Path -LiteralPath $forcedRoot) {
+        Remove-Item -LiteralPath $forcedRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# --- #82 literal acceptance: a TEMPORARY HOME/global git config actually
+# forcing init.defaultBranch=main (not `-c`), proving the fix under the real
+# condition the issue describes. Only this process's HOME/USERPROFILE point
+# at a disposable directory for the duration of this block; both are
+# restored in `finally` regardless of outcome. The user's real ~/.gitconfig
+# and the GuardEntra repository's own git config are never touched -- the
+# temporary .gitconfig lives solely inside the disposable temp HOME.
+$tempHomeRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('guardentra-native-git-temphome-' + [guid]::NewGuid().ToString('n'))
+$prevHome = $env:HOME
+$prevUserProfile = $env:USERPROFILE
+$prevGitConfigGlobal = $env:GIT_CONFIG_GLOBAL
+$prevGitConfigNoSystem = $env:GIT_CONFIG_NOSYSTEM
+try {
+    New-Item -ItemType Directory -Force -Path $tempHomeRoot | Out-Null
+
+    # Git for Windows resolves the global config from $HOME first, then
+    # $USERPROFILE. Point both at the disposable directory. Clear
+    # GIT_CONFIG_GLOBAL so an explicit override already present in this
+    # process/session cannot silently redirect `git config --global` away
+    # from the disposable HOME. GIT_CONFIG_NOSYSTEM avoids a real machine
+    # systemwide config participating in this proof (global still wins over
+    # system regardless, but this keeps the fixture fully self-contained).
+    $env:HOME = $tempHomeRoot
+    $env:USERPROFILE = $tempHomeRoot
+    Remove-Item Env:\GIT_CONFIG_GLOBAL -ErrorAction SilentlyContinue
+    $env:GIT_CONFIG_NOSYSTEM = '1'
+
+    Invoke-GuardentraTestGitSetup -GitArgs @('config', '--global', 'init.defaultBranch', 'main')
+
+    $tempGlobalConfigPath = Join-Path $tempHomeRoot '.gitconfig'
+    Assert-True (Test-Path -LiteralPath $tempGlobalConfigPath) 'temporary HOME .gitconfig file was created (disposable, not the real user config)'
+
+    $confirmedDefaultBranch = (Invoke-GuardentraTestGitSetup -GitArgs @('config', '--global', '--get', 'init.defaultBranch')).Trim()
+    Assert-True ($confirmedDefaultBranch -eq 'main') 'temporary global config confirms init.defaultBranch=main via git config --global --get'
+
+    $homeReposRoot = Join-Path $tempHomeRoot 'repos'
+    $homeBareRepo = Join-Path $homeReposRoot 'remote.git'
+    $homeSeedRepo = Join-Path $homeReposRoot 'seed'
+    $homeWorkRepo = Join-Path $homeReposRoot 'work'
+    New-Item -ItemType Directory -Force -Path $homeReposRoot | Out-Null
+
+    Invoke-GuardentraTestGitSetup -GitArgs @('init', '--bare', $homeBareRepo)
+    # Deliberately plain `git init` -- no -c override -- so this seed repo's
+    # unborn branch comes solely from the temporary global config above.
+    Invoke-GuardentraTestGitSetup -GitArgs @('init', $homeSeedRepo)
+    Invoke-GuardentraTestGitSetup -WorkDir $homeSeedRepo -GitArgs @('config', 'user.email', 'native-git-test@guardentra.local')
+    Invoke-GuardentraTestGitSetup -WorkDir $homeSeedRepo -GitArgs @('config', 'user.name', 'GuardEntra Native Git Test')
+
+    $homeInitialBranch = (Invoke-GuardentraTestGitSetup -WorkDir $homeSeedRepo -GitArgs @('symbolic-ref', '--short', 'HEAD')).Trim()
+    Assert-True ($homeInitialBranch -eq 'main') 'plain git init under temporary global config seeds an unborn main branch'
+
+    $homeGuardThrew = $false
+    try {
+        Set-GuardentraTestSeedMainBranch -RepoDir $homeSeedRepo
+    }
+    catch {
+        $homeGuardThrew = $true
+        $script:Failed++; $script:Failures.Add("production Set-GuardentraTestSeedMainBranch is safe under temporary global init.defaultBranch=main (threw: $($_.Exception.Message))")
+        Write-Host "FAIL production Set-GuardentraTestSeedMainBranch is safe under temporary global init.defaultBranch=main (threw: $($_.Exception.Message))"
+    }
+    Assert-True (-not $homeGuardThrew) 'production Set-GuardentraTestSeedMainBranch does not throw under temporary global init.defaultBranch=main'
+
+    $homeBranchAfterGuard = (Invoke-GuardentraTestGitSetup -WorkDir $homeSeedRepo -GitArgs @('symbolic-ref', '--short', 'HEAD')).Trim()
+    Assert-True ($homeBranchAfterGuard -eq 'main') 'branch remains main after the guard runs under temporary global init.defaultBranch=main'
+
+    Set-Content -LiteralPath (Join-Path $homeSeedRepo 'README.md') -Value 'temphome-v1' -Encoding utf8
+    Invoke-GuardentraTestGitSetup -WorkDir $homeSeedRepo -GitArgs @('add', 'README.md')
+    Invoke-GuardentraTestGitSetup -WorkDir $homeSeedRepo -GitArgs @('commit', '-m', 'temphome-seed')
+
+    $homeBranchesText = Invoke-GuardentraTestGitSetup -WorkDir $homeSeedRepo -GitArgs @('branch', '--list')
+    $homeMainMatches = [regex]::Matches($homeBranchesText, '(?m)^\*?\s*main\s*$')
+    Assert-True ($homeMainMatches.Count -eq 1) 'exactly one main branch exists after seeding under temporary global init.defaultBranch=main'
+
+    Invoke-GuardentraTestGitSetup -WorkDir $homeSeedRepo -GitArgs @('remote', 'add', 'origin', $homeBareRepo)
+    Invoke-GuardentraTestGitSetup -WorkDir $homeSeedRepo -GitArgs @('push', '-u', 'origin', 'main')
+    Invoke-GuardentraTestGitSetup -GitArgs @('clone', $homeBareRepo, $homeWorkRepo)
+    Invoke-GuardentraTestGitSetup -WorkDir $homeWorkRepo -GitArgs @('config', 'user.email', 'native-git-test@guardentra.local')
+    Invoke-GuardentraTestGitSetup -WorkDir $homeWorkRepo -GitArgs @('config', 'user.name', 'GuardEntra Native Git Test')
+
+    # Advance origin so a subsequent fetch emits normal native stderr on
+    # success -- re-proves the #77 wrapper fix itself (not only the seed
+    # branch guard) keeps working with a forced global init.defaultBranch=main.
+    Set-Content -LiteralPath (Join-Path $homeSeedRepo 'README.md') -Value 'temphome-v2' -Encoding utf8
+    Invoke-GuardentraTestGitSetup -WorkDir $homeSeedRepo -GitArgs @('add', 'README.md')
+    Invoke-GuardentraTestGitSetup -WorkDir $homeSeedRepo -GitArgs @('commit', '-m', 'temphome-advance-for-fetch-stderr')
+    Invoke-GuardentraTestGitSetup -WorkDir $homeSeedRepo -GitArgs @('push', 'origin', 'main')
+
+    $prevGuardentraRootHome = $script:GuardentraRoot
+    $prevEapHome = $ErrorActionPreference
+    try {
+        $script:GuardentraRoot = $homeWorkRepo
+        $ErrorActionPreference = 'Stop'
+
+        $homeFetchOk = $null
+        try {
+            $homeFetchOk = Invoke-GuardentraGit -GitArgs @('fetch', 'origin')
+            Assert-True ($true) 'native git fetch with stderr does not terminate wrapper under temporary global init.defaultBranch=main'
+        }
+        catch {
+            $script:Failed++; $script:Failures.Add("native git fetch with stderr does not terminate wrapper under temp HOME (threw: $($_.Exception.Message))")
+            Write-Host "FAIL native git fetch with stderr does not terminate wrapper under temp HOME (threw: $($_.Exception.Message))"
+        }
+        if ($null -ne $homeFetchOk) {
+            Assert-True ($homeFetchOk.ExitCode -eq 0) 'native git fetch exit code is 0 under temporary global init.defaultBranch=main'
+            Assert-True ($homeFetchOk.Output -match '(?i)From |FETCH_HEAD|\bmain\b|\*') 'native git success diagnostics retained under temporary global init.defaultBranch=main'
+        }
+
+        $homeFailGit = Invoke-GuardentraGit -GitArgs @('rev-parse', '--verify', 'refs/heads/does-not-exist-issue-82')
+        Assert-True ($homeFailGit.ExitCode -ne 0) 'native git failure returns non-zero exit code under temporary global init.defaultBranch=main'
+        Assert-True (-not [string]::IsNullOrWhiteSpace($homeFailGit.Output)) 'native git failure diagnostics available under temporary global init.defaultBranch=main'
+
+        $homeRedacted = Protect-GuardentraSecrets -Text ("token=ghp_abcdefghijklmnopqrstuv`n$($homeFailGit.Output)")
+        Assert-True ($homeRedacted -match 'REDACTED') 'native git diagnostics remain redacted under temporary global init.defaultBranch=main'
+        Assert-True ($homeRedacted -notmatch 'ghp_abcdefghijklmnopqrstuv') 'secret token not left unredacted under temporary global init.defaultBranch=main'
+    }
+    finally {
+        $ErrorActionPreference = $prevEapHome
+        $script:GuardentraRoot = $prevGuardentraRootHome
+    }
+}
+finally {
+    if ($null -eq $prevHome) { Remove-Item Env:\HOME -ErrorAction SilentlyContinue } else { $env:HOME = $prevHome }
+    if ($null -eq $prevUserProfile) { Remove-Item Env:\USERPROFILE -ErrorAction SilentlyContinue } else { $env:USERPROFILE = $prevUserProfile }
+    if ($null -eq $prevGitConfigGlobal) { Remove-Item Env:\GIT_CONFIG_GLOBAL -ErrorAction SilentlyContinue } else { $env:GIT_CONFIG_GLOBAL = $prevGitConfigGlobal }
+    if ($null -eq $prevGitConfigNoSystem) { Remove-Item Env:\GIT_CONFIG_NOSYSTEM -ErrorAction SilentlyContinue } else { $env:GIT_CONFIG_NOSYSTEM = $prevGitConfigNoSystem }
+    if (Test-Path -LiteralPath $tempHomeRoot) {
+        Remove-Item -LiteralPath $tempHomeRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
 
