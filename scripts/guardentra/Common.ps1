@@ -917,12 +917,26 @@ function Write-GuardentraHost {
 
 function Invoke-GuardentraGit {
     param([Parameter(Mandatory)][string[]]$GitArgs)
-    $out = & git -C $script:GuardentraRoot @GitArgs 2>&1
-    $code = $LASTEXITCODE
-    $text = ($out | Out-String).TrimEnd()
-    return [pscustomobject]@{
-        ExitCode = $code
-        Output   = $text
+    # Windows PowerShell 5.1 with $ErrorActionPreference='Stop' treats native
+    # stderr as terminating NativeCommandError even when git exits 0 (fetch/pull
+    # progress headers). File redirects do not reliably suppress that. Narrow the
+    # preference to Continue only for this native invocation so $LASTEXITCODE
+    # remains authoritative and stdout/stderr stay available. Preference is
+    # restored in finally — no global weakening outside this wrapper.
+    $prevEap = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $out = & git -C $script:GuardentraRoot @GitArgs 2>&1
+        $code = $LASTEXITCODE
+        if ($null -eq $code) { $code = 0 }
+        $text = ($out | ForEach-Object { "$_" } | Out-String).TrimEnd()
+        return [pscustomobject]@{
+            ExitCode = [int]$code
+            Output   = $text
+        }
+    }
+    finally {
+        $ErrorActionPreference = $prevEap
     }
 }
 
