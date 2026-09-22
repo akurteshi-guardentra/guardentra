@@ -37,6 +37,11 @@ function Reset-GuardentraTestProviders {
     $script:GuardentraHeadShaProvider = $null
     $script:GuardentraIssueRecordProvider = $null
     $script:GuardentraOwnerGrantProvider = $null
+    $script:GuardentraGitDirProvider = $null
+    $script:GuardentraGitCommonDirProvider = $null
+    $script:GuardentraRepoTopLevelProvider = $null
+    $script:GuardentraInPrimaryCheckoutProvider = $null
+    $script:GuardentraFetchAndFfPullMainProvider = $null
 }
 
 Write-Host '=== GuardEntra #9C R4 dispatcher tests ==='
@@ -770,6 +775,310 @@ finally {
     if ($null -eq $prevGitConfigNoSystem) { Remove-Item Env:\GIT_CONFIG_NOSYSTEM -ErrorAction SilentlyContinue } else { $env:GIT_CONFIG_NOSYSTEM = $prevGitConfigNoSystem }
     if (Test-Path -LiteralPath $tempHomeRoot) {
         Remove-Item -LiteralPath $tempHomeRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# --- #66 isolated-worktree-per-agent -----------------------------------
+
+# Part A: DI-mocked unit tests (no real git needed).
+Reset-GuardentraTestProviders
+
+Assert-True ((Get-GuardentraWorktreePath -Writer 'Cursor' -IssueNumber 62) -eq (Join-Path (Split-Path -Parent $script:GuardentraRoot) 'guardentra-cursor-62')) 'worktree path follows the guardentra-<writer>-<issue> convention'
+Assert-True ((Get-GuardentraWorktreePath -Writer 'CLAUDE' -IssueNumber 66) -eq (Join-Path (Split-Path -Parent $script:GuardentraRoot) 'guardentra-claude-66')) 'worktree path lowercases the writer name'
+
+$script:GuardentraInPrimaryCheckoutProvider = { $true }
+Assert-True (Test-GuardentraInPrimaryCheckout) 'primary-checkout provider override returns true'
+$script:GuardentraInPrimaryCheckoutProvider = { $false }
+Assert-True (-not (Test-GuardentraInPrimaryCheckout)) 'primary-checkout provider override returns false'
+$script:GuardentraInPrimaryCheckoutProvider = $null
+
+$contractNoWorktree = New-GuardentraDefaultContract -IssueNumber 66 -Title 't' -StartingMainSha $headA -FeatureBranch $branchName -WriterTool 'cursor'
+$noThrowLegacy = $true
+try { Assert-GuardentraWorktreeMatchesContract -Contract $contractNoWorktree } catch { $noThrowLegacy = $false }
+Assert-True $noThrowLegacy 'worktree-match assertion is a no-op for a contract predating #66 (empty worktree_path)'
+
+$contractWithWorktree = New-GuardentraDefaultContract -IssueNumber 66 -Title 't' -StartingMainSha $headA -FeatureBranch $branchName -WriterTool 'cursor'
+$contractWithWorktree.worktree_path = $script:GuardentraRoot
+$script:GuardentraRepoTopLevelProvider = { $script:GuardentraRoot }
+$matchNoThrow = $true
+try { Assert-GuardentraWorktreeMatchesContract -Contract $contractWithWorktree } catch { $matchNoThrow = $false }
+Assert-True $matchNoThrow 'worktree-match assertion passes when running from the recorded worktree'
+
+$script:GuardentraRepoTopLevelProvider = { 'C:\Users\Someone\repos\guardentra-someone-999' }
+Assert-Throws { Assert-GuardentraWorktreeMatchesContract -Contract $contractWithWorktree } 'worktree-match assertion refuses when running from a different worktree' -Match 'REFUSED.*isolated worktree'
+$script:GuardentraRepoTopLevelProvider = $null
+
+# Part B: real git (disposable temp repos; the actual GuardEntra repository,
+# its branches, and its remotes are never touched).
+$primaryRoot66 = Join-Path ([System.IO.Path]::GetTempPath()) ('guardentra-66-primary-' + [guid]::NewGuid().ToString('n'))
+$prevGuardentraRoot66 = $script:GuardentraRoot
+try {
+    New-Item -ItemType Directory -Force -Path $primaryRoot66 | Out-Null
+    Invoke-GuardentraTestGitSetup -GitArgs @('init', $primaryRoot66)
+    Invoke-GuardentraTestGitSetup -WorkDir $primaryRoot66 -GitArgs @('config', 'user.email', 'native-git-test@guardentra.local')
+    Invoke-GuardentraTestGitSetup -WorkDir $primaryRoot66 -GitArgs @('config', 'user.name', 'GuardEntra Native Git Test')
+    Set-GuardentraTestSeedMainBranch -RepoDir $primaryRoot66
+    Set-Content -LiteralPath (Join-Path $primaryRoot66 'README.md') -Value 'primary-v1' -Encoding utf8
+    Invoke-GuardentraTestGitSetup -WorkDir $primaryRoot66 -GitArgs @('add', 'README.md')
+    Invoke-GuardentraTestGitSetup -WorkDir $primaryRoot66 -GitArgs @('commit', '-m', 'primary-seed')
+    $primarySha66 = (Invoke-GuardentraTestGitSetup -WorkDir $primaryRoot66 -GitArgs @('rev-parse', 'HEAD')).Trim()
+
+    $script:GuardentraRoot = $primaryRoot66
+
+    # Real Test-GuardentraInPrimaryCheckout (no provider) against a real
+    # primary repo must read true.
+    Assert-True (Test-GuardentraInPrimaryCheckout) 'real primary repo is detected as the primary checkout'
+
+    # Two different "agents" (writers/issues) each get their own isolated
+    # worktree from the same primary -- the exact #62/#63 collision
+    # scenario this issue exists to prevent, now proven closed.
+    $agentAPath = Join-Path (Split-Path -Parent $primaryRoot66) ('guardentra-66-agentA-' + [guid]::NewGuid().ToString('n'))
+    $agentBPath = Join-Path (Split-Path -Parent $primaryRoot66) ('guardentra-66-agentB-' + [guid]::NewGuid().ToString('n'))
+    try {
+        New-GuardentraIsolatedWorktree -WorktreePath $agentAPath -FeatureBranch 'feat/agent-a-issue-101' -StartingSha $primarySha66
+        New-GuardentraIsolatedWorktree -WorktreePath $agentBPath -FeatureBranch 'feat/agent-b-issue-202' -StartingSha $primarySha66
+
+        # Primary is untouched by either provisioning call -- still on main,
+        # still clean, no branch switch happened in the shared checkout.
+        $primaryBranchAfter = (Invoke-GuardentraTestGitSetup -WorkDir $primaryRoot66 -GitArgs @('symbolic-ref', '--short', 'HEAD')).Trim()
+        Assert-True ($primaryBranchAfter -eq 'main') 'primary checkout branch is unchanged after provisioning two isolated worktrees'
+        $primaryStatusAfter = Invoke-GuardentraTestGitSetup -WorkDir $primaryRoot66 -GitArgs @('status', '--porcelain')
+        Assert-True ([string]::IsNullOrWhiteSpace($primaryStatusAfter)) 'primary checkout remains clean after provisioning two isolated worktrees'
+
+        # Real Test-GuardentraInPrimaryCheckout against each linked worktree
+        # must read false (this is what makes commit/push-and-pr/evidence
+        # safe to run from inside them).
+        $script:GuardentraRoot = $agentAPath
+        Assert-True (-not (Test-GuardentraInPrimaryCheckout)) 'agent A worktree is detected as non-primary'
+        Assert-True ((Invoke-GuardentraTestGitSetup -WorkDir $agentAPath -GitArgs @('symbolic-ref', '--short', 'HEAD')).Trim() -eq 'feat/agent-a-issue-101') 'agent A worktree is on its own branch'
+
+        $script:GuardentraRoot = $agentBPath
+        Assert-True (-not (Test-GuardentraInPrimaryCheckout)) 'agent B worktree is detected as non-primary'
+        Assert-True ((Invoke-GuardentraTestGitSetup -WorkDir $agentBPath -GitArgs @('symbolic-ref', '--short', 'HEAD')).Trim() -eq 'feat/agent-b-issue-202') 'agent B worktree is on its own branch'
+
+        # Agent B makes an uncommitted edit. Agent A's worktree must not see it
+        # -- true filesystem isolation, not just a different branch name.
+        Set-Content -LiteralPath (Join-Path $agentBPath 'agent-b-only.txt') -Value 'b' -Encoding utf8
+        Assert-True (-not (Test-Path -LiteralPath (Join-Path $agentAPath 'agent-b-only.txt'))) 'agent B uncommitted edit is invisible in agent A worktree (real filesystem isolation)'
+
+        # The concurrent-agent safety property required by #66: a contract
+        # bound to agent A's worktree refuses to authorize action while the
+        # process is actually sitting in agent B's worktree (or vice versa)
+        # -- this is the mechanism that makes it impossible for one agent's
+        # dispatcher invocation to mutate another agent's branch/worktree.
+        $contractAgentA = New-GuardentraDefaultContract -IssueNumber 101 -Title 'agent A' -StartingMainSha $primarySha66 -FeatureBranch 'feat/agent-a-issue-101' -WriterTool 'cursor'
+        $contractAgentA.worktree_path = $agentAPath
+
+        $script:GuardentraRoot = $agentAPath
+        $matchesOwn = $true
+        try { Assert-GuardentraWorktreeMatchesContract -Contract $contractAgentA } catch { $matchesOwn = $false }
+        Assert-True $matchesOwn 'agent A contract matches when actually running from agent A worktree'
+
+        $script:GuardentraRoot = $agentBPath
+        Assert-Throws { Assert-GuardentraWorktreeMatchesContract -Contract $contractAgentA } 'agent A contract is refused from agent B worktree (cannot cross-mutate another agent''s branch)' -Match 'REFUSED.*isolated worktree'
+    }
+    finally {
+        $script:GuardentraRoot = $primaryRoot66
+        foreach ($p in @($agentAPath, $agentBPath)) {
+            if (Test-Path -LiteralPath $p) {
+                Invoke-GuardentraTestGitSetup -WorkDir $primaryRoot66 -GitArgs @('worktree', 'remove', '--force', $p)
+            }
+        }
+    }
+}
+finally {
+    $script:GuardentraRoot = $prevGuardentraRoot66
+    if (Test-Path -LiteralPath $primaryRoot66) {
+        Remove-Item -LiteralPath $primaryRoot66 -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# --- #66 P0 correction: the REAL Invoke-GuardentraStart decision path,
+# real git, GitHub-only calls DI-mocked (issue record + dispatch comment).
+# Assert-GuardentraRepository is NOT touched, bypassed, or weakened: origin
+# is set to the real, literal GitHub URL text and `git remote get-url
+# origin` is called for real, so that check genuinely and unweakened
+# passes/fails on its own regex. (`git remote get-url` always reports the
+# post-insteadOf *effective* URL in this git version -- there is no --raw
+# flag -- so a local insteadOf-rewrite mirror cannot be used here without
+# also corrupting that identity check; deliberately not attempted.)
+#
+# The "start from primary" positive path does reach
+# Sync-GuardentraMainAndValidate, which normally does a real
+# `git fetch origin` + `git pull --ff-only origin main`. Only that specific
+# network-touching step is redirected via the pre-existing
+# GuardentraFetchAndFfPullMainProvider DI seam (defaults to the real fetch
+# hitting real origin in production, untouched here except for this test's
+# override) to its local-fixture equivalent -- the fixture's local `main`
+# is already the authoritative tip, so there is nothing to fetch. This
+# keeps the origin-identity check completely real while requiring no
+# network access, per "a network-backed fake-origin E2E is NOT required."
+#
+# $script:GuardentraStateRoot does not automatically follow
+# $script:GuardentraRoot (it is a separate script variable, normally fixed
+# once per real process at dot-source time). Simulating "a fresh process
+# physically located in worktree X" within this single test process
+# therefore requires moving both together on every switch, or contract
+# read/write would silently hit the wrong location and any resulting
+# pass/fail would prove nothing about the real ownership decision.
+function Set-GuardentraTestActiveRoot {
+    param([Parameter(Mandatory)][string]$Root)
+    $script:GuardentraRoot = $Root
+    $script:GuardentraStateRoot = Join-Path $Root 'scripts\guardentra\state\issues'
+}
+
+Reset-GuardentraTestProviders
+$ownPrimaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('guardentra-66-own-primary-' + [guid]::NewGuid().ToString('n'))
+$prevGuardentraRootOwn = $script:GuardentraRoot
+$prevGuardentraStateRootOwn = $script:GuardentraStateRoot
+try {
+    New-Item -ItemType Directory -Force -Path $ownPrimaryRoot | Out-Null
+    Invoke-GuardentraTestGitSetup -GitArgs @('init', $ownPrimaryRoot)
+    Invoke-GuardentraTestGitSetup -WorkDir $ownPrimaryRoot -GitArgs @('config', 'user.email', 'native-git-test@guardentra.local')
+    Invoke-GuardentraTestGitSetup -WorkDir $ownPrimaryRoot -GitArgs @('config', 'user.name', 'GuardEntra Native Git Test')
+    Set-GuardentraTestSeedMainBranch -RepoDir $ownPrimaryRoot
+    Set-Content -LiteralPath (Join-Path $ownPrimaryRoot 'README.md') -Value 'own-primary-v1' -Encoding utf8
+    Invoke-GuardentraTestGitSetup -WorkDir $ownPrimaryRoot -GitArgs @('add', 'README.md')
+    Invoke-GuardentraTestGitSetup -WorkDir $ownPrimaryRoot -GitArgs @('commit', '-m', 'own-primary-seed')
+
+    # Real, literal GitHub URL -- read for real by Assert-GuardentraRepository
+    # via a real `git remote get-url origin`, never rewritten or DI-mocked.
+    $githubOriginUrl = 'https://github.com/akurteshi-guardentra/guardentra.git'
+    Invoke-GuardentraTestGitSetup -WorkDir $ownPrimaryRoot -GitArgs @('remote', 'add', 'origin', $githubOriginUrl)
+    $ownPrimarySha = (Invoke-GuardentraTestGitSetup -WorkDir $ownPrimaryRoot -GitArgs @('rev-parse', 'HEAD')).Trim()
+
+    # Only the network-touching fetch/pull step is stubbed (see block
+    # comment above) -- the fixture's local main is already the
+    # authoritative tip, so a real fetch/pull would have nothing to do
+    # besides dial network that does not need to exist for this test.
+    $script:GuardentraFetchAndFfPullMainProvider = {
+        param($CurrentBranch)
+        if ($CurrentBranch -ne 'main') {
+            $co = Invoke-GuardentraGit -GitArgs @('checkout', 'main')
+            if ($co.ExitCode -ne 0) { throw "checkout main failed: $($co.Output)" }
+        }
+    }
+
+    $script:GuardentraIssueRecordProvider = {
+        param($IssueNumber)
+        [pscustomobject]@{
+            Number = $IssueNumber; Title = "issue $IssueNumber"; State = 'OPEN'
+            Body = ''; AuthorLogin = $owner; AcceptanceCriteria = @()
+        }
+    }
+
+    # --- START FROM PRIMARY: must succeed, provision an isolated worktree,
+    # and leave the primary itself untouched on main. ---
+    Set-GuardentraTestActiveRoot -Root $ownPrimaryRoot
+    $script:GuardentraAuthorityCommentsProvider = {
+        param($IssueNumber)
+        @(New-AuthorityComment -Body (New-DispatchBody -Branch 'feat/issue-303' -Sha $ownPrimarySha) -Login $owner -Id 1 -SourceRef 'https://github.com/akurteshi-guardentra/guardentra/issues/303#issuecomment-1')
+    }
+    $startFromPrimaryOk = $true
+    $contract303 = $null
+    try {
+        $contract303 = Invoke-GuardentraStart -IssueNumber 303 -Writer cursor -Branch 'feat/issue-303' -AccessTier T1
+    }
+    catch {
+        $startFromPrimaryOk = $false
+        $script:Failed++; $script:Failures.Add("start from primary checkout succeeds (threw: $($_.Exception.Message))")
+        Write-Host "FAIL start from primary checkout succeeds (threw: $($_.Exception.Message))"
+    }
+    Assert-True $startFromPrimaryOk 'start from primary checkout succeeds and provisions an isolated worktree'
+    if ($startFromPrimaryOk) {
+        Assert-True (-not [string]::IsNullOrWhiteSpace([string]$contract303.worktree_path)) 'start from primary records a non-empty worktree_path in the contract'
+        $primaryBranchAfter303 = (Invoke-GuardentraTestGitSetup -WorkDir $ownPrimaryRoot -GitArgs @('symbolic-ref', '--short', 'HEAD')).Trim()
+        Assert-True ($primaryBranchAfter303 -eq 'main') 'primary checkout branch is unchanged after start provisions an isolated worktree'
+    }
+
+    # --- START SAME ISSUE FROM CORRECT LINKED WORKTREE: must succeed
+    # (the "continue" path), running from exactly the worktree start #303
+    # just created. ---
+    $continueOk = $true
+    if ($startFromPrimaryOk) {
+        Set-GuardentraTestActiveRoot -Root ([string]$contract303.worktree_path)
+        try {
+            $null = Invoke-GuardentraStart -IssueNumber 303 -Writer cursor -Branch 'feat/issue-303' -AccessTier T1
+        }
+        catch {
+            $continueOk = $false
+            $script:Failed++; $script:Failures.Add("start (continue) from the issue's own correct worktree succeeds (threw: $($_.Exception.Message))")
+            Write-Host "FAIL start (continue) from the issue's own correct worktree succeeds (threw: $($_.Exception.Message))"
+        }
+    }
+    else {
+        $continueOk = $false
+    }
+    Assert-True $continueOk 'start (continue) from the issue''s own correct linked worktree succeeds'
+
+    # --- START DIFFERENT ISSUE FROM ANOTHER AGENT'S WORKTREE: must be
+    # REFUSED before any checkout/branch/contract/packet mutation, proving
+    # the P0 ownership gap is actually closed. ---
+    Set-GuardentraTestActiveRoot -Root $ownPrimaryRoot
+    $agentAWorktree = Join-Path (Split-Path -Parent $ownPrimaryRoot) ('guardentra-66-agentA-own-' + [guid]::NewGuid().ToString('n'))
+    try {
+        New-GuardentraIsolatedWorktree -WorktreePath $agentAWorktree -FeatureBranch 'feat/agent-a-issue-301' -StartingSha $ownPrimarySha
+        Set-Content -LiteralPath (Join-Path $agentAWorktree 'agent-a-uncommitted.txt') -Value 'agent-a-original-content' -Encoding utf8
+
+        Set-GuardentraTestActiveRoot -Root $agentAWorktree
+        $script:GuardentraAuthorityCommentsProvider = {
+            param($IssueNumber)
+            @(New-AuthorityComment -Body (New-DispatchBody -Branch 'feat/agent-b-issue-302' -Sha $ownPrimarySha) -Login $owner -Id 1 -SourceRef 'https://github.com/akurteshi-guardentra/guardentra/issues/302#issuecomment-1')
+        }
+
+        $crossIssueRefused = $false
+        try {
+            Invoke-GuardentraStart -IssueNumber 302 -Writer cursor -Branch 'feat/agent-b-issue-302' -AccessTier T1 | Out-Null
+        }
+        catch {
+            $crossIssueRefused = ($_.Exception.Message -match 'REFUSED')
+        }
+        Assert-True $crossIssueRefused 'start for a different issue is REFUSED while physically inside another issue''s worktree (#66 P0 correction)'
+
+        $worktreeABranchAfter = (Invoke-GuardentraTestGitSetup -WorkDir $agentAWorktree -GitArgs @('symbolic-ref', '--short', 'HEAD')).Trim()
+        Assert-True ($worktreeABranchAfter -eq 'feat/agent-a-issue-301') 'worktree A branch is unchanged after the refused cross-issue start attempt'
+        Assert-True (Test-Path -LiteralPath (Join-Path $agentAWorktree 'agent-a-uncommitted.txt')) 'worktree A uncommitted file still exists after the refused cross-issue start attempt'
+        Assert-True ((Get-Content -LiteralPath (Join-Path $agentAWorktree 'agent-a-uncommitted.txt') -Raw).Trim() -eq 'agent-a-original-content') 'worktree A uncommitted file content is unchanged after the refused cross-issue start attempt'
+
+        $branchBListInA = Invoke-GuardentraTestGitSetup -WorkDir $agentAWorktree -GitArgs @('branch', '--list', 'feat/agent-b-issue-302')
+        Assert-True ([string]::IsNullOrWhiteSpace($branchBListInA)) 'no branch for the other issue was created inside worktree A'
+        Assert-True (-not (Test-Path -LiteralPath (Join-Path $agentAWorktree 'scripts\guardentra\state\issues\302'))) 'no contract/task-packet for the other issue was written into worktree A'
+
+        Set-GuardentraTestActiveRoot -Root $ownPrimaryRoot
+        $primaryBranchAfterRefusal = (Invoke-GuardentraTestGitSetup -WorkDir $ownPrimaryRoot -GitArgs @('symbolic-ref', '--short', 'HEAD')).Trim()
+        Assert-True ($primaryBranchAfterRefusal -eq 'main') 'primary checkout branch is unchanged after the refused cross-issue start attempt'
+    }
+    finally {
+        Set-GuardentraTestActiveRoot -Root $ownPrimaryRoot
+        if (Test-Path -LiteralPath $agentAWorktree) {
+            Invoke-GuardentraTestGitSetup -WorkDir $ownPrimaryRoot -GitArgs @('worktree', 'remove', '--force', $agentAWorktree)
+        }
+    }
+}
+finally {
+    # Deliberately unconditional and independent of $startFromPrimaryOk /
+    # where an exception was thrown above: `Get-GuardentraWorktreePath`
+    # is deterministic (guardentra-cursor-303), so any run that creates it
+    # but dies before the inner cleanup above runs must still remove it --
+    # otherwise the NEXT run collides with this run's leftover worktree
+    # ("already exists") instead of exercising real logic.
+    Set-GuardentraTestActiveRoot -Root $ownPrimaryRoot
+    if (Test-Path -LiteralPath $ownPrimaryRoot) {
+        $leftoverWorktree303 = Get-GuardentraWorktreePath -Writer 'cursor' -IssueNumber 303
+        if (Test-Path -LiteralPath $leftoverWorktree303) {
+            try {
+                Invoke-GuardentraTestGitSetup -WorkDir $ownPrimaryRoot -GitArgs @('worktree', 'remove', '--force', $leftoverWorktree303)
+            }
+            catch {
+                Remove-Item -LiteralPath $leftoverWorktree303 -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+    Reset-GuardentraTestProviders
+    $script:GuardentraRoot = $prevGuardentraRootOwn
+    $script:GuardentraStateRoot = $prevGuardentraStateRootOwn
+    if (Test-Path -LiteralPath $ownPrimaryRoot) {
+        Remove-Item -LiteralPath $ownPrimaryRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
 

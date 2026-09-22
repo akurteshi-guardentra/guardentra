@@ -409,7 +409,10 @@ function Invoke-GuardentraStart {
     $issue = Get-GuardentraIssueRecord -IssueNumber $IssueNumber
     $dispatch = Get-GuardentraDispatchEnvelope -IssueNumber $IssueNumber
 
-    Test-GuardentraAccessTierAllowed -AccessTier $AccessTier -MaxTier $dispatch.max_access_tier
+    # Throws on refusal; the boolean success return is not part of this
+    # function's contract and must not leak into Invoke-GuardentraStart's
+    # own return value.
+    Test-GuardentraAccessTierAllowed -AccessTier $AccessTier -MaxTier $dispatch.max_access_tier | Out-Null
     if ($writerNorm -ne $dispatch.writer) {
         throw "REFUSED: writer 'tool:$writerNorm' != dispatch writer 'tool:$($dispatch.writer)'. Re-dispatch explicitly."
     }
@@ -423,6 +426,12 @@ function Invoke-GuardentraStart {
     $contractPath = Get-GuardentraContractPath -IssueNumber $IssueNumber
 
     if ($currentBranch -eq $featureBranch) {
+        # #66: a shared primary checkout must never be parked on a feature
+        # branch at all -- that state is itself evidence of exactly the
+        # unsafe pattern that caused the #62/#63 collision.
+        if (Test-GuardentraInPrimaryCheckout) {
+            throw "REFUSED: the shared primary checkout is on feature branch '$featureBranch'. Writers must operate from an isolated worktree, never the primary checkout (#66). Remove/recreate the isolated worktree for tool:$writerNorm and re-run start from there."
+        }
         if (-not (Test-Path -LiteralPath $contractPath)) {
             throw "REFUSED: feature branch '$featureBranch' exists but no local contract/baseline cache. Will not invent starting_main_sha. Restore durable baseline or recreate branch from main under Owner direction."
         }
@@ -441,6 +450,11 @@ function Invoke-GuardentraStart {
         $existing.access_tier = $AccessTier
         $existing.allowed_paths = @($dispatch.allowed_paths)
         $existing.required_tests = @($dispatch.required_tests)
+        if (-not $existing.worktree_path) {
+            # Contract predates #66, or was created by a manual pre-isolated
+            # worktree flow. Backfill from where we actually are now.
+            $existing.worktree_path = Get-GuardentraRepoTopLevel
+        }
         if ($issue.AcceptanceCriteria.Count -gt 0) {
             $existing.acceptance_criteria = @($issue.AcceptanceCriteria)
         }
@@ -448,32 +462,88 @@ function Invoke-GuardentraStart {
         $packet = Protect-GuardentraSecrets -Text (New-GuardentraTaskPacketMarkdown -Contract $existing)
         Set-Content -Path (Get-GuardentraPacketPath -IssueNumber $IssueNumber) -Value $packet -Encoding utf8
         Write-GuardentraHost "Start (continue) on existing branch $featureBranch for #$IssueNumber"
+        Write-GuardentraHost "Worktree: $($existing.worktree_path)"
         Write-GuardentraHost "Writer: tool:$writerNorm (dispatch-bound)"
         Write-GuardentraHost "Starting SHA: $($existing.starting_main_sha)"
         Write-GuardentraHost 'Local authorize cannot mint Owner grants. Use sync-grants.'
         return $existing
     }
 
+    $inPrimaryCheckout = Test-GuardentraInPrimaryCheckout
+
+    if (-not $inPrimaryCheckout) {
+        # #66 P0 correction: a linked worktree must NEVER be assumed to
+        # belong to the issue/writer this `start` call is for -- a user/tool
+        # can physically be sitting inside issue A's worktree while invoking
+        # start for issue B. Verify ownership before ANY mutation at all
+        # (including the worktree-clean check below), so the refusal fires
+        # regardless of whether the wrong worktree happens to be clean or
+        # dirty at the moment of the mistake.
+        $currentWorktreeRoot = Get-GuardentraRepoTopLevel
+        $expectedWorktreePath = Get-GuardentraWorktreePath -Writer $writerNorm -IssueNumber $IssueNumber
+        $owned = Test-GuardentraWorktreeOwnedByIssue `
+            -CurrentWorktreeRoot $currentWorktreeRoot `
+            -ExpectedWorktreePath $expectedWorktreePath `
+            -IssueNumber $IssueNumber `
+            -WriterTool $writerNorm `
+            -FeatureBranch $featureBranch
+        if (-not $owned) {
+            throw "REFUSED: current worktree '$currentWorktreeRoot' is not the isolated worktree for issue #$IssueNumber / tool:$writerNorm (expected '$expectedWorktreePath'). An agent must never switch branches in another tool's worktree (#66). Run start from inside that issue's own worktree, or from the primary checkout to provision one."
+        }
+    }
+
     Assert-GuardentraWorktreeClean
-    Write-GuardentraHost 'Fetching origin (ff-only sync path)...'
-    $fetch = Invoke-GuardentraGit -GitArgs @('fetch', 'origin')
-    if ($fetch.ExitCode -ne 0) { throw "git fetch origin failed: $($fetch.Output)" }
-    if ($currentBranch -ne 'main') {
-        $co = Invoke-GuardentraGit -GitArgs @('checkout', 'main')
-        if ($co.ExitCode -ne 0) { throw "checkout main failed: $($co.Output)" }
-    }
-    $pull = Invoke-GuardentraGit -GitArgs @('pull', '--ff-only', 'origin', 'main')
-    if ($pull.ExitCode -ne 0) { throw "git pull --ff-only failed: $($pull.Output)" }
 
-    $startingSha = Get-GuardentraHeadSha
-    if ($dispatch.starting_main_sha -and $startingSha -ne $dispatch.starting_main_sha) {
-        throw "REFUSED: main HEAD $startingSha != dispatch starting SHA $($dispatch.starting_main_sha)"
+    if ($inPrimaryCheckout) {
+        # #66: never switch the shared primary checkout's own branch --
+        # provision a dedicated isolated worktree for this writer/issue
+        # instead, from the exact authorized starting SHA, and leave the
+        # primary checkout exactly where it was (on main).
+        $startingSha = Sync-GuardentraMainAndValidate `
+            -FeatureBranch $featureBranch `
+            -CurrentBranch $currentBranch `
+            -ExpectedStartingSha $dispatch.starting_main_sha
+
+        $worktreePath = Get-GuardentraWorktreePath -Writer $writerNorm -IssueNumber $IssueNumber
+        New-GuardentraIsolatedWorktree -WorktreePath $worktreePath -FeatureBranch $featureBranch -StartingSha $startingSha
+
+        $contract = New-GuardentraDefaultContract `
+            -IssueNumber $IssueNumber `
+            -Title $issue.Title `
+            -StartingMainSha $startingSha `
+            -FeatureBranch $featureBranch `
+            -WriterTool $writerNorm `
+            -PersonaRole $dispatch.persona_role `
+            -PersonaSpecPath $dispatch.persona_spec_path `
+            -AccessTier $AccessTier `
+            -AllowedPaths $dispatch.allowed_paths `
+            -AcceptanceCriteria $issue.AcceptanceCriteria `
+            -RequiredTests $dispatch.required_tests
+        $contract.worktree_path = $worktreePath
+
+        # A freshly created linked worktree has its own independent copy of
+        # the whole tracked tree, including scripts/guardentra/state -- write
+        # the contract/packet there directly, not into the primary
+        # checkout's own (different) state directory.
+        Save-GuardentraContractAt -WorktreeRoot $worktreePath -IssueNumber $IssueNumber -Contract $contract
+        $packet = Protect-GuardentraSecrets -Text (New-GuardentraTaskPacketMarkdown -Contract $contract)
+        Set-GuardentraPacketAt -WorktreeRoot $worktreePath -IssueNumber $IssueNumber -Text $packet
+
+        Write-GuardentraHost "Isolated worktree created: $worktreePath"
+        Write-GuardentraHost 'Primary checkout left untouched on main -- writers never operate directly in the shared checkout (#66).'
+        Write-GuardentraHost "Run all further dispatcher commands for issue #$IssueNumber from inside that worktree."
+        Write-GuardentraHost "Writer: tool:$writerNorm (dispatch-bound)"
+        Write-GuardentraHost "Starting SHA: $startingSha"
+        Write-GuardentraHost 'Authorization: github-owner-grant only via sync-grants.'
+        return $contract
     }
 
-    $branches = Invoke-GuardentraGit -GitArgs @('branch', '--list', $featureBranch)
-    if ($branches.Output -match [regex]::Escape($featureBranch)) {
-        throw "REFUSED: feature branch '$featureBranch' already exists. Checkout it with a valid contract cache; will not recreate baseline."
-    }
+    # Already inside a linked (non-primary) worktree, and ownership for this
+    # exact issue/writer was verified above -- safe to operate here.
+    $startingSha = Sync-GuardentraMainAndValidate `
+        -FeatureBranch $featureBranch `
+        -CurrentBranch $currentBranch `
+        -ExpectedStartingSha $dispatch.starting_main_sha
 
     $nb = Invoke-GuardentraGit -GitArgs @('checkout', '-b', $featureBranch)
     if ($nb.ExitCode -ne 0) { throw "create branch $featureBranch failed: $($nb.Output)" }
@@ -490,15 +560,59 @@ function Invoke-GuardentraStart {
         -AllowedPaths $dispatch.allowed_paths `
         -AcceptanceCriteria $issue.AcceptanceCriteria `
         -RequiredTests $dispatch.required_tests
+    $contract.worktree_path = Get-GuardentraRepoTopLevel
 
     Save-GuardentraContract -IssueNumber $IssueNumber -Contract $contract
     $packet = Protect-GuardentraSecrets -Text (New-GuardentraTaskPacketMarkdown -Contract $contract)
     Set-Content -Path (Get-GuardentraPacketPath -IssueNumber $IssueNumber) -Value $packet -Encoding utf8
     Write-GuardentraHost "Start complete for issue #$IssueNumber"
+    Write-GuardentraHost "Worktree: $($contract.worktree_path)"
     Write-GuardentraHost "Writer: tool:$writerNorm (dispatch-bound)"
     Write-GuardentraHost "Starting SHA: $($contract.starting_main_sha)"
     Write-GuardentraHost 'Authorization: github-owner-grant only via sync-grants.'
     return $contract
+}
+
+<#
+  Shared fetch/main-sync/branch-availability logic used by both #66 start
+  paths (provisioning a new isolated worktree, and continuing in one already
+  entered). Returns the verified main HEAD SHA.
+#>
+function Invoke-GuardentraFetchAndFfPullMain {
+    param([Parameter(Mandatory)][string]$CurrentBranch)
+    if ($script:GuardentraFetchAndFfPullMainProvider) {
+        & $script:GuardentraFetchAndFfPullMainProvider $CurrentBranch
+        return
+    }
+    Write-GuardentraHost 'Fetching origin (ff-only sync path)...'
+    $fetch = Invoke-GuardentraGit -GitArgs @('fetch', 'origin')
+    if ($fetch.ExitCode -ne 0) { throw "git fetch origin failed: $($fetch.Output)" }
+    if ($CurrentBranch -ne 'main') {
+        $co = Invoke-GuardentraGit -GitArgs @('checkout', 'main')
+        if ($co.ExitCode -ne 0) { throw "checkout main failed: $($co.Output)" }
+    }
+    $pull = Invoke-GuardentraGit -GitArgs @('pull', '--ff-only', 'origin', 'main')
+    if ($pull.ExitCode -ne 0) { throw "git pull --ff-only failed: $($pull.Output)" }
+}
+
+function Sync-GuardentraMainAndValidate {
+    param(
+        [Parameter(Mandatory)][string]$FeatureBranch,
+        [Parameter(Mandatory)][string]$CurrentBranch,
+        [string]$ExpectedStartingSha = ''
+    )
+    Invoke-GuardentraFetchAndFfPullMain -CurrentBranch $CurrentBranch
+
+    $startingSha = Get-GuardentraHeadSha
+    if ($ExpectedStartingSha -and $startingSha -ne $ExpectedStartingSha) {
+        throw "REFUSED: main HEAD $startingSha != dispatch starting SHA $ExpectedStartingSha"
+    }
+
+    $branches = Invoke-GuardentraGit -GitArgs @('branch', '--list', $FeatureBranch)
+    if ($branches.Output -match [regex]::Escape($FeatureBranch)) {
+        throw "REFUSED: feature branch '$FeatureBranch' already exists. Checkout it with a valid contract cache; will not recreate baseline."
+    }
+    return $startingSha
 }
 
 function Invoke-GuardentraAuthorize {
@@ -566,6 +680,7 @@ function Invoke-GuardentraCommit {
     )
     Assert-GuardentraRepository
     $contract = Read-GuardentraContract -IssueNumber $IssueNumber
+    Assert-GuardentraWorktreeMatchesContract -Contract $contract
     Test-GuardentraRetryGate -Contract $contract
 
     $branch = Get-GuardentraCurrentBranch
@@ -665,6 +780,7 @@ function Invoke-GuardentraPushAndPr {
     )
     Assert-GuardentraRepository
     $contract = Read-GuardentraContract -IssueNumber $IssueNumber
+    Assert-GuardentraWorktreeMatchesContract -Contract $contract
     Test-GuardentraRetryGate -Contract $contract
 
     $branch = Get-GuardentraCurrentBranch
@@ -789,6 +905,7 @@ function Invoke-GuardentraEvidence {
     )
     Assert-GuardentraRepository
     $contract = Read-GuardentraContract -IssueNumber $IssueNumber
+    Assert-GuardentraWorktreeMatchesContract -Contract $contract
     $branch = Get-GuardentraCurrentBranch
     if ($branch -ne $contract.feature_branch) {
         throw "REFUSED: evidence branch '$branch' != contract.feature_branch '$($contract.feature_branch)'"
@@ -834,6 +951,7 @@ function Invoke-GuardentraStatus {
     $contract = Read-GuardentraContract -IssueNumber $IssueNumber
     Write-GuardentraHost "Issue: #$IssueNumber"
     Write-GuardentraHost "Branch (contract): $($contract.feature_branch)"
+    Write-GuardentraHost "Worktree (contract): $($contract.worktree_path)"
     Write-GuardentraHost "Writer: tool:$($contract.selected_writer_tool)"
     Write-GuardentraHost "Starting SHA: $($contract.starting_main_sha)"
     Write-GuardentraHost "Current SHA: $(Get-GuardentraHeadSha)"
