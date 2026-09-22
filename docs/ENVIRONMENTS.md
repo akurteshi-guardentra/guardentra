@@ -189,28 +189,33 @@ See **[`docs/SECRETS.md`](./SECRETS.md)** for the full policy:
 
 App code path (already implemented):
 
-1. **Invite Vendor** → `POST /api/notify/mail` (auth + rate limit) → Admin SDK writes `mail/{id}` with `{ to, message: { subject, text, html? }, createdAt }`.
+1. **Invite Vendor** → `POST /api/notify/mail` (auth + rate limit) → Admin SDK writes `mail/{id}` via `server/lib/mailQueue.ts` (`to`, `message.{subject,text,html?}`, `createdAt`, `source`).
 2. Firestore rules deny all client access to `mail` — only the server route can queue.
-3. The UI now **awaits** queue success for Invite Vendor and shows a banner: queued OK, or “Vendor saved; email could not be queued…”.
+3. The UI **awaits** queue success for Invite Vendor and shows a banner: queued OK, or “Vendor saved; email could not be queued…”. Queue success is not delivery success.
+4. **Delivery** (`delivery.*`) is written by the extension — not by App Hosting. **SUCCESS = provider/SMTP accepted the message. Inbox receipt must be confirmed separately.**
 
 What code cannot do: deliver the message. That requires the extension + SMTP/SendGrid.
 
-**Install (each Firebase project that sends mail, including live `guardentra-7f582`):**
+**Staging (Issue #72) — SendGrid path:** follow the full no-code install, secret-name list, acceptance, and failure procedure in [`docs/STAGING_EMAIL_DELIVERY.md`](./STAGING_EMAIL_DELIVERY.md). Do **not** configure production until separately Owner-authorized.
+
+**Install (each Firebase project that sends mail; staging first):**
 
 1. Firebase Console → **Extensions** → search **Trigger Email from Firestore** (`firebase/firestore-send-email`).
-2. Collection: `mail` (must match `server/routes/notify.ts`).
-3. Configure SMTP **or** SendGrid. Prefer From: `support@guardentra.com` (or another address on a verified domain).
-4. Deploy/enable the extension; wait until status is **Active**.
+2. Collection: `mail` (must match `MAIL_COLLECTION` in `server/lib/mailQueue.ts`).
+3. Configure **SendGrid SMTP** (staging target) or another SMTP. Prefer From: `support@guardentra.com` on a verified domain.
+4. Deploy/enable the extension; wait until status is **Active**. Record the installed extension version before relying on status/retry fields.
+5. Keep SMTP password / API key in extension config (or Secret Manager name `SENDGRID_API_KEY` if Owner stores it there). Never commit values.
 
 **Diagnose after Invite Vendor to `akurteshi@guardentra.com`:**
 
 | Observation | Likely cause | Next step |
 |---|---|---|
 | UI banner: email could not be queued | `/api/notify/mail` auth/Admin/rate-limit failure | App Hosting logs for `[notify] failed to queue email` |
-| UI banner: Welcome email queued, but inbox empty | Extension missing, misconfigured, or SMTP rejected | Console → Extensions; Firestore → `mail` docs for `delivery` / error fields |
-| `mail` doc has `delivery.state: SUCCESS` | Delivered (check spam) | Confirm From domain / spam filters |
-| `mail` doc has error / PENDING forever | SMTP credentials, From not allowed, or extension down | Fix SMTP / SendGrid; re-invite |
+| UI banner: Welcome email queued, but inbox empty | Extension missing, misconfigured, or SMTP rejected | Console → Extensions; Firestore → `mail` docs for `delivery` / error fields; confirm inbox separately |
+| `mail` doc has `delivery.state: SUCCESS` | Provider/SMTP accepted the message (not proof of inbox) | Confirm From domain / spam / inbox receipt |
+| `mail` doc has `delivery.state: ERROR` | Provider rejection / bad SMTP | Read `delivery.error`; fix SendGrid; follow installed extension version for any re-send |
+| `mail` doc stuck without SUCCESS/ERROR | Extension down, not installed, or version-specific behavior | Fix extension; re-invite; verify against installed version docs |
 
-**Retest:** Vendors → Invite → contact `akurteshi@guardentra.com` → expect queue banner within seconds and inbox (or spam) within a few minutes once the extension is healthy.
+**Retest:** Vendors → Invite → contact `akurteshi@guardentra.com` → expect queue banner within seconds, then `delivery.state: SUCCESS` (SMTP accepted), then separately confirm inbox (or spam) once the extension is healthy.
 
 CLI note: listing extensions needs a valid Firebase login (`npm run firebase:reauth` in a local interactive terminal). Agent shells cannot complete browser OAuth.

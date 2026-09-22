@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { ensureAdmin } from '../middleware/requireFirebaseAuth';
 import { getAdminDb } from '../lib/adminDb';
 import { createRateLimiter } from '../middleware/rateLimit';
+import { buildMailQueueDocument, MAIL_COLLECTION } from '../lib/mailQueue';
 
 const router = Router();
 
@@ -20,10 +21,9 @@ const MAX_TEXT_LENGTH = 5000;
  * `mail` collection rule denies all direct access, see firestore.rules), so
  * this route is the only path that can queue an email.
  *
- * The extension itself still has to be installed and configured with an
- * SMTP/SendGrid provider in the Firebase Console before these docs actually
- * result in a sent email — that step can't be done from code. Until then,
- * this route succeeds (the doc is written) but no email is actually delivered.
+ * This route only proves queue write success — not delivery.
+ * Delivery is performed by the extension + SMTP (SendGrid for staging).
+ * See docs/STAGING_EMAIL_DELIVERY.md.
  */
 router.post('/mail', async (req, res) => {
   const { to, subject, text, html } = req.body || {};
@@ -44,15 +44,13 @@ router.post('/mail', async (req, res) => {
   try {
     ensureAdmin();
     const db = getAdminDb();
-    const ref = await db.collection('mail').add({
-      to: [to],
-      message: {
-        subject,
-        text,
-        ...(typeof html === 'string' ? { html } : {}),
-      },
-      createdAt: new Date().toISOString(),
+    const doc = buildMailQueueDocument({
+      to,
+      subject,
+      text,
+      ...(typeof html === 'string' ? { html } : {}),
     });
+    const ref = await db.collection(MAIL_COLLECTION).add(doc);
     return res.json({ queued: true, id: ref.id });
   } catch (err) {
     console.error('[notify] failed to queue email', err);
