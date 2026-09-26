@@ -490,6 +490,17 @@ function Invoke-GuardentraStart {
         if (-not $owned) {
             throw "REFUSED: current worktree '$currentWorktreeRoot' is not the isolated worktree for issue #$IssueNumber / tool:$writerNorm (expected '$expectedWorktreePath'). An agent must never switch branches in another tool's worktree (#66). Run start from inside that issue's own worktree, or from the primary checkout to provision one."
         }
+
+        # #66/#85 correction cycle 1: an owned linked worktree that is not
+        # already on its authorized feature branch is anomalous --
+        # New-GuardentraIsolatedWorktree always creates a linked worktree
+        # already checked out on that exact branch, so this state means
+        # something external touched it. Refuse before any mutation rather
+        # than attempting to sync/borrow main inside a linked worktree: a
+        # linked worktree must never checkout or switch to main.
+        if ($currentBranch -ne $featureBranch) {
+            throw "REFUSED: this worktree is the isolated worktree for issue #$IssueNumber / tool:$writerNorm, but it is on branch '$currentBranch', not the authorized feature branch '$featureBranch'. A linked worktree must never checkout/switch main or borrow another branch (#66/#85). Remove and reprovision this worktree (git worktree remove), then run start again from the primary checkout."
+        }
     }
 
     Assert-GuardentraWorktreeClean
@@ -502,7 +513,8 @@ function Invoke-GuardentraStart {
         $startingSha = Sync-GuardentraMainAndValidate `
             -FeatureBranch $featureBranch `
             -CurrentBranch $currentBranch `
-            -ExpectedStartingSha $dispatch.starting_main_sha
+            -ExpectedStartingSha $dispatch.starting_main_sha `
+            -IsPrimaryCheckout $true
 
         $worktreePath = Get-GuardentraWorktreePath -Writer $writerNorm -IssueNumber $IssueNumber
         New-GuardentraIsolatedWorktree -WorktreePath $worktreePath -FeatureBranch $featureBranch -StartingSha $startingSha
@@ -538,39 +550,14 @@ function Invoke-GuardentraStart {
         return $contract
     }
 
-    # Already inside a linked (non-primary) worktree, and ownership for this
-    # exact issue/writer was verified above -- safe to operate here.
-    $startingSha = Sync-GuardentraMainAndValidate `
-        -FeatureBranch $featureBranch `
-        -CurrentBranch $currentBranch `
-        -ExpectedStartingSha $dispatch.starting_main_sha
-
-    $nb = Invoke-GuardentraGit -GitArgs @('checkout', '-b', $featureBranch)
-    if ($nb.ExitCode -ne 0) { throw "create branch $featureBranch failed: $($nb.Output)" }
-
-    $contract = New-GuardentraDefaultContract `
-        -IssueNumber $IssueNumber `
-        -Title $issue.Title `
-        -StartingMainSha $startingSha `
-        -FeatureBranch $featureBranch `
-        -WriterTool $writerNorm `
-        -PersonaRole $dispatch.persona_role `
-        -PersonaSpecPath $dispatch.persona_spec_path `
-        -AccessTier $AccessTier `
-        -AllowedPaths $dispatch.allowed_paths `
-        -AcceptanceCriteria $issue.AcceptanceCriteria `
-        -RequiredTests $dispatch.required_tests
-    $contract.worktree_path = Get-GuardentraRepoTopLevel
-
-    Save-GuardentraContract -IssueNumber $IssueNumber -Contract $contract
-    $packet = Protect-GuardentraSecrets -Text (New-GuardentraTaskPacketMarkdown -Contract $contract)
-    Set-Content -Path (Get-GuardentraPacketPath -IssueNumber $IssueNumber) -Value $packet -Encoding utf8
-    Write-GuardentraHost "Start complete for issue #$IssueNumber"
-    Write-GuardentraHost "Worktree: $($contract.worktree_path)"
-    Write-GuardentraHost "Writer: tool:$writerNorm (dispatch-bound)"
-    Write-GuardentraHost "Starting SHA: $($contract.starting_main_sha)"
-    Write-GuardentraHost 'Authorization: github-owner-grant only via sync-grants.'
-    return $contract
+    # Unreachable: a linked (non-primary) worktree owned by this issue/writer
+    # is either already on the authorized feature branch (handled by the
+    # currentBranch -eq featureBranch early return at the top of this
+    # function) or refused above for being on a different branch. Kept as a
+    # fail-closed backstop so a future change to the branches above can never
+    # silently fall through to a `main` checkout/borrow inside a linked
+    # worktree (#66/#85 correction).
+    throw "REFUSED: internal invariant violated in Invoke-GuardentraStart for issue #$IssueNumber -- reached the end of the linked-worktree path without taking the already-on-feature-branch or primary-checkout path."
 }
 
 <#
@@ -584,13 +571,16 @@ function Invoke-GuardentraFetchAndFfPullMain {
         & $script:GuardentraFetchAndFfPullMainProvider $CurrentBranch
         return
     }
+    if ($CurrentBranch -ne 'main') {
+        # #66/#85 correction: Sync-GuardentraMainAndValidate refuses before
+        # ever reaching here unless already on main. This function must never
+        # checkout/switch main itself -- neither for the shared primary
+        # checkout nor for a linked worktree.
+        throw "REFUSED: refusing to fetch/pull main while not already on main (currently on '$CurrentBranch'); this must never checkout or switch to main."
+    }
     Write-GuardentraHost 'Fetching origin (ff-only sync path)...'
     $fetch = Invoke-GuardentraGit -GitArgs @('fetch', 'origin')
     if ($fetch.ExitCode -ne 0) { throw "git fetch origin failed: $($fetch.Output)" }
-    if ($CurrentBranch -ne 'main') {
-        $co = Invoke-GuardentraGit -GitArgs @('checkout', 'main')
-        if ($co.ExitCode -ne 0) { throw "checkout main failed: $($co.Output)" }
-    }
     $pull = Invoke-GuardentraGit -GitArgs @('pull', '--ff-only', 'origin', 'main')
     if ($pull.ExitCode -ne 0) { throw "git pull --ff-only failed: $($pull.Output)" }
 }
@@ -599,8 +589,21 @@ function Sync-GuardentraMainAndValidate {
     param(
         [Parameter(Mandatory)][string]$FeatureBranch,
         [Parameter(Mandatory)][string]$CurrentBranch,
-        [string]$ExpectedStartingSha = ''
+        [string]$ExpectedStartingSha = '',
+        [Parameter(Mandatory)][bool]$IsPrimaryCheckout
     )
+    if ($CurrentBranch -ne 'main') {
+        if ($IsPrimaryCheckout) {
+            # #66/#85 correction: never silently switch the shared primary
+            # checkout onto main. Fail closed before any mutation instead.
+            throw "REFUSED: the shared primary checkout is not on main (currently on '$CurrentBranch'). Refusing to silently switch it to main; checkout main manually (or resolve under Owner direction) and retry."
+        }
+        # A linked worktree must never checkout/switch main (#66/#85).
+        # Invoke-GuardentraStart refuses an off-branch linked worktree before
+        # ever reaching here; this is a defensive backstop.
+        throw "REFUSED: cannot sync main from a linked worktree not already on main (currently on '$CurrentBranch'). A linked worktree must never checkout or switch to main."
+    }
+
     Invoke-GuardentraFetchAndFfPullMain -CurrentBranch $CurrentBranch
 
     $startingSha = Get-GuardentraHeadSha
@@ -685,8 +688,6 @@ function Invoke-GuardentraCommit {
 
     $branch = Get-GuardentraCurrentBranch
     $head = Get-GuardentraHeadSha
-    $digest = Get-GuardentraCandidateContentDigest -BaseSha $contract.starting_main_sha
-    $contract = Assert-GuardentraAuthorityLive -Contract $contract -Action 'commit' -CurrentHeadSha $head -ContentDigest $digest
 
     if ($branch -ne $contract.feature_branch) {
         throw "REFUSED: current branch '$branch' != contract feature_branch '$($contract.feature_branch)'"
@@ -695,8 +696,12 @@ function Invoke-GuardentraCommit {
         throw 'REFUSED: direct commits to main are prohibited.'
     }
 
-    $changed = @(Get-GuardentraChangedFiles -BaseSha $contract.starting_main_sha)
-    # Commit stages only uncommitted worktree/index paths still pending.
+    # #66/#85 correction cycle 2: determine the pending (not-yet-committed)
+    # paths BEFORE any authority check. A single-use commit grant's
+    # content_digest is scoped to exactly these files -- it must never be
+    # computed over the branch's cumulative committed history too, or a
+    # second commit on an already-advanced branch becomes impossible to
+    # authorize with one grant.
     $pending = Invoke-GuardentraGit -GitArgs @('status', '--porcelain', '-uall')
     $toStage = New-Object System.Collections.Generic.List[string]
     if (-not [string]::IsNullOrWhiteSpace($pending.Output)) {
@@ -712,10 +717,18 @@ function Invoke-GuardentraCommit {
     $toStage = @($toStage | Sort-Object -Unique)
     if ($toStage.Count -eq 0) { throw 'REFUSED: no changes to commit.' }
     Assert-GuardentraChangedFilesAllowed -Paths $toStage -Contract $contract
-    # Also ensure cumulative branch paths remain in allowlist.
+
+    # Cumulative branch changed-files allowlist check -- kept separately from,
+    # and never mixed into, the pending-files content_digest below.
+    $changed = @(Get-GuardentraChangedFiles -BaseSha $contract.starting_main_sha)
     if ($changed.Count -gt 0) {
         Assert-GuardentraChangedFilesAllowed -Paths $changed -Contract $contract
     }
+
+    # Pre-stage authorization: content_digest scoped to exactly the pending
+    # paths about to be staged, never to the branch's cumulative diff.
+    $digest = Get-GuardentraCandidateContentDigest -BaseSha $contract.starting_main_sha -Paths $toStage
+    $contract = Assert-GuardentraAuthorityLive -Contract $contract -Action 'commit' -CurrentHeadSha $head -ContentDigest $digest
 
     foreach ($f in $toStage) {
         $add = Invoke-GuardentraGit -GitArgs @('add', '--', $f)
