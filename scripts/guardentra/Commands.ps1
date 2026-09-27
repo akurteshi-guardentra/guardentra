@@ -811,6 +811,25 @@ function Invoke-GuardentraPushAndPr {
     }
     Assert-GuardentraChangedFilesAllowed -Paths $changed -Contract $contract
 
+    # #66/#85 correction cycle 3: discover any existing OPEN PR for the exact
+    # feature branch BEFORE ever pushing. A second push-and-pr on a branch
+    # that already has an open PR must update that PR, never blindly attempt
+    # (or worse, silently diverge from) `gh pr create` for a duplicate.
+    $existingPrs = @(Get-GuardentraOpenPrsForBranch -Branch $branch)
+    if ($existingPrs.Count -gt 1) {
+        throw "REFUSED: found $($existingPrs.Count) open PRs for branch '$branch' (expected at most one): $((($existingPrs | ForEach-Object { "#$($_.number)" }) -join ', ')). Resolve/close duplicates under Owner direction before retrying."
+    }
+    $existingPr = $null
+    if ($existingPrs.Count -eq 1) {
+        $existingPr = $existingPrs[0]
+        if ([string]$existingPr.headRefName -ne $contract.feature_branch) {
+            throw "REFUSED: existing PR #$($existingPr.number) head branch '$($existingPr.headRefName)' != contract feature_branch '$($contract.feature_branch)'."
+        }
+        if ([string]$existingPr.baseRefName -ne 'main') {
+            throw "REFUSED: existing PR #$($existingPr.number) base branch '$($existingPr.baseRefName)' != 'main'."
+        }
+    }
+
     try {
         Invoke-GuardentraRequiredTests -Contract $contract | Out-Null
     }
@@ -819,31 +838,53 @@ function Invoke-GuardentraPushAndPr {
         throw
     }
 
-    $push = Invoke-GuardentraGit -GitArgs @('push', '-u', 'origin', 'HEAD')
-    if ($push.ExitCode -ne 0) {
+    try {
+        Invoke-GuardentraPushHeadToOrigin
+    }
+    catch {
         $null = Register-GuardentraAttempt -Contract $contract -Success:$false -IssueNumber $IssueNumber
-        throw "git push failed: $($push.Output)"
+        throw
     }
 
-    if (-not $Title) { $Title = "$($contract.title) (#$IssueNumber)" }
-    $bodyArgs = @()
-    if ($BodyFile -and (Test-Path -LiteralPath $BodyFile)) {
-        $bodyArgs = @('--body-file', $BodyFile)
+    if ($existingPr) {
+        $prNumber = [int]$existingPr.number
+        $prUrl = [string]$existingPr.url
+        Write-GuardentraHost "Existing PR #$prNumber found for branch '$branch'; pushed to it -- no new PR created."
     }
     else {
-        $bodyArgs = @('--body', "Closes #$IssueNumber`n`nPilot orchestration PR. Merge/deploy require separate Owner authorization.")
+        if (-not $Title) { $Title = "$($contract.title) (#$IssueNumber)" }
+        $bodyArgs = @()
+        if ($BodyFile -and (Test-Path -LiteralPath $BodyFile)) {
+            $bodyArgs = @('--body-file', $BodyFile)
+        }
+        else {
+            $bodyArgs = @('--body', "Closes #$IssueNumber`n`nPilot orchestration PR. Merge/deploy require separate Owner authorization.")
+        }
+        try {
+            $created = New-GuardentraPrForBranch -Title $Title -BodyArgs $bodyArgs
+        }
+        catch {
+            $null = Register-GuardentraAttempt -Contract $contract -Success:$false -IssueNumber $IssueNumber
+            throw
+        }
+        $prNumber = [int]$created.Number
+        $prUrl = [string]$created.Url
     }
 
-    $pr = & gh pr create --repo $script:GuardentraExpectedRepo --title $Title @bodyArgs --base main 2>&1
-    if ($LASTEXITCODE -ne 0) {
+    # Re-fetch the PR after pushing and verify its head SHA is exactly the
+    # authorized local HEAD that was just pushed -- fail closed and never
+    # report success on a mismatch (stale/foreign PR, a race, or a push that
+    # landed somewhere unexpected).
+    $prHeadShaAfterPush = Get-GuardentraPrHeadSha -Pr $prNumber
+    if (([string]$prHeadShaAfterPush).ToLowerInvariant() -ne $head.ToLowerInvariant()) {
         $null = Register-GuardentraAttempt -Contract $contract -Success:$false -IssueNumber $IssueNumber
-        throw "gh pr create failed: $pr"
+        throw "REFUSED: PR #$prNumber head SHA '$prHeadShaAfterPush' after push != authorized local HEAD '$head'. Push/PR grant NOT consumed."
     }
 
     $contract = Clear-GuardentraAuthGrant -Contract $contract -Action 'push-and-pr'
     $contract = Register-GuardentraAttempt -Contract $contract -Success:$true -IssueNumber $IssueNumber
     Save-GuardentraContract -IssueNumber $IssueNumber -Contract $contract
-    Write-GuardentraHost (Protect-GuardentraSecrets -Text "PR created: $pr")
+    Write-GuardentraHost (Protect-GuardentraSecrets -Text "PR: $prUrl (#$prNumber)")
     Write-GuardentraHost 'Push/PR grant consumed. Merge/deploy NOT performed.'
 }
 

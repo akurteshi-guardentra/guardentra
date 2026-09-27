@@ -27,6 +27,11 @@ $script:GuardentraGitCommonDirProvider = $null
 $script:GuardentraRepoTopLevelProvider = $null
 $script:GuardentraInPrimaryCheckoutProvider = $null
 $script:GuardentraFetchAndFfPullMainProvider = $null
+# #66/#85 correction cycle 3: existing-PR-safe push-and-pr providers.
+$script:GuardentraOpenPrsForBranchProvider = $null
+$script:GuardentraPrCreateProvider = $null
+$script:GuardentraPrViewProvider = $null
+$script:GuardentraPushHeadProvider = $null
 
 function Get-GuardentraRepoRoot {
     return $script:GuardentraRoot
@@ -1266,6 +1271,85 @@ function Get-GuardentraPrLink {
         return 'NONE'
     }
     return 'NONE'
+}
+
+<#
+  #66/#85 correction cycle 3: discovers OPEN PRs whose head branch is
+  exactly $Branch, so Invoke-GuardentraPushAndPr can decide -- BEFORE ever
+  pushing -- whether to update an existing PR or create a new one, and can
+  refuse (before push) if more than one exists or an existing one's
+  base/head does not match what is expected.
+#>
+function Get-GuardentraOpenPrsForBranch {
+    param([Parameter(Mandatory)][string]$Branch)
+    if ($script:GuardentraOpenPrsForBranchProvider) {
+        return @(& $script:GuardentraOpenPrsForBranchProvider $Branch)
+    }
+    $json = & gh pr list --repo $script:GuardentraExpectedRepo --head $Branch --state open --json number,url,baseRefName,headRefName 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "REFUSED: unable to list open PRs for branch '$Branch': $(Protect-GuardentraSecrets -Text ($json | Out-String))"
+    }
+    $jsonText = ($json | Out-String).Trim()
+    if ([string]::IsNullOrWhiteSpace($jsonText)) { return @() }
+    return @($jsonText | ConvertFrom-Json)
+}
+
+<#
+  Creates a PR for the current branch. `gh pr create` has no --json output
+  mode; it prints the PR URL on success, so the PR number is parsed from
+  that URL rather than issuing a second `gh` call.
+#>
+function New-GuardentraPrForBranch {
+    param(
+        [Parameter(Mandatory)][string]$Title,
+        [string[]]$BodyArgs = @()
+    )
+    if ($script:GuardentraPrCreateProvider) {
+        return (& $script:GuardentraPrCreateProvider $Title $BodyArgs)
+    }
+    $pr = & gh pr create --repo $script:GuardentraExpectedRepo --title $Title @BodyArgs --base main 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "gh pr create failed: $(Protect-GuardentraSecrets -Text ($pr | Out-String))"
+    }
+    $urlText = ($pr | Out-String).Trim()
+    $prNumber = 0
+    if ($urlText -match '/pull/(\d+)\s*$') { $prNumber = [int]$Matches[1] }
+    return [pscustomobject]@{ Number = $prNumber; Url = $urlText }
+}
+
+<#
+  Re-fetches a PR's current head SHA -- used immediately after push (whether
+  the PR was just created or already existed) so Invoke-GuardentraPushAndPr
+  can fail closed instead of reporting success when the PR's head does not
+  actually equal the authorized local HEAD that was just pushed.
+#>
+function Get-GuardentraPrHeadSha {
+    param([Parameter(Mandatory)][int]$Pr)
+    if ($script:GuardentraPrViewProvider) {
+        return [string](& $script:GuardentraPrViewProvider $Pr)
+    }
+    $view = & gh pr view $Pr --repo $script:GuardentraExpectedRepo --json headRefOid 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "REFUSED: unable to view PR #$Pr after push: $(Protect-GuardentraSecrets -Text ($view | Out-String))"
+    }
+    $obj = ($view | Out-String).Trim() | ConvertFrom-Json
+    return [string]$obj.headRefOid
+}
+
+<#
+  Pushes the current HEAD to origin. Wrapped behind a DI seam (like
+  Invoke-GuardentraFetchAndFfPullMain) purely so tests can exercise the
+  surrounding existing-PR-safety decision logic in Invoke-GuardentraPushAndPr
+  without needing a real, reachable git remote -- the production path always
+  performs a real `git push`.
+#>
+function Invoke-GuardentraPushHeadToOrigin {
+    if ($script:GuardentraPushHeadProvider) {
+        & $script:GuardentraPushHeadProvider
+        return
+    }
+    $push = Invoke-GuardentraGit -GitArgs @('push', '-u', 'origin', 'HEAD')
+    if ($push.ExitCode -ne 0) { throw "git push failed: $($push.Output)" }
 }
 
 function Register-GuardentraAttempt {

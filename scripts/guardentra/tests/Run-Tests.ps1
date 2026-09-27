@@ -42,6 +42,9 @@ function Reset-GuardentraTestProviders {
     $script:GuardentraRepoTopLevelProvider = $null
     $script:GuardentraInPrimaryCheckoutProvider = $null
     $script:GuardentraFetchAndFfPullMainProvider = $null
+    $script:GuardentraOpenPrsForBranchProvider = $null
+    $script:GuardentraPrCreateProvider = $null
+    $script:GuardentraPrViewProvider = $null
 }
 
 Write-Host '=== GuardEntra #9C R4 dispatcher tests ==='
@@ -1446,6 +1449,218 @@ finally {
     $script:GuardentraStateRoot = $prevStateRootCumulative
     if (Test-Path -LiteralPath $cumulativeRepoRoot) {
         Remove-Item -LiteralPath $cumulativeRepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# --- #66/#85 correction cycle 3: Invoke-GuardentraPushAndPr must discover
+# any existing OPEN PR for the exact feature branch BEFORE pushing, update
+# it instead of blindly creating a duplicate, refuse before push on
+# multiple/mismatched PRs, and fail closed (never report success) if the
+# PR's head does not match the authorized local HEAD after push. ---
+
+function New-GuardentraPushAndPrTestFixture {
+    param([Parameter(Mandatory)][string]$RepoDir, [Parameter(Mandatory)][string]$FeatureBranch)
+    New-Item -ItemType Directory -Force -Path $RepoDir | Out-Null
+    Invoke-GuardentraTestGitSetup -GitArgs @('init', $RepoDir) | Out-Null
+    Invoke-GuardentraTestGitSetup -WorkDir $RepoDir -GitArgs @('config', 'user.email', 'native-git-test@guardentra.local') | Out-Null
+    Invoke-GuardentraTestGitSetup -WorkDir $RepoDir -GitArgs @('config', 'user.name', 'GuardEntra Native Git Test') | Out-Null
+    Set-GuardentraTestSeedMainBranch -RepoDir $RepoDir | Out-Null
+    Set-Content -LiteralPath (Join-Path $RepoDir 'README.md') -Value 'main-v1' -Encoding utf8
+    Invoke-GuardentraTestGitSetup -WorkDir $RepoDir -GitArgs @('add', 'README.md') | Out-Null
+    Invoke-GuardentraTestGitSetup -WorkDir $RepoDir -GitArgs @('commit', '-m', 'main-seed') | Out-Null
+    Invoke-GuardentraTestGitSetup -WorkDir $RepoDir -GitArgs @('remote', 'add', 'origin', 'https://github.com/akurteshi-guardentra/guardentra.git') | Out-Null
+    $baseSha = (Invoke-GuardentraTestGitSetup -WorkDir $RepoDir -GitArgs @('rev-parse', 'HEAD')).Trim()
+
+    Invoke-GuardentraTestGitSetup -WorkDir $RepoDir -GitArgs @('checkout', '-b', $FeatureBranch) | Out-Null
+
+    $gDir = Join-Path $RepoDir 'scripts\guardentra'
+    $tDir = Join-Path $gDir 'tests'
+    New-Item -ItemType Directory -Force -Path $tDir | Out-Null
+    Set-Content -LiteralPath (Join-Path $gDir 'Commands.ps1') -Value '# Commands v1' -Encoding utf8
+    Set-Content -LiteralPath (Join-Path $tDir 'Run-Tests.ps1') -Value 'exit 0' -Encoding utf8
+    Invoke-GuardentraTestGitSetup -WorkDir $RepoDir -GitArgs @('add', 'scripts/guardentra/Commands.ps1', 'scripts/guardentra/tests/Run-Tests.ps1') | Out-Null
+    Invoke-GuardentraTestGitSetup -WorkDir $RepoDir -GitArgs @('commit', '-m', 'feature commit') | Out-Null
+    $headSha = (Invoke-GuardentraTestGitSetup -WorkDir $RepoDir -GitArgs @('rev-parse', 'HEAD')).Trim()
+
+    return [pscustomobject]@{ BaseSha = $baseSha; HeadSha = $headSha }
+}
+
+Reset-GuardentraTestProviders
+$pushPrRepoRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('guardentra-85-pushpr-' + [guid]::NewGuid().ToString('n'))
+$prevRootPushPr = $script:GuardentraRoot
+$prevStateRootPushPr = $script:GuardentraStateRoot
+try {
+    $ppFixture = New-GuardentraPushAndPrTestFixture -RepoDir $pushPrRepoRoot -FeatureBranch 'feat/issue-950'
+    $script:GuardentraRoot = $pushPrRepoRoot
+
+    $contract950 = New-GuardentraDefaultContract -IssueNumber 950 -Title 'issue 950' -StartingMainSha $ppFixture.BaseSha `
+        -FeatureBranch 'feat/issue-950' -WriterTool 'cursor'
+    $contract950.worktree_path = $pushPrRepoRoot
+    Save-GuardentraContract -IssueNumber 950 -Contract $contract950
+
+    $script:GuardentraIssueRecordProvider = {
+        param($IssueNumber)
+        [pscustomobject]@{ Number = $IssueNumber; Title = "issue $IssueNumber"; State = 'OPEN'; Body = ''; AuthorLogin = $owner; AcceptanceCriteria = @() }
+    }
+
+    # --- A) existing PR #85-style path updates the existing PR and never
+    # calls gh pr create. ---
+    $existingPr85 = [pscustomobject]@{ number = 85; url = 'https://github.com/akurteshi-guardentra/guardentra/pull/85'; baseRefName = 'main'; headRefName = 'feat/issue-950' }
+    $grantA = New-TestOwnerGrant -Action 'push-and-pr' -Head $ppFixture.HeadSha -Issue 950 -Branch 'feat/issue-950' -SourceRef 'https://github.com/akurteshi-guardentra/guardentra/issues/950#issuecomment-2'
+    $script:GuardentraAuthorityCommentsProvider = {
+        param($IssueNumber)
+        @(
+            (New-AuthorityComment -Body (New-DispatchBody -Branch 'feat/issue-950' -Sha $ppFixture.BaseSha) -Login $owner -Id 1 -SourceRef 'https://github.com/akurteshi-guardentra/guardentra/issues/950#issuecomment-1'),
+            (New-AuthorityComment -Body (New-GrantBody -Grant $grantA) -Login $owner -Id 2 -SourceRef $grantA.source_ref)
+        )
+    }
+    Invoke-GuardentraSyncGrants -IssueNumber 950 | Out-Null
+
+    $script:GuardentraOpenPrsForBranchProvider = { param($Branch) @($existingPr85) }
+    $script:GuardentraPrCreateProvider = { param($Title, $BodyArgs) throw 'gh pr create should not have been called (existing PR #85 path)' }
+    $script:GuardentraPrViewProvider = { param($Pr) $ppFixture.HeadSha }
+    $script:ppPushCalled = $false
+    $script:GuardentraPushHeadProvider = { $script:ppPushCalled = $true }
+
+    $pushPrAOk = $true
+    try {
+        Invoke-GuardentraPushAndPr -IssueNumber 950 | Out-Null
+    }
+    catch {
+        $pushPrAOk = $false
+        $script:Failed++; $script:Failures.Add("existing-PR push-and-pr path succeeds and never calls gh pr create (threw: $($_.Exception.Message))")
+        Write-Host "FAIL existing-PR push-and-pr path succeeds and never calls gh pr create (threw: $($_.Exception.Message))"
+    }
+    Assert-True $pushPrAOk 'push-and-pr with one existing matching PR succeeds, pushes, and never creates a duplicate PR (#85 regression cycle 3 A)'
+    Assert-True $script:ppPushCalled 'push-and-pr with an existing PR still pushes the authorized HEAD (#85 regression cycle 3 A)'
+
+    if ($pushPrAOk) {
+        $contractAfterA = Read-GuardentraContract -IssueNumber 950
+        Assert-True (-not [bool]$contractAfterA.auth_push_pr.enabled) 'push-and-pr grant is consumed after the successful existing-PR update (#85 regression cycle 3 F)'
+
+        # --- F) retrying without a fresh grant is refused -- proves the
+        # grant was consumed exactly once, not left reusable. ---
+        Assert-Throws { Invoke-GuardentraPushAndPr -IssueNumber 950 | Out-Null } `
+            'retrying push-and-pr without a fresh grant after a successful existing-PR update is refused (#85 regression cycle 3 F)' `
+            -Match 'REFUSED'
+    }
+
+    # --- B) no-existing-PR path still creates one. ---
+    $grantB = New-TestOwnerGrant -Action 'push-and-pr' -Head $ppFixture.HeadSha -Issue 950 -Branch 'feat/issue-950' -SourceRef 'https://github.com/akurteshi-guardentra/guardentra/issues/950#issuecomment-3'
+    $script:GuardentraAuthorityCommentsProvider = {
+        param($IssueNumber)
+        @(
+            (New-AuthorityComment -Body (New-DispatchBody -Branch 'feat/issue-950' -Sha $ppFixture.BaseSha) -Login $owner -Id 1 -SourceRef 'https://github.com/akurteshi-guardentra/guardentra/issues/950#issuecomment-1'),
+            (New-AuthorityComment -Body (New-GrantBody -Grant $grantB) -Login $owner -Id 3 -SourceRef $grantB.source_ref)
+        )
+    }
+    Invoke-GuardentraSyncGrants -IssueNumber 950 | Out-Null
+
+    $script:GuardentraOpenPrsForBranchProvider = { param($Branch) @() }
+    $script:ppCreateCalled = $false
+    $script:GuardentraPrCreateProvider = {
+        param($Title, $BodyArgs)
+        $script:ppCreateCalled = $true
+        [pscustomobject]@{ Number = 86; Url = 'https://github.com/akurteshi-guardentra/guardentra/pull/86' }
+    }
+    $script:GuardentraPrViewProvider = { param($Pr) $ppFixture.HeadSha }
+    $script:ppPushCalled = $false
+    $script:GuardentraPushHeadProvider = { $script:ppPushCalled = $true }
+
+    $pushPrBOk = $true
+    try {
+        Invoke-GuardentraPushAndPr -IssueNumber 950 | Out-Null
+    }
+    catch {
+        $pushPrBOk = $false
+        $script:Failed++; $script:Failures.Add("no-existing-PR push-and-pr path still creates a PR (threw: $($_.Exception.Message))")
+        Write-Host "FAIL no-existing-PR push-and-pr path still creates a PR (threw: $($_.Exception.Message))"
+    }
+    Assert-True $pushPrBOk 'push-and-pr with no existing PR still creates one (#85 regression cycle 3 B)'
+    Assert-True $script:ppCreateCalled 'gh pr create is invoked when no existing PR is found (#85 regression cycle 3 B)'
+
+    # --- C) multiple matching PRs refuse before push. ---
+    $grantC = New-TestOwnerGrant -Action 'push-and-pr' -Head $ppFixture.HeadSha -Issue 950 -Branch 'feat/issue-950' -SourceRef 'https://github.com/akurteshi-guardentra/guardentra/issues/950#issuecomment-4'
+    $script:GuardentraAuthorityCommentsProvider = {
+        param($IssueNumber)
+        @(
+            (New-AuthorityComment -Body (New-DispatchBody -Branch 'feat/issue-950' -Sha $ppFixture.BaseSha) -Login $owner -Id 1 -SourceRef 'https://github.com/akurteshi-guardentra/guardentra/issues/950#issuecomment-1'),
+            (New-AuthorityComment -Body (New-GrantBody -Grant $grantC) -Login $owner -Id 4 -SourceRef $grantC.source_ref)
+        )
+    }
+    Invoke-GuardentraSyncGrants -IssueNumber 950 | Out-Null
+
+    $script:GuardentraOpenPrsForBranchProvider = {
+        param($Branch)
+        @(
+            [pscustomobject]@{ number = 87; url = 'https://github.com/akurteshi-guardentra/guardentra/pull/87'; baseRefName = 'main'; headRefName = 'feat/issue-950' },
+            [pscustomobject]@{ number = 88; url = 'https://github.com/akurteshi-guardentra/guardentra/pull/88'; baseRefName = 'main'; headRefName = 'feat/issue-950' }
+        )
+    }
+    $script:ppPushCalled = $false
+    $script:GuardentraPushHeadProvider = { $script:ppPushCalled = $true }
+
+    Assert-Throws { Invoke-GuardentraPushAndPr -IssueNumber 950 | Out-Null } `
+        'push-and-pr refuses before push when multiple open PRs match the branch (#85 regression cycle 3 C)' `
+        -Match 'REFUSED.*found 2 open PRs'
+    Assert-True (-not $script:ppPushCalled) 'no push occurred when multiple matching PRs were found (#85 regression cycle 3 C)'
+
+    # --- D) existing PR base/head mismatch refuses before push. ---
+    $grantD = New-TestOwnerGrant -Action 'push-and-pr' -Head $ppFixture.HeadSha -Issue 950 -Branch 'feat/issue-950' -SourceRef 'https://github.com/akurteshi-guardentra/guardentra/issues/950#issuecomment-5'
+    $script:GuardentraAuthorityCommentsProvider = {
+        param($IssueNumber)
+        @(
+            (New-AuthorityComment -Body (New-DispatchBody -Branch 'feat/issue-950' -Sha $ppFixture.BaseSha) -Login $owner -Id 1 -SourceRef 'https://github.com/akurteshi-guardentra/guardentra/issues/950#issuecomment-1'),
+            (New-AuthorityComment -Body (New-GrantBody -Grant $grantD) -Login $owner -Id 5 -SourceRef $grantD.source_ref)
+        )
+    }
+    Invoke-GuardentraSyncGrants -IssueNumber 950 | Out-Null
+
+    $script:GuardentraOpenPrsForBranchProvider = {
+        param($Branch)
+        @([pscustomobject]@{ number = 89; url = 'https://github.com/akurteshi-guardentra/guardentra/pull/89'; baseRefName = 'develop'; headRefName = 'feat/issue-950' })
+    }
+    $script:ppPushCalled = $false
+    $script:GuardentraPushHeadProvider = { $script:ppPushCalled = $true }
+
+    Assert-Throws { Invoke-GuardentraPushAndPr -IssueNumber 950 | Out-Null } `
+        'push-and-pr refuses before push when the existing PR base branch is not main (#85 regression cycle 3 D)' `
+        -Match "REFUSED.*base branch 'develop'"
+    Assert-True (-not $script:ppPushCalled) 'no push occurred when the existing PR base/head mismatched (#85 regression cycle 3 D)'
+
+    # --- E) post-push PR head mismatch fails closed. ---
+    $grantE = New-TestOwnerGrant -Action 'push-and-pr' -Head $ppFixture.HeadSha -Issue 950 -Branch 'feat/issue-950' -SourceRef 'https://github.com/akurteshi-guardentra/guardentra/issues/950#issuecomment-6'
+    $script:GuardentraAuthorityCommentsProvider = {
+        param($IssueNumber)
+        @(
+            (New-AuthorityComment -Body (New-DispatchBody -Branch 'feat/issue-950' -Sha $ppFixture.BaseSha) -Login $owner -Id 1 -SourceRef 'https://github.com/akurteshi-guardentra/guardentra/issues/950#issuecomment-1'),
+            (New-AuthorityComment -Body (New-GrantBody -Grant $grantE) -Login $owner -Id 6 -SourceRef $grantE.source_ref)
+        )
+    }
+    Invoke-GuardentraSyncGrants -IssueNumber 950 | Out-Null
+
+    $script:GuardentraOpenPrsForBranchProvider = {
+        param($Branch)
+        @([pscustomobject]@{ number = 85; url = 'https://github.com/akurteshi-guardentra/guardentra/pull/85'; baseRefName = 'main'; headRefName = 'feat/issue-950' })
+    }
+    $wrongHeadSha = ('f' * 40)
+    $script:GuardentraPrViewProvider = { param($Pr) $wrongHeadSha }
+    $script:ppPushCalled = $false
+    $script:GuardentraPushHeadProvider = { $script:ppPushCalled = $true }
+
+    Assert-Throws { Invoke-GuardentraPushAndPr -IssueNumber 950 | Out-Null } `
+        'push-and-pr fails closed and does not report success when the post-push PR head does not match the authorized local HEAD (#85 regression cycle 3 E)' `
+        -Match 'REFUSED.*head SHA.*!= authorized local HEAD'
+    Assert-True $script:ppPushCalled 'the push itself still happened before the post-push head-mismatch check ran (#85 regression cycle 3 E)'
+    $contractAfterE = Read-GuardentraContract -IssueNumber 950
+    Assert-True ([bool]$contractAfterE.auth_push_pr.enabled) 'push-and-pr grant is NOT consumed when the post-push head check fails (#85 regression cycle 3 E)'
+}
+finally {
+    Reset-GuardentraTestProviders
+    $script:GuardentraRoot = $prevRootPushPr
+    $script:GuardentraStateRoot = $prevStateRootPushPr
+    if (Test-Path -LiteralPath $pushPrRepoRoot) {
+        Remove-Item -LiteralPath $pushPrRepoRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
 
