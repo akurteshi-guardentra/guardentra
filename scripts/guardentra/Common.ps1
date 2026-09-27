@@ -8,6 +8,16 @@ $ErrorActionPreference = 'Stop'
 $script:GuardentraSchemaVersion = 'guardentra.task_contract.v1'
 $script:GuardentraOwnerGrantSchema = 'guardentra.owner_grant.v1'
 $script:GuardentraGrantEventSchema = 'guardentra.grant_event.v1'
+# #88 Phase A: machine-readable task contract schema.
+$script:GuardentraTaskV1Schema = 'guardentra.task.v1'
+# #88 Phase B-D: normalized adapter/runner result and persisted runner state.
+$script:GuardentraAgentResultV1Schema = 'guardentra.agent_result.v1'
+$script:GuardentraAgentStateV1Schema = 'guardentra.agent_state.v1'
+$script:GuardentraAgentResultStatuses = @('manual_handoff_required', 'tests_failed', 'review_ready', 'blocked')
+$script:GuardentraAgentResultAllowedKeys = @(
+    'schema', 'issue', 'writer', 'status', 'branch', 'starting_sha', 'head_sha',
+    'changed_files', 'tests', 'worktree_clean', 'deployment', 'blockers'
+)
 $script:GuardentraExpectedRepo = 'akurteshi-guardentra/guardentra'
 $script:GuardentraRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $script:GuardentraStateRoot = Join-Path $PSScriptRoot 'state\issues'
@@ -32,6 +42,8 @@ $script:GuardentraOpenPrsForBranchProvider = $null
 $script:GuardentraPrCreateProvider = $null
 $script:GuardentraPrViewProvider = $null
 $script:GuardentraPushHeadProvider = $null
+# #88 Phase C: adapter capability-detection provider.
+$script:GuardentraAdapterCanRunProvider = $null
 
 function Get-GuardentraRepoRoot {
     return $script:GuardentraRoot
@@ -50,6 +62,51 @@ function Get-GuardentraContractPath {
 function Get-GuardentraPacketPath {
     param([Parameter(Mandatory)][int]$IssueNumber)
     return (Join-Path (Get-GuardentraIssueDir -IssueNumber $IssueNumber) 'task-packet.md')
+}
+
+function Get-GuardentraTaskV1Path {
+    param([Parameter(Mandatory)][int]$IssueNumber)
+    return (Join-Path (Get-GuardentraIssueDir -IssueNumber $IssueNumber) 'task.v1.json')
+}
+
+function Get-GuardentraAgentStatePath {
+    param([Parameter(Mandatory)][int]$IssueNumber)
+    return (Join-Path (Get-GuardentraIssueDir -IssueNumber $IssueNumber) 'agent_state.json')
+}
+
+<#
+  Restart-safe: returns the persisted guardentra.agent_state.v1 for this
+  issue, or a fresh 'queued' state if none exists yet. A new runner
+  invocation (including after a real process restart) always resumes from
+  here rather than silently starting over.
+#>
+function Read-GuardentraAgentState {
+    param([Parameter(Mandatory)][int]$IssueNumber)
+    $path = Get-GuardentraAgentStatePath -IssueNumber $IssueNumber
+    if (-not (Test-Path -LiteralPath $path)) {
+        return [ordered]@{
+            schema      = $script:GuardentraAgentStateV1Schema
+            issue       = $IssueNumber
+            writer      = ''
+            state       = 'queued'
+            last_result = $null
+            updated_utc = (Get-Date).ToUniversalTime().ToString('o')
+        }
+    }
+    $raw = Get-Content -LiteralPath $path -Raw -Encoding utf8
+    $obj = $raw | ConvertFrom-Json
+    $ht = [ordered]@{}
+    foreach ($p in $obj.PSObject.Properties) { $ht[$p.Name] = $p.Value }
+    return $ht
+}
+
+function Save-GuardentraAgentState {
+    param([Parameter(Mandatory)][int]$IssueNumber, [Parameter(Mandatory)]$State)
+    $path = Get-GuardentraAgentStatePath -IssueNumber $IssueNumber
+    New-Item -ItemType Directory -Force -Path (Split-Path $path -Parent) | Out-Null
+    $State.updated_utc = (Get-Date).ToUniversalTime().ToString('o')
+    $json = ($State | ConvertTo-Json -Depth 8)
+    Set-Content -Path $path -Value (Protect-GuardentraSecrets -Text $json) -Encoding utf8
 }
 
 function Get-GuardentraEvidencePath {
@@ -1441,6 +1498,23 @@ function Invoke-GuardentraRequiredTests {
         [void]$results.Add("PASS: $cmd")
     }
     return @($results)
+}
+
+<#
+  Non-throwing variant of Invoke-GuardentraRequiredTests for #88's agent
+  runner: the runner must be able to record a 'tests_failed' result and
+  persist restart-safe state instead of aborting the whole run on a test
+  failure (commit/push-and-pr, by contrast, correctly abort immediately).
+#>
+function Invoke-GuardentraRequiredTestsSafe {
+    param([Parameter(Mandatory)]$Contract)
+    try {
+        $results = Invoke-GuardentraRequiredTests -Contract $Contract
+        return [pscustomobject]@{ Passed = $true; Results = @($results) }
+    }
+    catch {
+        return [pscustomobject]@{ Passed = $false; Results = @("FAIL: $(Protect-GuardentraSecrets -Text $_.Exception.Message)") }
+    }
 }
 
 function New-GuardentraTaskPacketMarkdown {

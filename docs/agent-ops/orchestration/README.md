@@ -14,6 +14,10 @@ Runtime: `scripts/guardentra.ps1` and `scripts/guardentra/`.
 .\scripts\guardentra.ps1 merge <issue> -Pr <n>
 .\scripts\guardentra.ps1 evidence <issue>
 .\scripts\guardentra.ps1 status <issue>
+.\scripts\guardentra.ps1 task <issue>
+.\scripts\guardentra.ps1 agent run <issue>
+.\scripts\guardentra.ps1 agent status <issue>
+.\scripts\guardentra.ps1 agent watch
 ```
 
 ## Authorization (R4)
@@ -35,5 +39,7 @@ Runtime: `scripts/guardentra.ps1` and `scripts/guardentra/`.
 ## Related
 
 - `docs/agent-ops/orchestration/TASK_CONTRACT_SCHEMA.md`
+- `docs/agent-ops/orchestration/TASK_V1_SCHEMA.md` (`guardentra.task.v1`, #88 Phase A)
+- `docs/agent-ops/orchestration/AGENT_RUNNER.md` (`guardentra.agent_result.v1`, adapters, runner, #88 Phases B-D/F)
 - `docs/agent-ops/orchestration/PILOT.md`
 - `AGENTS.md`
