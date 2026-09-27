@@ -21,6 +21,17 @@ $script:GuardentraCurrentBranchProvider = $null
 $script:GuardentraHeadShaProvider = $null
 $script:GuardentraIssueRecordProvider = $null
 $script:GuardentraOwnerGrantProvider = $null # legacy alias unused in R4
+# #66 isolated-worktree-per-agent providers.
+$script:GuardentraGitDirProvider = $null
+$script:GuardentraGitCommonDirProvider = $null
+$script:GuardentraRepoTopLevelProvider = $null
+$script:GuardentraInPrimaryCheckoutProvider = $null
+$script:GuardentraFetchAndFfPullMainProvider = $null
+# #66/#85 correction cycle 3: existing-PR-safe push-and-pr providers.
+$script:GuardentraOpenPrsForBranchProvider = $null
+$script:GuardentraPrCreateProvider = $null
+$script:GuardentraPrViewProvider = $null
+$script:GuardentraPushHeadProvider = $null
 
 function Get-GuardentraRepoRoot {
     return $script:GuardentraRoot
@@ -277,6 +288,10 @@ function New-GuardentraDefaultContract {
         title                        = $Title
         starting_main_sha            = $StartingMainSha
         feature_branch               = $FeatureBranch
+        # #66: the isolated worktree path this issue/writer is confined to.
+        # Set by Invoke-GuardentraStart; enforced by
+        # Assert-GuardentraWorktreeMatchesContract on later mutating commands.
+        worktree_path                = ''
         selected_writer_tool         = $WriterTool.ToLowerInvariant()
         persona_role                 = $PersonaRole
         persona_spec_path            = $PersonaSpecPath
@@ -304,6 +319,7 @@ function New-GuardentraDefaultContract {
             'changed_files',
             'tests',
             'worktree',
+            'worktree_path',
             'deployment'
         )
         # Single-use scoped grants (not sticky booleans).
@@ -993,6 +1009,216 @@ function Get-GuardentraHeadSha {
     return $r.Output.Trim()
 }
 
+# --- #66 isolated-worktree-per-agent ---------------------------------------
+#
+# During parallel work on #62/#63, a second session ran a plain branch
+# checkout in the shared primary checkout and discarded another agent's
+# uncommitted edits. The fix: a writer never operates directly in the
+# primary checkout. `Invoke-GuardentraStart` detects that case and
+# provisions a dedicated linked git worktree instead (leaving the primary
+# checkout's own branch untouched), and every later mutating command
+# refuses to run unless it is physically inside that same recorded worktree.
+
+<#
+  Resolves a path git printed (possibly relative, possibly already absolute,
+  and on Windows git frequently prints absolute paths with forward slashes
+  for linked-worktree git-dir/common-dir) against a base directory. Deliberately
+  does not use the `Join-Path` cmdlet: its FileSystem-provider "is this
+  rooted" check does not reliably recognize a forward-slash absolute Windows
+  path (e.g. `C:/Users/...`) as rooted, and naively concatenating it onto the
+  base path produces a malformed two-drive-letter string that
+  [System.IO.Path]::GetFullPath then rejects.
+#>
+function Resolve-GuardentraAbsolutePath {
+    param(
+        [Parameter(Mandatory)][string]$BasePath,
+        [Parameter(Mandatory)][string]$MaybeRelative
+    )
+    $normalized = $MaybeRelative.Trim() -replace '/', '\'
+    if ([System.IO.Path]::IsPathRooted($normalized)) {
+        return [System.IO.Path]::GetFullPath($normalized)
+    }
+    return [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($BasePath, $normalized))
+}
+
+function Get-GuardentraGitDir {
+    if ($script:GuardentraGitDirProvider) {
+        return [string](& $script:GuardentraGitDirProvider)
+    }
+    $r = Invoke-GuardentraGit -GitArgs @('rev-parse', '--git-dir')
+    if ($r.ExitCode -ne 0) { throw "Unable to read git-dir: $($r.Output)" }
+    return $r.Output.Trim()
+}
+
+function Get-GuardentraGitCommonDir {
+    if ($script:GuardentraGitCommonDirProvider) {
+        return [string](& $script:GuardentraGitCommonDirProvider)
+    }
+    $r = Invoke-GuardentraGit -GitArgs @('rev-parse', '--git-common-dir')
+    if ($r.ExitCode -ne 0) { throw "Unable to read git-common-dir: $($r.Output)" }
+    return $r.Output.Trim()
+}
+
+function Get-GuardentraRepoTopLevel {
+    if ($script:GuardentraRepoTopLevelProvider) {
+        return [string](& $script:GuardentraRepoTopLevelProvider)
+    }
+    $r = Invoke-GuardentraGit -GitArgs @('rev-parse', '--show-toplevel')
+    if ($r.ExitCode -ne 0) { throw "Unable to read repo top-level: $($r.Output)" }
+    return $r.Output.Trim()
+}
+
+<#
+  True when the current $script:GuardentraRoot is the shared primary
+  checkout (git-dir == git-common-dir), false when it is a linked worktree
+  (git-dir is a path under the common dir's `worktrees/` subfolder). This is
+  the load-bearing distinction: writers may operate freely inside a linked
+  worktree (it is theirs alone), never directly in the primary checkout
+  (shared by every writer and the human owner).
+#>
+function Test-GuardentraInPrimaryCheckout {
+    if ($script:GuardentraInPrimaryCheckoutProvider) {
+        return [bool](& $script:GuardentraInPrimaryCheckoutProvider)
+    }
+    $gitDir = Get-GuardentraGitDir
+    $commonDir = Get-GuardentraGitCommonDir
+    $gitDirFull = Resolve-GuardentraAbsolutePath -BasePath $script:GuardentraRoot -MaybeRelative $gitDir
+    $commonDirFull = Resolve-GuardentraAbsolutePath -BasePath $script:GuardentraRoot -MaybeRelative $commonDir
+    return ($gitDirFull -eq $commonDirFull)
+}
+
+<#
+  Deterministic per-writer, per-issue worktree path, a sibling directory of
+  the primary checkout: guardentra-<writer>-<issue>. Matches the naming this
+  repository's own writers already use by convention (guardentra-cursor-62,
+  guardentra-claude-77, ...).
+#>
+function Get-GuardentraWorktreePath {
+    param(
+        [Parameter(Mandatory)][string]$Writer,
+        [Parameter(Mandatory)][int]$IssueNumber
+    )
+    $parent = Split-Path -Parent $script:GuardentraRoot
+    return (Join-Path $parent "guardentra-$($Writer.ToLowerInvariant())-$IssueNumber")
+}
+
+<#
+  Creates a new linked git worktree, checked out on a new branch at an exact
+  SHA, via real `git worktree add` against $script:GuardentraRoot (which must
+  be the primary checkout or another worktree of the same repository -- any
+  worktree can create siblings). Refuses if the target path already exists;
+  never overwrites or reuses an existing directory.
+#>
+function New-GuardentraIsolatedWorktree {
+    param(
+        [Parameter(Mandatory)][string]$WorktreePath,
+        [Parameter(Mandatory)][string]$FeatureBranch,
+        [Parameter(Mandatory)][string]$StartingSha
+    )
+    if (Test-Path -LiteralPath $WorktreePath) {
+        throw "REFUSED: isolated worktree path '$WorktreePath' already exists. Remove it or resolve under Owner direction before retrying."
+    }
+    $wtAdd = Invoke-GuardentraGit -GitArgs @('worktree', 'add', $WorktreePath, '-b', $FeatureBranch, $StartingSha)
+    if ($wtAdd.ExitCode -ne 0) { throw "git worktree add failed: $($wtAdd.Output)" }
+}
+
+<#
+  Refuses (fail closed) unless the current repo top-level exactly matches
+  the contract's recorded worktree_path. A contract saved before #66 (no
+  worktree_path recorded) is treated as a no-op here -- this check only
+  tightens behavior going forward, it never locks out pre-existing state.
+#>
+function Assert-GuardentraWorktreeMatchesContract {
+    param([Parameter(Mandatory)]$Contract)
+    $expected = [string]$Contract.worktree_path
+    if ([string]::IsNullOrWhiteSpace($expected)) { return }
+    $current = Get-GuardentraRepoTopLevel
+    $currentFull = [System.IO.Path]::GetFullPath($current)
+    $expectedFull = [System.IO.Path]::GetFullPath($expected)
+    if ($currentFull -ne $expectedFull) {
+        throw "REFUSED: issue #$($Contract.issue_number) is authorized only from its own isolated worktree '$expectedFull'; this command is running from '$currentFull' (#66 cross-agent worktree isolation)."
+    }
+}
+
+<#
+  #66 P0 correction: Invoke-GuardentraStart must never assume a linked
+  (non-primary) worktree belongs to the issue/writer it was just asked to
+  start -- a user/tool can physically be inside issue A's worktree while
+  invoking `start` for issue B. This is the exact ownership decision used to
+  gate that: true only when EITHER (a) the current location is the
+  deterministic guardentra-<writer>-<issue> path for THIS issue, OR (b) this
+  exact location is already recorded as this SAME issue's worktree_path in
+  its own local contract cache, AND that contract's writer/branch actually
+  match what was requested (a stale/foreign contract at a coincidentally
+  matching path is not ownership proof). Worktree cleanliness is a separate,
+  already-enforced concern (Assert-GuardentraWorktreeClean) -- deliberately
+  not folded in here, so this stays a pure ownership question and refuses
+  regardless of the wrong worktree's dirty/clean state.
+#>
+function Test-GuardentraWorktreeOwnedByIssue {
+    param(
+        [Parameter(Mandatory)][string]$CurrentWorktreeRoot,
+        [Parameter(Mandatory)][string]$ExpectedWorktreePath,
+        [Parameter(Mandatory)][int]$IssueNumber,
+        [Parameter(Mandatory)][string]$WriterTool,
+        [Parameter(Mandatory)][string]$FeatureBranch
+    )
+    $currentFull = [System.IO.Path]::GetFullPath($CurrentWorktreeRoot)
+    $expectedFull = [System.IO.Path]::GetFullPath($ExpectedWorktreePath)
+    if ($currentFull -eq $expectedFull) { return $true }
+
+    $contractPath = Get-GuardentraContractPath -IssueNumber $IssueNumber
+    if (-not (Test-Path -LiteralPath $contractPath)) { return $false }
+    try {
+        $existing = Read-GuardentraContract -IssueNumber $IssueNumber
+    }
+    catch {
+        # Unreadable/corrupt local contract is not ownership proof.
+        return $false
+    }
+    $recorded = [string]$existing.worktree_path
+    if ([string]::IsNullOrWhiteSpace($recorded)) { return $false }
+    $recordedFull = [System.IO.Path]::GetFullPath($recorded)
+    if ($recordedFull -ne $currentFull) { return $false }
+
+    # Cross-check the recorded contract really is this same issue/writer/
+    # branch -- a path match alone is not sufficient; it could be a stale or
+    # unrelated contract that happens to record this same directory.
+    if ([string]$existing.selected_writer_tool -ne $WriterTool) { return $false }
+    if ([string]$existing.feature_branch -ne $FeatureBranch) { return $false }
+    return $true
+}
+
+<#
+  Writes contract.json into an arbitrary worktree's own state directory
+  (scripts/guardentra/state/issues/<n>/), not $script:GuardentraStateRoot --
+  needed because a freshly created linked worktree has its own independent
+  copy of the whole tracked file tree, including scripts/guardentra itself.
+#>
+function Save-GuardentraContractAt {
+    param(
+        [Parameter(Mandatory)][string]$WorktreeRoot,
+        [Parameter(Mandatory)][int]$IssueNumber,
+        [Parameter(Mandatory)]$Contract
+    )
+    $dir = Join-Path $WorktreeRoot (Join-Path 'scripts\guardentra\state\issues' ([string]$IssueNumber))
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    $Contract.updated_utc = (Get-Date).ToUniversalTime().ToString('o')
+    $json = $Contract | ConvertTo-Json -Depth 8
+    Set-Content -Path (Join-Path $dir 'contract.json') -Value $json -Encoding utf8
+}
+
+function Set-GuardentraPacketAt {
+    param(
+        [Parameter(Mandatory)][string]$WorktreeRoot,
+        [Parameter(Mandatory)][int]$IssueNumber,
+        [Parameter(Mandatory)][string]$Text
+    )
+    $dir = Join-Path $WorktreeRoot (Join-Path 'scripts\guardentra\state\issues' ([string]$IssueNumber))
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    Set-Content -Path (Join-Path $dir 'task-packet.md') -Value $Text -Encoding utf8
+}
+
 function Get-GuardentraChangedFiles {
     param([string]$BaseSha)
     $files = New-Object System.Collections.Generic.List[string]
@@ -1045,6 +1271,85 @@ function Get-GuardentraPrLink {
         return 'NONE'
     }
     return 'NONE'
+}
+
+<#
+  #66/#85 correction cycle 3: discovers OPEN PRs whose head branch is
+  exactly $Branch, so Invoke-GuardentraPushAndPr can decide -- BEFORE ever
+  pushing -- whether to update an existing PR or create a new one, and can
+  refuse (before push) if more than one exists or an existing one's
+  base/head does not match what is expected.
+#>
+function Get-GuardentraOpenPrsForBranch {
+    param([Parameter(Mandatory)][string]$Branch)
+    if ($script:GuardentraOpenPrsForBranchProvider) {
+        return @(& $script:GuardentraOpenPrsForBranchProvider $Branch)
+    }
+    $json = & gh pr list --repo $script:GuardentraExpectedRepo --head $Branch --state open --json number,url,baseRefName,headRefName 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "REFUSED: unable to list open PRs for branch '$Branch': $(Protect-GuardentraSecrets -Text ($json | Out-String))"
+    }
+    $jsonText = ($json | Out-String).Trim()
+    if ([string]::IsNullOrWhiteSpace($jsonText)) { return @() }
+    return @($jsonText | ConvertFrom-Json)
+}
+
+<#
+  Creates a PR for the current branch. `gh pr create` has no --json output
+  mode; it prints the PR URL on success, so the PR number is parsed from
+  that URL rather than issuing a second `gh` call.
+#>
+function New-GuardentraPrForBranch {
+    param(
+        [Parameter(Mandatory)][string]$Title,
+        [string[]]$BodyArgs = @()
+    )
+    if ($script:GuardentraPrCreateProvider) {
+        return (& $script:GuardentraPrCreateProvider $Title $BodyArgs)
+    }
+    $pr = & gh pr create --repo $script:GuardentraExpectedRepo --title $Title @BodyArgs --base main 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "gh pr create failed: $(Protect-GuardentraSecrets -Text ($pr | Out-String))"
+    }
+    $urlText = ($pr | Out-String).Trim()
+    $prNumber = 0
+    if ($urlText -match '/pull/(\d+)\s*$') { $prNumber = [int]$Matches[1] }
+    return [pscustomobject]@{ Number = $prNumber; Url = $urlText }
+}
+
+<#
+  Re-fetches a PR's current head SHA -- used immediately after push (whether
+  the PR was just created or already existed) so Invoke-GuardentraPushAndPr
+  can fail closed instead of reporting success when the PR's head does not
+  actually equal the authorized local HEAD that was just pushed.
+#>
+function Get-GuardentraPrHeadSha {
+    param([Parameter(Mandatory)][int]$Pr)
+    if ($script:GuardentraPrViewProvider) {
+        return [string](& $script:GuardentraPrViewProvider $Pr)
+    }
+    $view = & gh pr view $Pr --repo $script:GuardentraExpectedRepo --json headRefOid 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "REFUSED: unable to view PR #$Pr after push: $(Protect-GuardentraSecrets -Text ($view | Out-String))"
+    }
+    $obj = ($view | Out-String).Trim() | ConvertFrom-Json
+    return [string]$obj.headRefOid
+}
+
+<#
+  Pushes the current HEAD to origin. Wrapped behind a DI seam (like
+  Invoke-GuardentraFetchAndFfPullMain) purely so tests can exercise the
+  surrounding existing-PR-safety decision logic in Invoke-GuardentraPushAndPr
+  without needing a real, reachable git remote -- the production path always
+  performs a real `git push`.
+#>
+function Invoke-GuardentraPushHeadToOrigin {
+    if ($script:GuardentraPushHeadProvider) {
+        & $script:GuardentraPushHeadProvider
+        return
+    }
+    $push = Invoke-GuardentraGit -GitArgs @('push', '-u', 'origin', 'HEAD')
+    if ($push.ExitCode -ne 0) { throw "git push failed: $($push.Output)" }
 }
 
 function Register-GuardentraAttempt {
@@ -1173,6 +1478,7 @@ function New-GuardentraTaskPacketMarkdown {
 - GitHub issue: #$($Contract.issue_number) -- $($Contract.title)
 - Base branch and verified SHA: ``main`` @ ``$($Contract.starting_main_sha)``
 - Feature branch: ``$($Contract.feature_branch)``
+- Isolated worktree path: ``$($Contract.worktree_path)`` (#66 -- never the shared primary checkout)
 - Primary writing tool (``tool:*``): ``tool:$($Contract.selected_writer_tool)``
 - Persona / role: $($Contract.persona_role)
 - Persona spec: ``$($Contract.persona_spec_path)``
@@ -1263,18 +1569,19 @@ Generated UTC: $((Get-Date).ToUniversalTime().ToString('o'))
 ## Mandatory evidence
 
 1. **Branch name:** ``$Branch``
-2. **Starting SHA:** ``$($Contract.starting_main_sha)``
-3. **Current SHA:** ``$CurrentSha``
-4. **GitHub PR:** $PrLink
-5. **Exact changed files:**
+2. **Worktree path:** ``$($Contract.worktree_path)`` (#66 -- isolated per writer/issue, never the shared primary checkout)
+3. **Starting SHA:** ``$($Contract.starting_main_sha)``
+4. **Current SHA:** ``$CurrentSha``
+5. **GitHub PR:** $PrLink
+6. **Exact changed files:**
 $fileList
-6. **Test results:**
+7. **Test results:**
 $TestResults
-7. **Remaining uncommitted files / worktree:**
+8. **Remaining uncommitted files / worktree:**
 ``````
 $Worktree
 ``````
-8. **Deployment status:** $Deployment
+9. **Deployment status:** $Deployment
 
 ## Authorization snapshot (single-use grants)
 
