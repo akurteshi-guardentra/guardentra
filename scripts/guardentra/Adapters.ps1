@@ -13,8 +13,8 @@
 # drives another AI tool's session at all: doing so would be an
 # unsupervised, unbounded action outside every access-tier and Owner-gate
 # control this dispatcher otherwise enforces. StartTask/ResumeTask/Cancel
-# therefore always report `manual_handoff_required` in this slice; only
-# CanRun() reflects real, verifiable local capability detection. Evidence
+# therefore always report `manual_handoff_required` in this slice.
+# CanRun() stays false until an execution adapter is implemented and proven. Evidence
 # collection (CollectResult, in spirit) is tool-agnostic -- it reads git
 # and test state directly -- and lives in Commands.ps1's
 # New-GuardentraAgentResultV1, not in a per-adapter stub.
@@ -22,29 +22,14 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# Known writer -> local non-interactive CLI binary name. No entry, or the
-# binary missing from PATH, means CanRun() is false. `cursor` has no
-# verified reliable local non-interactive CLI in this repository's
-# toolchain docs (`docs/agent-ops/TOOLCHAIN.md`), so it is intentionally
-# absent here rather than guessed at.
-$script:GuardentraAdapterCliByWriter = @{
-    'claude'      = 'claude'
-    'claude-code' = 'claude'
-    'codex'       = 'codex'
-}
-
 function Test-GuardentraAdapterCanRun {
     <#
-      CanRun(): true only when a real, locally-resolvable non-interactive
-      CLI binary is known and present for this writer tool.
+      No autonomous execution adapter has been proven in this slice.
+      Installed binaries, aliases, functions, and provider hints do not
+      establish supported execution or authority.
     #>
     param([Parameter(Mandatory)][string]$Tool)
-    if ($script:GuardentraAdapterCanRunProvider) {
-        return [bool](& $script:GuardentraAdapterCanRunProvider $Tool)
-    }
-    $cli = $script:GuardentraAdapterCliByWriter[$Tool.ToLowerInvariant()]
-    if (-not $cli) { return $false }
-    return [bool](Get-Command $cli -ErrorAction SilentlyContinue)
+    return $false
 }
 
 function Invoke-GuardentraAdapterStartTask {
@@ -56,12 +41,6 @@ function Invoke-GuardentraAdapterStartTask {
         [Parameter(Mandatory)][string]$Tool,
         $Task
     )
-    if (Test-GuardentraAdapterCanRun -Tool $Tool) {
-        return [pscustomobject]@{
-            Status = 'manual_handoff_required'
-            Detail = "adapter for '$Tool' is capability-detected (local CLI present), but autonomous non-interactive driving is not implemented in this slice; hand off manually"
-        }
-    }
     return [pscustomobject]@{
         Status = 'manual_handoff_required'
         Detail = "no verified reliable non-interactive CLI/API for tool '$Tool' in this slice; hand off manually"

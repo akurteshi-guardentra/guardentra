@@ -23,6 +23,24 @@ All read-mostly: `agent run` may write `agent_state.json` and run the
 issue's own required tests, but never commits, pushes, merges, or deploys,
 and mints no authorization. `agent status` / `agent watch` are pure reads.
 
+## Correction cycle 2 trust boundary
+
+Before executing a check, `agent run` re-fetches the accepted GitHub dispatch
+and compares issue, branch, writer, starting SHA, paths, required tests, and
+access tier. It requires the tooling deny policy, a linked worktree at the
+dispatch-derived `guardentra-<writer>-<issue>` location, and HEAD descended
+from the dispatched SHA. Missing GitHub authority, a primary checkout, a
+blank/forged worktree, T3/T4, or a changed local contract refuses before
+tests/state writes. The local contract is never a substitute for dispatch.
+
+This tooling slice executes only the exact supported dispatcher test command,
+through a fixed `powershell.exe -NoProfile -File <literal path>` argument
+vector. It never interpolates cached test text into `-Command`. The test
+script itself remains executable candidate code and must be reviewed; this
+is not an OS sandbox. Test execution cannot authorize any subsequent Owner
+gate. HEAD, branch, changed-file set, and candidate digest must remain stable
+during tests before their outcome can support a result.
+
 ## `guardentra.agent_result.v1`
 
 Normalized, tool-agnostic evidence built from **real** git/test state
@@ -41,9 +59,12 @@ own claims:
 | `deployment` | Always the literal `none` in this slice |
 | `blockers` | Human-readable reasons, e.g. adapter capability detail |
 
-`Assert-GuardentraAgentResultV1Valid` is strict and fail-closed, and is the
-mechanism that satisfies "malicious/untrusted agent result cannot mint
-authority": **only** the fixed field list above is ever accepted — a
+`Assert-GuardentraAgentResultV1Valid` checks all required keys and exact value
+types (including string arrays, a boolean clean flag, and known writer/status).
+Schema validity alone is **not provenance**. `Assert-GuardentraAgentResultMatchesLocalEvidence`
+binds a newly produced result to current git identity/files and the tests
+executed by that runner invocation. No cached or adapter-supplied result is
+used as evidence or authorization. **Only** the fixed field list above is accepted — a
 result carrying an extra `nonce`, `content_digest`, `auth_commit`, or any
 other grant-shaped key is refused outright, before it is ever treated as
 trustworthy. Nothing in this dispatcher reads `agent_result` fields as
@@ -58,11 +79,10 @@ widening).
 One common contract (`CanRun`, `StartTask`, `ResumeTask`, `CollectResult`,
 `Cancel`) that every writer tool would implement. This slice:
 
-- **Capability-detects, never fakes.** `Test-GuardentraAdapterCanRun`
-  checks for a real, locally-resolvable non-interactive CLI binary
-  (`claude` for `claude`/`claude-code`, `codex` for `codex`). `cursor` has
-  no verified reliable non-interactive CLI in `docs/agent-ops/TOOLCHAIN.md`,
-  so it is intentionally absent from the mapping rather than guessed at.
+- **Execution capability stays false.** `Test-GuardentraAdapterCanRun`
+  returns false for every adapter until execution is implemented and proven.
+  Installed CLIs, functions/aliases on PATH, or capability-provider hints
+  cannot establish supported autonomous execution.
 - **Never autonomously drives another AI tool's session.** Doing so would
   be an unsupervised, unbounded action outside every access-tier and
   Owner-gate control this dispatcher otherwise enforces. `StartTask` /
@@ -77,15 +97,21 @@ One common contract (`CanRun`, `StartTask`, `ResumeTask`, `CollectResult`,
 
 Restart-safe: persists `scripts/guardentra/state/issues/<n>/agent_state.json`
 (`guardentra.agent_state.v1`: `schema`, `issue`, `writer`, `state`,
-`adapter_can_run`, `last_result`, `updated_utc`) and reads it back on every
+`adapter_can_run`, `evidence_verified`, `last_result`, `updated_utc`) and reads it back on every
 invocation instead of starting over — including after a real process
 restart, since state lives on disk, not in memory.
 
+State has exact keys/types and cannot contain grants, paths, tiers, or retry
+overrides. `evidence_verified` is always false on disk. A schema-valid
+`last_result` is discarded on read: cached HEAD/tests are not fresh evidence.
+Status/watch explicitly label cached state and writer UNVERIFIED and do not
+republish cached result claims. Old caches without `evidence_verified` receive
+false; caches claiming autonomous capability or authority refuse.
+
 Per run:
 
-1. `#66` worktree binding (`Assert-GuardentraWorktreeMatchesContract`) and
-   branch match, reused as-is — a wrong-worktree invocation refuses before
-   any evaluation.
+1. Live dispatch and independent worktree/branch validation
+   (`Assert-GuardentraAgentContractLive`), including the existing #66 binding.
 2. If nothing has been committed or is pending since `starting_main_sha`:
    `manual_handoff_required` (a genuinely fresh task is always a hand-off
    in this slice — see Adapters above).
@@ -101,7 +127,13 @@ Per run:
    exactly one correction-loop counter and one scope-allowlist check in the
    whole dispatcher; the runner does not duplicate either.
 4. The resulting `agent_result.v1` is strictly validated and scope-checked
-   before being persisted or printed.
+   and bound to current local evidence before being persisted or printed.
+
+Retry fields must be integers; count cannot be negative and limit must be
+between 1 and 3. The third failure preserves restart state and persists the
+shared counter before escalation. Further runs and attempts to reset an
+exhausted budget through a successful registration refuse. Editing a cache
+limit to 99 never widens this policy.
 
 The runner never calls `commit`, `push-and-pr`, `merge`, or `deploy-*` —
 those remain separately Owner-gated commands, unchanged by this slice.

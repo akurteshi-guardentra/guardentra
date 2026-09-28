@@ -3,7 +3,8 @@
 Versioned, machine-readable task contract derived from the authoritative
 GitHub issue and its `#9C DISPATCH PACKET`. This is the **first slice** of
 the Agent Control Plane described in #88: a headless, strictly-validated
-schema and generator — no runner, no adapters, no UI.
+schema and generator. The runner/adapters are documented in AGENT_RUNNER.md;
+neither schema grants autonomous execution or Owner authority.
 
 This is **not** the same artifact as
 [`TASK_CONTRACT_SCHEMA.md`](./TASK_CONTRACT_SCHEMA.md)
@@ -32,18 +33,22 @@ Writes `scripts/guardentra/state/issues/<n>/task.v1.json` (local, gitignored
 ## Generation and validation pipeline
 
 1. Read the local `contract.json` (already bound to the authoritative
-   dispatch at `start` time).
+   dispatch at `start` time), then revalidate against live GitHub dispatch
+   and the independently derived isolated-worktree identity.
 2. Build the `guardentra.task.v1` object from the contract + GitHub issue
    record (`New-GuardentraTaskV1`).
 3. **Strict validation, fail closed** (`Assert-GuardentraTaskV1Valid`):
-   refuses on a missing objective, an unrecognized writer, a missing or
+   checks every required key/type and fixed Owner-boundary policy; refuses
+   T3/T4, extra grant-shaped fields, noncanonical/traversing paths,
+   a missing objective, an unrecognized writer, a missing or
    `main` feature branch, a malformed starting SHA, or empty/ambiguous
    `allowed_paths` / `prohibited_paths` / `required_tests` (including an
    unbounded entry such as `*`, `/`, or `**` in `allowed_paths`).
 4. **Live dispatch match** (`Assert-GuardentraTaskV1MatchesDispatch`):
    re-fetches the authoritative GitHub dispatch envelope and refuses if the
-   generated task's `feature_branch`, `writer_tool`, `starting_sha` (when
-   the dispatch specifies one), `allowed_paths`, or `required_tests` diverge
+   generated task's issue, `feature_branch`, `writer_tool`, `starting_sha`,
+   `allowed_paths`, or `required_tests` diverge, its access tier exceeds the
+   dispatch ceiling, or the pilot deny/stop policy has been weakened
    from it — the generated task must exactly match GitHub, never a stale or
    locally-widened copy.
 5. Write the object deterministically to `task.v1.json` and print it.
@@ -81,9 +86,8 @@ expected to differ between generations, exactly like `contract.json`'s own
 
 ## Non-goals of this slice
 
-Per #88's "suggested first implementation slice": no runner/daemon (Phase
-B), no tool adapter interface (Phase C), no automatic evidence posting to
-GitHub (Phase D), no reviewer routing (Phase E), no correction-loop
-automation (Phase F), no Owner-gate CLI beyond the existing
+The runner and manual adapter interface are described in AGENT_RUNNER.md.
+This schema adds no automatic evidence posting to GitHub, reviewer routing,
+autonomous tool execution, or Owner-gate CLI beyond the existing
 `sync-grants`/`commit`/`push-and-pr`/`merge`/`deploy-*` (Phase G), and no
 dashboard (Phase H). Those remain separately authorized follow-up work.

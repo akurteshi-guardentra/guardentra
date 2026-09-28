@@ -1749,8 +1749,33 @@ $taskEmptyTests = Copy-GuardentraTaskForTest -Task $taskA
 $taskEmptyTests.required_tests = @()
 Assert-Throws { Assert-GuardentraTaskV1Valid -Task $taskEmptyTests } 'task.v1 with empty required_tests is refused (#88 Phase A)' -Match 'REFUSED.*required_tests is empty'
 
+foreach ($tier in @('T3', 'T4', 'T9')) {
+    $forgedTask = Copy-GuardentraTaskForTest -Task $taskA
+    $forgedTask.access_tier = $tier
+    Assert-Throws { Assert-GuardentraTaskV1Valid -Task $forgedTask } "task refuses $tier access escalation (#88 correction 2)"
+}
+foreach ($flag in @('autonomous_merge', 'autonomous_push', 'autonomous_deploy')) {
+    $forgedTask = Copy-GuardentraTaskForTest -Task $taskA
+    $forgedTask.authorization_boundaries = [ordered]@{
+        requires_owner_grant_for=@('commit', 'deploy-production', 'deploy-staging', 'merge', 'push-and-pr')
+        autonomous_merge=$false; autonomous_push=$false; autonomous_deploy=$false
+    }
+    $forgedTask.authorization_boundaries[$flag] = $true
+    Assert-Throws { Assert-GuardentraTaskV1Valid -Task $forgedTask } "task refuses $flag authority (#88 correction 2)"
+}
+foreach ($path in @('../src/*', 'scripts/../src/*', 'C:/outside/*', 'scripts\\guardentra/*', 'scripts//*', '')) {
+    $forgedTask = Copy-GuardentraTaskForTest -Task $taskA
+    $forgedTask.allowed_paths = @($path)
+    Assert-Throws { Assert-GuardentraTaskV1Valid -Task $forgedTask } "task refuses noncanonical path '$path' (#88 correction 2)"
+}
+$forgedTask = Copy-GuardentraTaskForTest -Task $taskA
+$forgedTask['auth_commit'] = @{enabled=$true}
+Assert-Throws { Assert-GuardentraTaskV1Valid -Task $forgedTask } 'task refuses extra grant fields (#88 correction 2)'
+
 # Assert-GuardentraTaskV1MatchesDispatch: must exactly match the live dispatch.
 $matchingDispatch = [pscustomobject]@{
+    issue_number      = 88
+    max_access_tier   = 'T2'
     feature_branch    = 'tooling/agent-control-plane-88'
     writer            = 'claude'
     starting_main_sha = $headA
@@ -1760,6 +1785,12 @@ $matchingDispatch = [pscustomobject]@{
 $matchNoThrow = $true
 try { Assert-GuardentraTaskV1MatchesDispatch -Task $taskA -Dispatch $matchingDispatch } catch { $matchNoThrow = $false }
 Assert-True $matchNoThrow 'task.v1 matching the live dispatch passes the match check (#88 Phase A)'
+$lowerTierDispatch = [pscustomobject]$matchingDispatch.PSObject.Copy()
+$lowerTierDispatch.max_access_tier = 'T0'
+Assert-Throws { Assert-GuardentraTaskV1MatchesDispatch -Task $taskA -Dispatch $lowerTierDispatch } 'task refuses tier beyond live dispatch (#88 correction 2)'
+$weakenedTask = Copy-GuardentraTaskForTest -Task $taskA
+$weakenedTask.prohibited_paths = @('irrelevant/*')
+Assert-Throws { Assert-GuardentraTaskV1MatchesDispatch -Task $weakenedTask -Dispatch $matchingDispatch } 'task refuses weakened deny policy (#88 correction 2)'
 
 $dispatchBranchMismatch = [pscustomobject]$matchingDispatch.PSObject.Copy()
 $dispatchBranchMismatch.feature_branch = 'some-other-branch'
@@ -1783,7 +1814,8 @@ Assert-Throws { Assert-GuardentraTaskV1MatchesDispatch -Task $taskA -Dispatch $d
 
 # --- Invoke-GuardentraTask: real git + DI end-to-end. ---
 Reset-GuardentraTestProviders
-$taskRepoRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('guardentra-88-task-' + [guid]::NewGuid().ToString('n'))
+$taskFixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('guardentra-88-task-' + [guid]::NewGuid().ToString('n'))
+$taskRepoRoot = Join-Path $taskFixtureRoot 'primary'
 $prevRootTask = $script:GuardentraRoot
 $prevStateRootTask = $script:GuardentraStateRoot
 try {
@@ -1797,7 +1829,9 @@ try {
     Invoke-GuardentraTestGitSetup -WorkDir $taskRepoRoot -GitArgs @('commit', '-m', 'main-seed') | Out-Null
     Invoke-GuardentraTestGitSetup -WorkDir $taskRepoRoot -GitArgs @('remote', 'add', 'origin', 'https://github.com/akurteshi-guardentra/guardentra.git') | Out-Null
     $taskBaseSha = (Invoke-GuardentraTestGitSetup -WorkDir $taskRepoRoot -GitArgs @('rev-parse', 'HEAD')).Trim()
-    Invoke-GuardentraTestGitSetup -WorkDir $taskRepoRoot -GitArgs @('checkout', '-b', 'tooling/agent-control-plane-970') | Out-Null
+    $taskWorktreeRoot = Join-Path $taskFixtureRoot 'guardentra-claude-970'
+    Invoke-GuardentraTestGitSetup -WorkDir $taskRepoRoot -GitArgs @('worktree', 'add', $taskWorktreeRoot, '-b', 'tooling/agent-control-plane-970', $taskBaseSha) | Out-Null
+    $taskRepoRoot = $taskWorktreeRoot
 
     $script:GuardentraRoot = $taskRepoRoot
     $contract970 = New-GuardentraDefaultContract -IssueNumber 970 -Title 'Agent Control Plane test issue' -StartingMainSha $taskBaseSha `
@@ -1871,8 +1905,8 @@ finally {
     Reset-GuardentraTestProviders
     $script:GuardentraRoot = $prevRootTask
     $script:GuardentraStateRoot = $prevStateRootTask
-    if (Test-Path -LiteralPath $taskRepoRoot) {
-        Remove-Item -LiteralPath $taskRepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $taskFixtureRoot) {
+        Remove-Item -LiteralPath $taskFixtureRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -1914,10 +1948,18 @@ function New-TestAgentResult {
 # Adapter capability detection: honest, never fakes a tool's support.
 Assert-True (-not (Test-GuardentraAdapterCanRun -Tool 'cursor')) 'adapter capability detection reports false for a tool with no verified local CLI mapping (#88 Phase C)'
 $script:GuardentraAdapterCanRunProvider = { param($Tool) $true }
-Assert-True (Test-GuardentraAdapterCanRun -Tool 'claude') 'adapter capability detection provider override returns true (#88 Phase C)'
+Assert-True (-not (Test-GuardentraAdapterCanRun -Tool 'claude')) 'an untrusted capability provider cannot enable unimplemented execution (#88 correction 2)'
 $script:GuardentraAdapterCanRunProvider = { param($Tool) $false }
 Assert-True (-not (Test-GuardentraAdapterCanRun -Tool 'claude')) 'adapter capability detection provider override returns false (#88 Phase C)'
 $script:GuardentraAdapterCanRunProvider = $null
+
+function claude { throw 'unproven CLI must never execute' }
+function codex { throw 'unproven CLI must never execute' }
+foreach ($tool in @('claude', 'claude-code', 'codex', 'cursor', 'grok', 'google')) {
+    Assert-True (-not (Test-GuardentraAdapterCanRun -Tool $tool)) "installed/unproven $tool cannot claim autonomous capability (#88 correction 2)"
+    Assert-True ((Invoke-GuardentraAdapterResumeTask -Tool $tool).Status -eq 'manual_handoff_required') "resume remains manual for $tool (#88 correction 2)"
+}
+Remove-Item Function:claude,Function:codex
 
 $startCanRun = Invoke-GuardentraAdapterStartTask -Tool 'claude'
 Assert-True ($startCanRun.Status -eq 'manual_handoff_required') 'StartTask never autonomously drives a tool even when capability-detected -- always manual_handoff_required in this slice (#88 Phase C)'
@@ -1968,6 +2010,30 @@ $notArrayResult = Copy-GuardentraOrderedForTest -Source $goodResult
 $notArrayResult.changed_files = $null
 Assert-Throws { Assert-GuardentraAgentResultV1Valid -Result $notArrayResult } 'agent_result.v1 with a null changed_files is refused (#88 Phase D)' -Match 'REFUSED.*changed_files'
 
+foreach ($field in $script:GuardentraAgentResultAllowedKeys) {
+    $missing = Copy-GuardentraOrderedForTest -Source $goodResult
+    $missing.Remove($field)
+    Assert-Throws { Assert-GuardentraAgentResultV1Valid -Result $missing } "result refuses missing $field (#88 correction 2)"
+}
+foreach ($case in @(
+    @{field='changed_files'; value=@(42)}, @{field='tests'; value='PASS'},
+    @{field='tests'; value=@(@{auth_commit=$true})}, @{field='worktree_clean'; value='true'},
+    @{field='writer'; value='made-up'}, @{field='issue'; value='88'},
+    @{field='changed_files'; value=@('../src/escape.ts')}
+)) {
+    $malformed = Copy-GuardentraOrderedForTest -Source $goodResult
+    $malformed[$case.field] = $case.value
+    Assert-Throws { Assert-GuardentraAgentResultV1Valid -Result $malformed } "result refuses malformed $($case.field) (#88 correction 2)"
+}
+foreach ($limit in @(99, 4, 0, -1, '3')) {
+    $retryProbe = [ordered]@{attempt_count=0; retry_limit=$limit}
+    Assert-Throws { Test-GuardentraRetryGate -Contract $retryProbe } "retry policy refuses limit '$limit' (#88 correction 2)"
+}
+foreach ($count in @(-1, '0', 1.5)) {
+    $retryProbe = [ordered]@{attempt_count=$count; retry_limit=3}
+    Assert-Throws { Test-GuardentraRetryGate -Contract $retryProbe } "retry policy refuses count '$count' (#88 correction 2)"
+}
+
 # Assert-GuardentraAgentResultV1WithinScope: scope widening guard.
 $scopeContract = New-GuardentraDefaultContract -IssueNumber 970 -Title 'scope test' -StartingMainSha $headA -FeatureBranch 'tooling/agent-control-plane-970' -WriterTool 'claude'
 $withinScopeOk = $true
@@ -1979,7 +2045,8 @@ Assert-Throws { Assert-GuardentraAgentResultV1WithinScope -Result $widenedResult
 
 # --- Invoke-GuardentraAgentRun: real git, restart-safe state machine. ---
 Reset-GuardentraTestProviders
-$agentRepoRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('guardentra-88-agent-' + [guid]::NewGuid().ToString('n'))
+$agentFixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('guardentra-88-agent-' + [guid]::NewGuid().ToString('n'))
+$agentRepoRoot = Join-Path $agentFixtureRoot 'primary'
 $prevRootAgent = $script:GuardentraRoot
 $prevStateRootAgent = $script:GuardentraStateRoot
 try {
@@ -1993,13 +2060,20 @@ try {
     Invoke-GuardentraTestGitSetup -WorkDir $agentRepoRoot -GitArgs @('commit', '-m', 'main-seed') | Out-Null
     Invoke-GuardentraTestGitSetup -WorkDir $agentRepoRoot -GitArgs @('remote', 'add', 'origin', 'https://github.com/akurteshi-guardentra/guardentra.git') | Out-Null
     $agentBaseSha = (Invoke-GuardentraTestGitSetup -WorkDir $agentRepoRoot -GitArgs @('rev-parse', 'HEAD')).Trim()
-    Invoke-GuardentraTestGitSetup -WorkDir $agentRepoRoot -GitArgs @('checkout', '-b', 'tooling/agent-control-plane-972') | Out-Null
+    $agentPrimaryRoot = $agentRepoRoot
+    $agentWorktreeRoot = Join-Path $agentFixtureRoot 'guardentra-claude-972'
+    Invoke-GuardentraTestGitSetup -WorkDir $agentRepoRoot -GitArgs @('worktree', 'add', $agentWorktreeRoot, '-b', 'tooling/agent-control-plane-972', $agentBaseSha) | Out-Null
+    $agentRepoRoot = $agentWorktreeRoot
 
     $script:GuardentraRoot = $agentRepoRoot
     $contract972 = New-GuardentraDefaultContract -IssueNumber 972 -Title 'Agent runner test issue' -StartingMainSha $agentBaseSha `
         -FeatureBranch 'tooling/agent-control-plane-972' -WriterTool 'claude' -AccessTier 'T2'
     $contract972.worktree_path = $agentRepoRoot
     Save-GuardentraContract -IssueNumber 972 -Contract $contract972
+    $script:GuardentraAuthorityCommentsProvider = {
+        param($IssueNumber)
+        @(New-AuthorityComment -Body (New-DispatchBody -Branch 'tooling/agent-control-plane-972' -Sha $agentBaseSha -Writer 'Claude') -Login $owner)
+    }
 
     # 1) Fresh task (nothing committed or pending yet): always
     #    manual_handoff_required -- this slice never fakes autonomously
@@ -2052,6 +2126,89 @@ try {
     $contractAfterPass = Read-GuardentraContract -IssueNumber 972
     Assert-True ([int]$contractAfterPass.attempt_count -eq 0) 'a successful agent run resets the shared correction-loop counter (#88 Phase F)'
 
+    # All attacks below use only disposable contract/state fixtures. No attack
+    # command may execute, and no new result may replace the last valid run.
+    $safeContractJson = $contractAfterPass | ConvertTo-Json -Depth 8
+    $attackMarker = Join-Path $agentRepoRoot 'unauthorized-command-ran'
+    foreach ($attack in @(
+        @{name='T3'; mutate={param($c) $c.access_tier='T3'}},
+        @{name='T4'; mutate={param($c) $c.access_tier='T4'}},
+        @{name='blank worktree'; mutate={param($c) $c.worktree_path=''}},
+        @{name='forged worktree'; mutate={param($c) $c.worktree_path=$agentPrimaryRoot}},
+        @{name='widened scope'; mutate={param($c) $c.allowed_paths=@('scripts/*','src/*')}},
+        @{name='weakened deny list'; mutate={param($c) $c.prohibited_paths=@('irrelevant/*')}},
+        @{name='wrong writer'; mutate={param($c) $c.selected_writer_tool='codex'}},
+        @{name='wrong issue'; mutate={param($c) $c.issue_number=999}},
+        @{name='wrong base'; mutate={param($c) $c.starting_main_sha=('b'*40)}},
+        @{name='retry widening'; mutate={param($c) $c.retry_limit=99}},
+        @{name='shell injection'; mutate={param($c) $c.required_tests=@("New-Item -ItemType File -Path '$attackMarker'")}},
+        @{name='empty tests'; mutate={param($c) $c.required_tests=@()}}
+    )) {
+        $attackContract = ConvertTo-GuardentraContractObject -InputObject ($safeContractJson | ConvertFrom-Json)
+        & $attack.mutate $attackContract
+        Save-GuardentraContract -IssueNumber 972 -Contract $attackContract
+        Assert-Throws { Invoke-GuardentraAgentRun -IssueNumber 972 | Out-Null } "runner refuses $($attack.name) before executing tests (#88 correction 2)"
+        Assert-True (-not (Test-Path -LiteralPath $attackMarker)) "no unauthorized command executed for $($attack.name) (#88 correction 2)"
+    }
+    Save-GuardentraContract -IssueNumber 972 -Contract (ConvertTo-GuardentraContractObject -InputObject ($safeContractJson | ConvertFrom-Json))
+    $dispatchProvider = $script:GuardentraAuthorityCommentsProvider
+    $script:GuardentraAuthorityCommentsProvider = { param($IssueNumber) @() }
+    Assert-Throws { Invoke-GuardentraAgentRun -IssueNumber 972 | Out-Null } 'runner refuses missing live dispatch rather than trusting cache (#88 correction 2)'
+    $script:GuardentraAuthorityCommentsProvider = {
+        param($IssueNumber)
+        @(New-AuthorityComment -Body (New-DispatchBody -Branch 'changed-by-owner' -Sha $agentBaseSha -Writer 'Claude') -Login $owner)
+    }
+    Assert-Throws { Invoke-GuardentraAgentRun -IssueNumber 972 | Out-Null } 'runner refuses changed live dispatch (#88 correction 2)'
+    $script:GuardentraAuthorityCommentsProvider = $dispatchProvider
+
+    foreach ($field in @('head_sha','branch','starting_sha','writer','issue','changed_files','tests','worktree_clean')) {
+        $forgedResult = Copy-GuardentraOrderedForTest -Source $passResult
+        switch ($field) {
+            'head_sha' { $forgedResult[$field]='b'*40 }
+            'starting_sha' { $forgedResult[$field]='b'*40 }
+            'branch' { $forgedResult[$field]='another-branch' }
+            'writer' { $forgedResult[$field]='codex' }
+            'issue' { $forgedResult[$field]=999 }
+            'changed_files' { $forgedResult[$field]=@('scripts/guardentra/not-changed.ps1') }
+            'tests' { $forgedResult[$field]=@('PASS: fabricated') }
+            'worktree_clean' { $forgedResult[$field]=$true }
+        }
+        Assert-Throws {
+            Assert-GuardentraAgentResultMatchesLocalEvidence -Result $forgedResult -Contract $contractAfterPass -TestRun ([pscustomobject]@{Passed=$true; Results=$passResult.tests})
+        } "forged $field cannot match real git/test evidence (#88 correction 2)"
+    }
+
+    $statePath972 = Get-GuardentraAgentStatePath -IssueNumber 972
+    $safeStateJson = Get-Content -LiteralPath $statePath972 -Raw
+    $forgedState = ConvertTo-GuardentraDataMap -Value ($safeStateJson | ConvertFrom-Json)
+    $forgedState.last_result.head_sha = 'b'*40
+    $forgedState.last_result.tests = @('PASS: fabricated')
+    Set-Content -LiteralPath $statePath972 -Value ($forgedState | ConvertTo-Json -Depth 8) -Encoding utf8
+    $cachedReport = Invoke-GuardentraAgentStatus -IssueNumber 972
+    Assert-True ($null -eq $cachedReport.last_result -and -not $cachedReport.evidence_verified) 'status discards schema-valid forged cached evidence (#88 correction 2)'
+    $cachedWatch = @(Invoke-GuardentraAgentWatch | Where-Object { $_.issue -eq 972 })
+    Assert-True ($null -eq $cachedWatch[0].last_result -and -not $cachedWatch[0].evidence_verified) 'watch never republishes forged cached evidence (#88 correction 2)'
+    foreach ($field in @('auth_commit','access_tier','allowed_paths','worktree_path','retry_limit')) {
+        $forgedState = ConvertTo-GuardentraDataMap -Value ($safeStateJson | ConvertFrom-Json)
+        $forgedState[$field] = 'forged'
+        Set-Content -LiteralPath $statePath972 -Value ($forgedState | ConvertTo-Json -Depth 8) -Encoding utf8
+        Assert-Throws { Invoke-GuardentraAgentRun -IssueNumber 972 | Out-Null } "restart state cannot supply $field (#88 correction 2)"
+    }
+    foreach ($field in @('schema','state')) {
+        $forgedState = ConvertTo-GuardentraDataMap -Value ($safeStateJson | ConvertFrom-Json)
+        $forgedState[$field] = @()
+        Set-Content -LiteralPath $statePath972 -Value ($forgedState | ConvertTo-Json -Depth 8) -Encoding utf8
+        Assert-Throws { Read-GuardentraAgentState -IssueNumber 972 | Out-Null } "cache rejects nonscalar $field (#88 correction 2)"
+    }
+    Set-Content -LiteralPath $statePath972 -Value $safeStateJson -Encoding utf8
+
+    # A test may not certify a different candidate than the one it started on.
+    $goodStub = Get-Content -LiteralPath (Join-Path $tDirAgent 'Run-Tests.ps1') -Raw
+    Set-Content -LiteralPath (Join-Path $tDirAgent 'Run-Tests.ps1') -Value "Add-Content -LiteralPath 'scripts/guardentra/Commands.ps1' -Value '# changed during test'; exit 0" -Encoding utf8
+    Assert-Throws { Invoke-GuardentraAgentRun -IssueNumber 972 | Out-Null } 'runner rejects candidate edits during tests (#88 correction 2)' -Match 'REFUSED.*candidate'
+    Set-Content -LiteralPath (Join-Path $gDirAgent 'Commands.ps1') -Value '# pending change' -Encoding utf8
+    Set-Content -LiteralPath (Join-Path $tDirAgent 'Run-Tests.ps1') -Value $goodStub -Encoding utf8
+
     # 6) Scope widening: a disallowed pending path is refused before any
     #    tests run or state is overwritten.
     $srcDirAgent = Join-Path $agentRepoRoot 'src'
@@ -2078,13 +2235,25 @@ try {
     Assert-True ($statusReport.state -eq 'review_ready') 'agent status reports the persisted state (#88 Phase B)'
     $watchReport = @(Invoke-GuardentraAgentWatch)
     Assert-True (@($watchReport | Where-Object { [int]$_.issue -eq 972 }).Count -eq 1) 'agent watch lists issue #972''s persisted state (#88 Phase B)'
+
+    # Run the actual shared failure path through three invocations, not a
+    # separate runner counter. A fourth invocation and success-reset refuse.
+    Set-Content -LiteralPath (Join-Path $tDirAgent 'Run-Tests.ps1') -Value 'exit 1' -Encoding utf8
+    Invoke-GuardentraAgentRun -IssueNumber 972 | Out-Null
+    Invoke-GuardentraAgentRun -IssueNumber 972 | Out-Null
+    Assert-Throws { Invoke-GuardentraAgentRun -IssueNumber 972 | Out-Null } 'third runner failure stops and escalates (#88 correction 2)' -Match 'ESCALATE'
+    $thirdFailure = Read-GuardentraContract -IssueNumber 972
+    Assert-True ($thirdFailure.attempt_count -eq 3) 'third failed attempt survives restart in shared contract (#88 correction 2)'
+    Assert-True ((Read-GuardentraAgentState -IssueNumber 972).state -eq 'blocked') 'third failure preserves blocked restart state (#88 correction 2)'
+    Assert-Throws { Invoke-GuardentraAgentRun -IssueNumber 972 | Out-Null } 'fourth runner attempt refuses before tests (#88 correction 2)' -Match 'ESCALATE'
+    Assert-Throws { Register-GuardentraAttempt -Contract $thirdFailure -Success:$true -IssueNumber 972 } 'success cannot reset exhausted correction budget (#88 correction 2)' -Match 'ESCALATE'
 }
 finally {
     Reset-GuardentraTestProviders
     $script:GuardentraRoot = $prevRootAgent
     $script:GuardentraStateRoot = $prevStateRootAgent
-    if (Test-Path -LiteralPath $agentRepoRoot) {
-        Remove-Item -LiteralPath $agentRepoRoot -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $agentFixtureRoot) {
+        Remove-Item -LiteralPath $agentFixtureRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
 

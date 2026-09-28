@@ -363,7 +363,7 @@ function New-GuardentraTaskV1 {
         [Parameter(Mandatory)]$Contract,
         [Parameter(Mandatory)]$Issue
     )
-    $dependencies = ConvertFrom-GuardentraIssueDependencies -Body ([string]$Issue.Body)
+    $dependencies = @(ConvertFrom-GuardentraIssueDependencies -Body ([string]$Issue.Body))
     return [ordered]@{
         schema                   = $script:GuardentraTaskV1Schema
         issue                    = [int]$Contract.issue_number
@@ -408,6 +408,36 @@ function New-GuardentraTaskV1 {
 #>
 function Assert-GuardentraTaskV1Valid {
     param([Parameter(Mandatory)]$Task)
+    Assert-GuardentraExactKeys -Data $Task -Keys @(
+        'schema', 'issue', 'objective', 'source_requirement_ids', 'reviewer_tool', 'writer_tool',
+        'persona_role', 'persona_spec_path', 'access_tier', 'starting_sha', 'feature_branch',
+        'isolated_worktree_path', 'allowed_paths', 'prohibited_paths', 'required_tests',
+        'acceptance_criteria', 'dependencies', 'stop_conditions', 'authorization_boundaries', 'generated_utc'
+    )
+    foreach ($field in @('schema', 'objective', 'reviewer_tool', 'writer_tool', 'persona_role', 'persona_spec_path',
+        'access_tier', 'starting_sha', 'feature_branch', 'isolated_worktree_path', 'generated_utc')) {
+        if ($Task.$field -isnot [string]) { throw "REFUSED: task.v1 $field must be a string" }
+    }
+    if ($Task.issue -isnot [int]) { throw 'REFUSED: task.v1 issue must be an integer' }
+    foreach ($field in @('source_requirement_ids', 'allowed_paths', 'prohibited_paths', 'required_tests', 'stop_conditions')) {
+        Assert-GuardentraStringArray -Value $Task.$field -Name $field -NonEmpty
+    }
+    foreach ($field in @('acceptance_criteria', 'dependencies')) {
+        Assert-GuardentraStringArray -Value $Task.$field -Name $field
+    }
+    if (@('T0', 'T1', 'T2') -cnotcontains $Task.access_tier) { throw 'REFUSED: task.v1 access_tier cannot escalate beyond T2' }
+    foreach ($path in @($Task.allowed_paths) + @($Task.prohibited_paths)) {
+        Assert-GuardentraRelativePath -Path $path -Pattern
+    }
+    $boundaries = ConvertTo-GuardentraDataMap -Value $Task.authorization_boundaries
+    Assert-GuardentraExactKeys -Data $boundaries -Keys @('requires_owner_grant_for', 'autonomous_merge', 'autonomous_push', 'autonomous_deploy')
+    foreach ($key in @('autonomous_merge', 'autonomous_push', 'autonomous_deploy')) {
+        if ($boundaries[$key] -isnot [bool] -or $boundaries[$key]) { throw 'REFUSED: task.v1 authorization_boundaries cannot grant authority' }
+    }
+    Assert-GuardentraStringArray -Value $boundaries.requires_owner_grant_for -Name 'requires_owner_grant_for' -NonEmpty
+    if (-not (Compare-GuardentraStringSets -Left $boundaries.requires_owner_grant_for -Right @('commit', 'deploy-production', 'deploy-staging', 'merge', 'push-and-pr'))) {
+        throw 'REFUSED: task.v1 authorization_boundaries must retain every Owner gate'
+    }
     if ([string]$Task.schema -ne $script:GuardentraTaskV1Schema) {
         throw "REFUSED: task.v1 schema '$($Task.schema)' != '$script:GuardentraTaskV1Schema'"
     }
@@ -430,6 +460,7 @@ function Assert-GuardentraTaskV1Valid {
     if ([string]::IsNullOrWhiteSpace([string]$Task.isolated_worktree_path)) {
         throw 'REFUSED: task.v1 missing isolated_worktree_path'
     }
+    if (-not [System.IO.Path]::IsPathRooted($Task.isolated_worktree_path)) { throw 'REFUSED: isolated_worktree_path must be absolute' }
     $allowedPaths = @($Task.allowed_paths)
     if ($allowedPaths.Count -eq 0) {
         throw 'REFUSED: task.v1 allowed_paths is empty (ambiguous scope)'
@@ -460,6 +491,18 @@ function Assert-GuardentraTaskV1MatchesDispatch {
         [Parameter(Mandatory)]$Task,
         [Parameter(Mandatory)]$Dispatch
     )
+    Assert-GuardentraTaskV1Valid -Task $Task | Out-Null
+    if ($Task.issue -ne $Dispatch.issue_number) { throw 'REFUSED: task/dispatch issue mismatch' }
+    Test-GuardentraAccessTierAllowed -AccessTier $Task.access_tier -MaxTier $Dispatch.max_access_tier | Out-Null
+    if (-not (Test-GuardentraSha40 -Sha $Dispatch.starting_main_sha)) { throw 'REFUSED: dispatch starting SHA is missing or ambiguous' }
+    # This pilot has a fixed deny policy; local state cannot delete its guards.
+    $policy = New-GuardentraDefaultContract -IssueNumber $Task.issue -Title 'policy' -StartingMainSha $Task.starting_sha -FeatureBranch $Task.feature_branch -WriterTool $Task.writer_tool
+    foreach ($path in $policy.prohibited_paths) {
+        if ($Task.prohibited_paths -cnotcontains $path) { throw 'REFUSED: prohibited_paths weakened from tooling policy' }
+    }
+    foreach ($action in $policy.prohibited_actions) {
+        if ($Task.stop_conditions -cnotcontains $action) { throw 'REFUSED: task stop_conditions weakened from tooling policy' }
+    }
     if ([string]$Task.feature_branch -ne [string]$Dispatch.feature_branch) {
         throw "REFUSED: generated task.v1 feature_branch '$($Task.feature_branch)' != authoritative GitHub dispatch branch '$($Dispatch.feature_branch)'"
     }
@@ -477,6 +520,30 @@ function Assert-GuardentraTaskV1MatchesDispatch {
     }
 }
 
+function Assert-GuardentraAgentContractLive {
+    param([Parameter(Mandatory)]$Contract, [Parameter(Mandatory)][int]$IssueNumber)
+    if ($Contract.schema_version -cne $script:GuardentraSchemaVersion -or
+        $Contract.issue_number -isnot [int] -or $Contract.issue_number -ne $IssueNumber -or
+        $Contract.repository -cne $script:GuardentraExpectedRepo) {
+        throw 'REFUSED: local contract identity/schema mismatch'
+    }
+    $dispatch = Get-GuardentraDispatchEnvelope -IssueNumber $IssueNumber
+    $task = New-GuardentraTaskV1 -Contract $Contract -Issue ([pscustomobject]@{Title='authority check'; Body=''; AcceptanceCriteria=@()})
+    Assert-GuardentraTaskV1MatchesDispatch -Task $task -Dispatch $dispatch
+    Assert-GuardentraRequiredTestCommands -Contract $Contract
+    Test-GuardentraRetryGate -Contract $Contract
+    # A mutable cached worktree_path is not independent proof of ownership.
+    $expected = Get-GuardentraWorktreePath -Writer $dispatch.writer -IssueNumber $IssueNumber
+    if (Test-GuardentraInPrimaryCheckout) { throw 'REFUSED: agent/task requires an isolated worktree, not the primary checkout' }
+    if ([System.IO.Path]::GetFullPath($Contract.worktree_path) -ne [System.IO.Path]::GetFullPath($expected)) {
+        throw 'REFUSED: cached isolated worktree does not match dispatch issue/writer location'
+    }
+    Assert-GuardentraWorktreeMatchesContract -Contract $Contract
+    if ((Get-GuardentraCurrentBranch) -cne $dispatch.feature_branch) { throw 'REFUSED: current branch differs from live dispatch' }
+    $ancestor = Invoke-GuardentraGit -GitArgs @('merge-base', '--is-ancestor', $dispatch.starting_main_sha, 'HEAD')
+    if ($ancestor.ExitCode -ne 0) { throw 'REFUSED: current HEAD is not descended from dispatch starting SHA' }
+}
+
 function Invoke-GuardentraTask {
     <#
       #88 Phase A entry point: generate this issue's guardentra.task.v1 from
@@ -491,7 +558,7 @@ function Invoke-GuardentraTask {
     param([Parameter(Mandatory)][int]$IssueNumber)
     Assert-GuardentraRepository
     $contract = Read-GuardentraContract -IssueNumber $IssueNumber
-    Assert-GuardentraWorktreeMatchesContract -Contract $contract
+    Assert-GuardentraAgentContractLive -Contract $contract -IssueNumber $IssueNumber
 
     $branch = Get-GuardentraCurrentBranch
     if ($branch -ne $contract.feature_branch) {
@@ -571,6 +638,18 @@ function New-GuardentraAgentResultV1 {
 #>
 function Assert-GuardentraAgentResultV1Valid {
     param([Parameter(Mandatory)]$Result)
+    $Result = ConvertTo-GuardentraDataMap -Value $Result
+    Assert-GuardentraExactKeys -Data $Result -Keys $script:GuardentraAgentResultAllowedKeys
+    foreach ($field in @('schema', 'writer', 'status', 'branch', 'starting_sha', 'head_sha', 'deployment')) {
+        if ($Result[$field] -isnot [string]) { throw "REFUSED: agent_result.v1 $field must be a string" }
+    }
+    if ($Result.issue -isnot [int]) { throw 'REFUSED: agent_result.v1 issue must be an integer' }
+    if (@('cursor', 'codex', 'claude', 'claude-code') -cnotcontains $Result.writer) { throw 'REFUSED: agent_result.v1 unknown writer' }
+    if ($Result.worktree_clean -isnot [bool]) { throw 'REFUSED: agent_result.v1 worktree_clean must be boolean' }
+    foreach ($field in @('changed_files', 'tests', 'blockers')) {
+        Assert-GuardentraStringArray -Value $Result[$field] -Name $field
+    }
+    foreach ($path in $Result.changed_files) { Assert-GuardentraRelativePath -Path $path }
     $keys = @($Result.Keys)
     $unexpected = @($keys | Where-Object { $script:GuardentraAgentResultAllowedKeys -notcontains $_ })
     if ($unexpected.Count -gt 0) {
@@ -609,6 +688,27 @@ function Assert-GuardentraAgentResultV1Valid {
     return $true
 }
 
+# Schema validity is not provenance. Only the runner's current git snapshot
+# and directly executed test results may support a result, never cached JSON.
+function Assert-GuardentraAgentResultMatchesLocalEvidence {
+    param([Parameter(Mandatory)]$Result, [Parameter(Mandatory)]$Contract,
+        [Parameter(Mandatory)]$TestRun)
+    Assert-GuardentraAgentResultV1Valid -Result $Result | Out-Null
+    if ($Result.issue -ne $Contract.issue_number -or $Result.writer -cne $Contract.selected_writer_tool -or
+        $Result.starting_sha -cne $Contract.starting_main_sha -or
+        $Result.branch -cne $Contract.feature_branch -or $Result.branch -cne (Get-GuardentraCurrentBranch) -or
+        $Result.head_sha -cne (Get-GuardentraHeadSha) -or
+        $Result.worktree_clean -ne (Test-GuardentraWorktreeClean) -or
+        -not (Compare-GuardentraStringSets -Left $Result.changed_files -Right @(Get-GuardentraChangedFiles -BaseSha $Contract.starting_main_sha)) -or
+        -not (Compare-GuardentraStringSets -Left $Result.tests -Right @($TestRun.Results))) {
+        throw 'REFUSED: agent result diverges from trusted local git/test evidence'
+    }
+    if ($Result.status -eq 'review_ready' -and (-not $TestRun.Passed -or
+        -not (Compare-GuardentraStringSets -Left $Result.tests -Right @($Contract.required_tests | ForEach-Object { "PASS: $_" })))) {
+        throw 'REFUSED: review_ready requires every authorized test to pass in this run'
+    }
+}
+
 <#
   "Scope widening" guard: an agent_result's changed_files must fall inside
   the contract's own allowlist, exactly like a real commit/push would be
@@ -631,7 +731,7 @@ function Invoke-GuardentraAgentRun {
       - Restart-safe: reads persisted agent_state.json instead of starting
         over on every invocation, including after a real process restart.
       - Never fakes autonomous adapter execution (Adapters.ps1): capability
-        is detected, not assumed; StartTask always reports
+        remains false until proven; StartTask always reports
         manual_handoff_required in this slice.
       - Evaluates whatever is ACTUALLY in the worktree (regardless of who
         produced it) via the same real git/test primitives commit uses, so
@@ -644,8 +744,7 @@ function Invoke-GuardentraAgentRun {
     param([Parameter(Mandatory)][int]$IssueNumber)
     Assert-GuardentraRepository
     $contract = Read-GuardentraContract -IssueNumber $IssueNumber
-    Assert-GuardentraWorktreeMatchesContract -Contract $contract
-    Test-GuardentraRetryGate -Contract $contract
+    Assert-GuardentraAgentContractLive -Contract $contract -IssueNumber $IssueNumber
 
     $branch = Get-GuardentraCurrentBranch
     if ($branch -ne $contract.feature_branch) {
@@ -654,6 +753,7 @@ function Invoke-GuardentraAgentRun {
 
     $writer = [string]$contract.selected_writer_tool
     $state = Read-GuardentraAgentState -IssueNumber $IssueNumber
+    if ($state.writer -and $state.writer -cne $writer) { throw 'REFUSED: cached agent writer differs from live dispatch' }
     $state.writer = $writer
 
     $changed = @(Get-GuardentraChangedFiles -BaseSha $contract.starting_main_sha)
@@ -667,6 +767,7 @@ function Invoke-GuardentraAgentRun {
         $result = New-GuardentraAgentResultV1 -Contract $contract -Status 'manual_handoff_required' `
             -Blockers @('no work started yet for this task', [string]$adapterOutcome.Detail)
         Assert-GuardentraAgentResultV1Valid -Result $result | Out-Null
+        Assert-GuardentraAgentResultMatchesLocalEvidence -Result $result -Contract $contract -TestRun ([pscustomobject]@{Passed=$false; Results=@()})
         $state.state = $result.status
         $state.adapter_can_run = $canRun
         $state.last_result = $result
@@ -678,26 +779,39 @@ function Invoke-GuardentraAgentRun {
     # Scope widening guard, before ever reporting a result as trustworthy.
     Assert-GuardentraChangedFilesAllowed -Paths $changed -Contract $contract
 
+    $headBefore = Get-GuardentraHeadSha
+    $digestBefore = Get-GuardentraCandidateContentDigest -BaseSha $contract.starting_main_sha -Paths $changed
     $testRun = Invoke-GuardentraRequiredTestsSafe -Contract $contract
+    $afterChanged = @(Get-GuardentraChangedFiles -BaseSha $contract.starting_main_sha)
+    Assert-GuardentraChangedFilesAllowed -Paths $afterChanged -Contract $contract
+    if ((Get-GuardentraHeadSha) -cne $headBefore -or (Get-GuardentraCurrentBranch) -cne $branch -or
+        -not (Compare-GuardentraStringSets -Left $changed -Right $afterChanged) -or
+        (Get-GuardentraCandidateContentDigest -BaseSha $contract.starting_main_sha -Paths $afterChanged) -cne $digestBefore) {
+        throw 'REFUSED: candidate content/identity changed during tests; evidence is not valid for this candidate'
+    }
     if ($testRun.Passed) {
         $status = 'review_ready'
-        $contract = Register-GuardentraAttempt -Contract $contract -Success:$true -IssueNumber $IssueNumber
         $blockers = @()
     }
     else {
         $status = 'tests_failed'
-        $contract = Register-GuardentraAttempt -Contract $contract -Success:$false -IssueNumber $IssueNumber
         $blockers = @('required tests failed')
     }
 
     $result = New-GuardentraAgentResultV1 -Contract $contract -Status $status -Tests @($testRun.Results) -Blockers $blockers
     Assert-GuardentraAgentResultV1Valid -Result $result | Out-Null
     Assert-GuardentraAgentResultV1WithinScope -Result $result -Contract $contract
+    Assert-GuardentraAgentResultMatchesLocalEvidence -Result $result -Contract $contract -TestRun $testRun
 
-    $state.state = $result.status
+    # Persist the third failed run's evidence before the shared counter throws.
+    if (-not $testRun.Passed -and ($contract.attempt_count + 1) -ge $contract.retry_limit) {
+        $state.state = 'blocked'
+    }
+    else { $state.state = $result.status }
     $state.adapter_can_run = (Test-GuardentraAdapterCanRun -Tool $writer)
     $state.last_result = $result
     Save-GuardentraAgentState -IssueNumber $IssueNumber -State $state
+    $contract = Register-GuardentraAttempt -Contract $contract -Success:([bool]$testRun.Passed) -IssueNumber $IssueNumber
 
     Write-GuardentraHost ($result | ConvertTo-Json -Depth 8)
     Write-GuardentraHost "Correction-loop attempt_count=$($contract.attempt_count) / retry_limit=$($contract.retry_limit) (shared with commit/push-and-pr). No commit/push/merge/deploy performed."
@@ -715,12 +829,9 @@ function Invoke-GuardentraAgentStatus {
     $contract = Read-GuardentraContract -IssueNumber $IssueNumber
     $state = Read-GuardentraAgentState -IssueNumber $IssueNumber
     Write-GuardentraHost "Issue: #$IssueNumber"
-    Write-GuardentraHost "Agent state: $($state.state)"
-    Write-GuardentraHost "Writer: tool:$($state.writer)"
+    Write-GuardentraHost "Cached agent state (UNVERIFIED, not current evidence): $($state.state)"
+    Write-GuardentraHost "Cached writer (UNVERIFIED): tool:$($state.writer)"
     Write-GuardentraHost "Correction-loop attempt_count=$($contract.attempt_count) / retry_limit=$($contract.retry_limit)"
-    if ($state.last_result) {
-        Write-GuardentraHost ('Last result: ' + ($state.last_result | ConvertTo-Json -Depth 8 -Compress))
-    }
     return $state
 }
 
@@ -737,12 +848,10 @@ function Invoke-GuardentraAgentWatch {
         foreach ($dir in (Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue)) {
             $path = Join-Path $dir.FullName 'agent_state.json'
             if (-not (Test-Path -LiteralPath $path)) { continue }
-            try {
-                $obj = (Get-Content -LiteralPath $path -Raw -Encoding utf8) | ConvertFrom-Json
-            }
-            catch { continue }
+            if ($dir.Name -notmatch '^[1-9][0-9]*$') { throw 'REFUSED: invalid cached issue directory' }
+            $obj = Read-GuardentraAgentState -IssueNumber ([int]$dir.Name)
             [void]$rows.Add($obj)
-            Write-GuardentraHost "#$($obj.issue) tool:$($obj.writer)  $($obj.state)"
+            Write-GuardentraHost "#$($obj.issue) cached tool:$($obj.writer)  $($obj.state) (UNVERIFIED; not authority/evidence)"
         }
     }
     if ($rows.Count -eq 0) { Write-GuardentraHost 'No agent state recorded yet.' }

@@ -45,6 +45,61 @@ $script:GuardentraPushHeadProvider = $null
 # #88 Phase C: adapter capability-detection provider.
 $script:GuardentraAdapterCanRunProvider = $null
 
+function ConvertTo-GuardentraDataMap {
+    param([Parameter(Mandatory)]$Value)
+    $map = [ordered]@{}
+    if ($Value -is [System.Collections.IDictionary]) {
+        foreach ($key in $Value.Keys) { $map[$key] = $Value[$key] }
+    }
+    elseif ($Value -is [pscustomobject]) {
+        foreach ($property in $Value.PSObject.Properties) { $map[$property.Name] = $property.Value }
+    }
+    else { throw 'REFUSED: schema data must be an object' }
+    return $map
+}
+
+function Assert-GuardentraExactKeys {
+    param([Parameter(Mandatory)]$Data, [Parameter(Mandatory)][string[]]$Keys)
+    $map = ConvertTo-GuardentraDataMap -Value $Data
+    foreach ($key in $map.Keys) {
+        if ($Keys -cnotcontains $key) { throw "REFUSED: unexpected/untrusted field '$key'" }
+    }
+    foreach ($key in $Keys) {
+        if (-not $map.Contains($key)) { throw "REFUSED: missing field '$key'" }
+    }
+}
+
+function Assert-GuardentraStringArray {
+    param([AllowNull()]$Value, [string]$Name, [switch]$NonEmpty)
+    if ($Value -isnot [array]) { throw "REFUSED: $Name must be an array" }
+    if ($NonEmpty -and $Value.Count -eq 0) { throw "REFUSED: $Name is empty" }
+    foreach ($item in $Value) {
+        if ($item -isnot [string] -or [string]::IsNullOrWhiteSpace($item)) {
+            throw "REFUSED: $Name must contain nonempty strings"
+        }
+    }
+}
+
+function Assert-GuardentraRelativePath {
+    param([Parameter(Mandatory)][string]$Path, [switch]$Pattern)
+    $candidate = $Path
+    if ($Pattern -and $candidate.EndsWith('/*')) { $candidate = $candidate.Substring(0, $candidate.Length - 2) }
+    if ($candidate -ne $candidate.Trim() -or $candidate -match '[\\:*?\[\]\x00-\x1f]' -or
+        $candidate.StartsWith('/') -or $candidate -match '(^|/)(\.|\.\.|)($|/)') {
+        throw "REFUSED: unbounded/ambiguous or noncanonical path '$Path'"
+    }
+}
+
+function Assert-GuardentraRequiredTestCommands {
+    param([Parameter(Mandatory)]$Contract)
+    Assert-GuardentraStringArray -Value $Contract.required_tests -Name 'required_tests' -NonEmpty
+    foreach ($command in $Contract.required_tests) {
+        if ($command -cne 'powershell -File scripts/guardentra/tests/Run-Tests.ps1') {
+            throw 'REFUSED: unsupported required_tests command; this tooling runner does not execute arbitrary shell text'
+        }
+    }
+}
+
 function Get-GuardentraRepoRoot {
     return $script:GuardentraRoot
 }
@@ -89,20 +144,48 @@ function Read-GuardentraAgentState {
             issue       = $IssueNumber
             writer      = ''
             state       = 'queued'
+            adapter_can_run = $false
+            evidence_verified = $false
             last_result = $null
             updated_utc = (Get-Date).ToUniversalTime().ToString('o')
         }
     }
     $raw = Get-Content -LiteralPath $path -Raw -Encoding utf8
-    $obj = $raw | ConvertFrom-Json
-    $ht = [ordered]@{}
-    foreach ($p in $obj.PSObject.Properties) { $ht[$p.Name] = $p.Value }
+    $ht = ConvertTo-GuardentraDataMap -Value ($raw | ConvertFrom-Json)
+    # Older caches predate the explicit unverified-evidence marker. They may
+    # retain restart status, but never become evidence by being read from disk.
+    if (-not $ht.Contains('evidence_verified')) { $ht.evidence_verified = $false }
+    Assert-GuardentraAgentStateValid -State $ht -IssueNumber $IssueNumber
+    $ht.last_result = $null
+    $ht.adapter_can_run = $false
     return $ht
+}
+
+function Assert-GuardentraAgentStateValid {
+    param([Parameter(Mandatory)]$State, [Parameter(Mandatory)][int]$IssueNumber)
+    Assert-GuardentraExactKeys -Data $State -Keys @('schema', 'issue', 'writer', 'state', 'adapter_can_run', 'evidence_verified', 'last_result', 'updated_utc')
+    if ($State.schema -isnot [string] -or $State.schema -cne $script:GuardentraAgentStateV1Schema -or
+        $State.issue -isnot [int] -or $State.issue -ne $IssueNumber -or
+        $State.writer -isnot [string] -or
+        @('', 'cursor', 'codex', 'claude', 'claude-code') -cnotcontains $State.writer -or
+        $State.state -isnot [string] -or (@('queued') + $script:GuardentraAgentResultStatuses) -cnotcontains $State.state -or
+        $State.adapter_can_run -isnot [bool] -or $State.adapter_can_run -or
+        $State.evidence_verified -isnot [bool] -or $State.evidence_verified -or
+        $State.updated_utc -isnot [string]) {
+        throw 'REFUSED: malformed/untrusted agent_state; restart state is not authority or verified evidence'
+    }
+    if ($null -ne $State.last_result) {
+        Assert-GuardentraAgentResultV1Valid -Result $State.last_result | Out-Null
+        if ($State.last_result.issue -ne $IssueNumber -or $State.last_result.writer -cne $State.writer) {
+            throw 'REFUSED: cached result identity mismatch'
+        }
+    }
 }
 
 function Save-GuardentraAgentState {
     param([Parameter(Mandatory)][int]$IssueNumber, [Parameter(Mandatory)]$State)
     $path = Get-GuardentraAgentStatePath -IssueNumber $IssueNumber
+    Assert-GuardentraAgentStateValid -State $State -IssueNumber $IssueNumber
     New-Item -ItemType Directory -Force -Path (Split-Path $path -Parent) | Out-Null
     $State.updated_utc = (Get-Date).ToUniversalTime().ToString('o')
     $json = ($State | ConvertTo-Json -Depth 8)
@@ -1415,6 +1498,7 @@ function Register-GuardentraAttempt {
         [Parameter(Mandatory)][bool]$Success,
         [int]$IssueNumber = 0
     )
+    Test-GuardentraRetryGate -Contract $Contract
     if ($Success) {
         $Contract.attempt_count = 0
         if ($IssueNumber -gt 0) { Save-GuardentraContract -IssueNumber $IssueNumber -Contract $Contract }
@@ -1433,6 +1517,10 @@ function Register-GuardentraAttempt {
 
 function Test-GuardentraRetryGate {
     param([Parameter(Mandatory)]$Contract)
+    if ($Contract.retry_limit -isnot [int] -or $Contract.retry_limit -lt 1 -or $Contract.retry_limit -gt 3 -or
+        $Contract.attempt_count -isnot [int] -or $Contract.attempt_count -lt 0) {
+        throw 'REFUSED: invalid attempt_count/retry_limit; correction policy permits at most 3 failed cycles'
+    }
     if ([int]$Contract.attempt_count -ge [int]$Contract.retry_limit) {
         throw "ESCALATE TO OWNER: retry_limit already reached ($($Contract.attempt_count)/$($Contract.retry_limit))."
     }
@@ -1486,12 +1574,20 @@ function Test-GuardentraRequiredCi {
 
 function Invoke-GuardentraRequiredTests {
     param([Parameter(Mandatory)]$Contract)
+    Assert-GuardentraRequiredTestCommands -Contract $Contract
     $results = New-Object System.Collections.Generic.List[string]
     foreach ($cmd in @($Contract.required_tests)) {
-        if ([string]::IsNullOrWhiteSpace($cmd)) { continue }
         Write-GuardentraHost "Running required check: $cmd"
-        $out = & powershell -NoProfile -Command "Set-Location -LiteralPath '$($script:GuardentraRoot)'; $cmd" 2>&1 | Out-String
-        $code = $LASTEXITCODE
+        # Fixed executable/argument vector: no local-cache string interpolation
+        # into shell source, even if the worktree name contains an apostrophe.
+        $powershell = Join-Path $PSHOME 'powershell.exe'
+        $testPath = Join-Path $script:GuardentraRoot 'scripts\guardentra\tests\Run-Tests.ps1'
+        Push-Location -LiteralPath $script:GuardentraRoot
+        try {
+            $out = & $powershell -NoProfile -File $testPath 2>&1 | Out-String
+            $code = $LASTEXITCODE
+        }
+        finally { Pop-Location }
         if ($code -ne 0) {
             throw "REFUSED: required test failed ($cmd): $(Protect-GuardentraSecrets -Text $out)"
         }
