@@ -266,6 +266,28 @@ Assert-True ([int]$reloaded.attempt_count -ge 3) 'third failure persisted'
 # Path allowlist / secrets / packet (no local authorize mint instructions)
 Assert-True (Test-GuardentraPathAllowed -Path 'scripts/guardentra.ps1' -AllowedPaths @($c.allowed_paths) -ProhibitedPaths @($c.prohibited_paths)) 'allow scripts'
 Assert-True (-not (Test-GuardentraPathAllowed -Path 'src/App.tsx' -AllowedPaths @($c.allowed_paths) -ProhibitedPaths @($c.prohibited_paths))) 'deny src'
+
+# --- #88 correction cycle 3: path normalization must preserve leading '.' ---
+# TrimStart('./') is a character-set trim and wrongly turns
+# `.github/workflows/ci.yml` into `github/workflows/ci.yml`, failing the
+# authorized allowlist entry during commit (cycle-3 commit-gate defect).
+$ciAllow = @('.github/workflows/ci.yml', 'scripts/guardentra/*')
+Assert-True (Test-GuardentraPathAllowed -Path '.github/workflows/ci.yml' -AllowedPaths $ciAllow -ProhibitedPaths @()) `
+    '.github/workflows/ci.yml matches exact allowlist entry (#88 correction cycle 3)'
+Assert-True (Test-GuardentraPathAllowed -Path './.github/workflows/ci.yml' -AllowedPaths $ciAllow -ProhibitedPaths @()) `
+    './.github/workflows/ci.yml strips only literal ./ and remains allowed (#88 correction cycle 3)'
+Assert-True (-not (Test-GuardentraPathAllowed -Path '.github/workflows/other.yml' -AllowedPaths $ciAllow -ProhibitedPaths @())) `
+    '.github/workflows/other.yml refused when only ci.yml is allowed (#88 correction cycle 3)'
+Assert-True (-not (Test-GuardentraPathAllowed -Path '../.github/workflows/ci.yml' -AllowedPaths $ciAllow -ProhibitedPaths @())) `
+    '../.github/workflows/ci.yml is not converted into an allowed path (#88 correction cycle 3)'
+Assert-True (Test-GuardentraPathAllowed -Path 'scripts/guardentra/Common.ps1' -AllowedPaths $ciAllow -ProhibitedPaths @()) `
+    'scripts/guardentra/* matching unchanged (#88 correction cycle 3)'
+Assert-True (-not (Test-GuardentraPathAllowed -Path '.github/workflows/ci.yml' -AllowedPaths $ciAllow -ProhibitedPaths @('.github/*'))) `
+    'prohibited-path rules still override allowed-path rules (#88 correction cycle 3)'
+$ciContract = New-GuardentraDefaultContract -IssueNumber 8803 -Title 'path-norm' -StartingMainSha $headA -FeatureBranch 'tooling/agent-control-plane-88' -WriterTool 'claude'
+$ciContract.allowed_paths = @('.github/workflows/ci.yml', 'scripts/guardentra/*', 'docs/agent-ops/orchestration/*')
+Assert-GuardentraChangedFilesAllowed -Paths @('.github/workflows/ci.yml') -Contract $ciContract
+Assert-True $true 'Assert-GuardentraChangedFilesAllowed accepts .github/workflows/ci.yml after path-norm fix (#88 correction cycle 3)'
 $red = Protect-GuardentraSecrets -Text 'token=ghp_abcdefghijklmnopqrstuv'
 Assert-True ($red -match 'REDACTED') 'redacts secrets'
 $pkt = New-GuardentraTaskPacketMarkdown -Contract $c
@@ -1453,6 +1475,38 @@ finally {
     }
 }
 
+# --- #88 correction cycle 3: PS 5.1 empty `gh pr list` JSON `[]` ----------
+# Real JSON string `[]` must become Count=0. Naively wrapping ConvertFrom-Json
+# as @($json | ConvertFrom-Json) yields Count=1 of $null on Windows PowerShell
+# 5.1 and breaks push-and-pr before any push (#89 review BLOCKER).
+
+Reset-GuardentraTestProviders
+
+$emptyFromLiteral = @(ConvertFrom-GuardentraOpenPrListJson -JsonText '[]')
+Assert-True ($emptyFromLiteral.Count -eq 0) 'ConvertFrom-GuardentraOpenPrListJson on literal JSON [] returns Count 0 (#88 correction cycle 3 / PS 5.1)'
+
+$emptyFromBlank = @(ConvertFrom-GuardentraOpenPrListJson -JsonText '')
+Assert-True ($emptyFromBlank.Count -eq 0) 'ConvertFrom-GuardentraOpenPrListJson on blank text returns Count 0 (#88 correction cycle 3)'
+
+$emptyFromWhitespace = @(ConvertFrom-GuardentraOpenPrListJson -JsonText "  `n  ")
+Assert-True ($emptyFromWhitespace.Count -eq 0) 'ConvertFrom-GuardentraOpenPrListJson on whitespace returns Count 0 (#88 correction cycle 3)'
+
+# Document the underlying PS 5.1 quirk so the regression stays meaningful if
+# a future engine changes ConvertFrom-Json behavior.
+$rawEmpty = '[]' | ConvertFrom-Json
+if ($null -eq $rawEmpty) {
+    $naiveWrap = @($rawEmpty)
+    Assert-True ($naiveWrap.Count -eq 1) 'PS 5.1 quirk still present: @($null) from ConvertFrom-Json [] has Count 1 (documents why the helper exists)'
+}
+
+$onePrJson = '[{"number":91,"url":"https://github.com/akurteshi-guardentra/guardentra/pull/91","baseRefName":"main","headRefName":"feat/x"}]'
+$onePr = @(ConvertFrom-GuardentraOpenPrListJson -JsonText $onePrJson)
+Assert-True ($onePr.Count -eq 1 -and [int]$onePr[0].number -eq 91) 'ConvertFrom-GuardentraOpenPrListJson parses a one-element JSON array (#88 correction cycle 3)'
+
+$twoPrJson = '[{"number":91,"url":"https://example/91","baseRefName":"main","headRefName":"feat/x"},{"number":92,"url":"https://example/92","baseRefName":"main","headRefName":"feat/x"}]'
+$twoPr = @(ConvertFrom-GuardentraOpenPrListJson -JsonText $twoPrJson)
+Assert-True ($twoPr.Count -eq 2) 'ConvertFrom-GuardentraOpenPrListJson parses a multi-element JSON array (#88 correction cycle 3)'
+
 # --- #66/#85 correction cycle 3: Invoke-GuardentraPushAndPr must discover
 # any existing OPEN PR for the exact feature branch BEFORE pushing, update
 # it instead of blindly creating a duplicate, refuse before push on
@@ -1557,7 +1611,13 @@ try {
     }
     Invoke-GuardentraSyncGrants -IssueNumber 950 | Out-Null
 
-    $script:GuardentraOpenPrsForBranchProvider = { param($Branch) @() }
+    # Feed the real gh empty-array JSON string `[]` through the parser used by
+    # Get-GuardentraOpenPrsForBranch -- not merely `@()`. This is the #88
+    # correction-cycle-3 regression for the PS 5.1 push-and-pr crash.
+    $script:GuardentraOpenPrsForBranchProvider = {
+        param($Branch)
+        @(ConvertFrom-GuardentraOpenPrListJson -JsonText '[]')
+    }
     $script:ppCreateCalled = $false
     $script:GuardentraPrCreateProvider = {
         param($Title, $BodyArgs)
@@ -1577,8 +1637,9 @@ try {
         $script:Failed++; $script:Failures.Add("no-existing-PR push-and-pr path still creates a PR (threw: $($_.Exception.Message))")
         Write-Host "FAIL no-existing-PR push-and-pr path still creates a PR (threw: $($_.Exception.Message))"
     }
-    Assert-True $pushPrBOk 'push-and-pr with no existing PR still creates one (#85 regression cycle 3 B)'
-    Assert-True $script:ppCreateCalled 'gh pr create is invoked when no existing PR is found (#85 regression cycle 3 B)'
+    Assert-True $pushPrBOk 'push-and-pr with no existing PR still creates one when open-PR list is real JSON [] (#88 correction cycle 3 / #85 B)'
+    Assert-True $script:ppCreateCalled 'gh pr create is invoked when open-PR list JSON is [] (#88 correction cycle 3 / #85 B)'
+    Assert-True $script:ppPushCalled 'push still occurs when open-PR list JSON is [] (#88 correction cycle 3)'
 
     # --- C) multiple matching PRs refuse before push. ---
     $grantC = New-TestOwnerGrant -Action 'push-and-pr' -Head $ppFixture.HeadSha -Issue 950 -Branch 'feat/issue-950' -SourceRef 'https://github.com/akurteshi-guardentra/guardentra/issues/950#issuecomment-4'

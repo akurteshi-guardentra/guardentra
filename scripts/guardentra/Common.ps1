@@ -999,7 +999,14 @@ function Test-GuardentraPathAllowed {
         [string[]]$ProhibitedPaths = @()
     )
 
-    $norm = ($Path -replace '\\', '/').TrimStart('./')
+    # Normalize separators, then strip only a literal "./" relative-path
+    # prefix. Do NOT use TrimStart('./') — that is a character-set trim and
+    # would strip the leading '.' from hidden paths such as
+    # `.github/workflows/ci.yml` (#88 correction cycle 3 / commit-gate).
+    $norm = ($Path -replace '\\', '/')
+    if ($norm.StartsWith('./')) {
+        $norm = $norm.Substring(2)
+    }
     foreach ($deny in $ProhibitedPaths) {
         if (Test-GuardentraGlobMatch -Path $norm -Pattern $deny) { return $false }
     }
@@ -1414,6 +1421,47 @@ function Get-GuardentraPrLink {
 }
 
 <#
+  Parse `gh pr list --json …` stdout into zero-or-more PR objects on the
+  pipeline. Callers should capture with `@(...)` so Count reflects the
+  number of PR objects.
+
+  Windows PowerShell 5.1 quirk (#88 correction cycle 3 / PR #89 review):
+  `ConvertFrom-Json` on the empty JSON array `[]` yields `$null`, and
+  `@($null)` has Count=1. Callers that then dereference `.headRefName` throw
+  before push. This helper emits **no** pipeline objects for `[]` / `$null`
+  / blank so `@(...)` has Count 0, and never emits a lone `$null`.
+#>
+function ConvertFrom-GuardentraOpenPrListJson {
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]$JsonText
+    )
+    $trimmed = ([string]$JsonText).Trim()
+    if ([string]::IsNullOrWhiteSpace($trimmed) -or $trimmed -eq '[]') {
+        return
+    }
+    try {
+        $parsed = $trimmed | ConvertFrom-Json
+    }
+    catch {
+        throw "REFUSED: unable to parse open PR list JSON: $($_.Exception.Message)"
+    }
+    # PS 5.1 may still return $null for some empty-array forms after parse.
+    if ($null -eq $parsed) {
+        return
+    }
+    # Emit each PR object. A single-object JSON array becomes one pipeline
+    # object; a multi-object array is enumerated. Never wrap with unary
+    # comma here — that would make @() see Count=1 for an empty nested array.
+    foreach ($item in @($parsed)) {
+        if ($null -ne $item) {
+            $item
+        }
+    }
+}
+
+<#
   #66/#85 correction cycle 3: discovers OPEN PRs whose head branch is
   exactly $Branch, so Invoke-GuardentraPushAndPr can decide -- BEFORE ever
   pushing -- whether to update an existing PR or create a new one, and can
@@ -1430,8 +1478,7 @@ function Get-GuardentraOpenPrsForBranch {
         throw "REFUSED: unable to list open PRs for branch '$Branch': $(Protect-GuardentraSecrets -Text ($json | Out-String))"
     }
     $jsonText = ($json | Out-String).Trim()
-    if ([string]::IsNullOrWhiteSpace($jsonText)) { return @() }
-    return @($jsonText | ConvertFrom-Json)
+    return @(ConvertFrom-GuardentraOpenPrListJson -JsonText $jsonText)
 }
 
 <#
