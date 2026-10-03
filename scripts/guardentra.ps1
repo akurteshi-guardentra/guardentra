@@ -27,6 +27,8 @@ param(
         'deploy-production',
         'evidence',
         'status',
+        'task',
+        'agent',
         'help'
     )]
     [string]$Command = 'help',
@@ -66,6 +68,10 @@ Usage:
   .\scripts\guardentra.ps1 deploy-production <issue>
   .\scripts\guardentra.ps1 evidence <issue>
   .\scripts\guardentra.ps1 status <issue>
+  .\scripts\guardentra.ps1 task <issue>
+  .\scripts\guardentra.ps1 agent run <issue>
+  .\scripts\guardentra.ps1 agent status <issue>
+  .\scripts\guardentra.ps1 agent watch
 
 Owner grants: post ## GUARDENTRA_OWNER_GRANT JSON on the GitHub issue (allowlisted author), then sync-grants.
 Local authorize cannot mint Owner authority. Local source=github-owner-grant alone is not authority.
@@ -118,6 +124,26 @@ try {
         'status' {
             if (-not $Arg1) { throw 'Usage: status <issue>' }
             Invoke-GuardentraStatus -IssueNumber ([int]$Arg1)
+        }
+        'task' {
+            if (-not $Arg1) { throw 'Usage: task <issue>' }
+            Invoke-GuardentraTask -IssueNumber ([int]$Arg1) | Out-Null
+        }
+        'agent' {
+            switch ($Arg1) {
+                'run' {
+                    if (-not $Arg2) { throw 'Usage: agent run <issue>' }
+                    Invoke-GuardentraAgentRun -IssueNumber ([int]$Arg2) | Out-Null
+                }
+                'status' {
+                    if (-not $Arg2) { throw 'Usage: agent status <issue>' }
+                    Invoke-GuardentraAgentStatus -IssueNumber ([int]$Arg2) | Out-Null
+                }
+                'watch' {
+                    Invoke-GuardentraAgentWatch | Out-Null
+                }
+                default { throw 'Usage: agent <run|status|watch> [issue]' }
+            }
         }
         default { Show-GuardentraHelp }
     }

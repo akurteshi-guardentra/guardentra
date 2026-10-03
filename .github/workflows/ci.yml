@@ -26,3 +26,15 @@ jobs:
 
       - name: Vitest
         run: npm run test:vitest
+
+  # #88 correction cycle 3: prove the GuardEntra PowerShell dispatcher suite
+  # on Windows PowerShell (PS 5.1 path), including the empty `gh pr list`
+  # JSON-array regression. No other workflow behavior is changed.
+  dispatcher:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: GuardEntra dispatcher PowerShell suite
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/guardentra/tests/Run-Tests.ps1

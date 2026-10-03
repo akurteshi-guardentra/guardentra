@@ -4,6 +4,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 . (Join-Path $PSScriptRoot 'Common.ps1')
+. (Join-Path $PSScriptRoot 'Adapters.ps1')
 
 function Get-GuardentraIssueRecord {
     param([Parameter(Mandatory)][int]$IssueNumber)
@@ -307,6 +308,554 @@ function Compare-GuardentraStringSets {
     $a = @($Left | ForEach-Object { $_ } | Sort-Object -Unique)
     $b = @($Right | ForEach-Object { $_ } | Sort-Object -Unique)
     return (($a -join '|') -eq ($b -join '|'))
+}
+
+# --- #88 Phase A: guardentra.task.v1 machine-readable task contract -------
+#
+# Turns the local contract cache (already bound to the authoritative GitHub
+# dispatch at `start` time) into the versioned, strictly-validated task
+# schema the wider Agent Control Plane (Phases B-H) will consume. This is a
+# read-only, headless step: it mints no authorization and performs no git
+# mutation, push, merge, or deploy.
+
+<#
+  Extracts #NN dependency references from a "## Dependency" / "##
+  Dependencies" section of a GitHub issue body. Returns a sorted-unique
+  array of literal '#NN' strings, or an empty array when no such section or
+  no references are present -- never fabricates a dependency that is not
+  textually present.
+#>
+function ConvertFrom-GuardentraIssueDependencies {
+    param([AllowEmptyString()][string]$Body)
+    if ([string]::IsNullOrWhiteSpace($Body)) { return @() }
+    $section = ''
+    if ($Body -match '(?is)##\s*Dependenc(?:y|ies)\s*\r?\n(.*?)(?:\r?\n##\s|\z)') {
+        $section = $Matches[1]
+    }
+    if (-not $section) { return @() }
+    $refs = New-Object System.Collections.Generic.List[string]
+    foreach ($m in [regex]::Matches($section, '#(\d+)')) {
+        [void]$refs.Add('#' + $m.Groups[1].Value)
+    }
+    return @($refs | Sort-Object -Unique)
+}
+
+<#
+  Builds a guardentra.task.v1 object from the LOCAL contract cache (already
+  cross-validated against the authoritative GitHub dispatch by
+  Invoke-GuardentraStart / Assert-GuardentraAuthorityLive) plus the GitHub
+  issue record.
+
+  Deterministic serialization: fixed key order (this function's own
+  [ordered] literal, preserved verbatim by ConvertTo-Json) plus
+  sorted-unique scope/test/dependency/stop-condition arrays, so
+  regenerating from the same authoritative state always yields the same
+  content shape regardless of incidental source ordering. `generated_utc`
+  is a real timestamp (like the existing contract's `updated_utc`) and is
+  expected to differ between generations; it is not part of the
+  determinism guarantee. `acceptance_criteria` preserves the GitHub issue's
+  own checkbox order -- that order is itself the authoritative, already
+  deterministic source, so reordering it would obscure meaning rather than
+  add determinism.
+#>
+function New-GuardentraTaskV1 {
+    param(
+        [Parameter(Mandatory)]$Contract,
+        [Parameter(Mandatory)]$Issue
+    )
+    $dependencies = @(ConvertFrom-GuardentraIssueDependencies -Body ([string]$Issue.Body))
+    return [ordered]@{
+        schema                   = $script:GuardentraTaskV1Schema
+        issue                    = [int]$Contract.issue_number
+        objective                = [string]$Issue.Title
+        source_requirement_ids   = @("issue-$([int]$Contract.issue_number)")
+        # Reserved for when dispatch packets encode an explicit reviewer;
+        # no current dispatch packet does, so this is honestly empty rather
+        # than fabricated.
+        reviewer_tool            = ''
+        writer_tool              = [string]$Contract.selected_writer_tool
+        persona_role             = [string]$Contract.persona_role
+        persona_spec_path        = [string]$Contract.persona_spec_path
+        access_tier              = [string]$Contract.access_tier
+        starting_sha             = [string]$Contract.starting_main_sha
+        feature_branch           = [string]$Contract.feature_branch
+        isolated_worktree_path   = [string]$Contract.worktree_path
+        allowed_paths            = @(@($Contract.allowed_paths) | Sort-Object -Unique)
+        prohibited_paths         = @(@($Contract.prohibited_paths) | Sort-Object -Unique)
+        required_tests           = @(@($Contract.required_tests) | Sort-Object -Unique)
+        acceptance_criteria      = @($Issue.AcceptanceCriteria)
+        dependencies             = $dependencies
+        stop_conditions          = @(@($Contract.prohibited_actions + @('scope_expansion', 'ambiguous_authority', 'retry_limit_exceeded')) | Sort-Object -Unique)
+        # Deliberately a fixed policy statement, not a live echo of
+        # contract.auth_*: task.v1 defines the task, it does not duplicate
+        # (or risk leaking provenance from) the live single-use grant state
+        # that `status`/`contract.json` already own.
+        authorization_boundaries = [ordered]@{
+            requires_owner_grant_for = @('commit', 'deploy-production', 'deploy-staging', 'merge', 'push-and-pr')
+            autonomous_merge         = $false
+            autonomous_push          = $false
+            autonomous_deploy        = $false
+        }
+        generated_utc            = (Get-Date).ToUniversalTime().ToString('o')
+    }
+}
+
+<#
+  Strict, fail-closed validation of a generated guardentra.task.v1 object --
+  refuses on any missing or ambiguous scope field. Runs before, and
+  independently of, the live dispatch-match check below, so a malformed
+  task never even reaches that comparison.
+#>
+function Assert-GuardentraTaskV1Valid {
+    param([Parameter(Mandatory)]$Task)
+    Assert-GuardentraExactKeys -Data $Task -Keys @(
+        'schema', 'issue', 'objective', 'source_requirement_ids', 'reviewer_tool', 'writer_tool',
+        'persona_role', 'persona_spec_path', 'access_tier', 'starting_sha', 'feature_branch',
+        'isolated_worktree_path', 'allowed_paths', 'prohibited_paths', 'required_tests',
+        'acceptance_criteria', 'dependencies', 'stop_conditions', 'authorization_boundaries', 'generated_utc'
+    )
+    foreach ($field in @('schema', 'objective', 'reviewer_tool', 'writer_tool', 'persona_role', 'persona_spec_path',
+        'access_tier', 'starting_sha', 'feature_branch', 'isolated_worktree_path', 'generated_utc')) {
+        if ($Task.$field -isnot [string]) { throw "REFUSED: task.v1 $field must be a string" }
+    }
+    if ($Task.issue -isnot [int]) { throw 'REFUSED: task.v1 issue must be an integer' }
+    foreach ($field in @('source_requirement_ids', 'allowed_paths', 'prohibited_paths', 'required_tests', 'stop_conditions')) {
+        Assert-GuardentraStringArray -Value $Task.$field -Name $field -NonEmpty
+    }
+    foreach ($field in @('acceptance_criteria', 'dependencies')) {
+        Assert-GuardentraStringArray -Value $Task.$field -Name $field
+    }
+    if (@('T0', 'T1', 'T2') -cnotcontains $Task.access_tier) { throw 'REFUSED: task.v1 access_tier cannot escalate beyond T2' }
+    foreach ($path in @($Task.allowed_paths) + @($Task.prohibited_paths)) {
+        Assert-GuardentraRelativePath -Path $path -Pattern
+    }
+    $boundaries = ConvertTo-GuardentraDataMap -Value $Task.authorization_boundaries
+    Assert-GuardentraExactKeys -Data $boundaries -Keys @('requires_owner_grant_for', 'autonomous_merge', 'autonomous_push', 'autonomous_deploy')
+    foreach ($key in @('autonomous_merge', 'autonomous_push', 'autonomous_deploy')) {
+        if ($boundaries[$key] -isnot [bool] -or $boundaries[$key]) { throw 'REFUSED: task.v1 authorization_boundaries cannot grant authority' }
+    }
+    Assert-GuardentraStringArray -Value $boundaries.requires_owner_grant_for -Name 'requires_owner_grant_for' -NonEmpty
+    if (-not (Compare-GuardentraStringSets -Left $boundaries.requires_owner_grant_for -Right @('commit', 'deploy-production', 'deploy-staging', 'merge', 'push-and-pr'))) {
+        throw 'REFUSED: task.v1 authorization_boundaries must retain every Owner gate'
+    }
+    if ([string]$Task.schema -ne $script:GuardentraTaskV1Schema) {
+        throw "REFUSED: task.v1 schema '$($Task.schema)' != '$script:GuardentraTaskV1Schema'"
+    }
+    if (-not $Task.issue -or [int]$Task.issue -le 0) {
+        throw 'REFUSED: task.v1 missing a positive issue number'
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$Task.objective)) {
+        throw 'REFUSED: task.v1 missing objective'
+    }
+    $allowedWriters = @('cursor', 'codex', 'claude', 'claude-code')
+    if ($allowedWriters -notcontains [string]$Task.writer_tool) {
+        throw "REFUSED: task.v1 writer_tool '$($Task.writer_tool)' is not a recognized writer"
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$Task.feature_branch) -or [string]$Task.feature_branch -eq 'main') {
+        throw "REFUSED: task.v1 feature_branch is missing or is 'main' (ambiguous/unsafe scope)"
+    }
+    if (-not (Test-GuardentraSha40 -Sha ([string]$Task.starting_sha))) {
+        throw 'REFUSED: task.v1 starting_sha must be 40-hex'
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$Task.isolated_worktree_path)) {
+        throw 'REFUSED: task.v1 missing isolated_worktree_path'
+    }
+    if (-not [System.IO.Path]::IsPathRooted($Task.isolated_worktree_path)) { throw 'REFUSED: isolated_worktree_path must be absolute' }
+    $allowedPaths = @($Task.allowed_paths)
+    if ($allowedPaths.Count -eq 0) {
+        throw 'REFUSED: task.v1 allowed_paths is empty (ambiguous scope)'
+    }
+    foreach ($p in $allowedPaths) {
+        if (([string]$p).Trim() -in @('*', '/', '.', './', '**')) {
+            throw "REFUSED: task.v1 allowed_paths contains an unbounded/ambiguous entry '$p'"
+        }
+    }
+    if (@($Task.prohibited_paths).Count -eq 0) {
+        throw 'REFUSED: task.v1 prohibited_paths is empty (ambiguous scope)'
+    }
+    if (@($Task.required_tests).Count -eq 0) {
+        throw 'REFUSED: task.v1 required_tests is empty (ambiguous scope: nothing gates completion)'
+    }
+    return $true
+}
+
+<#
+  Re-fetches nothing itself (the caller passes an already-fresh $Dispatch
+  from Get-GuardentraDispatchEnvelope) and asserts the generated task
+  matches that authoritative GitHub dispatch exactly on every field that
+  must never silently diverge: branch, writer, starting SHA (when the
+  dispatch specifies one), allowed paths, and required tests.
+#>
+function Assert-GuardentraTaskV1MatchesDispatch {
+    param(
+        [Parameter(Mandatory)]$Task,
+        [Parameter(Mandatory)]$Dispatch
+    )
+    Assert-GuardentraTaskV1Valid -Task $Task | Out-Null
+    if ($Task.issue -ne $Dispatch.issue_number) { throw 'REFUSED: task/dispatch issue mismatch' }
+    Test-GuardentraAccessTierAllowed -AccessTier $Task.access_tier -MaxTier $Dispatch.max_access_tier | Out-Null
+    if (-not (Test-GuardentraSha40 -Sha $Dispatch.starting_main_sha)) { throw 'REFUSED: dispatch starting SHA is missing or ambiguous' }
+    # This pilot has a fixed deny policy; local state cannot delete its guards.
+    $policy = New-GuardentraDefaultContract -IssueNumber $Task.issue -Title 'policy' -StartingMainSha $Task.starting_sha -FeatureBranch $Task.feature_branch -WriterTool $Task.writer_tool
+    foreach ($path in $policy.prohibited_paths) {
+        if ($Task.prohibited_paths -cnotcontains $path) { throw 'REFUSED: prohibited_paths weakened from tooling policy' }
+    }
+    foreach ($action in $policy.prohibited_actions) {
+        if ($Task.stop_conditions -cnotcontains $action) { throw 'REFUSED: task stop_conditions weakened from tooling policy' }
+    }
+    if ([string]$Task.feature_branch -ne [string]$Dispatch.feature_branch) {
+        throw "REFUSED: generated task.v1 feature_branch '$($Task.feature_branch)' != authoritative GitHub dispatch branch '$($Dispatch.feature_branch)'"
+    }
+    if ([string]$Task.writer_tool -ne [string]$Dispatch.writer) {
+        throw "REFUSED: generated task.v1 writer_tool '$($Task.writer_tool)' != authoritative GitHub dispatch writer '$($Dispatch.writer)'"
+    }
+    if ($Dispatch.starting_main_sha -and [string]$Task.starting_sha -ne [string]$Dispatch.starting_main_sha) {
+        throw "REFUSED: generated task.v1 starting_sha '$($Task.starting_sha)' != authoritative GitHub dispatch starting SHA '$($Dispatch.starting_main_sha)'"
+    }
+    if (-not (Compare-GuardentraStringSets -Left @($Task.allowed_paths) -Right @($Dispatch.allowed_paths))) {
+        throw 'REFUSED: generated task.v1 allowed_paths diverge from authoritative GitHub dispatch (scope mismatch refused)'
+    }
+    if (-not (Compare-GuardentraStringSets -Left @($Task.required_tests) -Right @($Dispatch.required_tests))) {
+        throw 'REFUSED: generated task.v1 required_tests diverge from authoritative GitHub dispatch'
+    }
+}
+
+function Assert-GuardentraAgentContractLive {
+    param([Parameter(Mandatory)]$Contract, [Parameter(Mandatory)][int]$IssueNumber)
+    if ($Contract.schema_version -cne $script:GuardentraSchemaVersion -or
+        $Contract.issue_number -isnot [int] -or $Contract.issue_number -ne $IssueNumber -or
+        $Contract.repository -cne $script:GuardentraExpectedRepo) {
+        throw 'REFUSED: local contract identity/schema mismatch'
+    }
+    $dispatch = Get-GuardentraDispatchEnvelope -IssueNumber $IssueNumber
+    $task = New-GuardentraTaskV1 -Contract $Contract -Issue ([pscustomobject]@{Title='authority check'; Body=''; AcceptanceCriteria=@()})
+    Assert-GuardentraTaskV1MatchesDispatch -Task $task -Dispatch $dispatch
+    Assert-GuardentraRequiredTestCommands -Contract $Contract
+    Test-GuardentraRetryGate -Contract $Contract
+    # A mutable cached worktree_path is not independent proof of ownership.
+    $expected = Get-GuardentraWorktreePath -Writer $dispatch.writer -IssueNumber $IssueNumber
+    if (Test-GuardentraInPrimaryCheckout) { throw 'REFUSED: agent/task requires an isolated worktree, not the primary checkout' }
+    if ([System.IO.Path]::GetFullPath($Contract.worktree_path) -ne [System.IO.Path]::GetFullPath($expected)) {
+        throw 'REFUSED: cached isolated worktree does not match dispatch issue/writer location'
+    }
+    Assert-GuardentraWorktreeMatchesContract -Contract $Contract
+    if ((Get-GuardentraCurrentBranch) -cne $dispatch.feature_branch) { throw 'REFUSED: current branch differs from live dispatch' }
+    $ancestor = Invoke-GuardentraGit -GitArgs @('merge-base', '--is-ancestor', $dispatch.starting_main_sha, 'HEAD')
+    if ($ancestor.ExitCode -ne 0) { throw 'REFUSED: current HEAD is not descended from dispatch starting SHA' }
+}
+
+function Invoke-GuardentraTask {
+    <#
+      #88 Phase A entry point: generate this issue's guardentra.task.v1 from
+      the local contract cache, validate it strictly (fail closed), assert
+      it matches a live re-fetch of the authoritative GitHub dispatch, then
+      write it deterministically to
+      scripts/guardentra/state/issues/<n>/task.v1.json.
+
+      Read-only with respect to git/GitHub mutation: does not commit, push,
+      merge, or deploy, and mints no authorization.
+    #>
+    param([Parameter(Mandatory)][int]$IssueNumber)
+    Assert-GuardentraRepository
+    $contract = Read-GuardentraContract -IssueNumber $IssueNumber
+    Assert-GuardentraAgentContractLive -Contract $contract -IssueNumber $IssueNumber
+
+    $branch = Get-GuardentraCurrentBranch
+    if ($branch -ne $contract.feature_branch) {
+        throw "REFUSED: task branch '$branch' != contract.feature_branch '$($contract.feature_branch)'"
+    }
+
+    $issue = Get-GuardentraIssueRecord -IssueNumber $IssueNumber
+    $dispatch = Get-GuardentraDispatchEnvelope -IssueNumber $IssueNumber
+
+    $task = New-GuardentraTaskV1 -Contract $contract -Issue $issue
+    Assert-GuardentraTaskV1Valid -Task $task | Out-Null
+    Assert-GuardentraTaskV1MatchesDispatch -Task $task -Dispatch $dispatch
+
+    $path = Get-GuardentraTaskV1Path -IssueNumber $IssueNumber
+    New-Item -ItemType Directory -Force -Path (Split-Path $path -Parent) | Out-Null
+    $json = ($task | ConvertTo-Json -Depth 8)
+    Set-Content -Path $path -Value (Protect-GuardentraSecrets -Text $json) -Encoding utf8
+
+    Write-GuardentraHost $json
+    Write-GuardentraHost "guardentra.task.v1 written: $path"
+    Write-GuardentraHost 'Validated strictly and matched against live authoritative GitHub dispatch. No authorization minted; commit/push/merge/deploy unaffected.'
+    return $task
+}
+
+# --- #88 Phases B/C/D/F: guardentra.agent_result.v1 + local runner --------
+#
+# Evidence normalization (Phase D) and the correction-loop counter (Phase F)
+# for the runner deliberately REUSE what commit/push-and-pr already prove:
+# Get-GuardentraChangedFiles, Test-GuardentraWorktreeClean,
+# Invoke-GuardentraRequiredTests(Safe), Assert-GuardentraChangedFilesAllowed,
+# and contract.attempt_count/retry_limit via Register-GuardentraAttempt /
+# Test-GuardentraRetryGate. This keeps exactly one correction-loop counter
+# and one scope-allowlist check in the whole dispatcher, rather than a
+# second, parallel implementation for the runner.
+
+<#
+  Builds a guardentra.agent_result.v1 object from real, current git/test
+  state -- never from the adapter's own claims. This is the "automatic
+  evidence normalization" (Phase D) for this slice.
+#>
+function New-GuardentraAgentResultV1 {
+    param(
+        [Parameter(Mandatory)]$Contract,
+        [Parameter(Mandatory)][ValidateSet('manual_handoff_required', 'tests_failed', 'review_ready', 'blocked')][string]$Status,
+        [string[]]$Tests = @(),
+        [string[]]$Blockers = @()
+    )
+    $branch = Get-GuardentraCurrentBranch
+    $head = Get-GuardentraHeadSha
+    $changed = @(Get-GuardentraChangedFiles -BaseSha $Contract.starting_main_sha)
+    return [ordered]@{
+        schema         = $script:GuardentraAgentResultV1Schema
+        issue          = [int]$Contract.issue_number
+        writer         = [string]$Contract.selected_writer_tool
+        status         = $Status
+        branch         = $branch
+        starting_sha   = [string]$Contract.starting_main_sha
+        head_sha       = $head
+        changed_files  = @($changed | Sort-Object -Unique)
+        tests          = @($Tests)
+        worktree_clean = [bool](Test-GuardentraWorktreeClean)
+        deployment     = 'none'
+        blockers       = @($Blockers)
+    }
+}
+
+<#
+  Strict, fail-closed validation. Also enforces two security requirements
+  at the schema gate itself, unconditionally:
+    - "malicious/untrusted agent result cannot mint authority": only a
+      fixed allow-list of top-level keys is ever accepted -- there is no
+      field through which a result can carry or imply a grant, nonce,
+      digest, branch-widening, or merge/deploy instruction. Nothing in this
+      dispatcher ever reads agent_result fields as authorization input.
+    - "no implicit merge/deploy": `deployment` must be the literal string
+      'none'; this slice has no deploy-from-result path at all.
+#>
+function Assert-GuardentraAgentResultV1Valid {
+    param([Parameter(Mandatory)]$Result)
+    $Result = ConvertTo-GuardentraDataMap -Value $Result
+    Assert-GuardentraExactKeys -Data $Result -Keys $script:GuardentraAgentResultAllowedKeys
+    foreach ($field in @('schema', 'writer', 'status', 'branch', 'starting_sha', 'head_sha', 'deployment')) {
+        if ($Result[$field] -isnot [string]) { throw "REFUSED: agent_result.v1 $field must be a string" }
+    }
+    if ($Result.issue -isnot [int]) { throw 'REFUSED: agent_result.v1 issue must be an integer' }
+    if (@('cursor', 'codex', 'claude', 'claude-code') -cnotcontains $Result.writer) { throw 'REFUSED: agent_result.v1 unknown writer' }
+    if ($Result.worktree_clean -isnot [bool]) { throw 'REFUSED: agent_result.v1 worktree_clean must be boolean' }
+    foreach ($field in @('changed_files', 'tests', 'blockers')) {
+        Assert-GuardentraStringArray -Value $Result[$field] -Name $field
+    }
+    foreach ($path in $Result.changed_files) { Assert-GuardentraRelativePath -Path $path }
+    $keys = @($Result.Keys)
+    $unexpected = @($keys | Where-Object { $script:GuardentraAgentResultAllowedKeys -notcontains $_ })
+    if ($unexpected.Count -gt 0) {
+        throw "REFUSED: agent_result.v1 contains unexpected/untrusted field(s): $($unexpected -join ', ')"
+    }
+    if ([string]$Result.schema -ne $script:GuardentraAgentResultV1Schema) {
+        throw "REFUSED: agent_result.v1 schema '$($Result.schema)' != '$script:GuardentraAgentResultV1Schema'"
+    }
+    if (-not $Result.issue -or [int]$Result.issue -le 0) {
+        throw 'REFUSED: agent_result.v1 missing a positive issue number'
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$Result.writer)) {
+        throw 'REFUSED: agent_result.v1 missing writer'
+    }
+    if ($script:GuardentraAgentResultStatuses -notcontains [string]$Result.status) {
+        throw "REFUSED: agent_result.v1 status '$($Result.status)' is not a recognized status"
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$Result.branch) -or [string]$Result.branch -eq 'main') {
+        throw "REFUSED: agent_result.v1 branch is missing or is 'main'"
+    }
+    if (-not (Test-GuardentraSha40 -Sha ([string]$Result.starting_sha))) {
+        throw 'REFUSED: agent_result.v1 starting_sha must be 40-hex'
+    }
+    if (-not (Test-GuardentraSha40 -Sha ([string]$Result.head_sha))) {
+        throw 'REFUSED: agent_result.v1 head_sha must be 40-hex'
+    }
+    if ([string]$Result.deployment -ne 'none') {
+        throw "REFUSED: agent_result.v1 deployment must be 'none' in this slice (got '$($Result.deployment)')"
+    }
+    if ($null -eq $Result.changed_files -or $Result.changed_files -isnot [array]) {
+        throw 'REFUSED: agent_result.v1 changed_files must be an array'
+    }
+    if ($null -eq $Result.blockers -or $Result.blockers -isnot [array]) {
+        throw 'REFUSED: agent_result.v1 blockers must be an array'
+    }
+    return $true
+}
+
+# Schema validity is not provenance. Only the runner's current git snapshot
+# and directly executed test results may support a result, never cached JSON.
+function Assert-GuardentraAgentResultMatchesLocalEvidence {
+    param([Parameter(Mandatory)]$Result, [Parameter(Mandatory)]$Contract,
+        [Parameter(Mandatory)]$TestRun)
+    Assert-GuardentraAgentResultV1Valid -Result $Result | Out-Null
+    if ($Result.issue -ne $Contract.issue_number -or $Result.writer -cne $Contract.selected_writer_tool -or
+        $Result.starting_sha -cne $Contract.starting_main_sha -or
+        $Result.branch -cne $Contract.feature_branch -or $Result.branch -cne (Get-GuardentraCurrentBranch) -or
+        $Result.head_sha -cne (Get-GuardentraHeadSha) -or
+        $Result.worktree_clean -ne (Test-GuardentraWorktreeClean) -or
+        -not (Compare-GuardentraStringSets -Left $Result.changed_files -Right @(Get-GuardentraChangedFiles -BaseSha $Contract.starting_main_sha)) -or
+        -not (Compare-GuardentraStringSets -Left $Result.tests -Right @($TestRun.Results))) {
+        throw 'REFUSED: agent result diverges from trusted local git/test evidence'
+    }
+    if ($Result.status -eq 'review_ready' -and (-not $TestRun.Passed -or
+        -not (Compare-GuardentraStringSets -Left $Result.tests -Right @($Contract.required_tests | ForEach-Object { "PASS: $_" })))) {
+        throw 'REFUSED: review_ready requires every authorized test to pass in this run'
+    }
+}
+
+<#
+  "Scope widening" guard: an agent_result's changed_files must fall inside
+  the contract's own allowlist, exactly like a real commit/push would be
+  checked -- a malicious or buggy result cannot claim/imply edits outside
+  the authorized scope and have that pass silently.
+#>
+function Assert-GuardentraAgentResultV1WithinScope {
+    param(
+        [Parameter(Mandatory)]$Result,
+        [Parameter(Mandatory)]$Contract
+    )
+    Assert-GuardentraChangedFilesAllowed -Paths @($Result.changed_files) -Contract $Contract
+}
+
+function Invoke-GuardentraAgentRun {
+    <#
+      #88 Phase B/F: local runner/state-machine skeleton entry point.
+
+      - Never operates from another task's worktree (#66 binding, reused).
+      - Restart-safe: reads persisted agent_state.json instead of starting
+        over on every invocation, including after a real process restart.
+      - Never fakes autonomous adapter execution (Adapters.ps1): capability
+        remains false until proven; StartTask always reports
+        manual_handoff_required in this slice.
+      - Evaluates whatever is ACTUALLY in the worktree (regardless of who
+        produced it) via the same real git/test primitives commit uses, so
+        it is useful immediately -- not gated behind an autonomous adapter
+        that does not exist yet.
+      - Reuses the existing bounded correction-loop counter
+        (contract.attempt_count/retry_limit) instead of a second one.
+      - Never commits, pushes, merges, or deploys.
+    #>
+    param([Parameter(Mandatory)][int]$IssueNumber)
+    Assert-GuardentraRepository
+    $contract = Read-GuardentraContract -IssueNumber $IssueNumber
+    Assert-GuardentraAgentContractLive -Contract $contract -IssueNumber $IssueNumber
+
+    $branch = Get-GuardentraCurrentBranch
+    if ($branch -ne $contract.feature_branch) {
+        throw "REFUSED: agent run branch '$branch' != contract.feature_branch '$($contract.feature_branch)'"
+    }
+
+    $writer = [string]$contract.selected_writer_tool
+    $state = Read-GuardentraAgentState -IssueNumber $IssueNumber
+    if ($state.writer -and $state.writer -cne $writer) { throw 'REFUSED: cached agent writer differs from live dispatch' }
+    $state.writer = $writer
+
+    $changed = @(Get-GuardentraChangedFiles -BaseSha $contract.starting_main_sha)
+
+    if ($changed.Count -eq 0) {
+        # Nothing committed or pending yet -- this slice never fakes
+        # autonomously starting the work, so a genuinely fresh task is
+        # always a manual hand-off, regardless of adapter capability.
+        $canRun = Test-GuardentraAdapterCanRun -Tool $writer
+        $adapterOutcome = Invoke-GuardentraAdapterStartTask -Tool $writer -Task $null
+        $result = New-GuardentraAgentResultV1 -Contract $contract -Status 'manual_handoff_required' `
+            -Blockers @('no work started yet for this task', [string]$adapterOutcome.Detail)
+        Assert-GuardentraAgentResultV1Valid -Result $result | Out-Null
+        Assert-GuardentraAgentResultMatchesLocalEvidence -Result $result -Contract $contract -TestRun ([pscustomobject]@{Passed=$false; Results=@()})
+        $state.state = $result.status
+        $state.adapter_can_run = $canRun
+        $state.last_result = $result
+        Save-GuardentraAgentState -IssueNumber $IssueNumber -State $state
+        Write-GuardentraHost ($result | ConvertTo-Json -Depth 8)
+        return $result
+    }
+
+    # Scope widening guard, before ever reporting a result as trustworthy.
+    Assert-GuardentraChangedFilesAllowed -Paths $changed -Contract $contract
+
+    $headBefore = Get-GuardentraHeadSha
+    $digestBefore = Get-GuardentraCandidateContentDigest -BaseSha $contract.starting_main_sha -Paths $changed
+    $testRun = Invoke-GuardentraRequiredTestsSafe -Contract $contract
+    $afterChanged = @(Get-GuardentraChangedFiles -BaseSha $contract.starting_main_sha)
+    Assert-GuardentraChangedFilesAllowed -Paths $afterChanged -Contract $contract
+    if ((Get-GuardentraHeadSha) -cne $headBefore -or (Get-GuardentraCurrentBranch) -cne $branch -or
+        -not (Compare-GuardentraStringSets -Left $changed -Right $afterChanged) -or
+        (Get-GuardentraCandidateContentDigest -BaseSha $contract.starting_main_sha -Paths $afterChanged) -cne $digestBefore) {
+        throw 'REFUSED: candidate content/identity changed during tests; evidence is not valid for this candidate'
+    }
+    if ($testRun.Passed) {
+        $status = 'review_ready'
+        $blockers = @()
+    }
+    else {
+        $status = 'tests_failed'
+        $blockers = @('required tests failed')
+    }
+
+    $result = New-GuardentraAgentResultV1 -Contract $contract -Status $status -Tests @($testRun.Results) -Blockers $blockers
+    Assert-GuardentraAgentResultV1Valid -Result $result | Out-Null
+    Assert-GuardentraAgentResultV1WithinScope -Result $result -Contract $contract
+    Assert-GuardentraAgentResultMatchesLocalEvidence -Result $result -Contract $contract -TestRun $testRun
+
+    # Persist the third failed run's evidence before the shared counter throws.
+    if (-not $testRun.Passed -and ($contract.attempt_count + 1) -ge $contract.retry_limit) {
+        $state.state = 'blocked'
+    }
+    else { $state.state = $result.status }
+    $state.adapter_can_run = (Test-GuardentraAdapterCanRun -Tool $writer)
+    $state.last_result = $result
+    Save-GuardentraAgentState -IssueNumber $IssueNumber -State $state
+    $contract = Register-GuardentraAttempt -Contract $contract -Success:([bool]$testRun.Passed) -IssueNumber $IssueNumber
+
+    Write-GuardentraHost ($result | ConvertTo-Json -Depth 8)
+    Write-GuardentraHost "Correction-loop attempt_count=$($contract.attempt_count) / retry_limit=$($contract.retry_limit) (shared with commit/push-and-pr). No commit/push/merge/deploy performed."
+    return $result
+}
+
+function Invoke-GuardentraAgentStatus {
+    <#
+      Read-only: prints/returns the persisted guardentra.agent_state.v1 and
+      the shared correction-loop counter. Does not require running from the
+      issue's own worktree (consistent with the existing plain `status`
+      command).
+    #>
+    param([Parameter(Mandatory)][int]$IssueNumber)
+    $contract = Read-GuardentraContract -IssueNumber $IssueNumber
+    $state = Read-GuardentraAgentState -IssueNumber $IssueNumber
+    Write-GuardentraHost "Issue: #$IssueNumber"
+    Write-GuardentraHost "Cached agent state (UNVERIFIED, not current evidence): $($state.state)"
+    Write-GuardentraHost "Cached writer (UNVERIFIED): tool:$($state.writer)"
+    Write-GuardentraHost "Correction-loop attempt_count=$($contract.attempt_count) / retry_limit=$($contract.retry_limit)"
+    return $state
+}
+
+function Invoke-GuardentraAgentWatch {
+    <#
+      Minimal, read-only, single-pass summary across every issue with
+      persisted agent_state.json. Not a background daemon and not the
+      #88 Phase H dashboard (separate, out of scope for this slice) --
+      a bounded, one-shot listing consistent with "headless, no UI first".
+    #>
+    $root = $script:GuardentraStateRoot
+    $rows = New-Object System.Collections.Generic.List[object]
+    if (Test-Path -LiteralPath $root) {
+        foreach ($dir in (Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue)) {
+            $path = Join-Path $dir.FullName 'agent_state.json'
+            if (-not (Test-Path -LiteralPath $path)) { continue }
+            if ($dir.Name -notmatch '^[1-9][0-9]*$') { throw 'REFUSED: invalid cached issue directory' }
+            $obj = Read-GuardentraAgentState -IssueNumber ([int]$dir.Name)
+            [void]$rows.Add($obj)
+            Write-GuardentraHost "#$($obj.issue) cached tool:$($obj.writer)  $($obj.state) (UNVERIFIED; not authority/evidence)"
+        }
+    }
+    if ($rows.Count -eq 0) { Write-GuardentraHost 'No agent state recorded yet.' }
+    return @($rows.ToArray())
 }
 
 function Assert-GuardentraAuthorityLive {
