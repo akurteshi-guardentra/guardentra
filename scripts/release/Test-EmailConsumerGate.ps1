@@ -156,15 +156,21 @@ function Test-GEEmailConsumerState {
 
     if ($Target -eq 'managed_extension') {
         $ok=($ManagedState -eq 'active' -and $WorkerState -eq 'disabled')
-        return [pscustomobject]@{ pass=$ok; reason=if($ok){'exactly one managed consumer active'}else{'target managed_extension does not match observed state'} }
+        $reason='target managed_extension does not match observed state'
+        if ($ok) { $reason='exactly one managed consumer active' }
+        return [pscustomobject]@{ pass=$ok; reason=$reason }
     }
     if ($Target -eq 'self_managed') {
         $ok=($ManagedState -eq 'disabled' -and $WorkerState -eq 'active')
-        return [pscustomobject]@{ pass=$ok; reason=if($ok){'exactly one self-managed consumer active'}else{'target self_managed does not match observed state'} }
+        $reason='target self_managed does not match observed state'
+        if ($ok) { $reason='exactly one self-managed consumer active' }
+        return [pscustomobject]@{ pass=$ok; reason=$reason }
     }
 
     $ok=($ManagedState -eq 'disabled' -and $WorkerState -eq 'disabled')
-    return [pscustomobject]@{ pass=$ok; reason=if($ok){'email consumption intentionally disabled'}else{'target disabled does not match observed state'} }
+    $reason='target disabled does not match observed state'
+    if ($ok) { $reason='email consumption intentionally disabled' }
+    return [pscustomobject]@{ pass=$ok; reason=$reason }
 }
 
 function Get-GEFirebaseObservationJson {
@@ -192,7 +198,7 @@ function Get-GEFirebaseObservationJson {
 if ($MyInvocation.InvocationName -ne '.') {
     if ([string]::IsNullOrWhiteSpace($ProjectId)) { throw 'REFUSED: ProjectId is required' }
     if ($TargetConsumer -notin @('managed_extension','self_managed','disabled')) { throw 'REFUSED: TargetConsumer is required' }
-    if ($SourceSha -notmatch '^[0-9a-f]{40}
+    if ($SourceSha -notmatch '^[0-9a-f]{40}$') { throw 'REFUSED: exact 40-character source SHA required' }
 
     $firebaseJson=Get-GEFirebaseObservationJson -Project $ProjectId -JsonPath $FirebaseJsonPath
     $managed=Get-GEManagedConsumerObservation $firebaseJson
@@ -228,49 +234,6 @@ if ($MyInvocation.InvocationName -ne '.') {
         Set-Content -LiteralPath $EvidenceOut -Value $json -Encoding UTF8
     }
 
-    # Safe summary only. Never print raw firebase extension configuration/params.
-    Write-Host ("EMAIL_CONSUMER_GATE project={0} target={1} managed={2} worker={3} pass={4}" -f $ProjectId,$TargetConsumer,$managed.state,$worker.state,$decision.pass)
-    Write-Host ("REASON: " + $decision.reason)
-
-    if (-not $decision.pass) { exit 2 }
-}
-) { throw 'REFUSED: exact 40-character source SHA required' }
-
-    $firebaseJson=Get-GEFirebaseObservationJson -Project $ProjectId -JsonPath $FirebaseJsonPath
-    $managed=Get-GEManagedConsumerObservation $firebaseJson
-    $worker=Read-GEWorkerEvidence -Path $WorkerEvidencePath -ExpectedProject $ProjectId -MaxAgeMinutes $MaxEvidenceAgeMinutes
-    $decision=Test-GEEmailConsumerState -ManagedState $managed.state -WorkerState $worker.state -Target $TargetConsumer
-
-    $evidence=[ordered]@{
-        schema='guardentra.email_consumer_gate.v1'
-        observed_utc=[datetime]::UtcNow.ToString('o')
-        project_id=$ProjectId
-        source_sha=$SourceSha
-        target_consumer=$TargetConsumer
-        managed_extension=[ordered]@{
-            state=$managed.state
-            instances=$managed.instances
-            detail=$managed.detail
-        }
-        self_managed=[ordered]@{
-            state=$worker.state
-            detail=$worker.detail
-            observed_utc=$worker.observed_utc
-            source_sha=$worker.source_sha
-        }
-        pass=[bool]$decision.pass
-        reason=$decision.reason
-        rollback_required='restore exactly one previously proven consumer; rerun this gate before traffic'
-    }
-
-    $json=$evidence | ConvertTo-Json -Depth 8
-    if (-not [string]::IsNullOrWhiteSpace($EvidenceOut)) {
-        $parent=Split-Path -Parent $EvidenceOut
-        if ($parent -and -not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
-        Set-Content -LiteralPath $EvidenceOut -Value $json -Encoding UTF8
-    }
-
-    # Safe summary only. Never print raw firebase extension configuration/params.
     Write-Host ("EMAIL_CONSUMER_GATE project={0} target={1} managed={2} worker={3} pass={4}" -f $ProjectId,$TargetConsumer,$managed.state,$worker.state,$decision.pass)
     Write-Host ("REASON: " + $decision.reason)
 
