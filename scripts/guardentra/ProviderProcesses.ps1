@@ -67,16 +67,35 @@ function Invoke-GuardentraProviderProcess {
         $stdout = $process.StandardOutput.ReadToEndAsync()
         $stderr = $process.StandardError.ReadToEndAsync()
         # Input backpressure and inherited output handles share the same deadline.
-        $inputWrite=$process.StandardInput.WriteAsync($InputText)
+        # Empty stdin is EOF, not a write. A fast-exiting child may close its pipe
+        # before the parent observes completion, so child-side closure is not itself
+        # a transport failure; the real process exit still determines provider state.
+        $inputWrite=$null
         $inputFlush=$null
         $inputClosed=$false
+        if ([string]::IsNullOrEmpty($InputText)) {
+            try { $process.StandardInput.Close() }
+            catch [System.IO.IOException] { }
+            catch [System.ObjectDisposedException] { }
+            $inputClosed=$true
+        } else {
+            try { $inputWrite=$process.StandardInput.WriteAsync($InputText) }
+            catch [System.IO.IOException] { $inputClosed=$true }
+            catch [System.ObjectDisposedException] { $inputClosed=$true }
+        }
         while ($true) {
-            if (-not $inputClosed -and $inputWrite.IsCompleted) {
-                $inputWrite.GetAwaiter().GetResult() | Out-Null
-                if ($null -eq $inputFlush) { $inputFlush=$process.StandardInput.FlushAsync() }
-                if ($inputFlush.IsCompleted) {
-                    $inputFlush.GetAwaiter().GetResult() | Out-Null
-                    $process.StandardInput.Close(); $inputClosed=$true
+            if (-not $inputClosed -and $null -ne $inputWrite -and $inputWrite.IsCompleted) {
+                try {
+                    $inputWrite.GetAwaiter().GetResult() | Out-Null
+                    if ($null -eq $inputFlush) { $inputFlush=$process.StandardInput.FlushAsync() }
+                    if ($inputFlush.IsCompleted) {
+                        $inputFlush.GetAwaiter().GetResult() | Out-Null
+                        $process.StandardInput.Close(); $inputClosed=$true
+                    }
+                } catch [System.IO.IOException] {
+                    $inputClosed=$true
+                } catch [System.ObjectDisposedException] {
+                    $inputClosed=$true
                 }
             }
             if ($process.HasExited -and $stdout.IsCompleted -and $stderr.IsCompleted) { break }

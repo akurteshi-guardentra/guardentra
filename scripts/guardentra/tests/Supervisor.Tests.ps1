@@ -106,6 +106,16 @@ try {
         $probe=Invoke-GuardentraProviderProcess -Executable (Join-Path $PSHOME 'powershell.exe') -Arguments @('-NoProfile','-EncodedCommand',$encoded) -Directory $supervisorRepo -TimeoutSeconds 10
         Assert-True ($probe.ExitCode -eq 0) 'exclusive repository lease prevents second process writer'
     } finally { $lease.ReleaseMutex(); $lease.Dispose() }
+
+    # A fast-exiting native child must not turn an empty stdin EOF race into a dispatcher exception.
+    $fastEmpty=Invoke-GuardentraProviderProcess -Executable (Join-Path $PSHOME 'powershell.exe') -Arguments @('-NoProfile','-Command','exit 7') -Directory $supervisorRepo -TimeoutSeconds 10
+    Assert-True ($fastEmpty.ExitCode -eq 7 -and -not $fastEmpty.TimedOut) 'fast-exit child with empty stdin returns its real exit'
+
+    # A child that closes stdin while a large write is pending must still return its real exit.
+    $closedStdinSource='$s=[Console]::OpenStandardInput(); $s.Close(); exit 9'
+    $fastClosed=Invoke-GuardentraProviderProcess -Executable (Join-Path $PSHOME 'powershell.exe') -Arguments @('-NoProfile','-Command',$closedStdinSource) -InputText ('x' * 1048576) -Directory $supervisorRepo -TimeoutSeconds 10
+    Assert-True ($fastClosed.ExitCode -eq 9 -and -not $fastClosed.TimedOut) 'closed stdin during payload write returns real child exit'
+
     $script:supervisorHeartbeats=0
     $timeoutRun=Invoke-GuardentraProviderProcess -Executable (Join-Path $PSHOME 'powershell.exe') -Arguments @('-NoProfile','-Command','Start-Sleep -Seconds 30') -Directory $supervisorRepo -TimeoutSeconds 1 -Heartbeat { $script:supervisorHeartbeats++ }
     Assert-True ($timeoutRun.TimedOut -and (Get-GuardentraProviderFailureState $timeoutRun.ExitCode $timeoutRun.Error $timeoutRun.TimedOut) -eq 'owner_action_required') 'watchdog timeout returns valid non-failover state after parent termination'
