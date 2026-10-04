@@ -30,6 +30,9 @@ function Assert-GuardentraCloudReadOnlyCommand {
             'projects describe',
             'tasks queues list',
             'compute instances list',
+            'compute networks list',
+            'compute networks subnets',
+            'projects get-iam-policy',
             'sql instances list',
             'secrets list'
         )
@@ -39,7 +42,10 @@ function Assert-GuardentraCloudReadOnlyCommand {
         throw 'REFUSED: unsupported gcloud command in read-only inventory'
     }
     if ($Tool -eq 'firebase') {
-        if ($Arguments.Count -ge 1 -and $Arguments[0] -ceq 'ext:list') { return $true }
+        if (
+            $Arguments.Count -ge 1 -and
+            ($Arguments[0] -ceq 'ext:list' -or $Arguments[0] -ceq 'apphosting:backends:list')
+        ) { return $true }
         throw 'REFUSED: unsupported firebase command in read-only inventory'
     }
     throw 'REFUSED: unsupported cloud tool'
@@ -108,6 +114,40 @@ function Get-GuardentraCloudProperty {
     $property=$Object.PSObject.Properties[$Name]
     if ($property) { return $property.Value }
     return $Default
+}
+
+function Get-GuardentraAppHostingSummary {
+    param([string]$ProjectId)
+    $r = Invoke-GuardentraCloudReadCommand -Tool firebase -Arguments @('apphosting:backends:list','--project',$ProjectId,'--json')
+    $state = Get-GuardentraCloudFailureState -ExitCode $r.ExitCode -Text ([string]$r.Output + ' ' + [string]$r.Error)
+    if ($state -ne 'available') {
+        return [ordered]@{ result=$state; count=0; backends=@() }
+    }
+    try {
+        $payload=([string]$r.Output) | ConvertFrom-Json
+        $rows=Get-GuardentraCloudProperty $payload 'backends'
+        if ($null -eq $rows) { $rows=Get-GuardentraCloudProperty $payload 'result' }
+        if ($null -eq $rows) { $rows=$payload }
+        $safe=@()
+        foreach($row in @($rows)) {
+            if ($null -eq $row) { continue }
+            $id=Get-GuardentraCloudProperty $row 'id'
+            if (-not $id) { $id=Get-GuardentraCloudProperty $row 'backendId' }
+            $name=Get-GuardentraCloudProperty $row 'name'
+            if (-not $id -and $name) { $id=([string]$name).Split('/')[-1] }
+            $location=Get-GuardentraCloudProperty $row 'location'
+            if (-not $location) { $location=Get-GuardentraCloudProperty $row 'region' }
+            $stateValue=Get-GuardentraCloudProperty $row 'state'
+            $safe += [ordered]@{
+                id=if($id){[string]$id}else{'unknown'}
+                location=if($location){([string]$location).Split('/')[-1]}else{'unknown'}
+                state=if($stateValue){[string]$stateValue}else{'unknown'}
+            }
+        }
+        return [ordered]@{ result='available'; count=$safe.Count; backends=$safe }
+    } catch {
+        return [ordered]@{ result='failed'; count=0; backends=@() }
+    }
 }
 
 function Get-GuardentraSendEmailExtensionSummary {
@@ -184,6 +224,9 @@ function Get-GuardentraCloudEnvironmentInventory {
         cloud_tasks=[ordered]@{ result='not_run'; count=0; queues=@() }
         compute=[ordered]@{ result='not_run'; count=0; instances=@() }
         cloud_sql=[ordered]@{ result='not_run'; count=0; instances=@() }
+        app_hosting=[ordered]@{ result='not_run'; count=0; backends=@() }
+        network=[ordered]@{ result='not_run'; network_count=0; networks=@(); subnet_count=0; subnets=@() }
+        iam=[ordered]@{ result='not_run'; role_count=0; roles=@() }
         secret_references=[ordered]@{ result='not_run'; count=0; names=@() }
         send_email_extension=[ordered]@{ result='not_run'; state='unverified'; instance_count=0; instances=@() }
         secret_payloads_read=$false
@@ -230,6 +273,53 @@ function Get-GuardentraCloudEnvironmentInventory {
         $result.cloud_sql=[ordered]@{ result='available'; count=$safe.Count; instances=$safe }
     } else { $result.cloud_sql.result=$sqlState }
 
+    $result.app_hosting = Get-GuardentraAppHostingSummary -ProjectId $project
+
+    $networks = Invoke-GuardentraCloudReadCommand -Tool gcloud -Arguments @('compute','networks','list','--project',$project,'--format=json(name,autoCreateSubnetworks)')
+    $networkState = Get-GuardentraCloudFailureState -ExitCode $networks.ExitCode -Text ([string]$networks.Output + ' ' + [string]$networks.Error)
+    $subnets = Invoke-GuardentraCloudReadCommand -Tool gcloud -Arguments @('compute','networks','subnets','list','--project',$project,'--format=json(name,region,network)')
+    $subnetState = Get-GuardentraCloudFailureState -ExitCode $subnets.ExitCode -Text ([string]$subnets.Output + ' ' + [string]$subnets.Error)
+    if ($networkState -eq 'available' -and $subnetState -eq 'available') {
+        $safeNetworks=@()
+        foreach($item in @(ConvertFrom-GuardentraCloudJson $networks.Output)) {
+            if (-not $item) { continue }
+            $safeNetworks += [ordered]@{ name=[string]$item.name; auto_subnets=[bool](Get-GuardentraCloudProperty $item 'autoCreateSubnetworks' $false) }
+        }
+        $safeSubnets=@()
+        foreach($item in @(ConvertFrom-GuardentraCloudJson $subnets.Output)) {
+            if (-not $item) { continue }
+            $safeSubnets += [ordered]@{
+                name=[string]$item.name
+                region=([string]$item.region).Split('/')[-1]
+                network=([string]$item.network).Split('/')[-1]
+            }
+        }
+        $result.network=[ordered]@{
+            result='available'
+            network_count=$safeNetworks.Count
+            networks=$safeNetworks
+            subnet_count=$safeSubnets.Count
+            subnets=$safeSubnets
+        }
+    } else {
+        $result.network.result=if($networkState -ne 'available'){$networkState}else{$subnetState}
+    }
+
+    $iam = Invoke-GuardentraCloudReadCommand -Tool gcloud -Arguments @('projects','get-iam-policy',$project,'--format=json(bindings.role)')
+    $iamState = Get-GuardentraCloudFailureState -ExitCode $iam.ExitCode -Text ([string]$iam.Output + ' ' + [string]$iam.Error)
+    if ($iamState -eq 'available') {
+        $roles=@()
+        try {
+            $payload=([string]$iam.Output) | ConvertFrom-Json
+            foreach($binding in @(Get-GuardentraCloudProperty $payload 'bindings' @())) {
+                $role=Get-GuardentraCloudProperty $binding 'role'
+                if ($role) { $roles += [string]$role }
+            }
+            $roles=@($roles | Select-Object -Unique)
+            $result.iam=[ordered]@{ result='available'; role_count=$roles.Count; roles=$roles }
+        } catch { $result.iam.result='failed' }
+    } else { $result.iam.result=$iamState }
+
     $secrets = Invoke-GuardentraCloudReadCommand -Tool gcloud -Arguments @('secrets','list','--project',$project,'--format=json(name)')
     $secretState = Get-GuardentraCloudFailureState -ExitCode $secrets.ExitCode -Text ([string]$secrets.Output + ' ' + [string]$secrets.Error)
     if ($secretState -eq 'available') {
@@ -263,6 +353,16 @@ function New-GuardentraCloudInventoryComment {
             scanner_compute_count=$item.compute.count
             cloud_sql_result=$item.cloud_sql.result
             cloud_sql_count=$item.cloud_sql.count
+            cloud_sql_instances=@($item.cloud_sql.instances | ForEach-Object { $_.name })
+            app_hosting_result=$item.app_hosting.result
+            app_hosting_backends=@($item.app_hosting.backends | ForEach-Object { $_.id })
+            network_result=$item.network.result
+            networks=@($item.network.networks | ForEach-Object { $_.name })
+            subnets=@($item.network.subnets | ForEach-Object { $_.name })
+            iam_result=$item.iam.result
+            iam_roles=@($item.iam.roles)
+            cloud_task_queues=@($item.cloud_tasks.queues | ForEach-Object { $_.name })
+            scanner_compute=@($item.compute.instances | ForEach-Object { $_.name })
             secret_reference_result=$item.secret_references.result
             secret_reference_count=$item.secret_references.count
             send_email_result=$item.send_email_extension.result
