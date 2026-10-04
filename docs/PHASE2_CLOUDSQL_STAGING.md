@@ -1,4 +1,21 @@
-# Phase 2 — Cloud SQL EU staging checklist
+# Phase 2 — Cloud SQL EU staging checklist — HISTORICAL 2026-08-11 PROOF
+
+> **DO NOT EXECUTE THIS DOCUMENT AS THE CURRENT #74 STAGING RUNBOOK.**
+>
+> This file preserves the 2026-08-11 proof performed against the historical
+> `guardentra-7f582` single-backend/tagged-Cloud-Run topology. Current environment
+> authority is different: named staging is `guardentra-staging`, production is
+> `guardentra-prod`, and `guardentra-7f582` is rollback/history only.
+>
+> Before any #74 staging enablement, first collect a **read-only** inventory from
+> `guardentra-staging`: Cloud SQL instances/connection names, VPC/subnets/private
+> connectivity, App Hosting backend/runtime identity, non-secret audit env/config
+> references, Secret Manager secret **names/references only**, and current
+> `AUDIT_SPINE_ENABLED` state. Generate a new exact staging-only change packet from
+> that evidence. Do not copy/paste the historical commands below into any live project.
+>
+> No production action is authorized by this historical record. Preserve
+> `MERGED != STAGING_LIVE_VERIFIED != PRODUCTION_LIVE_VERIFIED`.
 
 After local Docker spine is green (`scripts/phase2-local-spine.ps1` + `npm run phase2:live-prove`):
 
@@ -29,7 +46,7 @@ After local Docker spine is green (`scripts/phase2-local-spine.ps1` + `npm run p
 | App Hosting rollout of yaml `AUDIT_*` | **Remaining** — commit/push + Firebase reauth / console rollout |
 | Dual Firebase EU/US projects | **Gated** — Org Owner; do not CLI-create |
 
-## Exact human commands (Path B)
+## Historical human commands (Path B) — evidence only, DO NOT RUN against current environments
 
 ### 1) Enable APIs (once)
 
@@ -88,7 +105,7 @@ AUDIT_WORKER_ENABLED=true
 
 Shared [`apphosting.yaml`](../apphosting.yaml) keeps `AUDIT_SPINE_ENABLED=false` so production stays safe.
 
-**Current single-backend reality:** only App Hosting backend `guardentra` exists (serves guardentra.com). Spine ON was staged as Cloud Run traffic tag `auditspine` at **0%** (does not flip prod).
+**Historical single-backend reality (2026-08-11):** only App Hosting backend `guardentra` existed in this proof path and the spine-ON revision used the `auditspine` traffic tag at **0%**. This is not the current named staging topology.
 
 ### 5b) Finish HTTP DoD against tagged revision (human)
 
