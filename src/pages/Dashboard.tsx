@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, limit, query, where, getDocs } from 'firebase/firestore';
-import { Building2, ClipboardList, FileCheck, Loader2, Plus, Sparkles } from 'lucide-react';
+import { Building2, ClipboardList, Loader2, Plus, Settings2, Sparkles } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/src/components/ui/card';
 import { Button } from '@/src/components/ui/button';
 import { db } from '../firebase';
@@ -100,7 +100,7 @@ export function Dashboard() {
             className="border-white/10 bg-white/5 text-white hover:bg-white/10"
           >
             <Building2 className="mr-2 h-4 w-4" />
-            Vendors
+            {showQuickStart ? 'Add first vendor' : 'Vendors'}
           </Button>
           <Button
             onClick={() => navigate('/assessments/new')}
@@ -163,8 +163,8 @@ export function Dashboard() {
               Quick start
             </CardTitle>
             <CardDescription>
-              Add your first vendor, then send a GuardEntra-authored questionnaire through the assessment
-              portal.
+              Your GuardEntra workspace is ready. Add your first vendor to begin your third-party risk
+              workflow. Organization profile and assessment-pack defaults can be completed at any time.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -174,8 +174,8 @@ export function Dashboard() {
               className="rounded-xl border border-white/10 bg-black/20 p-4 text-left transition hover:border-primary/40"
             >
               <Building2 className="mb-2 h-5 w-5 text-emerald-400" />
-              <p className="text-sm font-semibold text-white">1. Add a vendor</p>
-              <p className="mt-1 text-xs text-slate-500">Create or bulk-upload third parties.</p>
+              <p className="text-sm font-semibold text-white">1. Add your first vendor</p>
+              <p className="mt-1 text-xs text-slate-500">Start with a real third party — no demo records are created.</p>
             </button>
             <button
               type="button"
@@ -183,17 +183,17 @@ export function Dashboard() {
               className="rounded-xl border border-white/10 bg-black/20 p-4 text-left transition hover:border-primary/40"
             >
               <ClipboardList className="mb-2 h-5 w-5 text-indigo-400" />
-              <p className="text-sm font-semibold text-white">2. Send an assessment</p>
-              <p className="mt-1 text-xs text-slate-500">Pick assessment packs and share the portal link.</p>
+              <p className="text-sm font-semibold text-white">2. Create your first assessment</p>
+              <p className="mt-1 text-xs text-slate-500">Choose GuardEntra assessment packs when you create it.</p>
             </button>
             <button
               type="button"
-              onClick={() => navigate('/audit-readiness')}
+              onClick={() => navigate('/settings')}
               className="rounded-xl border border-white/10 bg-black/20 p-4 text-left transition hover:border-primary/40"
             >
-              <FileCheck className="mb-2 h-5 w-5 text-amber-400" />
-              <p className="text-sm font-semibold text-white">3. Check Audit Lab</p>
-              <p className="mt-1 text-xs text-slate-500">Track assessment-pack readiness estimates and evidence gaps.</p>
+              <Settings2 className="mb-2 h-5 w-5 text-amber-400" />
+              <p className="text-sm font-semibold text-white">3. Complete organization profile</p>
+              <p className="mt-1 text-xs text-slate-500">Add industry, branding, and optional pack defaults later.</p>
             </button>
           </CardContent>
         </Card>

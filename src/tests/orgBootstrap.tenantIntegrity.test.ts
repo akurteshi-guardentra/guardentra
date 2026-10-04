@@ -83,6 +83,7 @@ describe('bootstrapUserProfile tenant authority', () => {
       role: 'admin',
       organizationId: 'auto_org_1',
       email: 'founder@example.com',
+      onboarded: true,
     });
     expect(profileWrite?.[1]).not.toHaveProperty('inviteId');
     expect(profileWrite?.[1].organizationId).not.toBe('attacker-chosen-org');
@@ -101,6 +102,7 @@ describe('bootstrapUserProfile tenant authority', () => {
       role: 'member',
       organizationId: 'org-invited',
       inviteId: 'inv_abc',
+      onboarded: true,
     });
     expect(batchUpdate).toHaveBeenCalled();
     expect(updateDocMock).toHaveBeenCalled();
