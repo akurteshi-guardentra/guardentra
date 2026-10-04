@@ -26,7 +26,7 @@ describe('#119 customer trust readiness contract', () => {
   });
 
   it('does not represent planned email infrastructure as active', () => {
-    const byService = new Map(readiness.service_register.map((row: any) => [row.service, row]));
+    const byService = new Map<string, any>(readiness.service_register.map((row: any) => [row.service, row]));
     expect(byService.get('SendGrid / SMTP provider')?.runtime_status).toBe('PLANNED_STAGING');
     expect(byService.get('Firebase Trigger Email managed extension')?.runtime_status).toBe('UNVERIFIED_STAGING');
   });
