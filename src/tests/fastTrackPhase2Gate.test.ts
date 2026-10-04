@@ -81,6 +81,9 @@ describe('E2E gate: decision packet', () => {
       decisionNotes: 'MFA gap by Q3',
       decidedBy: 'admin@example.com',
       decidedAt: new Date().toISOString(),
+      remediationOwner: 'Security Team',
+      remediationDueAt: '2026-12-31T23:59:59.999Z',
+      residualRiskLevel: 'High',
       nextReviewAt: new Date().toISOString(),
       exceptions: [{ question: 'Do you use MFA?', reason: 'negative', answer: 'No' }],
       triageTier: 'Standard',
@@ -89,6 +92,9 @@ describe('E2E gate: decision packet', () => {
     expect(html).toContain('Acme Vendor');
     expect(html).toContain('conditional');
     expect(html).toContain('MFA gap by Q3');
+    expect(html).toContain('Security Team');
+    expect(html).toContain('Residual risk');
+    expect(html).toContain('High');
   });
 });
 
