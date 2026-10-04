@@ -17,7 +17,8 @@ export type AuditEventType =
   | 'exception.reviewed'
   | 'decision.finalized'
   | 'report.exported'
-  | 'audit.chain_verified';
+  | 'audit.chain_verified'
+  | 'audit.chain_verification_failed';
 
 export interface AuditEmitEnvelope {
   eventId?: string;

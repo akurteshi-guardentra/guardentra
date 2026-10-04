@@ -29,8 +29,23 @@ export function AuditSpineCard() {
         return;
       }
       if (!res.ok) {
+        const verifiedBrokenChain = res.status === 409 && body.ok === false;
         setTone('err');
-        setMessage(body.error || `Verify failed (${res.status})`);
+        setMessage(body.message || body.error || `Verify failed (${res.status})`);
+        if (verifiedBrokenChain) {
+          void emitAuditBestEffort({
+            tenantId: orgId,
+            eventType: 'audit.chain_verification_failed',
+            actorId: user?.uid || null,
+            objectType: 'organization',
+            objectId: orgId,
+            payload: {
+              ok: false,
+              checked: body.checked ?? null,
+              firstBreakSeq: body.firstBreakSeq ?? null,
+            },
+          });
+        }
         return;
       }
       const ok = Boolean(body.ok);

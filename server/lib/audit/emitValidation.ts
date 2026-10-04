@@ -20,6 +20,7 @@ const EVENT_TYPES = new Set([
   'decision.finalized',
   'report.exported',
   'audit.chain_verified',
+  'audit.chain_verification_failed',
 ]);
 
 export function parseAuditEmitBody(raw: unknown): { ok: true; value: AuditEmitEnvelope } | { ok: false; error: string } {

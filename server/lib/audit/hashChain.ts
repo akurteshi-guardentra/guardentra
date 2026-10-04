@@ -6,12 +6,17 @@ export async function persistOutboxPayload(
   client: pg.PoolClient,
   envelope: AuditEmitEnvelope & { eventId: string }
 ): Promise<void> {
+  // Serialize by tenant BEFORE checking event_id. A stale outbox lease can be
+  // reclaimed while an older worker is still finishing; checking first creates a
+  // race where both workers observe "missing". The transaction lock makes the
+  // second worker re-check after the first commits, preserving exactly-once
+  // event + hash-chain persistence.
+  await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [envelope.tenantId]);
+
   const existing = await client.query(`SELECT 1 FROM audit_events WHERE event_id = $1`, [
     envelope.eventId,
   ]);
   if (existing.rowCount) return;
-
-  await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [envelope.tenantId]);
 
   const last = await client.query(
     `SELECT hash, seq FROM audit_hash_chain
