@@ -22,10 +22,11 @@ export function Onboarding() {
   const { profile, user, loading, acknowledgeDurableOnboarding } = useAuth();
   const navigate = useNavigate();
   const inFlight = useRef(false);
+  const automaticAttemptKey = useRef<string | null>(null);
   const [finishing, setFinishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const finishBootstrap = useCallback(async () => {
+  const finishBootstrap = useCallback(async (manualRetry = false) => {
     if (inFlight.current || !user || !profile) return;
 
     if (profile.onboarded || hasOnboardingAck(user.uid)) {
@@ -37,6 +38,10 @@ export function Onboarding() {
       setError('Your secure organization bootstrap is incomplete. Retry after your profile finishes loading.');
       return;
     }
+
+    const attemptKey = `${user.uid}:${profile.organizationId}`;
+    if (!manualRetry && automaticAttemptKey.current === attemptKey) return;
+    if (!manualRetry) automaticAttemptKey.current = attemptKey;
 
     inFlight.current = true;
     setFinishing(true);
@@ -99,7 +104,7 @@ export function Onboarding() {
               <p role="alert" className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-300">
                 {error}
               </p>
-              <Button type="button" className="w-full" onClick={() => void finishBootstrap()}>
+              <Button type="button" className="w-full" onClick={() => void finishBootstrap(true)}>
                 <RefreshCw className="mr-2 h-4 w-4" />
                 Retry secure setup
               </Button>

@@ -31,7 +31,7 @@ vi.mock('../lib/AuthContext', () => ({
     user: authState.user,
     profile: authState.profile,
     loading: authState.loading,
-    acknowledgeDurableOnboarding: () => authState.acknowledgeDurableOnboarding(),
+    acknowledgeDurableOnboarding: authState.acknowledgeDurableOnboarding,
   }),
 }));
 
@@ -87,13 +87,27 @@ describe('#67 progressive onboarding migration bridge', () => {
     expect(String((writes[0][0] as any)?.path || '')).not.toContain('organizations/');
   });
 
-  it('fails closed on durable write failure and retry is safe', async () => {
-    vi.mocked(firestore.updateDoc).mockRejectedValueOnce(new Error('permission-denied'));
-    render(<MemoryRouter><Onboarding /></MemoryRouter>);
+  it('fails closed after one automatic attempt; profile refresh cannot retry until explicit Retry', async () => {
+    vi.mocked(firestore.updateDoc)
+      .mockRejectedValueOnce(new Error('permission-denied'))
+      .mockResolvedValue(undefined as any);
+
+    const { rerender } = render(<MemoryRouter><Onboarding /></MemoryRouter>);
     await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+
+    expect(firestore.updateDoc).toHaveBeenCalledTimes(1);
     expect(isLocallyOnboarded('user-1')).toBe(false);
     expect(navigateMock).not.toHaveBeenCalledWith('/dashboard', { replace: true });
+
+    authState.profile = { ...authState.profile };
+    rerender(<MemoryRouter><Onboarding /></MemoryRouter>);
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+    expect(firestore.updateDoc).toHaveBeenCalledTimes(1);
+    expect(navigateMock).not.toHaveBeenCalledWith('/dashboard', { replace: true });
+
     fireEvent.click(screen.getByRole('button', { name: /retry secure setup/i }));
+    await waitFor(() => expect(firestore.updateDoc).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/dashboard', { replace: true }));
   });
 

@@ -24,7 +24,7 @@ vi.mock('../lib/AuthContext', () => ({
     user: authState.user,
     profile: authState.profile,
     loading: authState.loading,
-    acknowledgeDurableOnboarding: () => authState.acknowledgeDurableOnboarding(),
+    acknowledgeDurableOnboarding: authState.acknowledgeDurableOnboarding,
   }),
   AuthProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
