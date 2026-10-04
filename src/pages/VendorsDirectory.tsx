@@ -480,6 +480,9 @@ export function VendorsDirectory() {
     setInviteBanner(null);
     try {
       const vendorId = await createVendor(input);
+      if (!vendorId) {
+        throw new Error('Vendor was not durably created; notification was not queued.');
+      }
 
       let emailQueued = false;
       let emailQueueError = '';
