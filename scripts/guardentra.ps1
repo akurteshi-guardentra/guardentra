@@ -31,6 +31,9 @@ param(
         'agent',
         'supervisor',
         'night-run',
+        'observe',
+        'runner',
+        'runner-task',
         'providers',
         'provider-doctor',
         'report',
@@ -53,7 +56,9 @@ param(
     [int]$Pr = 0,
     [string]$Action = '',
     [ValidateRange(1,1000)][int]$Passes = 1,
-    [ValidateRange(0,60)][int]$IntervalSeconds = 0
+    [ValidateRange(0,60)][int]$IntervalSeconds = 0,
+    [switch]$Once,
+    [switch]$NoPublish
 )
 
 Set-StrictMode -Version Latest
@@ -81,6 +86,9 @@ Usage:
   .\scripts\guardentra.ps1 agent watch
   .\scripts\guardentra.ps1 supervisor <issue>
   .\scripts\guardentra.ps1 night-run [-Passes 1] [-IntervalSeconds 0]
+  .\scripts\guardentra.ps1 observe [provider[,provider]] [-IntervalSeconds 2] [-Once]
+  .\scripts\guardentra.ps1 runner [-IntervalSeconds 30] [-Once] [-NoPublish]
+  .\scripts\guardentra.ps1 runner-task [status|install|remove] [-IntervalSeconds 30]
   .\scripts\guardentra.ps1 providers
   .\scripts\guardentra.ps1 provider-doctor
   .\scripts\guardentra.ps1 report [morning|midday|night]
@@ -164,6 +172,27 @@ try {
         'night-run' {
             $nightAction = if ($Action) { $Action } else { 'implement' }
             Invoke-GuardentraNightRun -Passes $Passes -IntervalSeconds $IntervalSeconds -Action $nightAction | ConvertTo-Json -Depth 20
+        }
+        'observe' {
+            . (Join-Path $PSScriptRoot 'guardentra\Observe-LocalAgents.ps1')
+            $refresh = if ($IntervalSeconds -gt 0) { $IntervalSeconds } else { 2 }
+            Show-GuardentraObserver -RefreshSeconds $refresh -Provider $Arg1 -Once:$Once
+        }
+        'runner' {
+            . (Join-Path $PSScriptRoot 'guardentra\Run-LocalSupervisor.ps1')
+            $runnerInterval = if ($IntervalSeconds -gt 0) { $IntervalSeconds } else { 30 }
+            Invoke-GuardentraPersistentRunner -IntervalSeconds $runnerInterval -Once:$Once -PublishCheckpoints:(-not $NoPublish)
+        }
+        'runner-task' {
+            . (Join-Path $PSScriptRoot 'guardentra\Register-LocalRunnerTask.ps1')
+            $runnerInterval = if ($IntervalSeconds -gt 0) { $IntervalSeconds } else { 30 }
+            $taskAction = if ($Arg1) { $Arg1 } else { 'Status' }
+            switch ($taskAction.ToLowerInvariant()) {
+                'status' { Get-GuardentraRunnerTaskStatus | ConvertTo-Json -Depth 5 }
+                'install' { Install-GuardentraRunnerScheduledTask -IntervalSeconds $runnerInterval | ConvertTo-Json -Depth 5 }
+                'remove' { Remove-GuardentraRunnerScheduledTask | ConvertTo-Json -Depth 5 }
+                default { throw 'Usage: runner-task [status|install|remove] [-IntervalSeconds 30]' }
+            }
         }
         'providers' {
             @('codex','cursor','gemini','cloud','grok','xai') | ForEach-Object { Get-GuardentraProviderCapability $_ } | ConvertTo-Json -Depth 5

@@ -3,8 +3,15 @@ name: Observer CI
 on:
   pull_request:
     paths:
+      - 'scripts/guardentra.ps1'
+      - 'scripts/guardentra/ProviderProcesses.ps1'
+      - 'scripts/guardentra/Supervisor.ps1'
       - 'scripts/guardentra/Observe-LocalAgents.ps1'
+      - 'scripts/guardentra/Run-LocalSupervisor.ps1'
+      - 'scripts/guardentra/Register-LocalRunnerTask.ps1'
       - 'scripts/guardentra/tests/Observer.Tests.ps1'
+      - 'scripts/guardentra/tests/Runner.Tests.ps1'
+      - 'scripts/guardentra/tests/Supervisor.Tests.ps1'
       - '.vscode/tasks.json'
       - 'docs/agent-ops/orchestration/LOCAL_AGENT_OBSERVER.md'
       - '.github/workflows/observer-ci.yml'
@@ -12,8 +19,15 @@ on:
     branches:
       - main
     paths:
+      - 'scripts/guardentra.ps1'
+      - 'scripts/guardentra/ProviderProcesses.ps1'
+      - 'scripts/guardentra/Supervisor.ps1'
       - 'scripts/guardentra/Observe-LocalAgents.ps1'
+      - 'scripts/guardentra/Run-LocalSupervisor.ps1'
+      - 'scripts/guardentra/Register-LocalRunnerTask.ps1'
       - 'scripts/guardentra/tests/Observer.Tests.ps1'
+      - 'scripts/guardentra/tests/Runner.Tests.ps1'
+      - 'scripts/guardentra/tests/Supervisor.Tests.ps1'
       - '.vscode/tasks.json'
       - 'docs/agent-ops/orchestration/LOCAL_AGENT_OBSERVER.md'
       - '.github/workflows/observer-ci.yml'
@@ -27,3 +41,6 @@ jobs:
       - name: GuardEntra observer PowerShell 5.1 tests
         shell: powershell
         run: .\scripts\guardentra\tests\Observer.Tests.ps1
+      - name: GuardEntra persistent runner/checkpoint tests
+        shell: powershell
+        run: .\scripts\guardentra\tests\Runner.Tests.ps1
