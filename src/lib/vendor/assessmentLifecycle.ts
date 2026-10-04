@@ -4,7 +4,7 @@
  * VendorPortal and Assessments compose these so Vitest can cover create →
  * autosave → submit → org decision without Firebase.
  */
-import type { AssessmentStatus, FrameworkId } from './types';
+import type { AssessmentStatus, FrameworkId, RiskLevel } from './types';
 import type { DecisionOutcome } from './assessmentExceptions';
 import { overallProgressPct, type PortalQuestion } from './questionBank';
 import { QUESTION_BANK_VERSION } from './frameworkPacks';
@@ -280,16 +280,35 @@ export function nextReviewAtForDecision(
 
 export type OrgDecisionPatch = {
   decisionOutcome: DecisionOutcome;
-  /** Present as a string when notes were supplied; `null` on a no-notes terminal decision so a prior remediate rationale cannot remain. */
   decisionNotes?: string | null;
   decidedAt: string;
   decidedBy: string;
+  remediationOwner?: string | null;
+  remediationDueAt?: string | null;
+  residualRiskLevel: RiskLevel;
   status: 'Completed' | 'Under Review';
   progressPct?: number;
   progress?: number;
   portalOpen: boolean;
   completedAt?: string;
 };
+
+export function decisionRequiresRemediationPlan(outcome: DecisionOutcome): boolean {
+  return outcome === 'conditional' || outcome === 'remediate';
+}
+
+export function normalizeRemediationDueAt(raw: string | undefined | null): string | null {
+  const value = String(raw || '').trim();
+  if (!value) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const parsed = new Date(`${value}T23:59:59.999Z`);
+    if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) return null;
+    return parsed.toISOString();
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+}
 
 /**
  * Org FastTrack decision terminal.
@@ -300,17 +319,29 @@ export function buildOrgDecisionPatch(input: {
   outcome: DecisionOutcome;
   decidedBy: string;
   decisionNotes?: string;
+  remediationOwner?: string;
+  remediationDueAt?: string;
+  residualRiskLevel: RiskLevel;
   nowIso?: string;
 }): OrgDecisionPatch {
   const decidedAt = input.nowIso || new Date().toISOString();
   const notes = input.decisionNotes?.trim();
   const closes = decisionClosesPortal(input.outcome);
+  const requiresPlan = decisionRequiresRemediationPlan(input.outcome);
+  const remediationOwner = input.remediationOwner?.trim();
+  const remediationDueAt = normalizeRemediationDueAt(input.remediationDueAt);
+
+  if (!input.residualRiskLevel) throw new Error('Residual risk level is required for every decision.');
+  if (requiresPlan && (!notes || !remediationOwner || !remediationDueAt)) {
+    throw new Error('Conditional/remediate decisions require notes, remediation owner, and due date.');
+  }
 
   const patch: OrgDecisionPatch = closes
     ? {
         decisionOutcome: input.outcome,
         decidedAt,
         decidedBy: input.decidedBy,
+        residualRiskLevel: input.residualRiskLevel,
         status: 'Completed',
         progressPct: 100,
         progress: 100,
@@ -321,20 +352,24 @@ export function buildOrgDecisionPatch(input: {
         decisionOutcome: input.outcome,
         decidedAt,
         decidedBy: input.decidedBy,
+        residualRiskLevel: input.residualRiskLevel,
         status: 'Under Review',
         portalOpen: true,
       };
 
-  if (notes) {
-    patch.decisionNotes = notes;
-  } else if (closes) {
-    // Firestore rejects `undefined`; omitting the key would leave a prior remediate note in place.
-    patch.decisionNotes = null;
+  if (notes) patch.decisionNotes = notes;
+  else if (closes) patch.decisionNotes = null;
+
+  if (requiresPlan) {
+    patch.remediationOwner = remediationOwner!;
+    patch.remediationDueAt = remediationDueAt!;
+  } else {
+    patch.remediationOwner = null;
+    patch.remediationDueAt = null;
   }
   return patch;
 }
 
-/** Notes required for conditional approve and remediate. */
 export function decisionRequiresNotes(outcome: DecisionOutcome): boolean {
-  return outcome === 'conditional' || outcome === 'remediate';
+  return decisionRequiresRemediationPlan(outcome);
 }
