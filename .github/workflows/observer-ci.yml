@@ -1,0 +1,29 @@
+name: Observer CI
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/guardentra/Observe-LocalAgents.ps1'
+      - 'scripts/guardentra/tests/Observer.Tests.ps1'
+      - '.vscode/tasks.json'
+      - 'docs/agent-ops/orchestration/LOCAL_AGENT_OBSERVER.md'
+      - '.github/workflows/observer-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'scripts/guardentra/Observe-LocalAgents.ps1'
+      - 'scripts/guardentra/tests/Observer.Tests.ps1'
+      - '.vscode/tasks.json'
+      - 'docs/agent-ops/orchestration/LOCAL_AGENT_OBSERVER.md'
+      - '.github/workflows/observer-ci.yml'
+
+jobs:
+  windows-observer:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: GuardEntra observer PowerShell 5.1 tests
+        shell: powershell
+        run: .\scripts\guardentra\tests\Observer.Tests.ps1
