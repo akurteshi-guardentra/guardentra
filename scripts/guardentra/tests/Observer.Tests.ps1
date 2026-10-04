@@ -47,7 +47,7 @@ try {
             paths = @('scripts/guardentra/example.txt')
         }
         tests = @('fixture PASS')
-        attempts = @(@{ state='available' }, @{ state='available' })
+        attempts = @(@{ state='available' }, @{ state='quota_exhausted' })
         handoffs = @(@{ from='cursor'; to='codex' })
         blocker = 'token=supersecret provider retry'
         owner_gate = ''
@@ -60,6 +60,7 @@ try {
 
     @{
         worktree_path = $worktree
+        attempt_count = 2
     } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $issue90 'contract.json') -Encoding UTF8
 
     # Legacy #95 supervisor filename remains readable during workstation upgrade.
@@ -100,8 +101,10 @@ try {
     Assert-Observer ($supervisor.heartbeat_utc -eq $heartbeat) 'shows raw heartbeat timestamp'
     Assert-Observer ($supervisor.test_count -eq 1) 'counts supervisor tests'
     Assert-Observer ($supervisor.last_test -eq 'fixture PASS') 'shows last bounded supervisor test'
+    Assert-Observer ($supervisor.correction_count -eq 2) 'shows dispatcher correction count from contract'
     Assert-Observer ($supervisor.attempts -eq 2) 'counts attempts'
     Assert-Observer ($supervisor.handoffs -eq 1) 'counts handoffs'
+    Assert-Observer ($supervisor.exit_state -eq 'quota_exhausted') 'shows latest persisted provider exit state'
     Assert-Observer ($supervisor.heartbeat_age_s -ge 0) 'computes heartbeat age'
     Assert-Observer ($supervisor.heartbeat_state -eq 'fresh') 'classifies recent heartbeat as fresh'
     Assert-Observer ($supervisor.branch -eq 'tooling/autonomous-supervisor-90') 'reads nested snapshot branch'
