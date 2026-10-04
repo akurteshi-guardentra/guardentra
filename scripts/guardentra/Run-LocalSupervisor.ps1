@@ -35,8 +35,17 @@ function Get-GuardentraLocalCompletionCheckpoint {
         $contract = Get-Content -LiteralPath $contractPath -Raw -Encoding UTF8 | ConvertFrom-Json
     } catch { return $null }
 
+    $schema = [string](Get-GuardentraObserverProperty $state 'schema')
+    if ($schema -cne 'guardentra.supervisor.v1') { return $null }
+
     $phase = [string](Get-GuardentraObserverProperty $state 'phase')
     if ($phase -notin @('owner_gate','blocked')) { return $null }
+
+    $verification = [string](Get-GuardentraObserverProperty $state 'verification' 'MISSING')
+    if ($verification -cnotin @('MISSING','IMPLEMENTED_LOCAL','TESTED_LOCAL')) { return $null }
+
+    $taskHash = [string](Get-GuardentraObserverProperty $state 'task_hash')
+    if ([string]::IsNullOrWhiteSpace($taskHash)) { return $null }
 
     $directoryIssue = Split-Path $IssueDir -Leaf
     if ($directoryIssue -notmatch '^[1-9][0-9]*$') { return $null }
@@ -72,8 +81,8 @@ function Get-GuardentraLocalCompletionCheckpoint {
         reviewer = (Protect-GuardentraObserverText (Get-GuardentraObserverProperty $state 'reviewer'))
         branch = (Protect-GuardentraObserverText $branch)
         head = (Protect-GuardentraObserverText $head)
-        task_hash = (Protect-GuardentraObserverText (Get-GuardentraObserverProperty $state 'task_hash'))
-        verification = (Protect-GuardentraObserverText (Get-GuardentraObserverProperty $state 'verification' 'MISSING'))
+        task_hash = (Protect-GuardentraObserverText $taskHash)
+        verification = (Protect-GuardentraObserverText $verification)
         test_count = @(Get-GuardentraObserverProperty $state 'tests' @()).Count
         attempt_count = @(Get-GuardentraObserverProperty $state 'attempts' @()).Count
         handoff_count = @(Get-GuardentraObserverProperty $state 'handoffs' @()).Count
