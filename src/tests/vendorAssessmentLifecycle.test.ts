@@ -30,6 +30,7 @@ import {
   buildPortalSubmitPatch,
   canSignOffAssessment,
   decisionRequiresNotes,
+  decisionRequiresRemediationPlan,
   hasTerminalOrgDecision,
   isReceiptMode,
   isTerminalDecisionOutcome,
@@ -184,6 +185,7 @@ describe('vendor assessment portal/tracker lifecycle', () => {
     const decision = buildOrgDecisionPatch({
       outcome: 'approved',
       decidedBy: 'admin@example.com',
+      residualRiskLevel: 'Medium',
       nowIso: '2026-08-05T14:00:00.000Z',
     });
     expect(decision.status).toBe('Completed');
@@ -231,11 +233,16 @@ describe('vendor assessment portal/tracker lifecycle', () => {
     await syncVendorAfterAssessmentSubmit(orgId, vendor.id, true);
 
     expect(decisionRequiresNotes('remediate')).toBe(true);
+    expect(decisionRequiresRemediationPlan('conditional')).toBe(true);
+    expect(decisionRequiresRemediationPlan('approved')).toBe(false);
     expect(decisionRequiresNotes('approved')).toBe(false);
 
     const remediate = buildOrgDecisionPatch({
       outcome: 'remediate',
       decidedBy: 'admin@example.com',
+      residualRiskLevel: 'Medium',
+      remediationOwner: 'Security Team',
+      remediationDueAt: '2026-12-31',
       decisionNotes: 'Fix MFA gaps',
       nowIso: '2026-08-05T15:00:00.000Z',
     });
@@ -243,6 +250,9 @@ describe('vendor assessment portal/tracker lifecycle', () => {
     expect(remediate.portalOpen).toBe(true);
     expect(remediate.decisionOutcome).toBe('remediate');
     expect(remediate.decisionNotes).toBe('Fix MFA gaps');
+    expect(remediate.remediationOwner).toBe('Security Team');
+    expect(remediate.remediationDueAt).toContain('2026-12-31');
+    expect(remediate.residualRiskLevel).toBe('Medium');
     expect(hasTerminalOrgDecision(remediate)).toBe(false);
     expect(isTerminalDecisionOutcome('remediate')).toBe(false);
     expect(isTerminalDecisionOutcome('approved')).toBe(true);
@@ -259,12 +269,15 @@ describe('vendor assessment portal/tracker lifecycle', () => {
     const rejected = buildOrgDecisionPatch({
       outcome: 'rejected',
       decidedBy: 'admin@example.com',
+      residualRiskLevel: 'Medium',
       nowIso: '2026-08-05T16:00:00.000Z',
     });
     expect(rejected.status).toBe('Completed');
     expect(rejected.portalOpen).toBe(false);
     expect(rejected.decisionOutcome).toBe('rejected');
     expect(rejected.decisionNotes).toBeNull();
+    expect(rejected.remediationOwner).toBeNull();
+    expect(rejected.remediationDueAt).toBeNull();
 
     upsertLocalAssessment(orgId, { ...remRow, ...rejected });
     await syncVendorAfterAssessmentApprove(
@@ -386,6 +399,7 @@ describe('buildOrgDecisionPatch omits absent decisionNotes', () => {
     const rejected = buildOrgDecisionPatch({
       outcome: 'rejected',
       decidedBy: 'u1',
+      residualRiskLevel: 'Medium',
     });
     expect(rejected.decisionNotes).toBeNull();
     expect(rejected.decisionOutcome).toBe('rejected');
@@ -397,6 +411,7 @@ describe('buildOrgDecisionPatch omits absent decisionNotes', () => {
     const approved = buildOrgDecisionPatch({
       outcome: 'approved',
       decidedBy: 'u1',
+      residualRiskLevel: 'Medium',
     });
     expect(approved.decisionNotes).toBeNull();
     expect(approved.decisionOutcome).toBe('approved');
@@ -408,6 +423,9 @@ describe('buildOrgDecisionPatch omits absent decisionNotes', () => {
     const conditional = buildOrgDecisionPatch({
       outcome: 'conditional',
       decidedBy: 'u1',
+      residualRiskLevel: 'Medium',
+      remediationOwner: 'Security Team',
+      remediationDueAt: '2026-12-31',
       decisionNotes: 'conditions apply',
     });
     expect(conditional.decisionNotes).toBe('conditions apply');
@@ -416,6 +434,9 @@ describe('buildOrgDecisionPatch omits absent decisionNotes', () => {
     const remediate = buildOrgDecisionPatch({
       outcome: 'remediate',
       decidedBy: 'u1',
+      residualRiskLevel: 'Medium',
+      remediationOwner: 'Security Team',
+      remediationDueAt: '2026-12-31',
       decisionNotes: 'fix gaps',
     });
     expect(remediate.decisionNotes).toBe('fix gaps');
@@ -427,20 +448,58 @@ describe('buildOrgDecisionPatch omits absent decisionNotes', () => {
     const remediate = buildOrgDecisionPatch({
       outcome: 'remediate',
       decidedBy: 'u1',
+      residualRiskLevel: 'Medium',
+      remediationOwner: 'Security Team',
+      remediationDueAt: '2026-12-31',
       decisionNotes: 'Fix MFA gaps',
     });
     const approved = buildOrgDecisionPatch({
       outcome: 'approved',
       decidedBy: 'u1',
+      residualRiskLevel: 'Medium',
     });
     const rejected = buildOrgDecisionPatch({
       outcome: 'rejected',
       decidedBy: 'u1',
+      residualRiskLevel: 'Medium',
     });
 
     expect({ ...remediate, ...approved }.decisionNotes).toBeNull();
     expect({ ...remediate, ...rejected }.decisionNotes).toBeNull();
     expect({ ...remediate, ...approved }.decisionOutcome).toBe('approved');
     expect({ ...remediate, ...rejected }.decisionOutcome).toBe('rejected');
+  });
+});
+
+describe('#121 remediation accountability', () => {
+  it('requires structured remediation accountability for conditional/remediate', () => {
+    expect(() =>
+      buildOrgDecisionPatch({
+        outcome: 'remediate',
+        decidedBy: 'u1',
+        decisionNotes: 'Fix MFA',
+        residualRiskLevel: 'High',
+      })
+    ).toThrow(/owner.*due date/i);
+  });
+
+  it('clears stale remediation fields on a later approved decision', () => {
+    const remediate = buildOrgDecisionPatch({
+      outcome: 'remediate',
+      decidedBy: 'u1',
+      decisionNotes: 'Fix MFA',
+      residualRiskLevel: 'High',
+      remediationOwner: 'Security Team',
+      remediationDueAt: '2026-12-31',
+    });
+    const approved = buildOrgDecisionPatch({
+      outcome: 'approved',
+      decidedBy: 'u1',
+      residualRiskLevel: 'Low',
+    });
+    const merged = { ...remediate, ...approved };
+    expect(merged.remediationOwner).toBeNull();
+    expect(merged.remediationDueAt).toBeNull();
+    expect(merged.residualRiskLevel).toBe('Low');
   });
 });
