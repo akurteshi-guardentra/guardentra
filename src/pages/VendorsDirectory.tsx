@@ -45,7 +45,7 @@ import {
   type ParsedBulkVendor,
 } from '../lib/vendor/csvBulk';
 import { downloadVendorRegisterReport } from '../lib/vendor/reportExport';
-import { sendEmail } from '../lib/notifications';
+import { sendNotificationIntent } from '../lib/notifications';
 import {
   HOSTED_VENDOR_LOAD_FAILED,
   HOSTED_VENDOR_SAVE_FAILED,
@@ -484,10 +484,9 @@ export function VendorsDirectory() {
       let emailQueued = false;
       let emailQueueError = '';
       try {
-        await sendEmail({
-          to: input.primaryContactEmail,
-          subject: `You've been added as a vendor in Guardentra`,
-          text: `Hi${input.primaryContactName ? ` ${input.primaryContactName}` : ''},\n\n${input.name} has been added to Guardentra's vendor register${profile?.displayName ? ` by ${profile.displayName}` : ''}. A security assessment questionnaire will follow separately.\n\nNo action is needed from you yet.`,
+        await sendNotificationIntent({
+          intentType: 'vendor_welcome',
+          objectId: vendorId,
         });
         emailQueued = true;
       } catch (mailEx: any) {
@@ -527,7 +526,7 @@ export function VendorsDirectory() {
       if (emailQueued) {
         setInviteBanner({
           tone: 'ok',
-          text: `Welcome email queued to ${input.primaryContactEmail}. Delivery needs the Trigger Email extension + SMTP.`,
+          text: `Welcome email queued to the vendor's authoritative contact ${input.primaryContactEmail}. Queue success is not delivery proof.`,
         });
       } else {
         setInviteBanner({

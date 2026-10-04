@@ -33,7 +33,7 @@ import {
 } from '../lib/vendor/localVendorStore';
 import { syncVendorAfterAssessmentCreate } from '../lib/vendor/syncVendorAssessment';
 import { buildCreateAssessmentFields } from '../lib/vendor/assessmentLifecycle';
-import { sendEmail } from '../lib/notifications';
+import { sendNotificationIntent } from '../lib/notifications';
 import { isTriageTier, parseFrameworksParam } from '../lib/vendor/fastTrackTriage';
 import { loadVendorTriage } from '../lib/vendor/vendorTriageStore';
 import { emitAuditBestEffort } from '../lib/auditClient';
@@ -374,23 +374,21 @@ export function AssessmentWizard() {
         },
       });
 
-      const to = (inviteEmail || selected.primaryContactEmail || '').trim();
+      const to = (selected.primaryContactEmail || '').trim();
       if (to) {
-        const portalUrl = `${window.location.origin}/portal/${ref.id}`;
         try {
-          await sendEmail({
-            to,
-            subject: `Security assessment request — ${selected.name}`,
-            text: `Hi${selected.primaryContactName ? ` ${selected.primaryContactName}` : ''},\n\n${selected.name} has been asked to complete a security assessment (${frameworkName}).\n\nComplete it here: ${portalUrl}\n\nDue: ${due.toLocaleDateString()}\nReminders: ${schedule.label}\n\nYour progress saves automatically and this link stays valid until the assessment is complete.`,
+          await sendNotificationIntent({
+            intentType: 'assessment_invite',
+            objectId: ref.id,
           });
           setSendBanner({
             tone: 'ok',
-            text: `Assessment sent. Invite queued to ${to} (needs Trigger Email + SMTP to deliver).`,
+            text: `Assessment created. Invite queued to the vendor's authoritative contact ${to} (queue success is not delivery proof).`,
           });
         } catch (mailEx: unknown) {
           setSendBanner({
             tone: 'warn',
-            text: `Assessment created; email could not be queued${mailEx instanceof Error ? ` (${mailEx.message})` : ''}.`,
+            text: `Assessment created; authorized invite could not be queued${mailEx instanceof Error ? ` (${mailEx.message})` : ''}.`,
           });
         }
       }
