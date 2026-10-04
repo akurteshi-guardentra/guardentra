@@ -1,0 +1,27 @@
+name: Email Consumer Gate CI
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/release/Test-EmailConsumerGate.ps1'
+      - 'scripts/release/tests/EmailConsumerGate.Tests.ps1'
+      - 'docs/release/EMAIL_CONSUMER_CUTOVER.md'
+      - '.github/workflows/email-consumer-gate-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'scripts/release/Test-EmailConsumerGate.ps1'
+      - 'scripts/release/tests/EmailConsumerGate.Tests.ps1'
+      - 'docs/release/EMAIL_CONSUMER_CUTOVER.md'
+      - '.github/workflows/email-consumer-gate-ci.yml'
+
+jobs:
+  windows-email-consumer-gate:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Email consumer gate PowerShell 5.1 tests
+        shell: powershell
+        run: .\scripts\release\tests\EmailConsumerGate.Tests.ps1
