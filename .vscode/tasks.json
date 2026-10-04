@@ -2,7 +2,7 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "GuardEntra: Observe local agents",
+      "label": "GuardEntra: Local supervisor runner",
       "type": "shell",
       "command": "powershell.exe",
       "args": [
@@ -10,8 +10,33 @@
         "-ExecutionPolicy",
         "Bypass",
         "-File",
-        "${workspaceFolder}\\scripts\\guardentra\\Observe-LocalAgents.ps1",
-        "-RefreshSeconds",
+        "${workspaceFolder}\\scripts\\guardentra.ps1",
+        "runner",
+        "-IntervalSeconds",
+        "30"
+      ],
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "guardentra-runner",
+        "focus": false,
+        "clear": true
+      }
+    },
+    {
+      "label": "GuardEntra: Observe all agents",
+      "type": "shell",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\scripts\\guardentra.ps1",
+        "observe",
+        "-IntervalSeconds",
         "2"
       ],
       "isBackground": true,
@@ -19,6 +44,107 @@
       "presentation": {
         "reveal": "always",
         "panel": "dedicated",
+        "group": "guardentra-all",
+        "focus": false,
+        "clear": true
+      }
+    },
+    {
+      "label": "GuardEntra: Observe Codex",
+      "type": "shell",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\scripts\\guardentra.ps1",
+        "observe",
+        "codex",
+        "-IntervalSeconds",
+        "2"
+      ],
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "guardentra-codex",
+        "focus": false,
+        "clear": true
+      }
+    },
+    {
+      "label": "GuardEntra: Observe Cursor",
+      "type": "shell",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\scripts\\guardentra.ps1",
+        "observe",
+        "cursor",
+        "-IntervalSeconds",
+        "2"
+      ],
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "guardentra-cursor",
+        "focus": false,
+        "clear": true
+      }
+    },
+    {
+      "label": "GuardEntra: Observe Gemini / Cloud",
+      "type": "shell",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\scripts\\guardentra.ps1",
+        "observe",
+        "gemini,cloud",
+        "-IntervalSeconds",
+        "2"
+      ],
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "guardentra-gemini",
+        "focus": false,
+        "clear": true
+      }
+    },
+    {
+      "label": "GuardEntra: Observe Grok / xAI",
+      "type": "shell",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\scripts\\guardentra.ps1",
+        "observe",
+        "grok,xai",
+        "-IntervalSeconds",
+        "2"
+      ],
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "guardentra-grok",
         "focus": false,
         "clear": true
       }
@@ -32,7 +158,8 @@
         "-ExecutionPolicy",
         "Bypass",
         "-File",
-        "${workspaceFolder}\\scripts\\guardentra\\Observe-LocalAgents.ps1",
+        "${workspaceFolder}\\scripts\\guardentra.ps1",
+        "observe",
         "-Once"
       ],
       "problemMatcher": [],
@@ -42,6 +169,38 @@
         "focus": false,
         "clear": true
       }
+    },
+    {
+      "label": "GuardEntra: Provider doctor snapshot",
+      "type": "shell",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\scripts\\guardentra.ps1",
+        "provider-doctor"
+      ],
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "new",
+        "focus": false,
+        "clear": true
+      }
+    },
+    {
+      "label": "GuardEntra: Local factory (runner + agent panes)",
+      "dependsOn": [
+        "GuardEntra: Local supervisor runner",
+        "GuardEntra: Observe Codex",
+        "GuardEntra: Observe Cursor",
+        "GuardEntra: Observe Gemini / Cloud",
+        "GuardEntra: Observe Grok / xAI"
+      ],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
     }
   ]
 }
