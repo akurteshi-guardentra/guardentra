@@ -38,6 +38,25 @@ $errored=[pscustomobject]@{
     result=@([pscustomobject]@{ instanceId='firestore-send-email'; state='ERRORED'; extensionRef='firebase/firestore-send-email' })
 }
 
+$directApi=[pscustomobject]@{
+    instances=@(
+        [pscustomobject]@{
+            name='projects/guardentra-staging/instances/firestore-send-email'
+            state='ACTIVE'
+            config=[pscustomobject]@{
+                source=[pscustomobject]@{
+                    spec=[pscustomobject]@{
+                        name='firestore-send-email'
+                        displayName='Trigger Email'
+                    }
+                }
+            }
+        }
+    )
+}
+
+$m=Get-GEManagedConsumerObservation $directApi
+Assert-GE ($m.state -eq 'active' -and $m.instances -eq 1) 'parses direct Extensions API instances response'
 $m=Get-GEManagedConsumerObservation $oldActive
 Assert-GE ($m.state -eq 'active' -and $m.instances -eq 1) 'parses legacy result.instances ACTIVE extension'
 $m=Get-GEManagedConsumerObservation $newActive
