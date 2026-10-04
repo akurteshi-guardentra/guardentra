@@ -2323,6 +2323,8 @@ if (Test-Path $tmpRoot) { Remove-Item $tmpRoot -Recurse -Force -ErrorAction Sile
 $script:GuardentraStateRoot = Join-Path $PSScriptRoot '..\state\issues'
 
 Write-Host ''
+. (Join-Path $PSScriptRoot 'Supervisor.Tests.ps1')
+. (Join-Path $PSScriptRoot 'ProviderProcesses.Tests.ps1')
 Write-Host "Results: $($script:Passed) passed, $($script:Failed) failed"
 if ($script:Failed -gt 0) {
     Write-Host 'Failures:'

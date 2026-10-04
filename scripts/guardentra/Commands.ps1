@@ -5,6 +5,8 @@ $ErrorActionPreference = 'Stop'
 
 . (Join-Path $PSScriptRoot 'Common.ps1')
 . (Join-Path $PSScriptRoot 'Adapters.ps1')
+. (Join-Path $PSScriptRoot 'Supervisor.ps1')
+. (Join-Path $PSScriptRoot 'ProviderDoctor.ps1')
 
 function Get-GuardentraIssueRecord {
     param([Parameter(Mandatory)][int]$IssueNumber)
