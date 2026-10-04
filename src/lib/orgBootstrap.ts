@@ -87,7 +87,7 @@ export async function bootstrapUserProfile(uid: string, fields: NewProfileFields
       role: resolveBootstrapJoinRole(pendingInvite.role),
       organizationId: pendingInvite.organizationId,
       inviteId: pendingInvite.id,
-      onboarded: false,
+      onboarded: true,
       createdAt: new Date().toISOString(),
     });
     batch.update(doc(db, 'org_invites', pendingInvite.id), {
@@ -120,7 +120,7 @@ export async function bootstrapUserProfile(uid: string, fields: NewProfileFields
       displayName: fields.displayName,
       role: 'admin',
       organizationId: orgRef.id,
-      onboarded: false,
+      onboarded: true,
       createdAt: new Date().toISOString(),
     });
   }

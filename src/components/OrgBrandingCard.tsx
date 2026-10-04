@@ -7,15 +7,28 @@ import { Input } from './ui/input';
 import { useAuth } from '../lib/AuthContext';
 import { db } from '../firebase';
 
-/**
- * SaaS tenant branding shown on the vendor portal (requesting company logo + name).
- * Each paying org configures this once; vendors see the customer's brand, not Guardentra alone.
- */
+const INDUSTRY_OPTIONS = [
+  ['FinTech', 'Financial services / FinTech'],
+  ['Insurance', 'Insurance'],
+  ['HealthTech', 'Healthcare / Life sciences'],
+  ['SaaS', 'SaaS / Software'],
+  ['E-commerce', 'Retail / E-commerce'],
+  ['Manufacturing', 'Manufacturing / Industrial'],
+  ['ProfessionalServices', 'Professional services'],
+  ['Education', 'Education'],
+  ['Energy', 'Energy / Utilities'],
+  ['GovTech', 'Government / Public sector'],
+  ['Nonprofit', 'Non-profit'],
+  ['Other', 'Other'],
+] as const;
+
+/** Progressive organization profile. Admins edit shared fields; invited members are read-only. */
 export function OrgBrandingCard() {
   const { profile } = useAuth();
   const orgId = profile?.organizationId;
   const isAdmin = profile?.role === 'admin';
   const [name, setName] = useState('');
+  const [industry, setIndustry] = useState('');
   const [logoUrl, setLogoUrl] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -31,6 +44,7 @@ export function OrgBrandingCard() {
       if (cancelled) return;
       const data = snap.data() || {};
       setName(typeof data.name === 'string' ? data.name : '');
+      setIndustry(typeof data.industry === 'string' ? data.industry : '');
       setLogoUrl(typeof data.logoUrl === 'string' ? data.logoUrl : '');
       setLoading(false);
     });
@@ -46,6 +60,10 @@ export function OrgBrandingCard() {
       setMessage('Organization name is required.');
       return;
     }
+    if (!industry) {
+      setMessage('Select an industry.');
+      return;
+    }
     const trimmedLogo = logoUrl.trim();
     if (trimmedLogo && !/^https:\/\//i.test(trimmedLogo)) {
       setMessage('Logo URL must start with https://');
@@ -56,11 +74,12 @@ export function OrgBrandingCard() {
     try {
       await updateDoc(doc(db, 'organizations', orgId), {
         name: trimmedName,
+        industry,
         logoUrl: trimmedLogo || null,
       });
-      setMessage('Saved. New assessment invites will show this brand on the vendor portal.');
+      setMessage('Organization profile saved.');
     } catch (err: any) {
-      setMessage(err?.message || 'Could not save branding.');
+      setMessage(err?.message || 'Could not save organization profile.');
     } finally {
       setSaving(false);
     }
@@ -71,11 +90,11 @@ export function OrgBrandingCard() {
       <CardHeader className="border-b border-white/5">
         <CardTitle className="flex items-center gap-2 text-lg">
           <Building2 className="h-5 w-5 text-primary" />
-          Company brand (vendor portal)
+          Organization profile
         </CardTitle>
         <CardDescription>
-          When you invite vendors through Guardentra SaaS, they see your company name and logo on
-          the questionnaire — not a generic Guardentra-only screen.
+          Complete this progressively. Your company name and logo appear on vendor questionnaires;
+          industry keeps workspace defaults relevant.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 p-6">
@@ -91,7 +110,7 @@ export function OrgBrandingCard() {
                   <Building2 className="h-6 w-6 text-slate-500" />
                 )}
               </div>
-              <p className="text-xs text-slate-500">Preview</p>
+              <p className="text-xs text-slate-500">Vendor-portal preview</p>
             </div>
             <label className="block text-sm text-slate-400">
               Company name
@@ -102,6 +121,20 @@ export function OrgBrandingCard() {
                 className="mt-2 border-white/10 bg-black/20 text-white"
                 placeholder="Acme Corp"
               />
+            </label>
+            <label className="block text-sm text-slate-400">
+              Industry
+              <select
+                value={industry}
+                disabled={!isAdmin}
+                onChange={(e) => setIndustry(e.target.value)}
+                className="mt-2 h-10 w-full rounded-xl border border-white/10 bg-slate-950 px-3 text-sm text-white disabled:opacity-60"
+              >
+                <option value="">Select industry…</option>
+                {INDUSTRY_OPTIONS.map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
             </label>
             <label className="block text-sm text-slate-400">
               Logo URL (https)
@@ -115,8 +148,9 @@ export function OrgBrandingCard() {
             </label>
             <Button type="button" disabled={!isAdmin || saving} onClick={() => void save()}>
               {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Save brand
+              Save organization profile
             </Button>
+            {!isAdmin ? <p className="text-xs text-slate-500">Only organization admins can change these shared settings.</p> : null}
             {message ? <p className="text-xs text-slate-400">{message}</p> : null}
           </>
         )}

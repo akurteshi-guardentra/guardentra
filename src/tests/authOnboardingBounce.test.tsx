@@ -256,7 +256,7 @@ describe('AuthContext hosted onboarding bounce', () => {
     expect(screen.queryByText('OnboardingPage')).toBeNull();
   });
 
-  it('F: missing first-time user still bootstraps', async () => {
+  it('F: new admin bootstrap lands on dashboard without old wizard', async () => {
     renderApp('/');
     await signIn();
     await emitMissingProfile();
@@ -266,8 +266,36 @@ describe('AuthContext hosted onboarding bounce', () => {
         expect.objectContaining({ email: harness.user.email }),
       ),
     );
+    await emitCloudProfile(cloudOnboarded);
+    await waitFor(() => expect(screen.getByText(/DashboardPage/)).toBeInTheDocument());
+    expect(screen.queryByText('OnboardingPage')).toBeNull();
+  });
+
+  it('F2: invited member bootstrap lands on dashboard without old wizard', async () => {
+    renderApp('/');
+    await signIn();
+    await emitMissingProfile();
+    await waitFor(() => expect(bootstrapMock).toHaveBeenCalled());
+
+    await emitCloudProfile({
+      email: 'admin@example.com',
+      displayName: 'Admin',
+      role: 'member',
+      organizationId: 'org-invited',
+      onboarded: true,
+    });
+
+    await waitFor(() => expect(screen.getByText(/DashboardPage/)).toBeInTheDocument());
+    expect(screen.getByText(/org=org-invited/)).toBeInTheDocument();
+    expect(screen.queryByText('OnboardingPage')).toBeNull();
+  });
+
+  it('F3: legacy incomplete cloud profile still routes to bounded migration bridge', async () => {
+    renderApp('/');
+    await signIn();
     await emitCloudProfile(cloudIncomplete);
     await waitFor(() => expect(screen.getByText('OnboardingPage')).toBeInTheDocument());
+    expect(screen.queryByText(/DashboardPage/)).toBeNull();
   });
 
   it('G: hosted listener error before profile → retry, no local_org, no onboarding', async () => {
