@@ -58,7 +58,6 @@ export function AssessmentWizard() {
   const [reviewCadence, setReviewCadence] = useState<string | null>(null);
   const [dueInDays, setDueInDays] = useState(14);
   const [reminderId, setReminderId] = useState<ReminderScheduleId>('before_and_due');
-  const [inviteEmail, setInviteEmail] = useState('');
   const [sendBanner, setSendBanner] = useState<{ tone: 'ok' | 'warn'; text: string } | null>(null);
   const [requesterOrgName, setRequesterOrgName] = useState('');
   const [requesterLogoUrl, setRequesterLogoUrl] = useState('');
@@ -135,12 +134,6 @@ export function AssessmentWizard() {
   );
 
   const selected = vendors.find((v) => v.id === vendorId);
-
-  useEffect(() => {
-    if (selected?.primaryContactEmail && !inviteEmail) {
-      setInviteEmail(selected.primaryContactEmail);
-    }
-  }, [selected?.primaryContactEmail, inviteEmail]);
 
   const filtered = useMemo(() => {
     const s = search.toLowerCase();
@@ -239,7 +232,7 @@ export function AssessmentWizard() {
         daysAfterDue: schedule.daysAfterDue,
         label: schedule.label,
       },
-      inviteEmail: inviteEmail || selected.primaryContactEmail || null,
+      inviteEmail: selected.primaryContactEmail || null,
       requesterOrgName: requesterOrgName || null,
       requesterLogoUrl: requesterLogoUrl || null,
     });
@@ -335,7 +328,7 @@ export function AssessmentWizard() {
           daysAfterDue: schedule.daysAfterDue,
           label: schedule.label,
         },
-        inviteEmail: inviteEmail || selected.primaryContactEmail || null,
+        inviteEmail: selected.primaryContactEmail || null,
         requesterOrgName: requesterOrgName || null,
         requesterLogoUrl: requesterLogoUrl || null,
       });
@@ -370,7 +363,7 @@ export function AssessmentWizard() {
           vendorId,
           dueAt: fields.dueAt,
           reminderScheduleId: schedule.id,
-          inviteEmail: Boolean(inviteEmail || selected.primaryContactEmail),
+          inviteEmail: Boolean(selected.primaryContactEmail),
         },
       });
 
@@ -774,7 +767,7 @@ export function AssessmentWizard() {
           <div>
             <h2 className="text-lg font-semibold text-white">Send assessment</h2>
             <p className="text-sm text-slate-400">
-              Confirm recipient, due date, and reminder schedule. Sending locks the question snapshot.
+              Confirm the authoritative vendor contact, due date, and reminder schedule. Sending locks the question snapshot.
             </p>
           </div>
 
@@ -782,11 +775,15 @@ export function AssessmentWizard() {
             <label className="block text-sm">
               <span className="text-xs font-bold uppercase tracking-widest text-slate-500">Recipient email</span>
               <Input
-                value={inviteEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
-                placeholder="vendor@example.com"
-                className="mt-2 border-white/10 bg-black/20 text-white"
+                value={selected.primaryContactEmail || ''}
+                readOnly
+                aria-readonly="true"
+                placeholder="Add a primary contact email on the vendor first"
+                className="mt-2 border-white/10 bg-black/20 text-slate-300"
               />
+              <span className="mt-1 block text-xs text-slate-500">
+                Recipient is controlled by the vendor record. Edit the vendor to change it.
+              </span>
             </label>
             <label className="block text-sm">
               <span className="text-xs font-bold uppercase tracking-widest text-slate-500">Due in (days)</span>
