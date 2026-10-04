@@ -3,6 +3,8 @@ $ErrorActionPreference = 'Stop'
 
 $scriptPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'Run-LocalSupervisor.ps1'
 . $scriptPath
+$registrationPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'Register-LocalRunnerTask.ps1'
+. $registrationPath
 
 $passes = 0
 $failures = 0
@@ -52,6 +54,13 @@ function Write-RunnerSupervisorState {
         updated_utc = [datetime]::UtcNow.ToString('o')
     } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $IssueDir 'supervisor.json') -Encoding UTF8
 }
+
+$taskSpec = Get-GuardentraRunnerTaskSpec -IntervalSeconds 30
+Assert-Runner ($taskSpec.task_name -eq 'GuardEntra Local Supervisor') 'startup task uses stable task name'
+Assert-Runner ($taskSpec.run_level -eq 'Limited') 'startup task is limited privilege'
+Assert-Runner ($taskSpec.logon_type -eq 'Interactive') 'startup task runs only in current interactive user context'
+Assert-Runner (-not $taskSpec.stores_password) 'startup task stores no password'
+Assert-Runner ($taskSpec.arguments -match 'Run-LocalSupervisor\.ps1' -and $taskSpec.arguments -match 'IntervalSeconds 30') 'startup task launches bounded persistent runner'
 
 $root = Join-Path ([IO.Path]::GetTempPath()) ('guardentra-runner-tests-' + [guid]::NewGuid().ToString('n'))
 try {
