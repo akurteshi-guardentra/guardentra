@@ -92,8 +92,8 @@ describe('#86 tenant-authorized notification intents', () => {
           }),
         }),
       }),
-      403,
-      'tenant_mismatch'
+      404,
+      'object_unavailable'
     );
   });
 
@@ -150,8 +150,8 @@ describe('#86 tenant-authorized notification intents', () => {
         }),
         publicAppUrl: 'https://app.guardentra.test',
       }),
-      403,
-      'tenant_mismatch'
+      404,
+      'object_unavailable'
     );
   });
 
