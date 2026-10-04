@@ -1,0 +1,80 @@
+name: Production Scanner Read-Only Evidence
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/prod-scanner-readonly-evidence.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  production-scanner-readonly-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TARGET_PROJECT: guardentra-prod
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/${{ vars.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-actions-ci@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Verify WIF identity can observe production project
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(gcloud projects describe "$TARGET_PROJECT" --format='value(projectId)')"
+          test "$actual" = "$TARGET_PROJECT"
+          echo "PRODUCTION_PROJECT_READ=PASS"
+
+      - name: Read production scanner-relevant resource inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "REPOSITORY_SHA=$GITHUB_SHA"
+          echo "TARGET_PROJECT=$TARGET_PROJECT"
+
+          echo "== Cloud Tasks queues (names, locations, states only) =="
+          locations="$(gcloud tasks locations list --project "$TARGET_PROJECT" --format='value(locationId)' 2>/dev/null || true)"
+          queue_found=0
+          if [ -n "$locations" ]; then
+            while IFS= read -r location; do
+              [ -n "$location" ] || continue
+              rows="$(gcloud tasks queues list                 --project "$TARGET_PROJECT"                 --location "$location"                 --filter='name:evidence OR name:scan OR name:malware'                 --format='csv[no-heading](name,state)' 2>/dev/null || true)"
+              if [ -n "$rows" ]; then
+                queue_found=1
+                printf '%s\n' "$rows"
+              fi
+            done <<< "$locations"
+          fi
+          if [ "$queue_found" -eq 0 ]; then
+            echo "PRODUCTION_SCANNER_QUEUE=NOT_OBSERVED_OR_UNREADABLE"
+          fi
+
+          echo "== Compute scanner candidates (name, zone, status only) =="
+          compute_rows="$(gcloud compute instances list             --project "$TARGET_PROJECT"             --filter='name~clamav OR name~scanner OR name~malware'             --format='csv[no-heading](name,zone.basename(),status)' 2>/dev/null || true)"
+          if [ -n "$compute_rows" ]; then
+            printf '%s\n' "$compute_rows"
+          else
+            echo "PRODUCTION_SCANNER_COMPUTE=NOT_OBSERVED_OR_UNREADABLE"
+          fi
+
+          echo "== Secret references by name only =="
+          secret_rows="$(gcloud secrets list             --project "$TARGET_PROJECT"             --filter='name~SCANNER OR name~CLAM OR name~MALWARE OR name~EVIDENCE'             --format='value(name)' 2>/dev/null || true)"
+          if [ -n "$secret_rows" ]; then
+            printf '%s\n' "$secret_rows"
+          else
+            echo "PRODUCTION_SCANNER_SECRET_REFERENCES=NOT_OBSERVED_OR_UNREADABLE"
+          fi
+
+          echo "PRODUCTION_SCANNER_READONLY_INVENTORY=COMPLETE"
