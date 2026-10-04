@@ -71,6 +71,7 @@ router.post('/mail', async (req, res) => {
       intent,
       store,
       publicAppUrl,
+      productionLike: productionLike(),
     });
 
     const queueDoc = {
