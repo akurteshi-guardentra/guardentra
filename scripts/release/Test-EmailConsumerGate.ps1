@@ -32,14 +32,26 @@ function Get-GENested {
 
 function Get-GEExtensionInstances {
     param([Parameter(Mandatory=$true)]$FirebaseJson)
-    $result=Get-GEProperty $FirebaseJson 'result' $null
-    if ($null -eq $result) { throw 'REFUSED: firebase ext:list JSON missing result' }
 
-    $instances=Get-GEProperty $result 'instances' $null
-    if ($null -ne $instances) { return @($instances) }
+    $resultProperty=$FirebaseJson.PSObject.Properties['result']
+    if ($null -eq $resultProperty) { throw 'REFUSED: firebase ext:list JSON missing result' }
+    $result=$resultProperty.Value
 
     if ($result -is [System.Array]) { return @($result) }
-    if ($result -is [System.Collections.IEnumerable] -and -not ($result -is [string]) -and $null -eq $result.PSObject.Properties['instances']) {
+
+    $instancesProperty=$null
+    if ($null -ne $result) { $instancesProperty=$result.PSObject.Properties['instances'] }
+    if ($null -ne $instancesProperty) { return @($instancesProperty.Value) }
+
+    # A current CLI with a single result can be deserialized by older PowerShell
+    # as one PSCustomObject rather than an array. Treat an object that looks like
+    # an extension row as the single row; an empty/null result is zero rows.
+    if ($null -eq $result) { return @() }
+    if (
+        $null -ne $result.PSObject.Properties['instanceId'] -or
+        $null -ne $result.PSObject.Properties['name'] -or
+        $null -ne $result.PSObject.Properties['extensionRef']
+    ) {
         return @($result)
     }
 
