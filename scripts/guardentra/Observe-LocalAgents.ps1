@@ -104,8 +104,10 @@ function ConvertTo-GuardentraObserverRow {
             heartbeat_age_s = $null
             heartbeat_state = 'unknown'
             verification = 'UNVERIFIED'
+            correction_count = 0
             attempts = 0
             handoffs = 0
+            exit_state = ''
             branch = ''
             head = ''
             worktree = ''
@@ -154,6 +156,11 @@ function ConvertTo-GuardentraObserverRow {
     $heartbeatAge = Get-GuardentraHeartbeatAgeSeconds $heartbeatUtc
     $tests = @(Get-GuardentraObserverProperty $State 'tests' @())
     $lastTest = if ($tests.Count -gt 0) { Protect-GuardentraObserverText $tests[$tests.Count - 1] } else { '' }
+    $attemptEntries = @(Get-GuardentraObserverProperty $State 'attempts' @())
+    $exitState = if ($attemptEntries.Count -gt 0) {
+        Protect-GuardentraObserverText (Get-GuardentraObserverProperty $attemptEntries[$attemptEntries.Count - 1] 'state')
+    } else { '' }
+    $correctionCount = if ($Contract) { [int](Get-GuardentraObserverProperty $Contract 'attempt_count' 0) } else { 0 }
     $heartbeatState = if ($null -eq $heartbeatAge) {
         'unknown'
     } elseif ($heartbeatAge -le 15) {
@@ -176,8 +183,10 @@ function ConvertTo-GuardentraObserverRow {
         test_count = $tests.Count
         last_test = $lastTest
         verification = (Protect-GuardentraObserverText (Get-GuardentraObserverProperty $State 'verification' 'UNVERIFIED'))
-        attempts = @(Get-GuardentraObserverProperty $State 'attempts' @()).Count
+        correction_count = $correctionCount
+        attempts = $attemptEntries.Count
         handoffs = @(Get-GuardentraObserverProperty $State 'handoffs' @()).Count
+        exit_state = $exitState
         branch = (Protect-GuardentraObserverText $branch)
         head = (Protect-GuardentraObserverText $head)
         worktree = (Protect-GuardentraObserverText $worktree)
@@ -271,7 +280,7 @@ function Show-GuardentraObserver {
             Write-Host 'No persisted agent/supervisor state matched the filter.' -ForegroundColor DarkYellow
         } else {
             $rows |
-                Select-Object issue,provider,reviewer,phase,pid,pid_state,worker_started,heartbeat_utc,heartbeat_age_s,heartbeat_state,test_count,last_test,verification,attempts,handoffs,branch,head,blocker,owner_gate |
+                Select-Object issue,provider,reviewer,phase,pid,pid_state,worker_started,heartbeat_utc,heartbeat_age_s,heartbeat_state,test_count,last_test,verification,correction_count,attempts,handoffs,exit_state,branch,head,blocker,owner_gate |
                 Format-Table -AutoSize -Wrap
 
             foreach ($row in $rows) {
