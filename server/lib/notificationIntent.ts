@@ -88,7 +88,7 @@ function validEmail(value: unknown): string {
 
 function assertSameTenant(actual: unknown, expected: string): void {
   if (typeof actual !== 'string' || actual !== expected) {
-    throw new NotificationIntentError(403, 'tenant_mismatch', 'Notification object is outside the authenticated organization');
+    throw new NotificationIntentError(404, 'object_unavailable', 'Notification object is unavailable');
   }
 }
 
