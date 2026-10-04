@@ -70,6 +70,7 @@ function Write-RunnerSupervisorState {
         feature_branch = $ContractBranch
         worktree_path = $ContractWorktree
         selected_writer_tool = 'codex'
+        attempt_count = 2
     } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $IssueDir 'contract.json') -Encoding UTF8
 }
 
@@ -201,6 +202,8 @@ try {
 
     $bound = Get-GuardentraLocalCompletionCheckpoint -IssueDir $issue90
     Assert-Runner ($bound.source -eq 'owner_local_supervisor+contract+git' -and $bound.head -eq $head -and $bound.branch -eq $branch) 'checkpoint records exact bound local provenance'
+    Assert-Runner ($bound.correction_count -eq 2) 'checkpoint publishes dispatcher correction count'
+    Assert-Runner ($bound.exit_state -eq 'available') 'checkpoint publishes latest persisted provider exit state'
     $comment = New-GuardentraCheckpointComment $bound
     Assert-Runner ($comment.Length -lt 4096) 'checkpoint body remains bounded'
 }
