@@ -210,3 +210,6 @@ finally {
 
 Write-Host "Runner tests: $passes PASS / $failures FAIL"
 if ($failures -gt 0) { exit 1 }
+# Intentional negative Git probes can leave LASTEXITCODE nonzero even when every
+# assertion passed. Normalize only after the harness has proven zero failures.
+exit 0
