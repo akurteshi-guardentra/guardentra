@@ -47,6 +47,13 @@ function Get-GuardentraLocalCompletionCheckpoint {
     $taskHash = [string](Get-GuardentraObserverProperty $state 'task_hash')
     if ([string]::IsNullOrWhiteSpace($taskHash)) { return $null }
 
+    $attemptEntries = @(Get-GuardentraObserverProperty $state 'attempts' @())
+    $exitState = if ($attemptEntries.Count -gt 0) {
+        Protect-GuardentraObserverText (Get-GuardentraObserverProperty $attemptEntries[$attemptEntries.Count - 1] 'state')
+    } else { '' }
+    $correctionCount = [int](Get-GuardentraObserverProperty $contract 'attempt_count' 0)
+    if ($correctionCount -lt 0) { return $null }
+
     $directoryIssue = Split-Path $IssueDir -Leaf
     if ($directoryIssue -notmatch '^[1-9][0-9]*$') { return $null }
     $issue = [int](Get-GuardentraObserverProperty $state 'issue' 0)
@@ -84,8 +91,10 @@ function Get-GuardentraLocalCompletionCheckpoint {
         task_hash = (Protect-GuardentraObserverText $taskHash)
         verification = (Protect-GuardentraObserverText $verification)
         test_count = @(Get-GuardentraObserverProperty $state 'tests' @()).Count
-        attempt_count = @(Get-GuardentraObserverProperty $state 'attempts' @()).Count
+        correction_count = $correctionCount
+        attempt_count = $attemptEntries.Count
         handoff_count = @(Get-GuardentraObserverProperty $state 'handoffs' @()).Count
+        exit_state = $exitState
         blocker = (Protect-GuardentraObserverText (Get-GuardentraObserverProperty $state 'blocker'))
         owner_gate = (Protect-GuardentraObserverText (Get-GuardentraObserverProperty $state 'owner_gate'))
         source = 'owner_local_supervisor+contract+git'
