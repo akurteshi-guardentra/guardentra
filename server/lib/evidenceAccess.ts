@@ -21,8 +21,9 @@ import {
   type EvidenceTrustMap,
   type EvidenceTrustRecord,
 } from '../../src/lib/vendor/evidenceTrust.ts';
-import { decisionRequiresNotes } from '../../src/lib/vendor/assessmentLifecycle.ts';
+import { decisionRequiresNotes, decisionRequiresRemediationPlan, normalizeRemediationDueAt } from '../../src/lib/vendor/assessmentLifecycle.ts';
 import type { DecisionOutcome } from '../../src/lib/vendor/assessmentExceptions.ts';
+import type { RiskLevel } from '../../src/lib/vendor/types.ts';
 
 const DECISION_OUTCOMES: readonly DecisionOutcome[] = [
   'approved',
@@ -106,6 +107,16 @@ export function parseDecisionOutcome(raw: unknown): DecisionOutcome {
   return outcome as DecisionOutcome;
 }
 
+const RESIDUAL_RISK_LEVELS: readonly RiskLevel[] = ['Critical', 'High', 'Medium', 'Low'];
+
+export function parseResidualRiskLevel(raw: unknown): RiskLevel {
+  const level = String(raw || '');
+  if (!(RESIDUAL_RISK_LEVELS as readonly string[]).includes(level)) {
+    throw new HttpError(400, 'Valid residualRiskLevel is required.');
+  }
+  return level as RiskLevel;
+}
+
 /**
  * Convert a serializable assessment patch into a Firestore `tx.update` payload.
  * `decisionNotes: null` becomes FieldValue.delete() so a prior remediate note is removed.
@@ -119,7 +130,10 @@ export function toFirestoreAssessmentUpdate(
     if (value === undefined) {
       throw new HttpError(500, `Firestore update must not contain undefined field "${key}"`);
     }
-    if (key === 'decisionNotes' && value === null) {
+    if (
+      value === null &&
+      (key === 'decisionNotes' || key === 'remediationOwner' || key === 'remediationDueAt')
+    ) {
       update[key] = FieldValue.delete();
     } else {
       update[key] = value;
@@ -452,6 +466,9 @@ export async function handleOrgDecision(req: Request, res: Response, deps: Evide
     const assessmentId = String(req.body?.assessmentId || '').trim();
     const outcome = parseDecisionOutcome(req.body?.outcome);
     const decisionNotes = String(req.body?.decisionNotes || '');
+    const remediationOwner = String(req.body?.remediationOwner || '').trim();
+    const remediationDueAt = normalizeRemediationDueAt(String(req.body?.remediationDueAt || ''));
+    const residualRiskLevel = parseResidualRiskLevel(req.body?.residualRiskLevel);
     const decoded = await requireVerifiedToken(req, deps);
     if (!assessmentId) {
       res.status(400).json({ error: 'assessmentId is required.' });
@@ -459,6 +476,14 @@ export async function handleOrgDecision(req: Request, res: Response, deps: Evide
     }
     if (decisionRequiresNotes(outcome) && !decisionNotes.trim()) {
       res.status(400).json({ error: 'Decision notes are required for this outcome.' });
+      return;
+    }
+    if (decisionRequiresRemediationPlan(outcome) && !remediationOwner) {
+      res.status(400).json({ error: 'Remediation owner is required for this outcome.' });
+      return;
+    }
+    if (decisionRequiresRemediationPlan(outcome) && !remediationDueAt) {
+      res.status(400).json({ error: 'Valid remediation due date is required for this outcome.' });
       return;
     }
 
@@ -535,6 +560,9 @@ export async function handleOrgDecision(req: Request, res: Response, deps: Evide
         outcome,
         decidedBy: decoded.uid,
         decisionNotes,
+        remediationOwner,
+        remediationDueAt: remediationDueAt || undefined,
+        residualRiskLevel,
       }) as unknown as Record<string, unknown>;
     });
 
