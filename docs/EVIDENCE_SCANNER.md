@@ -37,7 +37,7 @@ Metadata validation **never** writes `clean`.
 3. **HTTP** `POST /api/internal/evidence-scan-task` — Cloud Tasks worker. Google-signed **OIDC only**
    (audience + task service account). Does **not** accept the scanner shared secret.
 
-### Cloud Tasks contract (implementation in progress — infra not provisioned in #8H-A)
+### Cloud Tasks contract (staging LIVE VERIFIED; production NOT DEPLOYED)
 
 | Variable | Purpose |
 |----------|---------|
@@ -205,28 +205,51 @@ This is **not** independently GitHub-verified cloud state.
 | Cleanup | **PASS** |
 | Durability | **NOT YET PROVEN** (inline enqueue) |
 
-### Action #8H-A — durable Cloud Tasks delivery (repo only)
+### Action #8H-A — durable Cloud Tasks delivery (historical repo-only stage)
 
 | Item | Value |
 |------|-------|
-| Status | **IMPLEMENTATION IN PROGRESS** (this commit) |
+| Historical status | **REPO IMPLEMENTATION STAGE** — superseded by later staging provisioning/deploy/live proof |
 | Code | Cloud Tasks adapter + OIDC worker route + await-before-200 enqueue |
-| Cloud Tasks API / queue / IAM | **NOT PROVISIONED** (separate action) |
-| Staging deploy of cloud_tasks mode | **NOT DONE** |
-| Eventarc | **NOT CONFIGURED** |
+| At #8H-A | Cloud Tasks API / queue / IAM were **NOT YET PROVISIONED** |
+| At #8H-A | Staging `cloud_tasks` deploy was **NOT YET DONE** |
+| Eventarc | **NOT CONFIGURED** (still optional) |
 | Production | **UNCHANGED** |
 
-Enabling the staging flag / proving #8G does **not** establish durable delivery.
-Durable Cloud Tasks infra + staging `EVIDENCE_SCANNER_DELIVERY=cloud_tasks` remain separate gates.
+This section records the historical #8H-A point in time. It is **not current staging state**.
 
-### Explicitly still offline / incomplete
+### Actions #8H-C / #8H-D / #8H-E — durable staging delivery LIVE VERIFIED
+
+Later operator-verified transitions superseded the #8H-A staging gaps:
+
+| Item | Current verified staging state |
+|------|------|
+| Project | `guardentra-staging` |
+| Delivery | **`cloud_tasks` LIVE VERIFIED** |
+| Queue | `evidence-malware-scan` / `us-central1` / **RUNNING** |
+| Task OIDC SA | `evidence-scan-task@guardentra-staging.iam.gserviceaccount.com` |
+| Live revision | `guardentra-staging-build-2026-09-14-001` |
+| Deployed scanner source | `39fde456312586b1fff36a9cd68c13656ca6fa39` |
+| Durability proof | **PASS** — queue pause → portal validate → `scan_pending` + Cloud Task exists → queue resume → terminal verdict |
+| Clean | **PASS** — `clean` / ClamAV / clean |
+| EICAR | **PASS** — `quarantined` / ClamAV / infected / `Eicar-Test-Signature` |
+| Generation binding | **PASS** |
+| Deterministic task identity / idempotency | **PASS** |
+| Eventarc | **NOT CONFIGURED** (optional) |
+| Production | **NOT DEPLOYED** |
+
+Evidence ledger: `docs/agent-ops/PROJECT_STATE.md` and the 2026-09-15 transition in
+`docs/agent-ops/PROJECT_TRANSITIONS.md`. Those ledgers are navigation/evidence
+records; production still requires a separate owner-authorized live workstream.
+
+### Current incomplete controls
 
 | Control | Status |
 |---------|--------|
-| Staging automatic happy path (#8G) | **PROVEN** (inline) |
-| Durable Cloud Tasks delivery | **CODE READY** — infra/config/deploy **NOT** done |
-| Eventarc | **NOT CONFIGURED** |
-| Production | **UNCHANGED** |
+| Staging automatic scanner | **LIVE VERIFIED** |
+| Durable Cloud Tasks delivery | **LIVE VERIFIED** |
+| Eventarc | **NOT CONFIGURED** (optional; not required for the proven Cloud Tasks path) |
+| Production scanner | **NOT DEPLOYED** |
 
 ### Production
 
@@ -242,7 +265,7 @@ separate owner-authorized production workstream.
 | `EVIDENCE_SCANNER_SECRET` | Secret Manager secret **created**; App Hosting YAML uses symbolic `secret:` reference only |
 | `CLAMAV_HOST` / `CLAMAV_PORT` | Bound to `10.128.0.2:3310` |
 | App Hosting runtime SA | Secret Accessor on this secret; Storage/Firestore for trust writes |
-| Cloud Tasks queue / task SA | **NOT CREATED** (required before `EVIDENCE_SCANNER_DELIVERY=cloud_tasks`) |
+| Cloud Tasks queue / task SA | **LIVE VERIFIED in staging** — queue `evidence-malware-scan`; OIDC SA `evidence-scan-task@guardentra-staging.iam.gserviceaccount.com` |
 | Eventarc (optional) | Object finalize → scan endpoint — **not configured** |
 
 ## Local verify
