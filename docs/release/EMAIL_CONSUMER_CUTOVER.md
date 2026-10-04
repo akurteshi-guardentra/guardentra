@@ -2,7 +2,7 @@
 
 This gate prevents GuardEntra from deliberately releasing with both the managed Firebase Trigger Email extension and a future self-managed mail worker active on the same `mail` collection.
 
-Firebase's supported CLI includes `firebase ext:list --project <project>`, and JSON output is available with `--json`. The gate uses that read-only command for managed-extension evidence.
+The live gate deliberately avoids `firebase ext:list`: Firebase CLI may ensure/enable the Extensions API before listing instances. Instead, the gate obtains the currently authenticated Google access token from `gcloud auth print-access-token` and performs only an HTTP GET to the Firebase Extensions instance-list endpoint. The request can read or fail; it does not enable APIs or mutate extension state.
 
 ## Rule
 
@@ -31,7 +31,7 @@ Example for staging:
   -EvidenceOut <checkpoint-path.json>
 ```
 
-The command prints only a safe state summary. Raw Firebase extension JSON is never printed because extension configuration may contain sensitive parameters.
+The command prints only a safe state summary. The Google access token and raw Firebase Extensions API response are never printed. Extension configuration may contain sensitive SMTP parameters.
 
 ## Self-managed worker evidence
 

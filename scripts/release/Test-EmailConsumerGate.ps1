@@ -33,8 +33,13 @@ function Get-GENested {
 function Get-GEExtensionInstances {
     param([Parameter(Mandatory=$true)]$FirebaseJson)
 
+    # Direct read-only Firebase Extensions API response.
+    $directInstances=$FirebaseJson.PSObject.Properties['instances']
+    if ($null -ne $directInstances) { return @($directInstances.Value) }
+
+    # Offline/legacy Firebase CLI fixture compatibility.
     $resultProperty=$FirebaseJson.PSObject.Properties['result']
-    if ($null -eq $resultProperty) { throw 'REFUSED: firebase ext:list JSON missing result' }
+    if ($null -eq $resultProperty) { throw 'REFUSED: Firebase Extensions JSON missing instances/result' }
     $result=$resultProperty.Value
 
     if ($result -is [System.Array]) { return @($result) }
@@ -43,9 +48,6 @@ function Get-GEExtensionInstances {
     if ($null -ne $result) { $instancesProperty=$result.PSObject.Properties['instances'] }
     if ($null -ne $instancesProperty) { return @($instancesProperty.Value) }
 
-    # A current CLI with a single result can be deserialized by older PowerShell
-    # as one PSCustomObject rather than an array. Treat an object that looks like
-    # an extension row as the single row; an empty/null result is zero rows.
     if ($null -eq $result) { return @() }
     if (
         $null -ne $result.PSObject.Properties['instanceId'] -or
@@ -193,17 +195,36 @@ function Get-GEFirebaseObservationJson {
         return (Get-Content -LiteralPath $JsonPath -Raw -Encoding UTF8 | ConvertFrom-Json)
     }
 
-    $firebase=Get-Command firebase -ErrorAction SilentlyContinue
-    if ($null -eq $firebase) { throw 'REFUSED: Firebase CLI unavailable; live managed-consumer state cannot be proven' }
+    if ($Project -notmatch '^[a-z][a-z0-9-]{4,28}[a-z0-9]$') {
+        throw 'REFUSED: invalid Google Cloud project id'
+    }
 
-    $temp=Join-Path ([IO.Path]::GetTempPath()) ('guardentra-ext-list-' + [guid]::NewGuid().ToString('n') + '.json')
+    $gcloud=Get-Command gcloud -ErrorAction SilentlyContinue
+    if ($null -eq $gcloud) {
+        throw 'REFUSED: gcloud unavailable; live managed-consumer state cannot be proven'
+    }
+
+    $token=''
     try {
-        & $firebase.Source ext:list --json --project $Project 1> $temp 2> $null
-        if ($LASTEXITCODE -ne 0) { throw 'REFUSED: firebase ext:list failed; managed-consumer state unproven' }
-        $raw=Get-Content -LiteralPath $temp -Raw -Encoding UTF8
-        return ($raw | ConvertFrom-Json)
+        $token=[string]((& $gcloud.Source auth print-access-token --quiet 2>$null | Select-Object -First 1))
+        $token=$token.Trim()
+        if ([string]::IsNullOrWhiteSpace($token)) {
+            throw 'REFUSED: Google access token unavailable; managed-consumer state unproven'
+        }
+
+        $uri='https://firebaseextensions.googleapis.com/v1beta/projects/' + [Uri]::EscapeDataString($Project) + '/instances?pageSize=100'
+        try {
+            $response=Invoke-WebRequest -UseBasicParsing -Method Get -Uri $uri -Headers @{ Authorization=('Bearer ' + $token); Accept='application/json' } -ErrorAction Stop
+        } catch {
+            throw 'REFUSED: Firebase Extensions API read failed; managed-consumer state unproven'
+        }
+
+        if ([int]$response.StatusCode -ne 200) {
+            throw 'REFUSED: Firebase Extensions API did not return HTTP 200'
+        }
+        return ($response.Content | ConvertFrom-Json)
     } finally {
-        Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue
+        $token=''
     }
 }
 
