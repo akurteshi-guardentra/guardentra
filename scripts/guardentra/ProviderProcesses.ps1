@@ -83,7 +83,12 @@ function Invoke-GuardentraProviderProcess {
             catch [System.IO.IOException] { $inputClosed=$true }
             catch [System.ObjectDisposedException] { $inputClosed=$true }
         }
-        while ($true) {
+        # Process exit, redirected-stream drain, and ExitCode finalization are
+        # separate lifecycle events on Windows. Do not require them to become true
+        # in the same polling iteration: a child may exit before inherited output
+        # handles close, or output may complete just after the native process exits.
+        $exitObserved=$false
+        while (-not $exitObserved) {
             if (-not $inputClosed -and $null -ne $inputWrite -and $inputWrite.IsCompleted) {
                 try {
                     $inputWrite.GetAwaiter().GetResult() | Out-Null
@@ -93,16 +98,40 @@ function Invoke-GuardentraProviderProcess {
                         $process.StandardInput.Close(); $inputClosed=$true
                     }
                 } catch [System.IO.IOException] {
+                    # Expected only when the child has already closed its stdin pipe.
                     $inputClosed=$true
                 } catch [System.ObjectDisposedException] {
                     $inputClosed=$true
                 }
             }
-            if ($process.HasExited -and $stdout.IsCompleted -and $stderr.IsCompleted) { break }
+
+            if ($process.HasExited) {
+                $exitObserved=$true
+                break
+            }
             if ($Heartbeat) { & $Heartbeat }
             if ($timer.Elapsed.TotalSeconds -ge $TimeoutSeconds) { $timedOut = $true; break }
             Start-Sleep -Milliseconds 100
         }
+
+        # WaitForExit finalizes the native process handle before ExitCode is read.
+        # Keep it inside the original watchdog deadline; never add an unbounded wait.
+        if (-not $timedOut -and $exitObserved) {
+            $remainingMs=[Math]::Max(1,[int](($TimeoutSeconds-$timer.Elapsed.TotalSeconds)*1000))
+            if (-not $process.WaitForExit($remainingMs)) { $timedOut=$true }
+        }
+
+        # A descendant may inherit stdout/stderr handles after the parent exits.
+        # Drain only while the same watchdog budget remains. If those handles never
+        # close, report owner-action-required instead of hanging or unsafe failover.
+        if (-not $timedOut) {
+            while (-not ($stdout.IsCompleted -and $stderr.IsCompleted)) {
+                if ($Heartbeat) { & $Heartbeat }
+                if ($timer.Elapsed.TotalSeconds -ge $TimeoutSeconds) { $timedOut=$true; break }
+                Start-Sleep -Milliseconds 100
+            }
+        }
+
         if ($timedOut) {
             # Only the exact process object started here is targeted. No PID from model output.
             if (-not $process.HasExited) { $process.Kill() }
@@ -111,10 +140,14 @@ function Invoke-GuardentraProviderProcess {
             # Persist blocked state, never resource-failover, after any watchdog timeout.
             return [pscustomobject]@{ ExitCode=-1; Output=''; Error='watchdog timeout; descendant state requires owner reconciliation'; TimedOut=$true }
         }
+
+        # Stream task failures other than the explicitly handled child-side stdin
+        # closure above remain fatal and visible; do not suppress transport errors.
         $output = $stdout.GetAwaiter().GetResult()
         $errors = $stderr.GetAwaiter().GetResult()
+        $exitCode=$process.ExitCode
         if (($output.Length + $errors.Length) -gt 2097152) { throw 'REFUSED: oversized provider response' }
-        return [pscustomobject]@{ ExitCode=$process.ExitCode; Output=$output; Error=$errors; TimedOut=$timedOut }
+        return [pscustomobject]@{ ExitCode=$exitCode; Output=$output; Error=$errors; TimedOut=$false }
     }
     finally {
         if ($didStart -and -not $process.HasExited) {
