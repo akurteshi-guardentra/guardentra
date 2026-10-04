@@ -25,6 +25,8 @@ import {
 } from '../lib/vendor/localAssessmentStore';
 import { approvalBlockedByUntrustedEvidence } from '../lib/vendor/evidenceTrust';
 import { FRAMEWORK_CATALOG } from '../lib/vendor/constants';
+import { effectiveRiskLevel } from '../lib/vendor/risk';
+import type { RiskLevel } from '../lib/vendor/types';
 import { packsNeedingUpgradeNotice } from '../lib/vendor/frameworkPacks';
 import {
   loadOrgFrameworkPackDefaults,
@@ -40,6 +42,8 @@ import {
   canSignOffAssessment,
   decisionClosesPortal,
   decisionRequiresNotes,
+  decisionRequiresRemediationPlan,
+  normalizeRemediationDueAt,
   nextReviewAtForDecision,
 } from '../lib/vendor/assessmentLifecycle';
 import {
@@ -113,6 +117,9 @@ export function Assessments() {
   const [openConditionsOnly, setOpenConditionsOnly] = useState(monitorFocus);
   const [decisionNotes, setDecisionNotes] = useState('');
   const [decisionOutcome, setDecisionOutcome] = useState<DecisionOutcome>('approved');
+  const [remediationOwner, setRemediationOwner] = useState('');
+  const [remediationDueDate, setRemediationDueDate] = useState('');
+  const [residualRiskLevel, setResidualRiskLevel] = useState<RiskLevel>('Medium');
   const [archiveReason, setArchiveReason] = useState('');
   const [recoveringEmpty, setRecoveringEmpty] = useState(false);
   const [archivingEmpty, setArchivingEmpty] = useState(false);
@@ -248,6 +255,12 @@ export function Assessments() {
     setReviewFilter('exceptions');
     setDecisionNotes('');
     setDecisionOutcome('approved');
+    const vendor = vendors.find((v) => v.id === assessment.vendorId);
+    setRemediationOwner(assessment.remediationOwner || vendor?.ownerName || '');
+    setRemediationDueDate(assessment.remediationDueAt?.slice(0, 10) || '');
+    setResidualRiskLevel(
+      assessment.residualRiskLevel || (vendor ? effectiveRiskLevel(vendor) : 'Medium')
+    );
     setArchiveReason('');
     setIsReviewing(true);
 
@@ -343,6 +356,18 @@ export function Assessments() {
       });
       return;
     }
+    const requiresPlan = decisionRequiresRemediationPlan(outcome);
+    const normalizedRemediationDueAt = requiresPlan
+      ? normalizeRemediationDueAt(remediationDueDate)
+      : null;
+    if (requiresPlan && !remediationOwner.trim()) {
+      setToast({ tone: 'warn', text: 'Assign a remediation owner before continuing.' });
+      return;
+    }
+    if (requiresPlan && !normalizedRemediationDueAt) {
+      setToast({ tone: 'warn', text: 'Set a valid remediation due date before continuing.' });
+      return;
+    }
 
     setApproving(true);
     const decidedBy = profile?.email || profile?.displayName || 'org-admin';
@@ -351,6 +376,9 @@ export function Assessments() {
       outcome,
       decidedBy,
       decisionNotes: decisionNotes.trim() || undefined,
+      remediationOwner: requiresPlan ? remediationOwner.trim() : undefined,
+      remediationDueAt: normalizedRemediationDueAt || undefined,
+      residualRiskLevel,
     });
     const closes = decisionClosesPortal(outcome);
     const nextReviewAt = nextReviewAtForDecision(outcome);
@@ -367,6 +395,9 @@ export function Assessments() {
             assessmentId: reviewAssessment.id,
             outcome,
             decisionNotes: decisionNotes.trim() || undefined,
+            remediationOwner: requiresPlan ? remediationOwner.trim() : undefined,
+            remediationDueAt: normalizedRemediationDueAt || undefined,
+            residualRiskLevel,
           }),
         });
         if (!res.ok) {
@@ -403,6 +434,10 @@ export function Assessments() {
           nextReviewAt: closes ? nextReviewAt : null,
           exceptionCount: exceptions.length,
           hasNotes: Boolean(decisionNotes.trim()),
+          residualRiskLevel,
+          remediationRequired: requiresPlan,
+          remediationOwnerPresent: requiresPlan ? Boolean(remediationOwner.trim()) : false,
+          remediationDueAt: requiresPlan ? normalizedRemediationDueAt : null,
         },
       });
       if (exceptions.length) {
@@ -669,6 +704,12 @@ export function Assessments() {
             onDecisionNotesChange={setDecisionNotes}
             decisionOutcome={decisionOutcome}
             onDecisionOutcomeChange={setDecisionOutcome}
+            remediationOwner={remediationOwner}
+            onRemediationOwnerChange={setRemediationOwner}
+            remediationDueDate={remediationDueDate}
+            onRemediationDueDateChange={setRemediationDueDate}
+            residualRiskLevel={residualRiskLevel}
+            onResidualRiskLevelChange={setResidualRiskLevel}
             archiveReason={archiveReason}
             onArchiveReasonChange={setArchiveReason}
             approving={approving}
@@ -692,6 +733,15 @@ export function Assessments() {
                   decisionNotes: decisionNotes.trim() || undefined,
                   decidedBy: profile?.email || profile?.displayName || undefined,
                   decidedAt: new Date().toISOString(),
+                  remediationOwner:
+                    decisionRequiresRemediationPlan(decisionOutcome) && remediationOwner.trim()
+                      ? remediationOwner.trim()
+                      : undefined,
+                  remediationDueAt:
+                    decisionRequiresRemediationPlan(decisionOutcome)
+                      ? normalizeRemediationDueAt(remediationDueDate) || undefined
+                      : undefined,
+                  residualRiskLevel,
                   nextReviewAt: nextReviewAtForDecision(decisionOutcome),
                   exceptions: reviewExceptions.map((e) => ({
                     question: e.question,
