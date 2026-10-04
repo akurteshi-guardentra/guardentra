@@ -24,7 +24,7 @@ writes `supervisor.json`.
 - resolves the isolated worktree from `contract.json`
 - validates the persisted worker PID and process start time
 - classifies heartbeat freshness
-- displays a bounded, redacted provider telemetry tail
+- displays bounded operational provider telemetry that never contains raw proposal/auth output
 - adds a persistent runner that repeatedly calls the existing `night-run` command
 - publishes idempotent, redacted terminal checkpoints to the bound GitHub issue
 - adds dedicated VS Code/Cursor panes for Codex, Cursor, Gemini/Cloud, and Grok/xAI
@@ -134,7 +134,7 @@ For a live #90 supervisor state, the observer can show:
 - exact candidate HEAD
 - isolated worktree when present in the issue contract
 - redacted blocker and Owner gate
-- bounded redacted provider stdout/stderr tail
+- bounded operational provider telemetry summary
 
 The display is derived from persisted state; it does not infer provider activity from a
 terminal title or process name.
@@ -164,20 +164,20 @@ The observer never:
 
 ## Redacted provider telemetry
 
-#90 continues to capture stdout/stderr in memory for bounded provider execution.
-#106 adds a separate telemetry tail for local observation.
+#90 continues to capture stdout/stderr in memory for bounded provider execution and
+proposal parsing. #106 adds separate operational telemetry for local observation.
 
-The telemetry tail:
+Persisted observer telemetry:
 
-- is redacted before persistence
-- is capped at 2 KiB
-- strips secret-like bearer/token/API-key/password values
+- records only operational presence/status summaries
+- never contains successful proposal stdout, source bodies, prompts, or raw auth output
+- is capped at 2 KiB and redacted defensively
 - does not replace the full provider response used internally by the adapter
 - does not grant authority
 - is cleared at the beginning of the next provider execution
 
-Raw prompts, credentials, raw authentication output, and unredacted provider output
-must never be persisted for the observer.
+Raw prompts, credentials, authentication output, proposal JSON/source bodies, and raw
+provider stdout/stderr must never be persisted for the observer.
 
 ## Local completion checkpoint publishing
 
