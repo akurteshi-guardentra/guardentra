@@ -9,6 +9,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 . (Join-Path $PSScriptRoot 'Observe-LocalAgents.ps1')
+. (Join-Path $PSScriptRoot 'CloudAuthorityInventory.ps1')
 
 $script:GuardentraExpectedCheckpointRepo = 'akurteshi-guardentra/guardentra'
 
@@ -207,6 +208,26 @@ function Get-GuardentraRunnerStateRoots {
     )
 }
 
+function Test-GuardentraCloudInventoryDue {
+    param([string]$RepositoryRoot,[int]$MinimumMinutes=15)
+    $stateRoot=Join-Path $RepositoryRoot 'scripts\guardentra\state\cloud-authority'
+    $stamp=Join-Path $stateRoot 'last-run.json'
+    if (-not (Test-Path -LiteralPath $stamp)) { return $true }
+    try {
+        $obj=Get-Content -LiteralPath $stamp -Raw -Encoding UTF8 | ConvertFrom-Json
+        $last=[datetime]::Parse([string]$obj.observed_utc).ToUniversalTime()
+        return (([datetime]::UtcNow - $last).TotalMinutes -ge $MinimumMinutes)
+    } catch { return $true }
+}
+
+function Save-GuardentraCloudInventoryRunStamp {
+    param([string]$RepositoryRoot)
+    $stateRoot=Join-Path $RepositoryRoot 'scripts\guardentra\state\cloud-authority'
+    New-Item -ItemType Directory -Force -Path $stateRoot | Out-Null
+    [ordered]@{schema='guardentra.cloud_inventory_runner.v1';observed_utc=[datetime]::UtcNow.ToString('o')} |
+        ConvertTo-Json -Compress | Set-Content -LiteralPath (Join-Path $stateRoot 'last-run.json') -Encoding UTF8
+}
+
 function Invoke-GuardentraPersistentRunner {
     [CmdletBinding()]
     param(
@@ -232,6 +253,16 @@ function Invoke-GuardentraPersistentRunner {
         $nightExit = $LASTEXITCODE
         if ($nightExit -ne 0) {
             Write-Warning "GuardEntra night-run cycle exited $nightExit; continuing after bounded interval."
+        }
+
+        if (Test-GuardentraCloudInventoryDue -RepositoryRoot $repoRoot) {
+            try {
+                $cloudResult=@(Invoke-GuardentraCloudAuthorityInventory -Environment all -Publish:$PublishCheckpoints)
+                Write-Host ('Cloud authority inventory environments observed: ' + $cloudResult.Count)
+                Save-GuardentraCloudInventoryRunStamp -RepositoryRoot $repoRoot
+            } catch {
+                Write-Warning ('Cloud authority inventory deferred: ' + (Protect-GuardentraObserverText $_.Exception.Message))
+            }
         }
 
         if ($PublishCheckpoints) {

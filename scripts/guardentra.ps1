@@ -34,6 +34,7 @@ param(
         'observe',
         'runner',
         'runner-task',
+        'cloud-inventory',
         'providers',
         'provider-doctor',
         'report',
@@ -89,6 +90,7 @@ Usage:
   .\scripts\guardentra.ps1 observe [provider[,provider]] [-IntervalSeconds 2] [-Once]
   .\scripts\guardentra.ps1 runner [-IntervalSeconds 30] [-Once] [-NoPublish]
   .\scripts\guardentra.ps1 runner-task [status|install|remove] [-IntervalSeconds 30]
+  .\scripts\guardentra.ps1 cloud-inventory [all|staging|production] [-NoPublish]
   .\scripts\guardentra.ps1 providers
   .\scripts\guardentra.ps1 provider-doctor
   .\scripts\guardentra.ps1 report [morning|midday|night]
@@ -193,6 +195,11 @@ try {
                 'remove' { Remove-GuardentraRunnerScheduledTask | ConvertTo-Json -Depth 5 }
                 default { throw 'Usage: runner-task [status|install|remove] [-IntervalSeconds 30]' }
             }
+        }
+        'cloud-inventory' {
+            . (Join-Path $PSScriptRoot 'guardentra\CloudAuthorityInventory.ps1')
+            $cloudTarget = if ($Arg1) { $Arg1 } else { 'all' }
+            Invoke-GuardentraCloudAuthorityInventory -Environment $cloudTarget -Publish:(-not $NoPublish) | ConvertTo-Json -Depth 12
         }
         'providers' {
             @('codex','cursor','gemini','cloud','grok','xai') | ForEach-Object { Get-GuardentraProviderCapability $_ } | ConvertTo-Json -Depth 5

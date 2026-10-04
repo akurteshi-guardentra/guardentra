@@ -245,6 +245,27 @@
         "focus": false,
         "clear": true
       }
+    },
+    {
+      "label": "GuardEntra: Cloud authority snapshot",
+      "type": "shell",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\scripts\\guardentra.ps1",
+        "cloud-inventory",
+        "all"
+      ],
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "new",
+        "focus": false,
+        "clear": true
+      }
     }
   ]
 }
