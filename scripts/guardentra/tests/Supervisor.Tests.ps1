@@ -116,6 +116,14 @@ try {
     $fastClosed=Invoke-GuardentraProviderProcess -Executable (Join-Path $PSHOME 'powershell.exe') -Arguments @('-NoProfile','-Command',$closedStdinSource) -InputText ('x' * 1048576) -Directory $supervisorRepo -TimeoutSeconds 10
     Assert-True ($fastClosed.ExitCode -eq 9 -and -not $fastClosed.TimedOut) 'closed stdin during payload write returns real child exit'
 
+    # Delayed redirected output and non-zero exit status are separate lifecycle facts.
+    # Capture both before reading ExitCode; this reproduces the remaining Windows fixture.
+    $delayedOutputSource='Start-Sleep -Milliseconds 350; [Console]::Out.Write("late-output"); [Console]::Error.Write("late-error"); exit 13'
+    $delayedOutput=Invoke-GuardentraProviderProcess -Executable (Join-Path $PSHOME 'powershell.exe') -Arguments @('-NoProfile','-Command',$delayedOutputSource) -Directory $supervisorRepo -TimeoutSeconds 10
+    Assert-True ($delayedOutput.ExitCode -eq 13 -and -not $delayedOutput.TimedOut) 'delayed-output child preserves exact nonzero exit status'
+    Assert-True ($delayedOutput.Output -match 'late-output') 'delayed stdout is drained before provider result'
+    Assert-True ($delayedOutput.Error -match 'late-error') 'delayed stderr is drained before provider result'
+
     $script:supervisorHeartbeats=0
     $timeoutRun=Invoke-GuardentraProviderProcess -Executable (Join-Path $PSHOME 'powershell.exe') -Arguments @('-NoProfile','-Command','Start-Sleep -Seconds 30') -Directory $supervisorRepo -TimeoutSeconds 1 -Heartbeat { $script:supervisorHeartbeats++ }
     Assert-True ($timeoutRun.TimedOut -and (Get-GuardentraProviderFailureState $timeoutRun.ExitCode $timeoutRun.Error $timeoutRun.TimedOut) -eq 'owner_action_required') 'watchdog timeout returns valid non-failover state after parent termination'
