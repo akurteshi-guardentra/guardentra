@@ -39,10 +39,29 @@ function req(opts: {
   token?: string | null;
   body?: Record<string, unknown>;
   query?: Record<string, unknown>;
+  disableDecisionDefaults?: boolean;
 }) {
+  const body = { ...(opts.body || {}) };
+  const outcome = String(body.outcome || '');
+  if (
+    !opts.disableDecisionDefaults &&
+    ['approved', 'conditional', 'remediate', 'rejected'].includes(outcome)
+  ) {
+    if (!Object.prototype.hasOwnProperty.call(body, 'residualRiskLevel')) {
+      body.residualRiskLevel = 'Medium';
+    }
+    if (outcome === 'conditional' || outcome === 'remediate') {
+      if (!Object.prototype.hasOwnProperty.call(body, 'remediationOwner')) {
+        body.remediationOwner = 'Security Team';
+      }
+      if (!Object.prototype.hasOwnProperty.call(body, 'remediationDueAt')) {
+        body.remediationDueAt = '2026-12-31';
+      }
+    }
+  }
   return {
     headers: opts.token === null ? {} : { authorization: opts.token ? `Bearer ${opts.token}` : undefined },
-    body: opts.body || {},
+    body,
     query: opts.query || {},
   } as any;
 }
@@ -473,6 +492,58 @@ describe('org decisions', () => {
     expect(res.statusCode).toBe(400);
   });
 
+  it('rejects a decision without residual risk evidence', async () => {
+    const res = mockRes();
+    await handleOrgDecision(
+      req({
+        token: 'org',
+        body: { assessmentId: 'asmA', outcome: 'approved' },
+        disableDecisionDefaults: true,
+      }),
+      res as any,
+      deps()
+    );
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects conditional/remediate without structured accountability', async () => {
+    const missingOwner = mockRes();
+    await handleOrgDecision(
+      req({
+        token: 'org',
+        body: {
+          assessmentId: 'asmA',
+          outcome: 'remediate',
+          decisionNotes: 'fix SSO',
+          residualRiskLevel: 'High',
+          remediationDueAt: '2026-12-31',
+        },
+        disableDecisionDefaults: true,
+      }),
+      missingOwner as any,
+      deps()
+    );
+    expect(missingOwner.statusCode).toBe(400);
+
+    const missingDue = mockRes();
+    await handleOrgDecision(
+      req({
+        token: 'org',
+        body: {
+          assessmentId: 'asmA',
+          outcome: 'conditional',
+          decisionNotes: 'condition',
+          residualRiskLevel: 'Medium',
+          remediationOwner: 'Security Team',
+        },
+        disableDecisionDefaults: true,
+      }),
+      missingDue as any,
+      deps()
+    );
+    expect(missingDue.statusCode).toBe(400);
+  });
+
   it('rejects remediate without required notes', async () => {
     const res = mockRes();
     await handleOrgDecision(
@@ -519,6 +590,9 @@ describe('org decisions', () => {
     expect(store.decisionOutcome).toBe('remediate');
     expect(store.decidedAt).toBeTruthy();
     expect(store.portalOpen).toBe(true);
+    expect(store.remediationOwner).toBe('Security Team');
+    expect(String(store.remediationDueAt)).toContain('2026-12-31');
+    expect(store.residualRiskLevel).toBe('Medium');
   });
 
   it('allows one terminal decision after remediate, correction reopen, and resubmission', async () => {
@@ -585,6 +659,8 @@ describe('org decisions', () => {
     expect(rejectedCase.store.portalOpen).toBe(false);
     expect(rejectedCase.store.decisionNotes).toBeUndefined();
     expect(rejectedCase.store.decisionNotes).not.toBe('Fix MFA gaps');
+    expect(rejectedCase.store.remediationOwner).toBeUndefined();
+    expect(rejectedCase.store.remediationDueAt).toBeUndefined();
     expect(Object.prototype.hasOwnProperty.call(rejectedCase.store, 'decisionNotes')).toBe(
       false
     );
@@ -608,6 +684,8 @@ describe('org decisions', () => {
     expect(approvedCase.store.decisionOutcome).toBe('approved');
     expect(approvedCase.store.decisionNotes).toBeUndefined();
     expect(approvedCase.store.decisionNotes).not.toBe('Fix MFA gaps');
+    expect(approvedCase.store.remediationOwner).toBeUndefined();
+    expect(approvedCase.store.remediationDueAt).toBeUndefined();
   });
 
   it('allows approved after remediate', async () => {
@@ -768,12 +846,19 @@ describe('org decisions', () => {
     };
     expect({ ...current, decisionOutcome: 'rejected' }.decisionNotes).toBe('Fix MFA gaps');
 
-    const patch = { decisionOutcome: 'rejected', decisionNotes: null };
+    const patch = {
+      decisionOutcome: 'rejected',
+      decisionNotes: null,
+      remediationOwner: null,
+      remediationDueAt: null,
+    };
     assertNoUndefinedValues(patch);
     expect(JSON.parse(JSON.stringify(patch)).decisionNotes).toBeNull();
 
     const firestoreUpdate = toFirestoreAssessmentUpdate(patch);
     expect(isFirestoreDeleteSentinel(firestoreUpdate.decisionNotes)).toBe(true);
+    expect(isFirestoreDeleteSentinel(firestoreUpdate.remediationOwner)).toBe(true);
+    expect(isFirestoreDeleteSentinel(firestoreUpdate.remediationDueAt)).toBe(true);
 
     const applied = applyFirestoreAssessmentUpdate(current, patch);
     expect(Object.prototype.hasOwnProperty.call(applied, 'decisionNotes')).toBe(false);

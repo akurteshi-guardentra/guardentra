@@ -187,6 +187,9 @@ export type DecisionPacketInput = {
   decisionNotes?: string;
   decidedBy?: string;
   decidedAt?: string;
+  remediationOwner?: string;
+  remediationDueAt?: string;
+  residualRiskLevel?: string;
   nextReviewAt?: string;
   exceptions: { question: string; reason: string; answer?: string }[];
   triageTier?: string;
@@ -221,6 +224,10 @@ export function buildDecisionPacketHtml(input: DecisionPacketInput): string {
 </div>
 <p class="meta">Assessment ${escapeHtml(input.assessmentId)}</p>
 <p>Decided by: ${escapeHtml(input.decidedBy || '—')} at ${escapeHtml(input.decidedAt || '—')}</p>
+<p>Residual risk: <strong>${escapeHtml(input.residualRiskLevel || '—')}</strong></p>
+${input.remediationOwner || input.remediationDueAt
+  ? `<p>Remediation owner: ${escapeHtml(input.remediationOwner || '—')} · Due: ${escapeHtml(input.remediationDueAt || '—')}</p>`
+  : ''}
 <p>Next review: ${escapeHtml(input.nextReviewAt || '—')}${
     input.reviewCadence ? ` (cadence: ${escapeHtml(input.reviewCadence)})` : ''
   }</p>
