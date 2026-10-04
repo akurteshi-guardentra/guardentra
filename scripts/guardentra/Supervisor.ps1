@@ -69,7 +69,7 @@ function New-GuardentraSupervisorState {
         schema='guardentra.supervisor.v1'; issue=$Task.issue; task_hash=(Get-GuardentraTaskIdentity $Task)
         phase='queued'; provider=$Task.writer_tool; reviewer=$Task.reviewer_tool; verification='MISSING'
         snapshot=(Get-GuardentraSupervisorSnapshot $Task); tests=@(); attempts=@(); handoffs=@()
-        blocker=''; owner_gate=''; worker_pid=0; worker_started=''; heartbeat_utc=''; updated_utc=[datetime]::UtcNow.ToString('o')
+        blocker=''; owner_gate=''; worker_pid=0; worker_started=''; heartbeat_utc=''; worker_tail=''; updated_utc=[datetime]::UtcNow.ToString('o')
     }
 }
 
@@ -85,6 +85,8 @@ function Read-GuardentraSupervisorState {
     if (-not (Test-Path -LiteralPath $Path)) { return New-GuardentraSupervisorState $Task }
     $state = ConvertTo-GuardentraDataMap (Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json)
     $expected = New-GuardentraSupervisorState $Task
+    # Backward-compatible local-state migration. worker_tail carries no authority.
+    if (@($state.Keys) -cnotcontains 'worker_tail') { $state['worker_tail']='' }
     Assert-GuardentraExactKeys $state @($expected.Keys)
     if ($state.schema -cne 'guardentra.supervisor.v1' -or $state.issue -ne $Task.issue -or $state.task_hash -cne (Get-GuardentraTaskIdentity $Task)) { throw 'REFUSED: supervisor task identity changed' }
     if ($state.phase -cnotin @('queued','running','applying','testing','reviewing','correction','handoff','owner_gate','blocked')) { throw 'REFUSED: invalid supervisor phase' }
@@ -261,7 +263,7 @@ function Invoke-GuardentraSupervisorTask {
             $policyNow=Get-GuardentraSupervisorPolicy $task
             if (($policyNow | ConvertTo-Json -Compress) -cne ($policy | ConvertTo-Json -Compress)) { throw 'REFUSED: provider policy changed during run' }
             Assert-GuardentraSnapshotEqual $state.snapshot (Get-GuardentraSupervisorSnapshot $task)
-            $state.phase='running'; $state.worker_pid=0; $state.worker_started=''
+            $state.phase='running'; $state.worker_pid=0; $state.worker_started=''; $state.worker_tail=''
             $state.heartbeat_utc=[datetime]::UtcNow.ToString('o')
             Save-GuardentraSupervisorState $state $statePath
             $heartbeat={ $state.heartbeat_utc=[datetime]::UtcNow.ToString('o'); Save-GuardentraSupervisorState $state $statePath }
@@ -270,6 +272,9 @@ function Invoke-GuardentraSupervisorTask {
             $outcome=Invoke-GuardentraProposalAdapter -Task $task -Tool $state.provider -Context $context -Correction $state.blocker -Heartbeat $heartbeat -Started $started
             Assert-GuardentraSnapshotEqual $state.snapshot (Get-GuardentraSupervisorSnapshot $task)
             if ($outcome.state -cnotin $script:GuardentraProviderStates) { throw 'REFUSED: unknown provider state' }
+            $tailProp=$outcome.PSObject.Properties['telemetry_tail']
+            $state.worker_tail=if ($tailProp) { [string]$tailProp.Value } else { [string]$outcome.detail }
+            if ($state.worker_tail.Length -gt 2048) { $state.worker_tail=$state.worker_tail.Substring($state.worker_tail.Length-2048) }
             $state.worker_pid=0; $state.worker_started=''
             $state.attempts += @{ provider=$state.provider; state=$outcome.state; snapshot=$state.snapshot; tests=@(); findings=@(); utc=[datetime]::UtcNow.ToString('o') }
             if ($outcome.state -ne 'available') {
@@ -313,6 +318,9 @@ function Invoke-GuardentraSupervisorTask {
                 $state.phase='reviewing'; Save-GuardentraSupervisorState $state $statePath
                 $review=Invoke-GuardentraProposalAdapter -Task $task -Tool $state.reviewer -Context (Get-GuardentraProviderContext $task $state.snapshot $state.tests) -Review -Heartbeat $heartbeat -Started $started
                 Assert-GuardentraSnapshotEqual $state.snapshot (Get-GuardentraSupervisorSnapshot $task)
+                $reviewTail=$review.PSObject.Properties['telemetry_tail']
+                $state.worker_tail=if ($reviewTail) { [string]$reviewTail.Value } else { [string]$review.detail }
+                if ($state.worker_tail.Length -gt 2048) { $state.worker_tail=$state.worker_tail.Substring($state.worker_tail.Length-2048) }
                 $state.worker_pid=0; $state.worker_started=''
                 if ($review.state -ne 'available') {
                     $state.phase='owner_gate'; $state.owner_gate='optional reviewer unavailable'; $state.blocker=$review.state
