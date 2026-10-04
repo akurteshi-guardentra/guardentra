@@ -102,6 +102,14 @@ function Get-GuardentraCloudPrincipalKind {
     return 'unknown'
 }
 
+function Get-GuardentraCloudProperty {
+    param([AllowNull()]$Object,[string]$Name,$Default=$null)
+    if ($null -eq $Object) { return $Default }
+    $property=$Object.PSObject.Properties[$Name]
+    if ($property) { return $property.Value }
+    return $Default
+}
+
 function Get-GuardentraSendEmailExtensionSummary {
     param([string]$ProjectId)
     $r = Invoke-GuardentraCloudReadCommand -Tool firebase -Arguments @('ext:list','--json','--project',$ProjectId)
@@ -113,10 +121,15 @@ function Get-GuardentraSendEmailExtensionSummary {
     $rows=@()
     try {
         $payload = ([string]$r.Output) | ConvertFrom-Json
-        if ($payload.instances -is [array]) { $rows=@($payload.instances) }
-        elseif ($payload.result -is [array]) { $rows=@($payload.result) }
-        elseif ($payload.result -and $payload.result.instances -is [array]) { $rows=@($payload.result.instances) }
-        elseif ($payload.result) { $rows=@($payload.result) }
+        $instances = Get-GuardentraCloudProperty $payload 'instances'
+        $result = Get-GuardentraCloudProperty $payload 'result'
+        if ($instances -is [array]) { $rows=@($instances) }
+        elseif ($result -is [array]) { $rows=@($result) }
+        elseif ($result) {
+            $nestedInstances = Get-GuardentraCloudProperty $result 'instances'
+            if ($nestedInstances -is [array]) { $rows=@($nestedInstances) }
+            else { $rows=@($result) }
+        }
     } catch {
         return [ordered]@{ result='failed'; state='unverified'; instance_count=0; instances=@() }
     }
@@ -125,10 +138,16 @@ function Get-GuardentraSendEmailExtensionSummary {
     foreach($row in $rows) {
         $blob = ($row | ConvertTo-Json -Depth 8 -Compress)
         if ($blob -notmatch 'firestore-send-email|trigger email') { continue }
-        $instanceId = if ($row.instanceId) { [string]$row.instanceId } elseif ($row.name) { ([string]$row.name).Split('/')[-1] } else { 'unknown' }
-        $rowState = if ($row.state) { [string]$row.state } else { 'UNKNOWN' }
-        $extensionRef = if ($row.extensionRef) { [string]$row.extensionRef } elseif ($row.ref) { [string]$row.ref } else { 'unknown' }
-        $version = if ($row.version) { [string]$row.version } else { 'unknown' }
+        $instanceRaw = Get-GuardentraCloudProperty $row 'instanceId'
+        $nameRaw = Get-GuardentraCloudProperty $row 'name'
+        $stateRaw = Get-GuardentraCloudProperty $row 'state'
+        $extensionRaw = Get-GuardentraCloudProperty $row 'extensionRef'
+        $refRaw = Get-GuardentraCloudProperty $row 'ref'
+        $versionRaw = Get-GuardentraCloudProperty $row 'version'
+        $instanceId = if ($instanceRaw) { [string]$instanceRaw } elseif ($nameRaw) { ([string]$nameRaw).Split('/')[-1] } else { 'unknown' }
+        $rowState = if ($stateRaw) { [string]$stateRaw } else { 'UNKNOWN' }
+        $extensionRef = if ($extensionRaw) { [string]$extensionRaw } elseif ($refRaw) { [string]$refRaw } else { 'unknown' }
+        $version = if ($versionRaw) { [string]$versionRaw } else { 'unknown' }
         $safe += [ordered]@{ instance_id=$instanceId; state=$rowState; extension_ref=$extensionRef; version=$version }
     }
     $summaryState='absent'
