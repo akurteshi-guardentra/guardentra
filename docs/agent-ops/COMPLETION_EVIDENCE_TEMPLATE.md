@@ -51,6 +51,8 @@ Generate the score from explicit evidence stages; never estimate from roadmap wo
 - Current release state: `LOCAL | PR | MERGED | STAGING | PRODUCTION`
 - P0 blockers remaining:
 - Estimated remaining effort:
+- Target confidence — End of September:
+- Target confidence — Mid-October:
 - Gates that changed and exact reason/evidence:
 - Runtime evidence SHAs/environments supporting staging/production points:
 
