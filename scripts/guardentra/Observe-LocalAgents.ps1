@@ -150,7 +150,10 @@ function ConvertTo-GuardentraObserverRow {
 
     $workerPid = [int](Get-GuardentraObserverProperty $State 'worker_pid' 0)
     $workerStarted = [string](Get-GuardentraObserverProperty $State 'worker_started')
-    $heartbeatAge = Get-GuardentraHeartbeatAgeSeconds (Get-GuardentraObserverProperty $State 'heartbeat_utc')
+    $heartbeatUtc = [string](Get-GuardentraObserverProperty $State 'heartbeat_utc')
+    $heartbeatAge = Get-GuardentraHeartbeatAgeSeconds $heartbeatUtc
+    $tests = @(Get-GuardentraObserverProperty $State 'tests' @())
+    $lastTest = if ($tests.Count -gt 0) { Protect-GuardentraObserverText $tests[$tests.Count - 1] } else { '' }
     $heartbeatState = if ($null -eq $heartbeatAge) {
         'unknown'
     } elseif ($heartbeatAge -le 15) {
@@ -166,8 +169,12 @@ function ConvertTo-GuardentraObserverRow {
         phase = (Protect-GuardentraObserverText $phase)
         pid = $workerPid
         pid_state = (Get-GuardentraObserverPidState -WorkerPid $workerPid -WorkerStarted $workerStarted)
+        worker_started = (Protect-GuardentraObserverText $workerStarted)
+        heartbeat_utc = (Protect-GuardentraObserverText $heartbeatUtc)
         heartbeat_age_s = $heartbeatAge
         heartbeat_state = $heartbeatState
+        test_count = $tests.Count
+        last_test = $lastTest
         verification = (Protect-GuardentraObserverText (Get-GuardentraObserverProperty $State 'verification' 'UNVERIFIED'))
         attempts = @(Get-GuardentraObserverProperty $State 'attempts' @()).Count
         handoffs = @(Get-GuardentraObserverProperty $State 'handoffs' @()).Count
@@ -264,7 +271,7 @@ function Show-GuardentraObserver {
             Write-Host 'No persisted agent/supervisor state matched the filter.' -ForegroundColor DarkYellow
         } else {
             $rows |
-                Select-Object issue,provider,reviewer,phase,pid,pid_state,heartbeat_age_s,heartbeat_state,verification,attempts,handoffs,branch,head,blocker,owner_gate |
+                Select-Object issue,provider,reviewer,phase,pid,pid_state,worker_started,heartbeat_utc,heartbeat_age_s,heartbeat_state,test_count,last_test,verification,attempts,handoffs,branch,head,blocker,owner_gate |
                 Format-Table -AutoSize -Wrap
 
             foreach ($row in $rows) {
