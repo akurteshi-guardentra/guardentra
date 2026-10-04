@@ -10,6 +10,12 @@ export interface VerifyResult {
   message: string;
 }
 
+export function auditVerifyHttpStatus(result: VerifyResult): number {
+  if (result.ok) return 200;
+  if (result.message === 'Audit database unavailable') return 502;
+  return 409;
+}
+
 export async function verifyTenantChain(tenantId: string): Promise<VerifyResult> {
   const db = getAuditPool();
   if (!db) {

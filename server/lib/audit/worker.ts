@@ -13,15 +13,42 @@ function pollMs(): number {
   return Math.max(500, parseInt(process.env.AUDIT_WORKER_POLL_MS || '2000', 10) || 2000);
 }
 
+function leaseSeconds(): number {
+  const parsed = parseInt(process.env.AUDIT_OUTBOX_LEASE_SECONDS || '60', 10) || 60;
+  return Math.max(5, Math.min(3600, parsed));
+}
+
 function workerEnabled(): boolean {
   if (!isAuditSpineEnabled()) return false;
   const raw = (process.env.AUDIT_WORKER_ENABLED || 'true').toLowerCase();
   return raw !== 'false' && raw !== '0';
 }
 
+export async function reclaimStaleAuditOutbox(
+  dbOverride: ReturnType<typeof getAuditPool> = getAuditPool(),
+): Promise<number> {
+  const db = dbOverride;
+  if (!db) return 0;
+
+  const result = await db.query(
+    `UPDATE audit_outbox
+     SET status = CASE WHEN attempts + 1 >= $2 THEN 'dead' ELSE 'pending' END,
+         attempts = attempts + 1,
+         next_attempt_at = CASE WHEN attempts + 1 >= $2 THEN next_attempt_at ELSE now() END,
+         last_error = 'stale processing lease reclaimed',
+         updated_at = now()
+     WHERE status = 'processing'
+       AND updated_at <= now() - ($1 || ' seconds')::interval`,
+    [String(leaseSeconds()), maxAttempts()],
+  );
+  return Number(result.rowCount || 0);
+}
+
 export async function processAuditOutboxBatch(limit = 20): Promise<number> {
   const db = getAuditPool();
   if (!db) return 0;
+
+  await reclaimStaleAuditOutbox(db);
 
   const claimed = await db.query(
     `UPDATE audit_outbox
