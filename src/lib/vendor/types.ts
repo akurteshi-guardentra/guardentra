@@ -99,6 +99,11 @@ export interface VendorAssessment {
   decisionNotes?: string | null;
   decidedAt?: string;
   decidedBy?: string;
+  /** Structured accountability for conditional/remediate decisions. */
+  remediationOwner?: string | null;
+  remediationDueAt?: string | null;
+  /** Reviewer-recorded residual-risk evidence at decision time. */
+  residualRiskLevel?: RiskLevel;
   inviteEmail?: string;
   /** SaaS tenant brand stamped at invite (vendor portal chrome). */
   requesterOrgName?: string;
