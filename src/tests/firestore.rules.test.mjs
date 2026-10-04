@@ -714,6 +714,14 @@ async function main() {
       organizationId: ORG,
       title: 'Owned risk',
     });
+    await setDoc(doc(fs, `vendor_assessments/${ORG}-sparse-vendor-assessment`), {
+      organizationId: ORG,
+      status: 'Draft',
+    });
+    await setDoc(doc(fs, `evidence/${ORG}-sparse-evidence`), {
+      organizationId: ORG,
+      name: 'Legacy sparse evidence',
+    });
     // Ensure invite-create seat headroom after earlier suite increments.
     await setDoc(
       doc(fs, `organizations/${ORG}`),
@@ -788,6 +796,56 @@ async function main() {
       updateDoc(doc(db, `assessments/${ORG}-asm-owned`), {
         organizationId: ORG,
         vendorId: 'victim-vendor',
+      }),
+    ),
+  );
+
+  await check('legacy sparse vendor child CANNOT attach a cross-tenant vendor on update', () =>
+    assertFails(
+      updateDoc(doc(db, `vendor_assessments/${ORG}-sparse-vendor-assessment`), {
+        vendorId: 'victim-vendor',
+      }),
+    ),
+  );
+
+  await check('legacy sparse assessment child CANNOT attach a cross-tenant assessment on update', () =>
+    assertFails(
+      updateDoc(doc(db, `evidence/${ORG}-sparse-evidence`), {
+        assessmentId: 'victim-asm',
+      }),
+    ),
+  );
+
+  await check('legacy sparse vendor child CAN attach a valid same-tenant vendor once', () =>
+    assertSucceeds(
+      updateDoc(doc(db, `vendor_assessments/${ORG}-sparse-vendor-assessment`), {
+        vendorId: `${ORG}-v-owned`,
+      }),
+    ),
+  );
+
+  await check('legacy sparse assessment child CAN attach a valid same-tenant assessment once', () =>
+    assertSucceeds(
+      updateDoc(doc(db, `evidence/${ORG}-sparse-evidence`), {
+        assessmentId: `${ORG}-asm-owned`,
+      }),
+    ),
+  );
+
+  await check('child vendor parent field CANNOT be empty when present', () =>
+    assertFails(
+      setDoc(doc(db, 'vendor_assessments/empty-parent-61'), {
+        organizationId: ORG,
+        vendorId: '',
+      }),
+    ),
+  );
+
+  await check('child assessment parent field CANNOT be non-string when present', () =>
+    assertFails(
+      setDoc(doc(db, 'evidence/non-string-parent-61'), {
+        organizationId: ORG,
+        assessmentId: 61,
       }),
     ),
   );
