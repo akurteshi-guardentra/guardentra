@@ -174,6 +174,7 @@ export async function resolveNotificationIntent(input: {
   intent: NotificationIntentRequest;
   store: NotificationAuthorityStore;
   publicAppUrl?: string;
+  productionLike?: boolean;
   now?: Date;
 }): Promise<ResolvedNotificationIntent> {
   const { uid, intent, store } = input;
@@ -246,7 +247,7 @@ export async function resolveNotificationIntent(input: {
   const greeting = contactName ? `Hi ${contactName}` : 'Hello';
   const frameworkName = cleanLabel(assessment.frameworkName, 'Guardentra security assessment', 160);
   const due = dateLabel(assessment.dueAt ?? assessment.dueDate);
-  const baseUrl = resolvePublicAppUrl(input.publicAppUrl, true);
+  const baseUrl = resolvePublicAppUrl(input.publicAppUrl, input.productionLike ?? true);
   const portalUrl = `${baseUrl}/portal/${encodeURIComponent(intent.objectId)}`;
 
   if (intent.intentType === 'assessment_reminder') {
