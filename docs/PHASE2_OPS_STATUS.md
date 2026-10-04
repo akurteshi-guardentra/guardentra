@@ -1,6 +1,24 @@
-# Phase 2 ops enablement — status
+# Phase 2 ops enablement — HISTORICAL 2026-08-11 status
 
-_Last verified: 2026-08-11 (staging-dod-prove: **PASS** — Direct VPC + HTTP emit/verify)_
+> **HISTORICAL PROOF ONLY — DO NOT USE THESE COMMANDS FOR CURRENT #74 ENABLEMENT.**
+>
+> The proof below targeted `guardentra-7f582` before GuardEntra established the
+> current named environments. Current staging is `guardentra-staging`; current
+> production is `guardentra-prod`; `guardentra-7f582` is rollback/history only.
+>
+> Current #74 prerequisite: obtain a fresh **read-only** inventory of
+> `guardentra-staging` Cloud SQL, VPC/private connectivity, App Hosting backend and
+> runtime service account, non-secret audit env/config references, secret
+> names/references, and the current `AUDIT_SPINE_ENABLED` state. Only then derive a
+> new staging-only enablement/rollback packet. The historical commands in this file
+> must not be replayed by substitution or copy/paste.
+>
+> Repository hardening being merged does not prove staging enablement. Require live
+> exact-SHA emit → outbox → worker → hash-chain → verify/export plus tamper,
+> stale-processing recovery, crash/retry exactly-once, health/readback and rollback
+> evidence before any production promotion.
+
+_Last historical verification: 2026-08-11 (staging-dod-prove: **PASS** — Direct VPC + HTTP emit/verify)_
 
 ## staging-dod-prove result: **PASS**
 
@@ -42,7 +60,7 @@ _Last verified: 2026-08-11 (staging-dod-prove: **PASS** — Direct VPC + HTTP em
 | Commit + App Hosting rollout | Push `apphosting.yaml` `AUDIT_*` so main traffic mounts `AUDIT_DATABASE_URL` with spine **false** |
 | Optional cleanup | Temp `allow-iap-ssh` firewall + `gs://guardentra-audit-migrate-eu` — see staging doc |
 
-## Direct VPC + HTTP prove (completed 2026-08-11)
+## Historical Direct VPC + HTTP prove (completed 2026-08-11) — evidence only
 
 ```powershell
 $gcloud = "$env:LOCALAPPDATA\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd"
@@ -75,7 +93,7 @@ node scripts/staging-dod-http-prove.mjs
 
 **Tamper:** bastion PASS stands; not re-run on HTTP path.
 
-## Staging spine ON without flipping prod
+## Historical spine-ON proof without flipping then-production traffic
 
 There is **one** App Hosting backend (`guardentra` in `us-central1`) serving guardentra.com. Do **not** set `AUDIT_SPINE_ENABLED=true` on 100% traffic.
 
