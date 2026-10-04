@@ -38,6 +38,7 @@ param(
         'providers',
         'provider-doctor',
         'report',
+        'readiness',
         'help'
     )]
     [string]$Command = 'help',
@@ -94,6 +95,7 @@ Usage:
   .\scripts\guardentra.ps1 providers
   .\scripts\guardentra.ps1 provider-doctor
   .\scripts\guardentra.ps1 report [morning|midday|night]
+  .\scripts\guardentra.ps1 readiness -BodyFile <readiness-input.json>
 
 Owner grants: post ## GUARDENTRA_OWNER_GRANT JSON on the GitHub issue (allowlisted author), then sync-grants.
 Local authorize cannot mint Owner authority. Local source=github-owner-grant alone is not authority.
@@ -210,6 +212,11 @@ try {
         'report' {
             $period = if ($Arg1) { $Arg1 } else { 'morning' }
             Get-GuardentraSupervisorReport -Period $period | ConvertTo-Json -Depth 20
+        }
+        'readiness' {
+            if (-not $BodyFile) { throw 'Usage: readiness -BodyFile <readiness-input.json>' }
+            . (Join-Path $PSScriptRoot 'guardentra\ReadinessScorecard.ps1')
+            Invoke-GuardentraReadinessScorecardFile -Path $BodyFile | ConvertTo-Json -Depth 20
         }
         default { Show-GuardentraHelp }
     }

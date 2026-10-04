@@ -61,3 +61,17 @@ Optional review does not block merge after required CI passes unless the owner e
 - Remaining owner decisions:
 
 Attach the completed `COMPLETION_EVIDENCE_TEMPLATE.md`. Missing evidence prohibits a completion claim.
+
+
+## Readiness baseline / expected movement
+
+- Readiness input/evidence artifact:
+- Engineering delivery baseline: `NN/100`
+- Production go-live baseline: `NN/100`
+- Current release state: `LOCAL | PR | MERGED | STAGING | PRODUCTION`
+- P0 blockers at task start:
+- Gate(s) this task is allowed to advance:
+- Maximum evidence stage this task may claim:
+- Required exact SHA/environment/live evidence for any score increase:
+
+A task must not claim readiness movement outside its authorized scope. Repository implementation may raise engineering delivery while production go-live remains unchanged.
