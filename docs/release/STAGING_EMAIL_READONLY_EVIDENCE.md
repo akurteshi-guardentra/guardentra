@@ -6,8 +6,8 @@ After this file reaches `main`, the push-triggered workflow:
 
 1. authenticates with the repository's existing Google Workload Identity Federation identity,
 2. attempts a read-only `gcloud projects describe guardentra-staging`,
-3. runs `firebase ext:list --json --project guardentra-staging`,
-4. passes the raw JSON only to a local sanitizer,
+3. uses an OAuth access token only for a direct HTTP GET to the Firebase Extensions API instance-list endpoint,
+4. passes the raw GET response only to a local sanitizer,
 5. prints only a sanitized send-email inventory,
 6. deletes the raw extension JSON before the job exits.
 
