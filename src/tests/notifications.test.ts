@@ -24,7 +24,7 @@ describe('tenant-bound notifications client', () => {
       sendNotificationIntent({ intentType: 'assessment_invite', objectId: 'assessment-1' })
     ).resolves.toBeUndefined();
 
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(JSON.parse(String(init.body))).toEqual({
       intentType: 'assessment_invite',
       objectId: 'assessment-1',
