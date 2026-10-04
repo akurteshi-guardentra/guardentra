@@ -98,6 +98,18 @@ try {
     New-Item -ItemType Directory -Path $issue90 -Force | Out-Null
     Write-RunnerSupervisorState -IssueDir $issue90 -Issue 90 -Worktree $repo -Branch $branch -Head $head
 
+    $fixtureState = Get-Content -LiteralPath (Join-Path $issue90 'supervisor.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $fixtureContract = Get-Content -LiteralPath (Join-Path $issue90 'contract.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $fixtureExpectedDir = [IO.Path]::GetFullPath((Join-Path (Join-Path ([IO.Path]::GetFullPath($repo)) 'scripts\guardentra\state\issues') '90')).TrimEnd('\')
+    $fixtureActualDir = [IO.Path]::GetFullPath($issue90).TrimEnd('\')
+    $fixtureGitBranch = (& git -C $repo rev-parse --abbrev-ref HEAD).Trim()
+    $fixtureGitHead = (& git -C $repo rev-parse HEAD).Trim()
+    Assert-Runner ([int]$fixtureState.issue -eq 90 -and [int]$fixtureContract.issue_number -eq 90) 'fixture binds state and contract to directory issue'
+    Assert-Runner ([StringComparer]::OrdinalIgnoreCase.Equals($fixtureActualDir,$fixtureExpectedDir)) 'fixture issue path is inside registered worktree state root'
+    Assert-Runner ([string]$fixtureState.snapshot.branch -ceq [string]$fixtureContract.feature_branch -and [string]$fixtureState.snapshot.branch -ceq $fixtureGitBranch) 'fixture branch matches state, contract and git'
+    Assert-Runner ([string]$fixtureState.snapshot.head -ceq $fixtureGitHead) 'fixture head matches actual git head'
+    Assert-Runner ([StringComparer]::OrdinalIgnoreCase.Equals([IO.Path]::GetFullPath([string]$fixtureContract.worktree_path).TrimEnd('\'),[IO.Path]::GetFullPath($repo).TrimEnd('\'))) 'fixture contract worktree matches actual worktree'
+
     $publisher = {
         param($Issue,$Body)
         [void]$script:runnerPublished.Add([pscustomobject]@{ issue=$Issue; body=$Body })
