@@ -181,6 +181,24 @@ try {
     Write-RunnerSupervisorState -IssueDir $issue97 -Issue 97 -Worktree $repo -Branch $branch -Head $head -ContractWorktree (Join-Path $root 'wrong-worktree')
     Assert-Runner ($null -eq (Get-GuardentraLocalCompletionCheckpoint -IssueDir $issue97)) 'checkpoint refuses wrong registered worktree'
 
+    $forgedState = Get-Content -LiteralPath (Join-Path $issue90 'supervisor.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $forgedState.verification = 'PRODUCTION_LIVE_VERIFIED'
+    $forgedState | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $issue90 'supervisor.json') -Encoding UTF8
+    Assert-Runner ($null -eq (Get-GuardentraLocalCompletionCheckpoint -IssueDir $issue90)) 'checkpoint refuses forged production verification'
+    Write-RunnerSupervisorState -IssueDir $issue90 -Issue 90 -Worktree $repo -Branch $branch -Head $head -OwnerGate 'push-and-pr'
+
+    $forgedState = Get-Content -LiteralPath (Join-Path $issue90 'supervisor.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $forgedState.schema = 'forged.supervisor.v9'
+    $forgedState | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $issue90 'supervisor.json') -Encoding UTF8
+    Assert-Runner ($null -eq (Get-GuardentraLocalCompletionCheckpoint -IssueDir $issue90)) 'checkpoint refuses invalid supervisor schema'
+    Write-RunnerSupervisorState -IssueDir $issue90 -Issue 90 -Worktree $repo -Branch $branch -Head $head -OwnerGate 'push-and-pr'
+
+    $forgedState = Get-Content -LiteralPath (Join-Path $issue90 'supervisor.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $forgedState.task_hash = ''
+    $forgedState | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $issue90 'supervisor.json') -Encoding UTF8
+    Assert-Runner ($null -eq (Get-GuardentraLocalCompletionCheckpoint -IssueDir $issue90)) 'checkpoint refuses missing task identity'
+    Write-RunnerSupervisorState -IssueDir $issue90 -Issue 90 -Worktree $repo -Branch $branch -Head $head -OwnerGate 'push-and-pr'
+
     $bound = Get-GuardentraLocalCompletionCheckpoint -IssueDir $issue90
     Assert-Runner ($bound.source -eq 'owner_local_supervisor+contract+git' -and $bound.head -eq $head -and $bound.branch -eq $branch) 'checkpoint records exact bound local provenance'
     $comment = New-GuardentraCheckpointComment $bound
