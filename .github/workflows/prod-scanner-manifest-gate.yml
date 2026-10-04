@@ -1,0 +1,32 @@
+name: Production Scanner Manifest Gate
+
+on:
+  pull_request:
+    paths:
+      - 'apphosting.prod.yaml'
+      - 'apphosting.production.yaml'
+      - 'scripts/release/scanner-prod-preflight.mjs'
+      - 'scripts/release/tests/scanner-prod-preflight.test.mjs'
+      - '.github/workflows/prod-scanner-manifest-gate.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apphosting.prod.yaml'
+      - 'apphosting.production.yaml'
+      - 'scripts/release/scanner-prod-preflight.mjs'
+      - 'scripts/release/tests/scanner-prod-preflight.test.mjs'
+      - '.github/workflows/prod-scanner-manifest-gate.yml'
+
+jobs:
+  production-scanner-manifest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Scanner manifest unit tests
+        run: node --test scripts/release/tests/scanner-prod-preflight.test.mjs
+      - name: Current production scanner manifest gate
+        run: node scripts/release/scanner-prod-preflight.mjs apphosting.prod.yaml
