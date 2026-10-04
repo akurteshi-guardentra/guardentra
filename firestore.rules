@@ -88,10 +88,10 @@ service cloud.firestore {
 
     function childAssessmentBoundIfPresent() {
       return !('assessmentId' in request.resource.data)
-        || !(request.resource.data.assessmentId is string)
-        || request.resource.data.assessmentId.size() == 0
         || (
-          exists(/databases/$(database)/documents/assessments/$(request.resource.data.assessmentId))
+          request.resource.data.assessmentId is string
+          && request.resource.data.assessmentId.size() > 0
+          && exists(/databases/$(database)/documents/assessments/$(request.resource.data.assessmentId))
           && get(/databases/$(database)/documents/assessments/$(request.resource.data.assessmentId)).data.organizationId
             == request.resource.data.organizationId
         );
@@ -99,10 +99,10 @@ service cloud.firestore {
 
     function childVendorBoundIfPresent() {
       return !('vendorId' in request.resource.data)
-        || !(request.resource.data.vendorId is string)
-        || request.resource.data.vendorId.size() == 0
         || (
-          exists(/databases/$(database)/documents/vendors/$(request.resource.data.vendorId))
+          request.resource.data.vendorId is string
+          && request.resource.data.vendorId.size() > 0
+          && exists(/databases/$(database)/documents/vendors/$(request.resource.data.vendorId))
           && get(/databases/$(database)/documents/vendors/$(request.resource.data.vendorId)).data.organizationId
             == request.resource.data.organizationId
         );
@@ -383,7 +383,8 @@ service cloud.firestore {
       allow create: if isCreatingForOwnOrg() && childVendorBoundIfPresent();
       allow update: if isDocOrgMember()
         && orgIdUnchanged()
-        && parentVendorUnchanged();
+        && parentVendorUnchanged()
+        && childVendorBoundIfPresent();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
@@ -391,7 +392,7 @@ service cloud.firestore {
     match /vendor_assessments/{assessmentId} {
       allow read: if isDocOrgMember();
       allow create: if isCreatingForOwnOrg() && childVendorBoundIfPresent();
-      allow update: if isDocOrgMember() && orgIdUnchanged() && parentVendorUnchanged();
+      allow update: if isDocOrgMember() && orgIdUnchanged() && parentVendorUnchanged() && childVendorBoundIfPresent();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
@@ -490,7 +491,7 @@ service cloud.firestore {
     match /assessments/{assessmentId} {
       allow read: if isDocOrgMember() || (isPortalSessionFor(assessmentId) && isPortalReadableAssessment());
       allow create: if isCreatingForOwnOrg() && childVendorBoundIfPresent();
-      allow update: if (isDocOrgMember() && orgIdUnchanged() && parentVendorUnchanged() && orgPreservesSentSnapshot() && orgPreservesFinalDecision() && orgPreservesEvidenceTrust() && orgDeniesClientDecisionWrites()) ||
+      allow update: if (isDocOrgMember() && orgIdUnchanged() && parentVendorUnchanged() && childVendorBoundIfPresent() && orgPreservesSentSnapshot() && orgPreservesFinalDecision() && orgPreservesEvidenceTrust() && orgDeniesClientDecisionWrites()) ||
         (isPortalSessionFor(assessmentId) && portalSubmitTransition() && portalSubmitFieldsChanged()) ||
         (portalMayWriteAssessment(assessmentId) && onlyPortalAssessmentFieldsChanged());
       allow delete: if isDocOrgMember() && isAdmin();
@@ -509,7 +510,7 @@ service cloud.firestore {
     match /assessment_responses/{responseId} {
       allow read: if isDocOrgMember() || isPortalSessionFor(resource.data.assessmentId);
       allow create: if isCreatingForOwnOrg() && childAssessmentBoundIfPresent();
-      allow update: if (isDocOrgMember() && orgIdUnchanged() && parentAssessmentUnchanged()) ||
+      allow update: if (isDocOrgMember() && orgIdUnchanged() && parentAssessmentUnchanged() && childAssessmentBoundIfPresent()) ||
         (isPortalSessionFor(resource.data.assessmentId) && onlyPortalResponseFieldsChanged());
       allow delete: if isDocOrgMember() && isAdmin();
     }
@@ -517,7 +518,7 @@ service cloud.firestore {
     match /evidence/{evidenceId} {
       allow read: if isDocOrgMember();
       allow create: if isCreatingForOwnOrg() && childAssessmentBoundIfPresent();
-      allow update: if isDocOrgMember() && orgIdUnchanged() && parentAssessmentUnchanged();
+      allow update: if isDocOrgMember() && orgIdUnchanged() && parentAssessmentUnchanged() && childAssessmentBoundIfPresent();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
