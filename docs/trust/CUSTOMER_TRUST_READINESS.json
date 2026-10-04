@@ -1,0 +1,138 @@
+{
+  "schema": "guardentra.customer_trust_readiness.v1",
+  "production_ready": false,
+  "last_review_basis": "repository evidence; bind exact deployed SHA/environment at release",
+  "legal_gates": {
+    "privacy_notice": {
+      "status": "PENDING_COUNSEL",
+      "public_url": null
+    },
+    "terms_of_service": {
+      "status": "PENDING_COUNSEL",
+      "public_url": null
+    },
+    "data_processing_agreement": {
+      "status": "PENDING_COUNSEL",
+      "execution_path": null
+    },
+    "subprocessor_disclosure": {
+      "status": "PENDING_COUNSEL",
+      "public_url": null
+    },
+    "international_transfers": {
+      "status": "PENDING_COUNSEL",
+      "mechanism": null
+    },
+    "retention_and_deletion_terms": {
+      "status": "PENDING_COUNSEL",
+      "approved_policy": null
+    },
+    "incident_notification_terms": {
+      "status": "PENDING_COUNSEL",
+      "approved_policy": null
+    }
+  },
+  "operational_gates": {
+    "security_contact": {
+      "status": "PENDING_OWNER",
+      "value": null
+    },
+    "privacy_contact": {
+      "status": "PENDING_OWNER",
+      "value": null
+    },
+    "data_export_process": {
+      "status": "PARTIAL",
+      "evidence": [
+        "application exports exist in product areas; customer-wide export SLA/process not yet approved"
+      ]
+    },
+    "data_deletion_process": {
+      "status": "PARTIAL",
+      "evidence": [
+        "technical deletion capabilities exist per-resource; customer-wide deletion SLA/process not yet approved"
+      ]
+    },
+    "incident_response_owner": {
+      "status": "PENDING_OWNER",
+      "value": null
+    }
+  },
+  "service_register": [
+    {
+      "service": "Google Cloud / Firebase",
+      "runtime_status": "ACTIVE_VERIFIED",
+      "purpose": "application hosting, authentication, Firestore, Storage and Google Cloud infrastructure",
+      "customer_data_exposure": "YES",
+      "legal_classification": "PENDING_COUNSEL",
+      "evidence": [
+        "docs/ENVIRONMENTS.md",
+        "docs/SECRETS.md",
+        "docs/agent-ops/PROJECT_STATE.md"
+      ]
+    },
+    {
+      "service": "Google Gemini / Google GenAI",
+      "runtime_status": "UNVERIFIED_CURRENT_PRODUCTION",
+      "purpose": "server-side AI generation when configured",
+      "customer_data_exposure": "POTENTIAL",
+      "legal_classification": "PENDING_COUNSEL",
+      "evidence": [
+        "server/routes/ai.ts",
+        "docs/SECRETS.md"
+      ]
+    },
+    {
+      "service": "Stripe",
+      "runtime_status": "UNVERIFIED_CURRENT_PRODUCTION",
+      "purpose": "billing/customer subscription identity",
+      "customer_data_exposure": "YES_LIMITED_BILLING",
+      "legal_classification": "PENDING_COUNSEL",
+      "evidence": [
+        "server/routes/stripe.ts",
+        "docs/SECRETS.md",
+        "docs/ARCHITECTURE_FOUNDATION.md"
+      ]
+    },
+    {
+      "service": "SendGrid / SMTP provider",
+      "runtime_status": "PLANNED_STAGING",
+      "purpose": "invitation/notification email provider for #72 path",
+      "customer_data_exposure": "EXPECTED_EMAIL_ADDRESS_AND_MESSAGE",
+      "legal_classification": "PENDING_COUNSEL",
+      "evidence": [
+        "docs/STAGING_EMAIL_DELIVERY.md",
+        "docs/ENVIRONMENTS.md"
+      ]
+    },
+    {
+      "service": "Firebase Trigger Email managed extension",
+      "runtime_status": "UNVERIFIED_STAGING",
+      "purpose": "short-term #72 queue consumer if installed/active",
+      "customer_data_exposure": "EXPECTED_EMAIL_ADDRESS_AND_MESSAGE",
+      "legal_classification": "PENDING_COUNSEL",
+      "evidence": [
+        "docs/STAGING_EMAIL_DELIVERY.md",
+        "docs/release/EMAIL_CONSUMER_CUTOVER.md"
+      ]
+    },
+    {
+      "service": "GitHub / GitHub Actions",
+      "runtime_status": "ENGINEERING_ONLY",
+      "purpose": "source control and CI/CD evidence",
+      "customer_data_exposure": "PROHIBITED_BY_PROCESS",
+      "legal_classification": "PENDING_COUNSEL",
+      "evidence": [
+        "AGENTS.md",
+        "docs/agent-ops/AGENTIC_MANAGEMENT_MODEL.md"
+      ]
+    }
+  ],
+  "release_invariants": [
+    "No service is called a subprocessor or excluded from subprocessor status without counsel/Owner classification.",
+    "Planned or unverified services are not represented as active.",
+    "No SOC 2, ISO 27001, FedRAMP or other certification is claimed without evidence.",
+    "Production scanner, email delivery and audit-spine state must follow live evidence, not repository intent.",
+    "Customer-facing legal documents require approved version, effective date, owner and publication/execution path."
+  ]
+}
