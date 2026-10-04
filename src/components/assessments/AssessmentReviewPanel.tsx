@@ -28,6 +28,7 @@ import {
 } from '../../lib/vendor/emptyAssessmentRecovery';
 import type { FrameworkPackDefaults } from '../../lib/vendor/orgFrameworkPacks';
 import type { StoredAssessment } from '../../lib/vendor/localAssessmentStore';
+import type { RiskLevel } from '../../lib/vendor/types';
 
 function frameworkLabel(a: StoredAssessment): string {
   if (a.frameworkName) {
@@ -79,6 +80,12 @@ export type AssessmentReviewPanelProps = {
   onDecisionNotesChange: (notes: string) => void;
   decisionOutcome: DecisionOutcome;
   onDecisionOutcomeChange: (outcome: DecisionOutcome) => void;
+  remediationOwner: string;
+  onRemediationOwnerChange: (owner: string) => void;
+  remediationDueDate: string;
+  onRemediationDueDateChange: (date: string) => void;
+  residualRiskLevel: RiskLevel;
+  onResidualRiskLevelChange: (level: RiskLevel) => void;
   archiveReason: string;
   onArchiveReasonChange: (reason: string) => void;
   approving: boolean;
@@ -106,6 +113,12 @@ export function AssessmentReviewPanel({
   onDecisionNotesChange,
   decisionOutcome,
   onDecisionOutcomeChange,
+  remediationOwner,
+  onRemediationOwnerChange,
+  remediationDueDate,
+  onRemediationDueDateChange,
+  residualRiskLevel,
+  onResidualRiskLevelChange,
   archiveReason,
   onArchiveReasonChange,
   approving,
@@ -417,6 +430,12 @@ export function AssessmentReviewPanel({
                   onDecisionOutcomeChange={onDecisionOutcomeChange}
                   decisionNotes={decisionNotes}
                   onDecisionNotesChange={onDecisionNotesChange}
+                  remediationOwner={remediationOwner}
+                  onRemediationOwnerChange={onRemediationOwnerChange}
+                  remediationDueDate={remediationDueDate}
+                  onRemediationDueDateChange={onRemediationDueDateChange}
+                  residualRiskLevel={residualRiskLevel}
+                  onResidualRiskLevelChange={onResidualRiskLevelChange}
                   approving={approving}
                   assessment={reviewAssessment}
                   onDecide={onDecide}
@@ -436,6 +455,12 @@ function AssessmentDecisionBar({
   onDecisionOutcomeChange,
   decisionNotes,
   onDecisionNotesChange,
+  remediationOwner,
+  onRemediationOwnerChange,
+  remediationDueDate,
+  onRemediationDueDateChange,
+  residualRiskLevel,
+  onResidualRiskLevelChange,
   approving,
   assessment,
   onDecide,
@@ -445,6 +470,12 @@ function AssessmentDecisionBar({
   onDecisionOutcomeChange: (outcome: DecisionOutcome) => void;
   decisionNotes: string;
   onDecisionNotesChange: (notes: string) => void;
+  remediationOwner: string;
+  onRemediationOwnerChange: (owner: string) => void;
+  remediationDueDate: string;
+  onRemediationDueDateChange: (date: string) => void;
+  residualRiskLevel: RiskLevel;
+  onResidualRiskLevelChange: (level: RiskLevel) => void;
   approving: boolean;
   assessment: StoredAssessment;
   onDecide: (outcome: DecisionOutcome) => void;
@@ -489,6 +520,41 @@ function AssessmentDecisionBar({
         }
         className="mb-3 min-h-[72px] w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-xs text-slate-200 placeholder:text-slate-600"
       />
+      <label className="mb-3 block text-[11px] font-medium text-slate-400">
+        Residual risk
+        <select
+          value={residualRiskLevel}
+          onChange={(e) => onResidualRiskLevelChange(e.target.value as RiskLevel)}
+          className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-slate-950 px-2 text-xs text-white"
+        >
+          {(['Critical', 'High', 'Medium', 'Low'] as RiskLevel[]).map((level) => (
+            <option key={level} value={level}>{level}</option>
+          ))}
+        </select>
+      </label>
+      {(decisionOutcome === 'conditional' || decisionOutcome === 'remediate') && (
+        <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <label className="text-[11px] font-medium text-slate-400">
+            Remediation owner
+            <input
+              type="text"
+              value={remediationOwner}
+              onChange={(e) => onRemediationOwnerChange(e.target.value)}
+              placeholder="Accountable owner"
+              className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-black/30 px-2 text-xs text-white"
+            />
+          </label>
+          <label className="text-[11px] font-medium text-slate-400">
+            Due date
+            <input
+              type="date"
+              value={remediationDueDate}
+              onChange={(e) => onRemediationDueDateChange(e.target.value)}
+              className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-black/30 px-2 text-xs text-white"
+            />
+          </label>
+        </div>
+      )}
       <div className="space-y-3">
         <Button
           className={cn(
@@ -501,6 +567,8 @@ function AssessmentDecisionBar({
           )}
           disabled={
             approving ||
+            ((decisionOutcome === 'conditional' || decisionOutcome === 'remediate') &&
+              (!decisionNotes.trim() || !remediationOwner.trim() || !remediationDueDate)) ||
             (assessment.status !== 'Under Review' &&
               assessment.status !== 'Completed' &&
               progressOf(assessment) <= 0)
