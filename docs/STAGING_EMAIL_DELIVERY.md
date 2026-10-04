@@ -168,20 +168,55 @@ follow-up Owner decision for long-term provider strategy.
 7. Confirm recipient inbox (or spam) separately — inbox receipt is required evidence.
 8. Record: mail doc id, timestamps, `delivery.state`, messageId (not secrets).
 
-### Failure path
+### Failure path — credentials must remain unchanged
 
-1. Temporarily break SMTP (invalid password in extension **or** send to a
-   provider-rejected address Owner controls for testing). Prefer a disposable
-   invalid mailbox pattern SendGrid rejects, or a short-lived bad SMTP password
-   with immediate restore.
-2. Invite Vendor again (or Admin-write a test `mail` doc with the same schema).
-3. Expect failure to be observable (typically `delivery.state == ERROR` and
-   non-empty `delivery.error` when the installed extension records it that way).
-4. Confirm UI still distinguishes **queue** failure (no doc / 502) from **delivery**
-   failure (doc exists; extension reports failure).
-5. Restore valid SMTP immediately.
-6. Any manual re-send: follow only the procedure documented for the **installed**
-   extension version (do not assume `RETRY`/`PENDING` without verification).
+Do **not** invalidate, rotate, replace, or otherwise break the SMTP password/API key
+as a routine acceptance test. A credential mutation is a privileged configuration
+change, not an ordinary failure fixture.
+
+Use this decision order:
+
+1. Record the exact installed `firestore-send-email` version and exact SendGrid SMTP
+   path used by staging.
+2. If that exact consumer/provider path documents a **non-secret, staging-safe,
+   deterministic rejection/failure fixture**, use only that documented mechanism.
+   Record the provider/extension documentation source and expected failure semantics.
+3. Do **not** substitute SendGrid Mail Send API Sandbox Mode for this SMTP test.
+   Sandbox Mode validates the Mail Send API request and does not exercise this
+   extension's SMTP delivery path.
+4. Do **not** use `@sink.sendgrid.net` as failure evidence. SendGrid documents the
+   sink domain as accepting messages and deleting them, so it is useful for relay
+   throughput testing but does not prove an SMTP send failure.
+5. Do **not** deliberately generate hard bounces with random/nonexistent recipients
+   merely to force an error; bounce behavior can be asynchronous and repeated hard
+   bounces can affect sender reputation.
+6. If no deterministic non-secret SMTP failure mechanism is documented for the exact
+   installed path, record this acceptance item as **BLOCKED**. Open a separately
+   scoped staging failure-injection task rather than weakening credentials or
+   inventing provider behavior.
+7. When a safe failure fixture exists, queue one bounded test message and prove:
+   - the durable `mail` document exists;
+   - queue success is still distinct from provider/delivery failure;
+   - the installed extension/provider exposes the failure in its documented state
+     and fields;
+   - no duplicate provider submission is produced by the recovery/retry procedure.
+8. Any manual re-send/retry must follow only the procedure documented for the
+   **installed** extension version; do not assume `RETRY`/`PENDING` behavior.
+
+Official SendGrid references used for the failure-test boundary:
+
+- Sandbox Mode (Mail Send API only):
+  https://www.twilio.com/docs/sendgrid/for-developers/sending-email/sandbox-mode
+- Safely test sending speed (`@sink.sendgrid.net` accepts and discards messages):
+  https://www.twilio.com/docs/sendgrid/ui/account-and-settings/safely-test-your-sending-speed
+- Bounce semantics (synchronous vs asynchronous):
+  https://www.twilio.com/docs/sendgrid/glossary/bounces
+
+**Exceptional credential mutation:** if a real SMTP credential change is ever judged
+unavoidable, handle it as a separate explicitly privileged staging task with exact
+secret reference/version preflight, Owner authorization, readback, immediate
+restore/rollback evidence, and no secret value in logs/chat/GitHub. It is not part of
+this routine acceptance procedure.
 
 ### Negative controls
 
