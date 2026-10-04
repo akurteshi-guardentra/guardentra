@@ -10,8 +10,16 @@ function valueAt(object, path) {
 }
 
 export function extensionRows(payload) {
-  if (!payload || typeof payload !== 'object' || !Object.prototype.hasOwnProperty.call(payload, 'result')) {
-    throw new Error('firebase ext:list JSON missing result');
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('Firebase Extensions JSON must be an object');
+  }
+
+  // Direct read-only Firebase Extensions API response.
+  if (Array.isArray(payload.instances)) return payload.instances;
+
+  // Compatibility with sanitized/offline Firebase CLI fixtures.
+  if (!Object.prototype.hasOwnProperty.call(payload, 'result')) {
+    throw new Error('Firebase Extensions JSON missing instances/result');
   }
   const result = payload.result;
   if (Array.isArray(result)) return result;
