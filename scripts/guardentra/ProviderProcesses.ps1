@@ -56,10 +56,22 @@ function Protect-GuardentraProviderTelemetryText {
 
 function Get-GuardentraProviderTelemetryTail {
     param([AllowNull()][object]$Output, [AllowNull()][object]$ErrorText)
-    $parts=@()
-    if (-not [string]::IsNullOrWhiteSpace([string]$ErrorText)) { $parts += ('stderr: ' + [string]$ErrorText) }
-    if (-not [string]::IsNullOrWhiteSpace([string]$Output)) { $parts += ('stdout: ' + [string]$Output) }
-    return Protect-GuardentraProviderTelemetryText ($parts -join [Environment]::NewLine)
+    # Provider stdout/stderr may contain prompts, proposal JSON, full source bodies,
+    # auth diagnostics, or secret-bearing text. Persist operational presence only.
+    $hasOutput=-not [string]::IsNullOrWhiteSpace([string]$Output)
+    $hasError=-not [string]::IsNullOrWhiteSpace([string]$ErrorText)
+    if ($hasOutput -and $hasError) { return 'provider stdout/stderr received; raw output omitted' }
+    if ($hasError) { return 'provider stderr received; raw output omitted' }
+    if ($hasOutput) { return 'provider stdout received; raw output omitted' }
+    return ''
+}
+
+function Get-GuardentraOptionalTelemetryTail {
+    param([AllowNull()][object]$Run)
+    if ($null -eq $Run) { return '' }
+    $property=$Run.PSObject.Properties['TelemetryTail']
+    if ($null -eq $property -or $null -eq $property.Value) { return '' }
+    return Protect-GuardentraProviderTelemetryText ([string]$property.Value)
 }
 
 function Invoke-GuardentraProviderProcess {
@@ -310,9 +322,9 @@ function Invoke-GuardentraProposalAdapter {
     try { $run = Invoke-GuardentraProviderProcess -Executable $capability.executable -Arguments $arguments -InputText $prompt -Directory $Task.isolated_worktree_path -TimeoutSeconds 120 -Heartbeat $Heartbeat -Started $Started }
     catch { return [pscustomobject]@{ state='owner_action_required'; proposal=$null; detail='process launch/termination uncertain; owner reconciliation required'; telemetry_tail='' } }
     $state = Get-GuardentraProviderFailureState -ExitCode $run.ExitCode -Text $run.Error -TimedOut $run.TimedOut
-    if ($state -ne 'available') { return [pscustomobject]@{ state=$state; proposal=$null; detail='provider failed; raw output omitted'; telemetry_tail=$run.TelemetryTail } }
-    try { $proposal = $run.Output | ConvertFrom-Json } catch { return [pscustomobject]@{ state='failed'; proposal=$null; detail='invalid provider JSON'; telemetry_tail=$run.TelemetryTail } }
-    return [pscustomobject]@{ state='available'; proposal=$proposal; detail='untrusted proposal received'; telemetry_tail=$run.TelemetryTail }
+    if ($state -ne 'available') { return [pscustomobject]@{ state=$state; proposal=$null; detail='provider failed; raw output omitted'; telemetry_tail=(Get-GuardentraOptionalTelemetryTail $run) } }
+    try { $proposal = $run.Output | ConvertFrom-Json } catch { return [pscustomobject]@{ state='failed'; proposal=$null; detail='invalid provider JSON'; telemetry_tail=(Get-GuardentraOptionalTelemetryTail $run) } }
+    return [pscustomobject]@{ state='available'; proposal=$proposal; detail='untrusted proposal received'; telemetry_tail=(Get-GuardentraOptionalTelemetryTail $run) }
 }
 
 function Invoke-GuardentraGrokProposal {
@@ -333,11 +345,11 @@ function Invoke-GuardentraGrokProposal {
         $arguments=@('--single',$Prompt,'--output-format','json','--tools','read_file','--disallowed-tools','read_file,search_tool,use_tool,Agent','--deny','MCPTool','--deny','Bash','--deny','Write','--deny','Edit','--no-subagents','--disable-web-search','--permission-mode','dontAsk','--max-turns','1','--no-auto-update')
         $run=Invoke-GuardentraProviderProcess -Executable $Executable -Arguments $arguments -Directory $directory -TimeoutSeconds 120 -Heartbeat $Heartbeat -Started $Started -EnvironmentOverrides $environment
         $state=Get-GuardentraProviderFailureState $run.ExitCode ($run.Error + $run.Output) $run.TimedOut
-        if ($state -ne 'available') { return [pscustomobject]@{ state=$state; proposal=$null; detail='Grok bounded execution unsuccessful; raw output omitted'; telemetry_tail=$run.TelemetryTail } }
+        if ($state -ne 'available') { return [pscustomobject]@{ state=$state; proposal=$null; detail='Grok bounded execution unsuccessful; raw output omitted'; telemetry_tail=(Get-GuardentraOptionalTelemetryTail $run) } }
         $envelope=$run.Output | ConvertFrom-Json
         if ($envelope.stopReason -cne 'end_turn' -or $envelope.text -isnot [string]) { throw 'incomplete response' }
         $proposal=$envelope.text | ConvertFrom-Json
-        return [pscustomobject]@{ state='available'; proposal=$proposal; detail='untrusted proposal received; empty extension inventory and tool removal enforced'; telemetry_tail=$run.TelemetryTail }
+        return [pscustomobject]@{ state='available'; proposal=$proposal; detail='untrusted proposal received; empty extension inventory and tool removal enforced'; telemetry_tail=(Get-GuardentraOptionalTelemetryTail $run) }
     } catch { return [pscustomobject]@{ state='owner_action_required'; proposal=$null; detail='Grok confinement/process/response unverified; raw output omitted'; telemetry_tail='' } }
     finally {
         $resolved=[IO.Path]::GetFullPath($directory)
