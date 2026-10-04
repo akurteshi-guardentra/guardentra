@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import * as firestore from 'firebase/firestore';
 import { Onboarding } from '../pages/Onboarding';
 import { __resetOnboardingAcksForTests, acknowledgeOnboardingComplete, clearOnboardingAck, hasOnboardingAck } from '../lib/onboardingAck';
@@ -32,6 +32,7 @@ vi.mock('../lib/AuthContext', () => ({
 vi.mock('../lib/firebase-utils', () => ({ logOut: vi.fn() }));
 
 function AppShell() {
+  useLocation(); // subscribe harness to navigation so gate inputs are recomputed after Onboarding navigate()
   const profile = authState.profile;
   const user = authState.user;
   const loading = authState.loading;
