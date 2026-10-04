@@ -57,11 +57,10 @@ function Get-GuardentraLocalCompletionCheckpoint {
         $expectedIssueDir = [IO.Path]::GetFullPath((Join-Path (Join-Path $worktreeFull 'scripts\guardentra\state\issues') ([string]$issue))).TrimEnd('\')
         if (-not [StringComparer]::OrdinalIgnoreCase.Equals($issueFull,$expectedIssueDir)) { return $null }
         $actualBranch = [string](& git -C $worktreeFull rev-parse --abbrev-ref HEAD 2>$null | Select-Object -First 1)
-        if ($LASTEXITCODE -ne 0) { return $null }
         $actualHead = [string](& git -C $worktreeFull rev-parse HEAD 2>$null | Select-Object -First 1)
-        if ($LASTEXITCODE -ne 0) { return $null }
         $actualBranch = $actualBranch.Trim()
         $actualHead = $actualHead.Trim()
+        if ([string]::IsNullOrWhiteSpace($actualBranch) -or [string]::IsNullOrWhiteSpace($actualHead)) { return $null }
         if ($actualBranch -cne $branch -or $actualHead -cne $head) { return $null }
     } catch { return $null }
 
