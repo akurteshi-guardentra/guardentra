@@ -82,6 +82,13 @@ try {
     Save-GuardentraSupervisorState $initial $supervisorStatePath
     $restored=Read-GuardentraSupervisorState $supervisorTask $supervisorStatePath
     Assert-True ($restored.task_hash -eq $initial.task_hash -and $restored.snapshot.digest -eq $initial.snapshot.digest) 'atomic persisted task/snapshot survives restart'
+    $legacyState=ConvertTo-GuardentraDataMap $initial
+    [void]$legacyState.Remove('worker_tail')
+    Write-GuardentraAtomicJson $supervisorStatePath $legacyState
+    $migratedState=Read-GuardentraSupervisorState $supervisorTask $supervisorStatePath
+    Assert-True ($migratedState.worker_tail -eq '') 'pre-observer supervisor state migrates with empty non-authority worker tail'
+    Save-GuardentraSupervisorState $initial $supervisorStatePath
+    $restored=Read-GuardentraSupervisorState $supervisorTask $supervisorStatePath
     $restored.phase='running'; $restored.worker_pid=$PID; $restored.worker_started=(Get-Process -Id $PID).StartTime.ToUniversalTime().ToString('o')
     Save-GuardentraSupervisorState $restored $supervisorStatePath
     Assert-Throws { Read-GuardentraSupervisorState $supervisorTask $supervisorStatePath } 'live stale worker prevents concurrent restart'
@@ -123,6 +130,13 @@ try {
     Assert-True ($delayedOutput.ExitCode -eq 13 -and -not $delayedOutput.TimedOut) 'delayed-output child preserves exact nonzero exit status'
     Assert-True ($delayedOutput.Output -match 'late-output') 'delayed stdout is drained before provider result'
     Assert-True ($delayedOutput.Error -match 'late-error') 'delayed stderr is drained before provider result'
+    Assert-True ($delayedOutput.TelemetryTail -match 'late-output' -and $delayedOutput.TelemetryTail -match 'late-error') 'observer telemetry tail preserves delayed stdout and stderr'
+
+    $telemetrySecretSource='[Console]::Error.Write("token=supersecret"); [Console]::Out.Write("api_key=anothersecret"); exit 0'
+    $telemetrySecret=Invoke-GuardentraProviderProcess -Executable (Join-Path $PSHOME 'powershell.exe') -Arguments @('-NoProfile','-Command',$telemetrySecretSource) -Directory $supervisorRepo -TimeoutSeconds 10
+    Assert-True ($telemetrySecret.TelemetryTail -match '\[REDACTED\]') 'observer telemetry redacts secret-like provider output'
+    Assert-True ($telemetrySecret.TelemetryTail -notmatch 'supersecret|anothersecret') 'observer telemetry never persists secret-like values'
+    Assert-True ($telemetrySecret.TelemetryTail.Length -le 2048) 'observer telemetry tail is bounded'
 
     $script:supervisorHeartbeats=0
     $timeoutRun=Invoke-GuardentraProviderProcess -Executable (Join-Path $PSHOME 'powershell.exe') -Arguments @('-NoProfile','-Command','Start-Sleep -Seconds 30') -Directory $supervisorRepo -TimeoutSeconds 1 -Heartbeat { $script:supervisorHeartbeats++ }
