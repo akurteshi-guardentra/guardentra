@@ -33,7 +33,7 @@ import {
 } from '../lib/vendor/localVendorStore';
 import { syncVendorAfterAssessmentCreate } from '../lib/vendor/syncVendorAssessment';
 import { buildCreateAssessmentFields } from '../lib/vendor/assessmentLifecycle';
-import { sendEmail } from '../lib/notifications';
+import { sendNotificationIntent } from '../lib/notifications';
 import { isTriageTier, parseFrameworksParam } from '../lib/vendor/fastTrackTriage';
 import { loadVendorTriage } from '../lib/vendor/vendorTriageStore';
 import { emitAuditBestEffort } from '../lib/auditClient';
@@ -58,7 +58,6 @@ export function AssessmentWizard() {
   const [reviewCadence, setReviewCadence] = useState<string | null>(null);
   const [dueInDays, setDueInDays] = useState(14);
   const [reminderId, setReminderId] = useState<ReminderScheduleId>('before_and_due');
-  const [inviteEmail, setInviteEmail] = useState('');
   const [sendBanner, setSendBanner] = useState<{ tone: 'ok' | 'warn'; text: string } | null>(null);
   const [requesterOrgName, setRequesterOrgName] = useState('');
   const [requesterLogoUrl, setRequesterLogoUrl] = useState('');
@@ -135,12 +134,6 @@ export function AssessmentWizard() {
   );
 
   const selected = vendors.find((v) => v.id === vendorId);
-
-  useEffect(() => {
-    if (selected?.primaryContactEmail && !inviteEmail) {
-      setInviteEmail(selected.primaryContactEmail);
-    }
-  }, [selected?.primaryContactEmail, inviteEmail]);
 
   const filtered = useMemo(() => {
     const s = search.toLowerCase();
@@ -239,7 +232,7 @@ export function AssessmentWizard() {
         daysAfterDue: schedule.daysAfterDue,
         label: schedule.label,
       },
-      inviteEmail: inviteEmail || selected.primaryContactEmail || null,
+      inviteEmail: selected.primaryContactEmail || null,
       requesterOrgName: requesterOrgName || null,
       requesterLogoUrl: requesterLogoUrl || null,
     });
@@ -335,7 +328,7 @@ export function AssessmentWizard() {
           daysAfterDue: schedule.daysAfterDue,
           label: schedule.label,
         },
-        inviteEmail: inviteEmail || selected.primaryContactEmail || null,
+        inviteEmail: selected.primaryContactEmail || null,
         requesterOrgName: requesterOrgName || null,
         requesterLogoUrl: requesterLogoUrl || null,
       });
@@ -370,27 +363,25 @@ export function AssessmentWizard() {
           vendorId,
           dueAt: fields.dueAt,
           reminderScheduleId: schedule.id,
-          inviteEmail: Boolean(inviteEmail || selected.primaryContactEmail),
+          inviteEmail: Boolean(selected.primaryContactEmail),
         },
       });
 
-      const to = (inviteEmail || selected.primaryContactEmail || '').trim();
+      const to = (selected.primaryContactEmail || '').trim();
       if (to) {
-        const portalUrl = `${window.location.origin}/portal/${ref.id}`;
         try {
-          await sendEmail({
-            to,
-            subject: `Security assessment request — ${selected.name}`,
-            text: `Hi${selected.primaryContactName ? ` ${selected.primaryContactName}` : ''},\n\n${selected.name} has been asked to complete a security assessment (${frameworkName}).\n\nComplete it here: ${portalUrl}\n\nDue: ${due.toLocaleDateString()}\nReminders: ${schedule.label}\n\nYour progress saves automatically and this link stays valid until the assessment is complete.`,
+          await sendNotificationIntent({
+            intentType: 'assessment_invite',
+            objectId: ref.id,
           });
           setSendBanner({
             tone: 'ok',
-            text: `Assessment sent. Invite queued to ${to} (needs Trigger Email + SMTP to deliver).`,
+            text: `Assessment created. Invite queued to the vendor's authoritative contact ${to} (queue success is not delivery proof).`,
           });
         } catch (mailEx: unknown) {
           setSendBanner({
             tone: 'warn',
-            text: `Assessment created; email could not be queued${mailEx instanceof Error ? ` (${mailEx.message})` : ''}.`,
+            text: `Assessment created; authorized invite could not be queued${mailEx instanceof Error ? ` (${mailEx.message})` : ''}.`,
           });
         }
       }
@@ -776,7 +767,7 @@ export function AssessmentWizard() {
           <div>
             <h2 className="text-lg font-semibold text-white">Send assessment</h2>
             <p className="text-sm text-slate-400">
-              Confirm recipient, due date, and reminder schedule. Sending locks the question snapshot.
+              Confirm the authoritative vendor contact, due date, and reminder schedule. Sending locks the question snapshot.
             </p>
           </div>
 
@@ -784,11 +775,15 @@ export function AssessmentWizard() {
             <label className="block text-sm">
               <span className="text-xs font-bold uppercase tracking-widest text-slate-500">Recipient email</span>
               <Input
-                value={inviteEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
-                placeholder="vendor@example.com"
-                className="mt-2 border-white/10 bg-black/20 text-white"
+                value={selected.primaryContactEmail || ''}
+                readOnly
+                aria-readonly="true"
+                placeholder="Add a primary contact email on the vendor first"
+                className="mt-2 border-white/10 bg-black/20 text-slate-300"
               />
+              <span className="mt-1 block text-xs text-slate-500">
+                Recipient is controlled by the vendor record. Edit the vendor to change it.
+              </span>
             </label>
             <label className="block text-sm">
               <span className="text-xs font-bold uppercase tracking-widest text-slate-500">Due in (days)</span>

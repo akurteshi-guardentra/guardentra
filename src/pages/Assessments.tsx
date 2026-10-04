@@ -17,7 +17,7 @@ import { authHeaders } from '../lib/authHeaders';
 import { cn } from '../lib/utils';
 import { useOrgAssessments } from '../lib/vendor/useOrgAssessments';
 import { useOrgVendors } from '../lib/vendor/useOrgVendors';
-import { sendEmail } from '../lib/notifications';
+import { sendNotificationIntent } from '../lib/notifications';
 import {
   deriveStatusFromAssessments,
   upsertLocalAssessment,
@@ -168,15 +168,15 @@ export function Assessments() {
     }
     setReminderState((prev) => ({ ...prev, [assessment.id]: 'sending' }));
     try {
-      const portalUrl = `${window.location.origin}/portal/${assessment.id}`;
-      const due = assessment.dueAt || assessment.dueDate;
-      await sendEmail({
-        to: vendor.primaryContactEmail,
-        subject: `Reminder: security assessment pending — ${assessment.vendorName || vendor.name}`,
-        text: `Hi${vendor.primaryContactName ? ` ${vendor.primaryContactName}` : ''},\n\nThis is a reminder that a security assessment (${frameworkLabel(assessment)}) is still awaiting your response.\n\nComplete it here: ${portalUrl}\n${due ? `\nDue: ${new Date(due).toLocaleDateString()}\n` : ''}\nYour progress saves automatically.`,
+      await sendNotificationIntent({
+        intentType: 'assessment_reminder',
+        objectId: assessment.id,
       });
       setReminderState((prev) => ({ ...prev, [assessment.id]: 'sent' }));
-      setToast({ tone: 'ok', text: `Reminder sent to ${vendor.primaryContactEmail}` });
+      setToast({
+        tone: 'ok',
+        text: `Reminder queued to the vendor's authoritative contact ${vendor.primaryContactEmail} (queue success is not delivery proof)`,
+      });
     } catch (e) {
       console.warn('Send reminder failed', e);
       setReminderState((prev) => ({ ...prev, [assessment.id]: 'error' }));

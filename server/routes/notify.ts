@@ -1,8 +1,14 @@
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import { ensureAdmin } from '../middleware/requireFirebaseAuth';
 import { getAdminDb } from '../lib/adminDb';
 import { createRateLimiter } from '../middleware/rateLimit';
 import { buildMailQueueDocument, MAIL_COLLECTION } from '../lib/mailQueue';
+import {
+  NotificationIntentError,
+  parseNotificationIntentRequest,
+  resolveNotificationIntent,
+  type NotificationAuthorityStore,
+} from '../lib/notificationIntent';
 
 const router = Router();
 
@@ -10,51 +16,94 @@ const router = Router();
 // keep it tighter than the AI rate limit.
 router.use(createRateLimiter({ windowMs: 60_000, max: 10 }));
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const MAX_TEXT_LENGTH = 5000;
+function isAlreadyExistsError(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null)?.code;
+  return code === 6 || code === 'already-exists';
+}
+
+function productionLike(): boolean {
+  const env = (process.env.APP_ENV || process.env.NODE_ENV || '').toLowerCase();
+  return env === 'production' || env === 'prod' || env === 'staging';
+}
 
 /**
- * Queues an email via the Firebase "Trigger Email from Firestore" extension —
- * writes a doc to the `mail` collection in the shape that extension expects
- * (https://extensions.dev/extensions/firebase/firestore-send-email). Written
- * with the Admin SDK (bypasses Firestore rules entirely — the client-side
- * `mail` collection rule denies all direct access, see firestore.rules), so
- * this route is the only path that can queue an email.
+ * POST /api/notify/mail accepts ONLY a tenant-bound notification intent.
+ * The authenticated caller cannot provide recipient, subject, text, or html.
+ * Those fields are derived from authoritative GuardEntra state on the server.
  *
- * This route only proves queue write success — not delivery.
- * Delivery is performed by the extension + SMTP (SendGrid for staging).
- * See docs/STAGING_EMAIL_DELIVERY.md.
+ * Queue success is not delivery success. The Trigger Email extension owns
+ * delivery.* and provider/SMTP acceptance; inbox receipt remains separate proof.
  */
 router.post('/mail', async (req, res) => {
-  const { to, subject, text, html } = req.body || {};
-
-  if (typeof to !== 'string' || !EMAIL_RE.test(to)) {
-    return res.status(400).json({ error: 'A valid "to" email address is required' });
-  }
-  if (typeof subject !== 'string' || !subject.trim()) {
-    return res.status(400).json({ error: 'subject is required' });
-  }
-  if (typeof text !== 'string' || !text.trim()) {
-    return res.status(400).json({ error: 'text is required' });
-  }
-  if (subject.length > 300 || text.length > MAX_TEXT_LENGTH || (html && html.length > MAX_TEXT_LENGTH * 2)) {
-    return res.status(413).json({ error: 'subject/text exceeds allowed length' });
-  }
-
   try {
     ensureAdmin();
+
+    const decoded = (req as Request & { user?: { uid?: string } }).user;
+    const uid = decoded?.uid || '';
+    if (!uid) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const intent = parseNotificationIntentRequest(req.body);
     const db = getAdminDb();
-    const doc = buildMailQueueDocument({
-      to,
-      subject,
-      text,
-      ...(typeof html === 'string' ? { html } : {}),
+
+    const read = async (collection: string, id: string): Promise<Record<string, unknown> | null> => {
+      const snap = await db.collection(collection).doc(id).get();
+      return snap.exists ? ({ id: snap.id, ...(snap.data() || {}) } as Record<string, unknown>) : null;
+    };
+
+    const store: NotificationAuthorityStore = {
+      getUser: (id) => read('users', id),
+      getVendor: (id) => read('vendors', id),
+      getAssessment: (id) => read('assessments', id),
+      getOrganization: (id) => read('organizations', id),
+    };
+
+    const publicAppUrl =
+      intent.intentType === 'vendor_welcome'
+        ? undefined
+        : productionLike()
+          ? process.env.PUBLIC_APP_URL
+          : process.env.PUBLIC_APP_URL || 'http://localhost:8080';
+
+    const resolved = await resolveNotificationIntent({
+      uid,
+      intent,
+      store,
+      publicAppUrl,
+      productionLike: productionLike(),
     });
-    const ref = await db.collection(MAIL_COLLECTION).add(doc);
-    return res.json({ queued: true, id: ref.id });
+
+    const queueDoc = {
+      ...buildMailQueueDocument({
+        to: resolved.recipient,
+        subject: resolved.subject,
+        text: resolved.text,
+      }),
+      notification: {
+        intentType: resolved.intentType,
+        objectId: resolved.objectId,
+        organizationId: resolved.organizationId,
+      },
+    };
+
+    const ref = db.collection(MAIL_COLLECTION).doc(resolved.queueId);
+    try {
+      await ref.create(queueDoc);
+      return res.json({ queued: true, id: ref.id, deduplicated: false });
+    } catch (err) {
+      if (isAlreadyExistsError(err)) {
+        return res.json({ queued: true, id: ref.id, deduplicated: true });
+      }
+      throw err;
+    }
   } catch (err) {
-    console.error('[notify] failed to queue email', err);
-    return res.status(502).json({ error: 'Could not queue email' });
+    if (err instanceof NotificationIntentError) {
+      console.warn('[notify] intent refused', err.code);
+      return res.status(err.status).json({ error: err.message, code: err.code });
+    }
+    console.error('[notify] intent queue failed', 'internal_error');
+    return res.status(502).json({ error: 'Could not queue notification' });
   }
 });
 

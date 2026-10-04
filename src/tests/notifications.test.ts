@@ -7,43 +7,46 @@ vi.mock('../lib/authHeaders', () => ({
   })),
 }));
 
-import { sendEmail, sendEmailBestEffort } from '../lib/notifications';
+import { sendNotificationIntent } from '../lib/notifications';
 
-describe('notifications sendEmail', () => {
+describe('tenant-bound notifications client', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('resolves when the notify API queues mail', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response(JSON.stringify({ queued: true, id: 'm1' }), { status: 200 }))
+  it('sends only intentType + objectId, never recipient or message content', async () => {
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify({ queued: true, id: 'm1' }), { status: 200 })
     );
+    vi.stubGlobal('fetch', fetchMock);
+
     await expect(
-      sendEmail({ to: 'akurteshi@guardentra.com', subject: 'Hi', text: 'Body' })
+      sendNotificationIntent({ intentType: 'assessment_invite', objectId: 'assessment-1' })
     ).resolves.toBeUndefined();
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({
+      intentType: 'assessment_invite',
+      objectId: 'assessment-1',
+    });
+    expect(String(init.body)).not.toContain('to');
+    expect(String(init.body)).not.toContain('subject');
+    expect(String(init.body)).not.toContain('text');
   });
 
-  it('surfaces API error text on failure', async () => {
+  it('surfaces API refusal text', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(
         async () =>
-          new Response(JSON.stringify({ error: 'Could not queue email' }), { status: 502 })
+          new Response(JSON.stringify({ error: 'Notification object is outside the authenticated organization' }), {
+            status: 403,
+          })
       )
     );
-    await expect(
-      sendEmail({ to: 'akurteshi@guardentra.com', subject: 'Hi', text: 'Body' })
-    ).rejects.toThrow('Could not queue email');
-  });
 
-  it('sendEmailBestEffort swallows failures', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response(JSON.stringify({ error: 'nope' }), { status: 502 }))
-    );
     await expect(
-      sendEmailBestEffort({ to: 'akurteshi@guardentra.com', subject: 'Hi', text: 'Body' })
-    ).resolves.toBeUndefined();
+      sendNotificationIntent({ intentType: 'vendor_welcome', objectId: 'vendor-1' })
+    ).rejects.toThrow('outside the authenticated organization');
   });
 });
