@@ -1,0 +1,68 @@
+name: Staging Email Evidence
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/staging-email-evidence.yml'
+      - 'scripts/release/firebase-ext-evidence.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  read-only-staging-email-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TARGET_PROJECT: guardentra-staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/${{ vars.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-actions-ci@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Verify WIF identity can observe staging project
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(gcloud projects describe "$TARGET_PROJECT" --format='value(projectId)')"
+          test "$actual" = "$TARGET_PROJECT"
+          echo "STAGING_PROJECT_READ=PASS"
+
+      - name: Read Firebase Extensions API without enabling services or printing raw configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          RAW="$RUNNER_TEMP/firebase-ext-list.json"
+          SAFE="$RUNNER_TEMP/staging-email-evidence.json"
+          TOKEN="$(gcloud auth print-access-token)"
+          HTTP_CODE="$(curl --silent --show-error --output "$RAW" --write-out '%{http_code}' \
+            --header "Authorization: Bearer $TOKEN" \
+            --header "Accept: application/json" \
+            "https://firebaseextensions.googleapis.com/v1beta/projects/$TARGET_PROJECT/instances?pageSize=100")"
+          unset TOKEN
+          if [ "$HTTP_CODE" != "200" ]; then
+            rm -f "$RAW"
+            echo "STAGING_EXTENSIONS_API_READ=REFUSED_HTTP_$HTTP_CODE"
+            exit 3
+          fi
+          node scripts/release/firebase-ext-evidence.mjs --input "$RAW" --project "$TARGET_PROJECT" --output "$SAFE"
+          rm -f "$RAW"
+          echo "STAGING_EMAIL_EVIDENCE=SANITIZED"
+
+      - name: Remove temporary evidence files
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/firebase-ext-list.json" "$RUNNER_TEMP/staging-email-evidence.json"
