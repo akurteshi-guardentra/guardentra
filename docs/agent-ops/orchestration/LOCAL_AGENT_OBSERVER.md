@@ -128,8 +128,10 @@ For a live #90 supervisor state, the observer can show:
 - PID state: `alive`, `not_running`, `pid_reused`, or `idle`
 - heartbeat age and `fresh` / `stale` classification
 - local verification stage
+- correction count from the bound dispatcher contract
 - attempt count
 - handoff count
+- latest persisted provider exit/state
 - feature branch
 - exact candidate HEAD
 - isolated worktree when present in the issue contract
@@ -201,8 +203,10 @@ It contains only redacted operational metadata:
 - exact head
 - verification stage
 - test count
+- correction count
 - attempt count
 - handoff count
+- latest persisted provider exit/state
 - blocker
 - Owner gate
 - observation time
