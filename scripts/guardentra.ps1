@@ -29,6 +29,11 @@ param(
         'status',
         'task',
         'agent',
+        'supervisor',
+        'night-run',
+        'providers',
+        'provider-doctor',
+        'report',
         'help'
     )]
     [string]$Command = 'help',
@@ -46,7 +51,9 @@ param(
     [string]$Title = '',
     [string]$BodyFile = '',
     [int]$Pr = 0,
-    [string]$Action = ''
+    [string]$Action = '',
+    [ValidateRange(1,1000)][int]$Passes = 1,
+    [ValidateRange(0,60)][int]$IntervalSeconds = 0
 )
 
 Set-StrictMode -Version Latest
@@ -72,6 +79,11 @@ Usage:
   .\scripts\guardentra.ps1 agent run <issue>
   .\scripts\guardentra.ps1 agent status <issue>
   .\scripts\guardentra.ps1 agent watch
+  .\scripts\guardentra.ps1 supervisor <issue>
+  .\scripts\guardentra.ps1 night-run [-Passes 1] [-IntervalSeconds 0]
+  .\scripts\guardentra.ps1 providers
+  .\scripts\guardentra.ps1 provider-doctor
+  .\scripts\guardentra.ps1 report [morning|midday|night]
 
 Owner grants: post ## GUARDENTRA_OWNER_GRANT JSON on the GitHub issue (allowlisted author), then sync-grants.
 Local authorize cannot mint Owner authority. Local source=github-owner-grant alone is not authority.
@@ -144,6 +156,24 @@ try {
                 }
                 default { throw 'Usage: agent <run|status|watch> [issue]' }
             }
+        }
+        'supervisor' {
+            if (-not $Arg1) { throw 'Usage: supervisor <issue>' }
+            Invoke-GuardentraSupervisorTask ([int]$Arg1) | ConvertTo-Json -Depth 20
+        }
+        'night-run' {
+            $nightAction = if ($Action) { $Action } else { 'implement' }
+            Invoke-GuardentraNightRun -Passes $Passes -IntervalSeconds $IntervalSeconds -Action $nightAction | ConvertTo-Json -Depth 20
+        }
+        'providers' {
+            @('codex','cursor','gemini','cloud','grok','xai') | ForEach-Object { Get-GuardentraProviderCapability $_ } | ConvertTo-Json -Depth 5
+        }
+        'provider-doctor' {
+            Get-GuardentraProviderDoctor | ConvertTo-Json -Depth 12
+        }
+        'report' {
+            $period = if ($Arg1) { $Arg1 } else { 'morning' }
+            Get-GuardentraSupervisorReport -Period $period | ConvertTo-Json -Depth 20
         }
         default { Show-GuardentraHelp }
     }
