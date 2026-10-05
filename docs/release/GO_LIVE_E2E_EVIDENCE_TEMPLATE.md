@@ -29,37 +29,16 @@ Use only:
 - `BLOCKED` - required authority/dependency is unavailable; absence is unproven.
 - `FAIL` - the required behavior was directly observed to fail.
 
-## Machine-readable header
+## Canonical machine-readable evidence
 
-```yaml
-schema: guardentra.go_live_e2e.v1
-issue: 124
-repository_sha: "<40-char protected-main/release SHA>"
-observed_utc: "<ISO-8601 UTC>"
-operator_tool: "<actual Agent / Tool>"
-staging:
-  project: guardentra-staging
-  build_revision: "<observed identifier>"
-  source_sha: "<observed deployed SHA>"
-  result: BLOCKED
-production:
-  project: guardentra-prod
-  build_revision: "<observed identifier>"
-  source_sha: "<observed deployed SHA>"
-  result: BLOCKED
-dependencies:
-  issue_72_email: BLOCKED
-  issue_73_scanner: BLOCKED
-  issue_74_audit: BLOCKED
-release:
-  drift_check: BLOCKED
-  rollback_baseline: "<reference only; no secret values>"
-  promotion_path: "<approved path>"
-  cleanup: BLOCKED
-overall_result: BLOCKED
-blockers: []
-sources: []
-```
+The only machine-readable `guardentra.go_live_e2e.v1` schema is:
+
+`docs/release/GO_LIVE_E2E_EVIDENCE_TEMPLATE.json`
+
+Do not define or infer an alternate v1 structure from this Markdown file. This document is
+narrative guidance for operating the canonical JSON contract. During execution, copy the JSON
+template, preserve its field names and lifecycle semantics, and populate only directly observed,
+redacted evidence for the exact repository SHA and named environment.
 
 ## Staging journey
 
@@ -129,21 +108,10 @@ logging, authority widening, or test weakening is permitted.
 
 ## Final evidence and readiness
 
-After staging and production acceptance, record:
-
-```yaml
-final:
-  staging_live_verified: false
-  production_live_verified: false
-  go_live: false
-  readiness_scorecard:
-    evidence_artifact: "<#69 scorecard input/output reference>"
-    engineering_delivery: "<verified NN/100>"
-    production_go_live: "<verified NN/100>"
-  remaining_p0_blockers: []
-  cleanup_result: BLOCKED
-  rollback_readback_result: BLOCKED
-```
+Final staging, production, cleanup, blockers, and go-live classification must be recorded in the
+canonical JSON evidence artifact above. The JSON contract's `final_classification`, per-environment
+`overall_result`, step results, blockers, and invariant fields are authoritative. Readiness
+scorecard references may be attached as evidence sources, but must not create a second schema.
 
 Rules:
 
