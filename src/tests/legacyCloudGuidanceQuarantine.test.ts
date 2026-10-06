@@ -51,4 +51,21 @@ describe('#138 legacy cloud guidance quarantine', () => {
     expect(text).not.toMatch(/firebase-tools\s+projects:create/i);
     expect(text).not.toContain('**Only** `guardentra-7f582`');
   });
+
+  it('keeps historical Cloud SQL proof from advertising current legacy staging commands', () => {
+    const text = read('docs/PHASE2_CLOUDSQL_STAGING.md');
+    expect(text).toContain('Current #74 rule — historical operator steps superseded');
+    expect(text).toContain('#116 read-only cloud inventory');
+    expect(text).not.toContain('When a dedicated staging App Hosting backend exists');
+    expect(text).not.toMatch(/apphosting:secrets:grantaccess\s+AUDIT_DATABASE_URL\s+--project=guardentra-7f582/i);
+  });
+
+  it('keeps historical ops status from presenting legacy work as current remaining actions', () => {
+    const text = read('docs/PHASE2_OPS_STATUS.md');
+    expect(text).toContain('Historical remaining items from 2026-08-11 — NOT CURRENT WORK');
+    expect(text).toContain('Current #74 work begins with the #116 read-only inventory');
+    expect(text).not.toContain('## Remaining (human / console)');
+    expect(text).not.toMatch(/apphosting:secrets:grantaccess\s+AUDIT_DATABASE_URL\s+--project=guardentra-7f582/i);
+    expect(text).not.toContain('There is **one** App Hosting backend (`guardentra` in `us-central1`) serving guardentra.com.');
+  });
 });
