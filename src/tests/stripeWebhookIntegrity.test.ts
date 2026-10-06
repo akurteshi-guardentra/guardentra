@@ -37,6 +37,28 @@ describe('#144 Stripe webhook integrity helpers', () => {
     ).toBe(false);
   });
 
+  it('uses a deterministic id tie-breaker for same-second events with equal precedence', () => {
+    const current = {
+      id: 'evt_200',
+      created: 400,
+      type: 'customer.subscription.updated',
+    };
+
+    expect(
+      shouldApplyStripeBillingEvent(
+        { id: 'evt_201', created: 400, type: 'customer.subscription.updated' },
+        current,
+      ),
+    ).toBe(true);
+
+    expect(
+      shouldApplyStripeBillingEvent(
+        { id: 'evt_199', created: 400, type: 'customer.subscription.updated' },
+        current,
+      ),
+    ).toBe(false);
+  });
+
   it('uses deterministic same-second precedence so delivery order cannot resurrect a deleted subscription', () => {
     const checkout = { id: 'evt_checkout', created: 300, type: 'checkout.session.completed' as const };
     const updated = { id: 'evt_updated', created: 300, type: 'customer.subscription.updated' as const };
