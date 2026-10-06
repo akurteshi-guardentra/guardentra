@@ -79,4 +79,5 @@ Blueprint: [`firebase-blueprint.json`](../firebase-blueprint.json) includes `/as
 - Production Vite builds do **not** inject `GEMINI_API_KEY` into the client — prefer `/api/ai` with Firebase ID token auth
 - `firestore.rules`: removed personal email bypass (`isAtIdhee`); portal assessment read/update requires auth + `portalOpen`
 - `storage.rules`: portal evidence `read` requires signed-in (incl. anonymous)
-- Deploy rules before real customers: `firebase deploy --only firestore:rules,storage`
+- Deploy rules only to an explicitly named environment. For staging: `firebase deploy --only firestore:rules,storage --project=guardentra-staging`.
+- Production rules deployment is a separate release action and must use the approved production packet with explicit target `--project=guardentra-prod`; never rely on the Firebase CLI default project.
