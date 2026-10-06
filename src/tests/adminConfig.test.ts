@@ -3,6 +3,7 @@ import {
   DEMO_ADMIN_STORAGE_BUCKET,
   DEMO_PROJECT_ID,
   adminAppOptions,
+  assertAdminRuntimeConfig,
   getConfiguredStorageBucket,
   loadFirebaseAppletConfig,
   resolveAdminStorageBucket,
@@ -72,6 +73,33 @@ describe('Admin Storage bucket configuration', () => {
       FIREBASE_STORAGE_BUCKET: STAGING_BUCKET,
     };
     expect(resolveAdminStorageBucket(env, DEMO_APPLET)).toBe(STAGING_BUCKET);
+  });
+
+  it('validates production-like config before server startup', () => {
+    expect(() =>
+      assertAdminRuntimeConfig(
+        {
+          APP_ENV: 'production',
+          GCLOUD_PROJECT: PROD_PROJECT,
+          FIREBASE_STORAGE_BUCKET: PROD_BUCKET,
+        },
+        DEMO_APPLET
+      )
+    ).not.toThrow();
+
+    expect(() =>
+      assertAdminRuntimeConfig(
+        {
+          APP_ENV: 'staging',
+          GCLOUD_PROJECT: STAGING_PROJECT,
+        },
+        DEMO_APPLET
+      )
+    ).toThrow(/requires an explicit FIREBASE_STORAGE_BUCKET/i);
+
+    expect(() =>
+      assertAdminRuntimeConfig({ APP_ENV: 'development' }, DEMO_APPLET)
+    ).not.toThrow();
   });
 
   it('fails closed when production-like runtime project is missing', () => {
