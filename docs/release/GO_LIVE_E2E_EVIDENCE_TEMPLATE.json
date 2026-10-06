@@ -8,6 +8,7 @@
     "issue_72_email_live_accepted": false,
     "issue_73_scanner_ready_for_promotion": false,
     "issue_74_audit_staging_live_accepted": false,
+    "issue_126_legacy_rollout_integrity_resolved": false,
     "required_ci_green": false
   },
   "staging": {
