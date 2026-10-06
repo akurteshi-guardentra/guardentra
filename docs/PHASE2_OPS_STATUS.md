@@ -51,14 +51,15 @@ _Last historical verification: 2026-08-11 (staging-dod-prove: **PASS** — Direc
 | Firebase ID token mint (ops) | Token Creator binding on `firebase-adminsdk-fbsvc@…` for `admin@guardentra.com` |
 | staging-dod-prove HTTP | **PASS** 2026-08-11 via proxy → emit/verify/chain |
 
-## Remaining (human / console)
+## Historical remaining items from 2026-08-11 — NOT CURRENT WORK
 
-| Item | Notes |
-|------|-------|
-| Firebase CLI reauth | `npx firebase-tools login --reauth` (or `npm run firebase:reauth`) — blocks backends list + formal `grantaccess` + App Hosting rollout trigger |
-| Confirm `grantaccess` via CLI | After reauth: `npx firebase-tools apphosting:secrets:grantaccess AUDIT_DATABASE_URL --project=guardentra-7f582` (IAM already green via gcloud) |
-| Commit + App Hosting rollout | Push `apphosting.yaml` `AUDIT_*` so main traffic mounts `AUDIT_DATABASE_URL` with spine **false** |
-| Optional cleanup | Temp `allow-iap-ssh` firewall + `gs://guardentra-audit-migrate-eu` — see staging doc |
+The original proof still had legacy reauthentication, secret-grant, rollout, and cleanup
+tasks outstanding. Those steps are **not** current operator instructions.
+
+Current #74 work begins with the #116 read-only inventory of `guardentra-staging`, then a
+fresh exact-SHA staging-only enablement/rollback packet. Do not replay the historical
+`guardentra-7f582` grant-access, rollout, project-selection, firewall, storage-cleanup,
+or Cloud Run mutation commands from this document.
 
 ## Historical Direct VPC + HTTP prove (completed 2026-08-11) — evidence only
 
@@ -95,7 +96,10 @@ node scripts/staging-dod-http-prove.mjs
 
 ## Historical spine-ON proof without flipping then-production traffic
 
-There is **one** App Hosting backend (`guardentra` in `us-central1`) serving guardentra.com. Do **not** set `AUDIT_SPINE_ENABLED=true` on 100% traffic.
+**Historical 2026-08-11 topology:** the proof then used one legacy App Hosting backend
+(`guardentra` in `us-central1`). This sentence is historical evidence, not a statement
+about the current guardentra.com serving backend. Current traffic/backend authority must
+come from #116/#126 live inventory.
 
 ### A) Tagged Cloud Run revision (agent path)
 
@@ -118,22 +122,18 @@ node scripts/staging-dod-http-prove.mjs
 
 Browser fallback: sign in at guardentra.com → DevTools → copy Bearer → `AUTH_BEARER=… npm run verify:audit-spine`.
 
-### B) Console override (when a real staging backend exists)
+### B) Historical console-override concept
 
-1. Firebase console → App Hosting → **staging** backend → Environment.
-2. Override `AUDIT_SPINE_ENABLED=true` (do not change shared yaml default).
-3. Redeploy / wait for rollout.
-4. `BASE_URL=<staging> TENANT_ID=<org> AUTH_BEARER=<id_token> npm run verify:audit-spine`
+This section records how the 2026-08-11 proof was conceived. It does not authorize a
+current console override or rollout. Current staging enablement must be generated from
+fresh #116 inventory under #74, with exact environment binding, rollback, health/readback,
+and no production mutation.
 
-**Never** set `AUDIT_SPINE_ENABLED=true` on the production / 100% traffic backend until product sign-off.
+## Historical proxy-migrate note
 
-## Proxy migrate (ops)
-
-```powershell
-# From a host that can reach private IP (GCE in VPC), or after Auth Proxy is up:
-powershell -File scripts/phase2-cloudsql-proxy-migrate.ps1
-# Bastion one-shot helper (historical): scripts/bastion-prove2.sh — bastion deleted after PASS
-```
+The old proxy-migrate and bastion helpers are historical evidence and are quarantined by
+#130. Do not run them for current staging. Generate a fresh environment-bound migration
+or prove packet only after #116 inventory identifies the current topology.
 
 ## Ratified defaults
 

@@ -1,31 +1,30 @@
-# Interactive auth helpers for Phase 2 (no Cloud Shell required).
-# Prefer these when default `gcloud auth login` / browser auto-launch fails.
+# Phase 2 interactive authentication — CURRENT SAFETY NOTICE
 
-## Google Cloud (paste-code flow)
+> **Authentication is not project/change authority. Do not use historical auth helpers
+> to select a cloud project or rewrite repository cloud variables.**
 
-Do **not** need Cloud Shell. Works on phone browser + this PC terminal.
+The old procedure in this file set gcloud/ADC project state and GitHub Actions variables
+to legacy `guardentra-7f582`. Those project-binding actions are quarantined by #130/#136.
 
-```powershell
-# From an interactive PowerShell window (not the agent):
-& "$env:LOCALAPPDATA\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd" auth login --no-launch-browser --update-adc --account=admin@guardentra.com
-& "$env:LOCALAPPDATA\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd" auth application-default set-quota-project guardentra-7f582
-& "$env:LOCALAPPDATA\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd" config set project guardentra-7f582
-```
-
-Or: `powershell -File scripts/phase2-auth-gcloud.ps1`
-
-## GitHub CLI (device code — phone OK)
+If an approved Owner-local packet requires an interactive sign-in because browser
+auto-launch is unavailable, perform authentication only in an interactive terminal:
 
 ```powershell
-# Prints a one-time code + https://github.com/login/device
+& "$env:LOCALAPPDATA\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd" auth login --no-launch-browser --update-adc
 gh auth login --hostname github.com --git-protocol https --web
-gh variable set GCP_PROJECT_ID --body guardentra-7f582 --repo akurteshi-guardentra/guardentra
-gh variable set GCP_PROJECT_NUMBER --body 967769575761 --repo akurteshi-guardentra/guardentra
 ```
 
-Or: `powershell -File scripts/phase2-auth-gh.ps1`
+After authentication:
 
-## Why default login "does not work"
+1. Do **not** set a default/quota project from this document.
+2. Do **not** set `GCP_PROJECT_ID` / `GCP_PROJECT_NUMBER` repository variables from
+   historical values.
+3. Return to the current issue-bound packet (#116 for read-only cloud authority, then
+   #72/#73/#74/#126 or a newer scoped task).
+4. Use explicit project identifiers taken from fresh evidence.
+5. Keep tokens, verification codes, ADC files and raw auth output out of GitHub evidence.
 
-- `gcloud auth login` (without flags) tries to open a local browser and listen on `localhost:8085`. That fails if no usable browser / redirect is blocked. It is **not** Cloud Shell.
-- Agent terminals cannot accept the pasted Google verification code (EOF). Use an interactive window or the scripts above.
+Historical scripts `scripts/phase2-auth-gcloud.ps1` and `scripts/phase2-auth-gh.ps1`
+are quarantined under #130 and must not be used for current project selection.
+
+Issue #138 tracks this current guidance.

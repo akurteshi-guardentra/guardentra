@@ -8,9 +8,11 @@
 # history in docs/SECRETS.md. The Dockerfile is kept for local container testing
 # and leaves the Cloud Run door open.
 #
-# App Hosting builds from a connected GitHub branch. Per docs/ENVIRONMENTS.md the
-# mapping is dev → sandbox, test → staging, main → production, so create one
-# backend per environment and point each at its own Firebase project.
+# App Hosting source connections are external Firebase control-plane state.
+# A Git branch name is not deployment authority. Named release environments are
+# staging=guardentra-staging and production=guardentra-prod; every promotion must
+# use the current issue-bound release packet and exact backend/source readback.
+# P0 #126 tracks an unintended legacy guardentra-7f582 main-branch connection.
 #
 # This file holds safe *common* defaults only. Environment-specific Firebase web
 # identifiers live in:
@@ -91,11 +93,10 @@ env:
   # issued yet. The app degrades correctly meanwhile: server/routes/stripe.ts returns a
   # clear "not configured" error rather than faking a successful checkout.
   #
-  # To enable, create the secrets then uncomment. Staging uses Stripe test mode and
-  # production uses live mode, so these resolve to different values per backend, not
-  # different names:
-  #   gcloud secrets create STRIPE_SECRET_KEY --data-file=- --project guardentra-7f582
-  #   firebase apphosting:secrets:grantaccess STRIPE_SECRET_KEY --backend guardentra
+  # To enable, use the separately approved environment-specific Stripe/Secret Manager
+  # packet, then uncomment only after secret-name/reference readback. Staging uses test
+  # mode and production uses live mode. Do not copy commands from the legacy/default
+  # Firebase project or infer the target from the Git branch.
   #
   # - variable: STRIPE_SECRET_KEY
   #   secret: STRIPE_SECRET_KEY
