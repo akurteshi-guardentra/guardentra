@@ -188,6 +188,10 @@ router.post('/webhook', async (req, res) => {
     console.error('Firebase Admin not initialized — refusing Stripe webhook acknowledgement');
     return res.status(503).send('Billing persistence unavailable');
   }
+  if (!process.env.STRIPE_SECRET_KEY) {
+    console.error('STRIPE_SECRET_KEY is not set — refusing billing reconciliation');
+    return res.status(503).send('Billing reconciliation unavailable');
+  }
 
   try {
     const db = getAdminDb();
@@ -214,12 +218,10 @@ router.post('/webhook', async (req, res) => {
       let planId: PlanId =
         (isPlanId(session.metadata?.planId) && session.metadata.planId) || DEFAULT_PLAN_ID;
 
-      if (process.env.STRIPE_SECRET_KEY) {
-        const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-        const priceId = firstSubscriptionPriceId(subscription);
-        const fromPrice = resolvePlanIdFromPriceId(priceId, priceMap);
-        if (fromPrice) planId = fromPrice;
-      }
+      const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+      const priceId = firstSubscriptionPriceId(subscription);
+      const fromPrice = resolvePlanIdFromPriceId(priceId, priceMap);
+      if (fromPrice) planId = fromPrice;
 
       const result = await db.runTransaction(async (tx) => {
         const processed = await tx.get(eventRef);
@@ -305,7 +307,18 @@ router.post('/webhook', async (req, res) => {
       return res.send();
     }
 
-    const subscription = event.data.object as Stripe.Subscription;
+    const eventSubscription = event.data.object as Stripe.Subscription;
+    let subscription = eventSubscription;
+    try {
+      // Reconcile against Stripe's current subscription object so an out-of-order
+      // update event cannot restore stale status/price state.
+      subscription = await stripe.subscriptions.retrieve(eventSubscription.id);
+    } catch (error) {
+      if (guardedType !== 'customer.subscription.deleted') throw error;
+      // A deleted subscription may no longer be retrievable. The signed delete event
+      // remains authoritative for the terminal cancellation path.
+    }
+
     const customerId = requireStripeMapping(stripeObjectId(subscription.customer), 'customer');
     const status = subscription.status;
     const priceId = firstSubscriptionPriceId(subscription);
