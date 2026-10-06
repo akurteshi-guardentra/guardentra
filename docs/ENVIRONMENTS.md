@@ -25,7 +25,7 @@ firebase use staging
 firebase use prod
 ```
 
-Replace placeholder IDs in `.firebaserc` once projects exist (`guardentra-dev`, `guardentra-staging`, `guardentra-prod`).
+`guardentra-staging` and `guardentra-prod` are established named release environments. `guardentra-7f582` remains the local/demo/legacy project alias only. Do not use the default/demo alias as a staging or production deployment target. Issue #126 tracks the separate external App Hosting GitHub connection that is still auto-rolling protected-main commits to the legacy backend.`
 
 ## Client config
 
@@ -85,86 +85,53 @@ Until both projects exist, keep a single demo/staging project and treat dual rou
 
 ## Deploying the app (Firebase App Hosting)
 
-[`apphosting.yaml`](../apphosting.yaml) is the deploy config. App Hosting runs
-`npm run build` then `npm start`, which this repo already satisfies — verified locally:
-health, the SPA index, and the `/portal/{id}` deep-link fallback all serve from
-`dist/server.cjs`, and `APP_ENV=production` makes `/api/*` correctly return 401 without
-a token.
+[`apphosting.yaml`](../apphosting.yaml) is the shared deploy config. App Hosting runs
+`npm run build` then `npm start`. Environment-specific identifiers must come from
+the matching named backend environment:
 
-**One backend per environment**, each pointed at its own Firebase project and branch
-(`dev` → sandbox, `test` → staging, `main` → production):
+- staging: project `guardentra-staging`, environment `staging`, overrides in `apphosting.staging.yaml`
+- production: project `guardentra-prod`, environment `prod` (or `production` after an explicit Owner rename), overrides in `apphosting.prod.yaml` / `apphosting.production.yaml`
+- demo/legacy: `guardentra-7f582` is **not** an approved staging or production release target.
 
-```bash
-firebase apphosting:backends:create --project guardentra-7f582
-```
+### P0 release-integrity quarantine — Issue #126
 
-Then set the secrets that backend needs. These live in Google Secret Manager, never git:
+Protected-main pushes have been observed triggering automatic App Hosting rollouts on the
+legacy backend `guardentra-7f582/us-central1/guardentra`. That external Firebase GitHub
+connection is under P0 investigation in Issue #126.
 
-```bash
-firebase apphosting:secrets:set VITE_FIREBASE_API_KEY --project guardentra-7f582
-firebase apphosting:secrets:set GEMINI_API_KEY        --project guardentra-7f582
-firebase apphosting:secrets:set STRIPE_SECRET_KEY     --project guardentra-7f582
-firebase apphosting:secrets:set STRIPE_WEBHOOK_SECRET --project guardentra-7f582
-```
+Until #126 is live-reconciled:
 
-After that, pushing to the connected branch builds and deploys automatically.
+1. **Do not create, configure, deploy, grant secrets to, or deploy rules to a release backend by copying a `guardentra-7f582` example.**
+2. Treat any `guardentra-7f582` rollout check as legacy/demo evidence only — never as staging or production verification.
+3. Use explicit `--project guardentra-staging` or `--project guardentra-prod` only inside the separately approved environment-specific release packet.
+4. Before any App Hosting mutation, read back the target backend's project, source branch, environment name, current revision/source SHA, domain/traffic role, and rollback baseline.
+5. Production promotion must use the approved production release path and exact current-source evidence; a GitHub/App Hosting check alone is not `PRODUCTION_LIVE_VERIFIED`.
 
-### Verifying a live App Hosting rollout
+The legacy backend must not be deleted or detached blindly: #126 first requires read-only
+inventory of its current branch connection, domain/traffic role, and rollback dependency.
 
-Firebase CLI rollout commands need a fresh login. If you see
-`Authentication Error: … firebase login --reauth`, restore CLI first:
+### Verifying a live named-environment rollout
 
-```bash
-npm run firebase:reauth
-# or: npx firebase-tools login --reauth
-npx firebase-tools projects:list
-npx firebase-tools apphosting:rollouts:list --backend guardentra --project guardentra-7f582
-```
+Bind every verification record to the explicit Firebase project and expected source SHA.
+For staging or production, use the corresponding approved release/evidence packet and
+record the backend/build/revision/source SHA from that named project. Never infer the
+environment from the Git branch or from a successful rollout check name alone.
 
-**Do not wait on CLI to know if guardentra.com updated.** After every `main` push, run
-the CDN string probe (no Firebase auth required):
+After a production promotion, the public health/readback and the full release evidence
+contract in `docs/release/GO_LIVE_E2E.md` are required. A CDN/content probe may supplement
+that evidence but cannot substitute for exact production backend/source readback.
 
-```bash
-npm run verify:live
-# optional: node scripts/verify-live-deploy.mjs --base https://guardentra.com
-```
+### Portal signing/rules ordering
 
-What it checks:
+The portal custom-token path requires the selected environment backend service account to
+have the approved signing capability. IAM changes are privileged and must be separately
+scoped, least-privilege, preflighted and read back; this document does not grant that
+authority.
 
-1. Homepage HTML → hashed `/assets/index-*.js`
-2. Entry → `AppAuthenticated-*.js` graph includes `PageShell`, `VendorsDirectory`, `Assessments`, `AddVendorDialog` chunks
-3. Eager spine copy in `AppAuthenticated`: `FastTrack · Add vendor`, `FastTrack · Review & decide`, `Risk triage`, `Opening review`
-4. Lazy `VendorPortal` graph contains P0-1 markers (`submittedSnapshot`, `correctionReopenedAt`, `portalOpen:!1`)
-
-Exit `0` = live bundle looks current. Exit `1` = stale or incomplete vs markers — then open
-Firebase Console → App Hosting → backend `guardentra` and compare rollout commit to
-`origin/main`.
-
-Human backup: hard-refresh `/vendors` and confirm the **FastTrack · Add vendor** eyebrow.
-
-### Two prerequisites that fail silently if missed
-
-1. **Grant the backend's service account `roles/iam.serviceAccountTokenCreator`.**
-   `server/routes/portal.ts` calls `createCustomToken()` to mint vendor-portal
-   sessions, which requires signing a JWT. Without this role every portal link
-   returns "Portal link invalid" — the app looks fine until a vendor opens one.
-
-2. **Deploy the app *before* the rules.** `firestore.rules`/`storage.rules` now require
-   the `portalAssessmentId` claim that only a build containing `9519bd3` mints. A
-   scoped token still satisfies the *old* rules, so app-first is safe; rules-first
-   breaks every in-flight vendor portal link at once. Once the app is live:
-
-   ```bash
-   firebase deploy --only firestore:rules,storage --project guardentra-7f582
-   npm run smoke:portal -- --open <assessmentId> --other-open <assessmentId>
-   ```
-
-   The smoke run reports `[mode: scoped-token]` and gates the cross-assessment check
-   only when the portal endpoint is reachable; otherwise it falls back to anonymous
-   and says so, so a stale deploy can't produce a misleading pass.
-
-`Dockerfile` is retained for local container testing and keeps Cloud Run available as
-an alternative; it is not used by App Hosting.
+When a release includes both portal-token behavior and Firestore/Storage rules, preserve
+the proven app-first ordering described by the scoped release packet so rules never require
+claims the deployed app cannot yet mint. Rules deployment must always name the intended
+staging or production project explicitly; never rely on the Firebase default alias.
 
 ## Secrets & identity
 
