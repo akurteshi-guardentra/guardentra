@@ -44,7 +44,16 @@ export function shouldApplyStripeBillingEvent(
   if (incoming.created > currentCreated) return true;
   if (incoming.created < currentCreated) return false;
 
-  return stripeBillingEventPriority(incoming.type) >= stripeBillingEventPriority(current.type);
+  const incomingPriority = stripeBillingEventPriority(incoming.type);
+  const currentPriority = stripeBillingEventPriority(current.type);
+  if (incomingPriority > currentPriority) return true;
+  if (incomingPriority < currentPriority) return false;
+
+  // Same-second, same-precedence events still need a total order so final state
+  // is independent of delivery order. Stripe event IDs are opaque; lexical
+  // ordering is used only as a deterministic tie-breaker.
+  const currentId = typeof current.id === 'string' ? current.id : '';
+  return currentId === '' || incoming.id > currentId;
 }
 
 export function stripeBillingCursorFields(event: {
