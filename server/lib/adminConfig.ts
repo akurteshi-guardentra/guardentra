@@ -1,10 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 
-export const PRODUCTION_PROJECT_ID = 'guardentra-7f582';
-
-/** Production-equivalent default; not a secret. Never use this for a different runtime project. */
-export const DEFAULT_ADMIN_STORAGE_BUCKET = 'guardentra-7f582.firebasestorage.app';
+export const DEMO_PROJECT_ID = 'guardentra-7f582';
+export const DEMO_ADMIN_STORAGE_BUCKET = 'guardentra-7f582.firebasestorage.app';
 
 export type FirebaseAppletConfig = {
   projectId?: string;
@@ -29,17 +27,23 @@ function trim(value: string | undefined): string | undefined {
   return next ? next : undefined;
 }
 
+function runtimeMode(
+  env: NodeJS.Dict<string | undefined>
+): string {
+  return (trim(env.APP_ENV) || trim(env.NODE_ENV) || '').toLowerCase();
+}
+
+export function isProductionLikeRuntime(
+  env: NodeJS.Dict<string | undefined> = process.env
+): boolean {
+  const mode = runtimeMode(env);
+  return mode === 'production' || mode === 'prod' || mode === 'staging';
+}
+
 export function runtimeProjectId(
   env: NodeJS.Dict<string | undefined> = process.env
 ): string | undefined {
   return trim(env.GCLOUD_PROJECT) || trim(env.GOOGLE_CLOUD_PROJECT);
-}
-
-function isProductionBucket(bucket: string): boolean {
-  return (
-    bucket === DEFAULT_ADMIN_STORAGE_BUCKET ||
-    bucket === `${PRODUCTION_PROJECT_ID}.appspot.com`
-  );
 }
 
 function bucketMatchesProject(bucket: string, projectId: string): boolean {
@@ -51,9 +55,8 @@ function bucketMatchesProject(bucket: string, projectId: string): boolean {
 
 function failClosed(projectId: string, detail: string): never {
   throw new Error(
-    `Firebase Admin Storage is not configured for project "${projectId}". ` +
-      `Set FIREBASE_STORAGE_BUCKET to that project's bucket. ` +
-      `Refusing to use ${DEFAULT_ADMIN_STORAGE_BUCKET} for a different project. ${detail}`
+    `Firebase Admin Storage is not configured safely for project "${projectId}". ` +
+      `Set FIREBASE_STORAGE_BUCKET to that project's bucket. ${detail}`
   );
 }
 
@@ -85,18 +88,42 @@ export function resolveAdminStorageBucket(
   applet: FirebaseAppletConfig = loadFirebaseAppletConfig()
 ): string {
   const runtimeProject = runtimeProjectId(env);
+  const productionLike = isProductionLikeRuntime(env);
   const explicit =
     trim(env.FIREBASE_STORAGE_BUCKET) || trim(env.VITE_FIREBASE_STORAGE_BUCKET);
 
-  if (explicit) {
-    if (
-      runtimeProject &&
-      runtimeProject !== PRODUCTION_PROJECT_ID &&
-      isProductionBucket(explicit)
-    ) {
+  if (productionLike) {
+    if (!runtimeProject) {
+      throw new Error(
+        'Firebase Admin project is not configured for production-like runtime. ' +
+          'Set GCLOUD_PROJECT or GOOGLE_CLOUD_PROJECT explicitly.'
+      );
+    }
+    if (runtimeProject === DEMO_PROJECT_ID) {
+      throw new Error(
+        `REFUSED: production-like runtime cannot use demo/legacy project "${DEMO_PROJECT_ID}".`
+      );
+    }
+    if (!explicit) {
       failClosed(
         runtimeProject,
-        `FIREBASE_STORAGE_BUCKET/VITE_FIREBASE_STORAGE_BUCKET is the production-equivalent bucket.`
+        'Production-like runtime requires an explicit FIREBASE_STORAGE_BUCKET.'
+      );
+    }
+    if (!bucketMatchesProject(explicit, runtimeProject)) {
+      failClosed(
+        runtimeProject,
+        `Configured bucket "${explicit}" does not match the runtime project.`
+      );
+    }
+    return explicit;
+  }
+
+  if (explicit) {
+    if (runtimeProject && !bucketMatchesProject(explicit, runtimeProject)) {
+      failClosed(
+        runtimeProject,
+        `Configured bucket "${explicit}" does not match the runtime project.`
       );
     }
     return explicit;
@@ -104,18 +131,7 @@ export function resolveAdminStorageBucket(
 
   const compatibleApplet = appletBucketIfCompatible(runtimeProject, applet);
   if (compatibleApplet) {
-    if (
-      runtimeProject &&
-      runtimeProject !== PRODUCTION_PROJECT_ID &&
-      isProductionBucket(compatibleApplet)
-    ) {
-      failClosed(runtimeProject, 'Applet storageBucket is the production-equivalent bucket.');
-    }
     return compatibleApplet;
-  }
-
-  if (runtimeProject === PRODUCTION_PROJECT_ID) {
-    return DEFAULT_ADMIN_STORAGE_BUCKET;
   }
 
   if (runtimeProject) {
@@ -126,16 +142,31 @@ export function resolveAdminStorageBucket(
   }
 
   throw new Error(
-    'Firebase Admin Storage bucket is not configured. Set FIREBASE_STORAGE_BUCKET or provide a compatible firebase-applet-config.json storageBucket.'
+    'Firebase Admin Storage bucket is not configured. Set FIREBASE_STORAGE_BUCKET or provide a compatible firebase-applet-config.json storageBucket for local/development use.'
   );
+}
+
+export function assertAdminRuntimeConfig(
+  env: NodeJS.Dict<string | undefined> = process.env,
+  applet: FirebaseAppletConfig = loadFirebaseAppletConfig()
+): void {
+  if (!isProductionLikeRuntime(env)) return;
+  adminAppOptions(env, applet);
 }
 
 export function adminAppOptions(
   env: NodeJS.Dict<string | undefined> = process.env,
   applet: FirebaseAppletConfig = loadFirebaseAppletConfig()
 ): { projectId?: string; storageBucket: string } {
-  const projectId =
-    runtimeProjectId(env) || trim(applet.projectId);
+  const runtimeProject = runtimeProjectId(env);
+  if (isProductionLikeRuntime(env) && !runtimeProject) {
+    throw new Error(
+      'Firebase Admin project is not configured for production-like runtime. ' +
+        'Set GCLOUD_PROJECT or GOOGLE_CLOUD_PROJECT explicitly.'
+    );
+  }
+
+  const projectId = runtimeProject || trim(applet.projectId);
   return {
     ...(projectId ? { projectId } : {}),
     storageBucket: resolveAdminStorageBucket(env, applet),
