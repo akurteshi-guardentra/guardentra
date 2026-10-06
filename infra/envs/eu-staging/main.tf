@@ -23,8 +23,23 @@ provider "google" {
 }
 
 variable "project_id" {
-  description = "The EU staging Firebase/GCP project id"
+  description = "The explicitly approved EU staging Firebase/GCP project id"
   type        = string
+
+  validation {
+    condition     = trimspace(var.project_id) != "" && var.project_id != "guardentra-7f582"
+    error_message = "REFUSED: project_id must be explicit and must not target legacy guardentra-7f582."
+  }
+}
+
+variable "execution_issue" {
+  description = "Required issue/change packet authorizing this Terraform root (for example #NNN). No default by design."
+  type        = string
+
+  validation {
+    condition     = can(regex("^#[1-9][0-9]*$", trimspace(var.execution_issue)))
+    error_message = "REFUSED: execution_issue must be an explicit issue reference such as #134."
+  }
 }
 
 variable "region" {
@@ -32,8 +47,13 @@ variable "region" {
 }
 
 variable "backend_service_account_email" {
-  description = "EU staging App Hosting backend's service account email"
+  description = "EU staging App Hosting backend's explicitly observed service account email"
   type        = string
+
+  validation {
+    condition     = trimspace(var.backend_service_account_email) != "" && !endswith(lower(var.backend_service_account_email), "@guardentra-7f582.iam.gserviceaccount.com")
+    error_message = "REFUSED: backend_service_account_email must not target the legacy guardentra-7f582 project."
+  }
 }
 
 module "secrets" {
