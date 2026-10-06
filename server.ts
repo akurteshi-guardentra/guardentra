@@ -17,7 +17,7 @@ import scannerRoutes from "./server/routes/scanner.ts";
 import { assertEvidenceScannerRuntimeConfig } from "./server/lib/malwareScanner/types.ts";
 import { requireFirebaseAuth } from "./server/middleware/requireFirebaseAuth.ts";
 import { startAuditWorker } from "./server/lib/audit/worker.ts";
-import { closeAuditPool } from "./server/lib/audit/pool.ts";
+import { assertAuditRuntimeConfig, closeAuditPool } from "./server/lib/audit/pool.ts";
 import { startAssessmentReminderWorker } from "./server/lib/reminders/worker.ts";
 
 /** Cloud Run / Firebase App Hosting: always prefer process.env.PORT, fallback 8080. */
@@ -27,6 +27,7 @@ export function resolvePort(): number {
 
 export async function createApp() {
   assertEvidenceScannerRuntimeConfig(process.env);
+  assertAuditRuntimeConfig(process.env);
   const app = express();
   const appEnv = process.env.APP_ENV || process.env.NODE_ENV || "development";
 
