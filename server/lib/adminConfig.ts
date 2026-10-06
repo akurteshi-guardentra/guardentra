@@ -146,6 +146,14 @@ export function resolveAdminStorageBucket(
   );
 }
 
+export function assertAdminRuntimeConfig(
+  env: NodeJS.Dict<string | undefined> = process.env,
+  applet: FirebaseAppletConfig = loadFirebaseAppletConfig()
+): void {
+  if (!isProductionLikeRuntime(env)) return;
+  adminAppOptions(env, applet);
+}
+
 export function adminAppOptions(
   env: NodeJS.Dict<string | undefined> = process.env,
   applet: FirebaseAppletConfig = loadFirebaseAppletConfig()
