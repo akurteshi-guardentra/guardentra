@@ -1,0 +1,192 @@
+{
+  "schema": "guardentra.go_live_e2e.v1",
+  "repository": "akurteshi-guardentra/guardentra",
+  "repository_sha": null,
+  "observed_utc": null,
+  "release_state": "PRECHECK",
+  "prerequisites": {
+    "issue_72_email_live_accepted": false,
+    "issue_73_scanner_ready_for_promotion": false,
+    "issue_74_audit_staging_live_accepted": false,
+    "required_ci_green": false
+  },
+  "staging": {
+    "project_id": "guardentra-staging",
+    "build_id": null,
+    "revision": null,
+    "source_sha": null,
+    "overall_result": "BLOCKED",
+    "steps": [
+      {
+        "id": "tenant_bootstrap",
+        "result": "BLOCKED",
+        "source": null,
+        "detail_redacted": null
+      },
+      {
+        "id": "vendor_create",
+        "result": "BLOCKED",
+        "source": null,
+        "detail_redacted": null
+      },
+      {
+        "id": "assessment_create",
+        "result": "BLOCKED",
+        "source": null,
+        "detail_redacted": null
+      },
+      {
+        "id": "invitation_queue",
+        "result": "BLOCKED",
+        "source": null,
+        "detail_redacted": null
+      },
+      {
+        "id": "provider_acceptance",
+        "result": "BLOCKED",
+        "source": null,
+        "detail_redacted": null
+      },
+      {
+        "id": "inbox_receipt",
+        "result": "BLOCKED",
+        "source": null,
+        "detail_redacted": null
+      },
+      {
+        "id": "portal_open",
+        "result": "BLOCKED",
+        "source": null,
+        "detail_redacted": null
+      },
+      {
+        "id": "answers_persist_reload",
+        "result": "BLOCKED",
+        "source": null,
+        "detail_redacted": null
+      },
+      {
+        "id": "clean_evidence_scan",
+        "result": "BLOCKED",
+        "source": null,
+        "detail_redacted": null
+      },
+      {
+        "id": "eicar_quarantine",
+        "result": "BLOCKED",
+        "source": null,
+        "detail_redacted": null
+      },
+      {
+        "id": "assessment_submit",
+        "result": "BLOCKED",
+        "source": null,
+        "detail_redacted": null
+      },
+      {
+        "id": "decision_residual_risk_remediation",
+        "result": "BLOCKED",
+        "source": null,
+        "detail_redacted": null
+      },
+      {
+        "id": "decision_packet_export",
+        "result": "BLOCKED",
+        "source": null,
+        "detail_redacted": null
+      },
+      {
+        "id": "audit_chain_verify",
+        "result": "BLOCKED",
+        "source": null,
+        "detail_redacted": null
+      },
+      {
+        "id": "relogin_persistence",
+        "result": "BLOCKED",
+        "source": null,
+        "detail_redacted": null
+      },
+      {
+        "id": "health_cleanup",
+        "result": "BLOCKED",
+        "source": null,
+        "detail_redacted": null
+      }
+    ]
+  },
+  "production": {
+    "project_id": "guardentra-prod",
+    "rollback_baseline": null,
+    "build_id": null,
+    "revision": null,
+    "source_sha": null,
+    "overall_result": "BLOCKED",
+    "steps": [
+      {
+        "id": "release_sha_drift_check",
+        "result": "BLOCKED",
+        "source": null,
+        "detail_redacted": null
+      },
+      {
+        "id": "config_drift_check",
+        "result": "BLOCKED",
+        "source": null,
+        "detail_redacted": null
+      },
+      {
+        "id": "rollback_baseline",
+        "result": "BLOCKED",
+        "source": null,
+        "detail_redacted": null
+      },
+      {
+        "id": "approved_deploy",
+        "result": "BLOCKED",
+        "source": null,
+        "detail_redacted": null
+      },
+      {
+        "id": "health_readback",
+        "result": "BLOCKED",
+        "source": null,
+        "detail_redacted": null
+      },
+      {
+        "id": "bounded_smoke_e2e",
+        "result": "BLOCKED",
+        "source": null,
+        "detail_redacted": null
+      },
+      {
+        "id": "environment_isolation",
+        "result": "BLOCKED",
+        "source": null,
+        "detail_redacted": null
+      },
+      {
+        "id": "cleanup",
+        "result": "BLOCKED",
+        "source": null,
+        "detail_redacted": null
+      },
+      {
+        "id": "readiness_recalculation",
+        "result": "BLOCKED",
+        "source": null,
+        "detail_redacted": null
+      }
+    ]
+  },
+  "invariants": {
+    "secret_values_recorded": false,
+    "customer_data_recorded": false,
+    "direct_main_write": false,
+    "force_push": false,
+    "ad_hoc_deploy_path": false,
+    "staging_prod_leakage": false
+  },
+  "blockers": [],
+  "final_classification": "NOT_READY"
+}
