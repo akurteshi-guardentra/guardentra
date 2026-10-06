@@ -22,7 +22,9 @@ describe('#134 EU-staging Terraform quarantine', () => {
     expect(main).toContain('var.project_id != "guardentra-7f582"');
     expect(main).toContain('variable "execution_issue"');
     expect(main).toContain('can(regex("^#[1-9][0-9]*$"');
-    expect(main).not.toMatch(/variable "execution_issue"[\s\S]{0,300}default\s*=/);
+    const issueBlock = main.match(/variable "execution_issue" \\{[\\s\\S]*?\\n\\}/)?.[0] ?? '';
+    expect(issueBlock).toContain('validation');
+    expect(issueBlock).not.toMatch(/\\bdefault\\s*=/);
     expect(main).toContain('@guardentra-7f582.iam.gserviceaccount.com');
     expect(main).toContain('REFUSED:');
   });
