@@ -190,7 +190,15 @@ describe('#160 vendor create durable audit coupling', () => {
   });
 
   it('derives tenant and owner from authenticated user state, not request input', async () => {
-    const createVendor = vi.fn(async () => ({ vendorId: 'vendor_1', deduplicated: false }));
+    let capturedCreateArgs:
+      | Parameters<VendorMutationDeps['createVendor']>[0]
+      | undefined;
+    const createVendor = vi.fn(
+      async (args: Parameters<VendorMutationDeps['createVendor']>[0]) => {
+        capturedCreateArgs = args;
+        return { vendorId: 'vendor_1', deduplicated: false };
+      },
+    );
     const deps: VendorMutationDeps = {
       verifyIdToken: vi.fn(async () => ({ uid: 'user1', email: 'token@example.com' }) as any),
       getUser: vi.fn(async () => ({
@@ -220,10 +228,7 @@ describe('#160 vendor create durable audit coupling', () => {
         ownerName: 'Authoritative Owner',
       }),
     );
-    const createArgs = createVendor.mock.calls[0]?.[0] as
-      | { organizationId?: string }
-      | undefined;
-    expect(createArgs?.organizationId).toBe('org-authoritative');
-    expect(createArgs?.organizationId).not.toBe('org-attacker');
+    expect(capturedCreateArgs?.organizationId).toBe('org-authoritative');
+    expect(capturedCreateArgs?.organizationId).not.toBe('org-attacker');
   });
 });
