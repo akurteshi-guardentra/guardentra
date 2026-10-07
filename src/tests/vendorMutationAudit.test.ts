@@ -220,6 +220,10 @@ describe('#160 vendor create durable audit coupling', () => {
         ownerName: 'Authoritative Owner',
       }),
     );
-    expect(createVendor.mock.calls[0][0]).not.toHaveProperty('organizationId', 'org-attacker');
+    const createArgs = createVendor.mock.calls[0]?.[0] as
+      | { organizationId?: string }
+      | undefined;
+    expect(createArgs?.organizationId).toBe('org-authoritative');
+    expect(createArgs?.organizationId).not.toBe('org-attacker');
   });
 });
