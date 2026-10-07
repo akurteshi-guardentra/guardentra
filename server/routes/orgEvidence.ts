@@ -8,9 +8,14 @@ import {
   liveEvidenceDeps,
 } from '../lib/evidenceAccess.ts';
 import { handleAssessmentCreate } from '../lib/assessmentCreate.ts';
+import {
+  handleOrgVendorCreate,
+  liveVendorMutationDeps,
+} from '../lib/vendorMutation.ts';
 
 const router = Router();
 const deps = liveEvidenceDeps();
+const vendorDeps = liveVendorMutationDeps();
 const limiter = createRateLimiter({ windowMs: 60_000, max: 30 });
 
 router.get('/evidence-download', limiter, (req, res) =>
@@ -19,6 +24,10 @@ router.get('/evidence-download', limiter, (req, res) =>
 
 router.get('/attachment-download', limiter, (req, res) =>
   handleOrgAttachmentDownload(req, res, deps)
+);
+
+router.post('/vendor-create', limiter, (req, res) =>
+  handleOrgVendorCreate(req, res, vendorDeps)
 );
 
 router.post('/assessment-create', limiter, (req, res) => handleAssessmentCreate(req, res));
