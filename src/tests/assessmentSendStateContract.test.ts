@@ -22,6 +22,8 @@ describe('#154 assessment send-state integrity', () => {
     expect(route).toContain("assessmentStatus: 'Sent'");
     expect(route).toContain('sentAt,');
     expect(route).toContain("'assessment_not_invitable'");
+    expect(route).toContain('currentRecipient !== resolved.recipient.toLowerCase()');
+    expect(route).toContain("'assessment_recipient_changed'");
   });
 
   it('hosted wizard relies on server authority and does not emit duplicate sent audit', () => {
