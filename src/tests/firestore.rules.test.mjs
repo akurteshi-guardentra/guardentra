@@ -266,6 +266,12 @@ async function main() {
     .firestore();
 
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'vendors/v1'), {
+      organizationId: ORG,
+      name: 'Portal Co',
+      category: 'SaaS',
+      criticality: 'Medium',
+    });
     await setDoc(doc(ctx.firestore(), `assessments/${ASSESS}`), {
       organizationId: ORG,
       vendorId: 'v1',
@@ -748,8 +754,12 @@ async function main() {
   );
 
   await check('rejected sample batch is atomic — no partial sample risk is written', async () => {
-    const snap = await getDoc(doc(seedDb, `risks/${ORG_A}__sample_v1__risks__r1`));
-    if (snap.exists()) throw new Error('rejected sample batch partially committed');
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const snap = await getDoc(
+        doc(ctx.firestore(), `risks/${ORG_A}__sample_v1__risks__r1`),
+      );
+      if (snap.exists()) throw new Error('rejected sample batch partially committed');
+    });
   });
 
   await check('Org A admin CANNOT write Org B sample data in a cross-tenant batch', () =>
