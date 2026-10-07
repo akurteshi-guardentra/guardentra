@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { addDoc, collection, doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { Check, ChevronDown, ChevronRight, Eye, Search, Sparkles } from 'lucide-react';
 import { db } from '../firebase';
 import { useAuth } from '../lib/AuthContext';
+import { authHeaders } from '../lib/authHeaders';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { PageShell } from '../components/spine/PageShell';
@@ -33,7 +34,6 @@ import {
 } from '../lib/vendor/localVendorStore';
 import {
   syncVendorAfterAssessmentCreate,
-  syncVendorAfterAssessmentSent,
 } from '../lib/vendor/syncVendorAssessment';
 import { buildCreateAssessmentFields } from '../lib/vendor/assessmentLifecycle';
 import { sendNotificationIntent } from '../lib/notifications';
@@ -64,6 +64,7 @@ export function AssessmentWizard() {
   const [sendBanner, setSendBanner] = useState<{ tone: 'ok' | 'warn'; text: string } | null>(null);
   const [requesterOrgName, setRequesterOrgName] = useState('');
   const [requesterLogoUrl, setRequesterLogoUrl] = useState('');
+  const [createRequestId] = useState(() => crypto.randomUUID());
 
   useEffect(() => {
     if (!orgId) return;
