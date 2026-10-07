@@ -20,6 +20,7 @@ import { requireFirebaseAuth } from "./server/middleware/requireFirebaseAuth.ts"
 import { startAuditWorker } from "./server/lib/audit/worker.ts";
 import { assertAuditRuntimeConfig, closeAuditPool } from "./server/lib/audit/pool.ts";
 import { startAssessmentReminderWorker } from "./server/lib/reminders/worker.ts";
+import { buildReleaseIdentity } from "./server/lib/releaseIdentity.ts";
 
 /** Cloud Run / Firebase App Hosting: always prefer process.env.PORT, fallback 8080. */
 export function resolvePort(): number {
@@ -47,7 +48,11 @@ export async function createApp() {
 
   // API routes FIRST
   app.get("/api/health", (_req, res) => {
-    res.json({ status: "ok", message: "Guardentra API is online." });
+    res.json({
+      status: "ok",
+      message: "Guardentra API is online.",
+      release: buildReleaseIdentity(process.env),
+    });
   });
 
   app.use("/api/ai", requireFirebaseAuth, aiRoutes);
