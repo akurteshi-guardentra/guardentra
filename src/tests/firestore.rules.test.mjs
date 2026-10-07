@@ -133,8 +133,8 @@ async function main() {
     assertFails(updateDoc(doc(memberDb, 'organizations', ORG), { name: 'Hijacked Co' })),
   );
 
-  await check('non-admin member CAN increment vendorCount alone', () =>
-    assertSucceeds(updateDoc(doc(memberDb, 'organizations', ORG), { vendorCount: 6 })),
+  await check('non-admin member CANNOT mutate vendorCount — hosted vendor create is server-authoritative', () =>
+    assertFails(updateDoc(doc(memberDb, 'organizations', ORG), { vendorCount: 6 })),
   );
 
   await check('non-admin member CAN increment seatCount alone', () =>
@@ -212,6 +212,40 @@ async function main() {
     assertFails(setDoc(doc(db, 'risks/r4'), { organizationId: 'someone-else', title: 'X' })),
   );
 
+  console.log('\nP0 durable material-transition authority (#163):');
+
+  await check('org member CANNOT directly create a hosted vendor', () =>
+    assertFails(
+      setDoc(doc(db, 'vendors/direct-client-vendor'), {
+        organizationId: ORG,
+        name: 'Direct Client Vendor',
+        category: 'SaaS',
+        criticality: 'Medium',
+      }),
+    ),
+  );
+
+  await check('org member CANNOT directly create a hosted assessment', () =>
+    assertFails(
+      setDoc(doc(db, 'assessments/direct-client-assessment'), {
+        organizationId: ORG,
+        vendorId: 'v1',
+        status: 'Not Started',
+        portalOpen: true,
+      }),
+    ),
+  );
+
+  await check('browser client CANNOT create a durable material-audit journal row', () =>
+    assertFails(
+      setDoc(doc(db, 'audit_material_intents/forged-event'), {
+        eventId: 'forged-event',
+        state: 'relayed',
+        organizationId: ORG,
+      }),
+    ),
+  );
+
   console.log('\nP0-1 portal assessment lock (issue #10):');
 
   const ASSESS = 'asm-portal-p0';
@@ -249,8 +283,8 @@ async function main() {
     ),
   );
 
-  await check('portal session CAN submit (Under Review + portalOpen=false + snapshot)', () =>
-    assertSucceeds(
+  await check('portal session CANNOT directly submit — final submit is server-authoritative', () =>
+    assertFails(
       updateDoc(doc(portalDb, 'assessments', ASSESS), {
         answers: { q1: 'Yes', q2: 'No' },
         comments: {},
@@ -270,6 +304,28 @@ async function main() {
       }),
     ),
   );
+
+  // Simulate the Admin SDK server route, which bypasses client rules and commits
+  // assessment + vendor + durable audit intent atomically.
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), `assessments/${ASSESS}`), {
+      answers: { q1: 'Yes', q2: 'No' },
+      comments: {},
+      evidenceByQuestion: {},
+      progressPct: 100,
+      progress: 100,
+      status: 'Under Review',
+      completedAt: '2026-08-05T13:00:00.000Z',
+      portalOpen: false,
+      versionLocked: true,
+      submittedSnapshot: {
+        answers: { q1: 'Yes', q2: 'No' },
+        comments: {},
+        evidenceByQuestion: {},
+        submittedAt: '2026-08-05T13:00:00.000Z',
+      },
+    });
+  });
 
   await check('portal session CAN read submitted assessment (receipt)', () =>
     assertSucceeds(getDoc(doc(portalDb, 'assessments', ASSESS))),
@@ -378,11 +434,15 @@ async function main() {
     .authenticatedContext('portal-vendor-b', { portalAssessmentId: ASSESS_B })
     .firestore();
 
-  await check('scoped session CAN submit its own open assessment once', () =>
-    assertSucceeds(updateDoc(doc(portalB, 'assessments', ASSESS_B), submitShape)),
+  await check('scoped session CANNOT directly submit its own open assessment', () =>
+    assertFails(updateDoc(doc(portalB, 'assessments', ASSESS_B), submitShape)),
   );
 
-  await check('scoped session CANNOT submit a second time after portal closed', () =>
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), `assessments/${ASSESS_B}`), submitShape);
+  });
+
+  await check('scoped session CANNOT submit a second time after server closes portal', () =>
     assertFails(
       updateDoc(doc(portalB, 'assessments', ASSESS_B), {
         ...submitShape,
@@ -646,18 +706,13 @@ async function main() {
     return batch;
   }
 
-  await check('Org A admin sample-seed writeBatch spanning sample collections SUCCEEDS', () =>
-    assertSucceeds(sampleSeedBatch(ORG_A).commit()),
+  await check('client sample-seed batch containing a vendor create is rejected', () =>
+    assertFails(sampleSeedBatch(ORG_A).commit()),
   );
 
-  await check('deterministic retry of the same Org A sample-seed batch SUCCEEDS (no rule deny)', () =>
-    assertSucceeds(sampleSeedBatch(ORG_A).commit()),
-  );
-
-  await check('retry leaves a single deterministic sample risk doc (no duplicate random ids)', async () => {
+  await check('rejected sample batch is atomic — no partial sample risk is written', async () => {
     const snap = await getDoc(doc(seedDb, `risks/${ORG_A}__sample_v1__risks__r1`));
-    if (!snap.exists()) throw new Error('expected deterministic sample risk missing after retry');
-    if (snap.data()?.sampleSeedVersion !== 'v1') throw new Error('sampleSeedVersion missing');
+    if (snap.exists()) throw new Error('rejected sample batch partially committed');
   });
 
   await check('Org A admin CANNOT write Org B sample data in a cross-tenant batch', () =>
