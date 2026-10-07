@@ -56,6 +56,7 @@ import {
 } from '../lib/vendor/localVendorStore';
 import { useOrgAssessments } from '../lib/vendor/useOrgAssessments';
 import { authHeaders } from '../lib/authHeaders';
+import { DEFAULT_VENDOR_CAP, getPlan } from '../lib/plans';
 
 export function VendorsDirectory() {
   const { user, profile } = useAuth();
