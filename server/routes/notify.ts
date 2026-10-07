@@ -4,6 +4,11 @@ import { getAdminDb } from '../lib/adminDb';
 import { createRateLimiter } from '../middleware/rateLimit';
 import { buildMailQueueDocument, MAIL_COLLECTION } from '../lib/mailQueue';
 import {
+  commitPreparedMaterialAuditIntent,
+  materialAuditEventId,
+  prepareMaterialAuditIntent,
+} from '../lib/audit/materialIntent';
+import {
   NotificationIntentError,
   parseNotificationIntentRequest,
   resolveNotificationIntent,
@@ -121,17 +126,57 @@ router.post('/mail', async (req, res) => {
           );
         }
 
-        const deduplicated = queueSnap.exists;
-        if (!deduplicated) {
-          tx.create(ref, queueDoc);
+        const vendorId = String(assessmentData.vendorId || '').trim();
+        if (!vendorId) {
+          throw new NotificationIntentError(
+            409,
+            'assessment_vendor_missing',
+            'Assessment vendor mapping is unavailable',
+          );
+        }
+        const vendorRef = db.collection('vendors').doc(vendorId);
+        const vendorSnap = await tx.get(vendorRef);
+        if (!vendorSnap.exists || vendorSnap.data()?.organizationId !== resolved.organizationId) {
+          throw new NotificationIntentError(
+            409,
+            'assessment_vendor_unavailable',
+            'Assessment vendor mapping is unavailable',
+          );
         }
 
         const existingSentAt =
           typeof assessmentData.sentAt === 'string' && assessmentData.sentAt.trim()
             ? assessmentData.sentAt
             : null;
+        const sentAt = existingSentAt || new Date().toISOString();
+        const eventId = materialAuditEventId([
+          resolved.organizationId,
+          'assessment.sent',
+          resolved.objectId,
+          String(assessmentData.createdAt || 'initial'),
+        ]);
+        const preparedAudit = await prepareMaterialAuditIntent(tx, db, {
+          eventId,
+          tenantId: resolved.organizationId,
+          eventType: 'assessment.sent',
+          actorId: uid,
+          actorType: 'user',
+          objectType: 'assessment',
+          objectId: resolved.objectId,
+          payload: {
+            vendorId,
+            queueId: resolved.queueId,
+            queueAccepted: true,
+          },
+          createdAt: sentAt,
+        });
+
+        const deduplicated = queueSnap.exists;
+        if (!deduplicated) {
+          tx.create(ref, queueDoc);
+        }
+
         if (currentStatus !== 'Sent' || !existingSentAt) {
-          const sentAt = existingSentAt || new Date().toISOString();
           tx.set(
             assessmentRef,
             {
@@ -142,6 +187,15 @@ router.post('/mail', async (req, res) => {
             { merge: true },
           );
         }
+        tx.set(
+          vendorRef,
+          {
+            assessmentStatus: 'Sent',
+            lastAssessmentAt: sentAt,
+          },
+          { merge: true },
+        );
+        commitPreparedMaterialAuditIntent(tx, preparedAudit);
 
         return { deduplicated };
       });
