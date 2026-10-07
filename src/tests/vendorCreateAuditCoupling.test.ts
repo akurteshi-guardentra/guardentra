@@ -22,9 +22,11 @@ describe('#160 hosted vendor create durable audit coupling', () => {
     expect(create).toContain("fetch('/api/org/vendor-create'");
     expect(create).not.toContain('runTransaction(db');
     const hostedFetch = create.indexOf("fetch('/api/org/vendor-create'");
+    const hostedCatch = create.indexOf('    } catch (ex)', hostedFetch);
     const localAudit = create.indexOf('void emitAuditBestEffort');
     expect(localAudit).toBeGreaterThan(-1);
     expect(localAudit).toBeLessThan(hostedFetch);
-    expect(create.slice(hostedFetch)).not.toContain('eventType,\n        actorId');
+    expect(hostedCatch).toBeGreaterThan(hostedFetch);
+    expect(create.slice(hostedFetch, hostedCatch)).not.toContain('emitAuditBestEffort');
   });
 });
