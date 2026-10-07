@@ -35,7 +35,6 @@ import { evidenceStateLabel, trustedEvidenceFileNames, type EvidenceState } from
 import { syncVendorAfterAssessmentProgress, syncVendorAfterAssessmentSubmit } from '../lib/vendor/syncVendorAssessment';
 import {
   buildPortalAutosavePatch,
-  buildPortalSubmitPatch,
   isReceiptMode,
 } from '../lib/vendor/assessmentLifecycle';
 import {
