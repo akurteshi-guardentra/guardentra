@@ -575,6 +575,49 @@ describe('org decisions', () => {
     return { store, d };
   }
 
+  it('couples the decision transaction to a deterministic durable audit intent', async () => {
+    const intents: Array<Record<string, any>> = [];
+    const d = deps({
+      runAssessmentTransaction: vi.fn(async (_id, updater, auditFactory) => {
+        const current = {
+          organizationId: 'org1',
+          questions: [],
+          answers: {},
+          submittedSnapshot: { submittedAt: '2026-10-07T12:00:00.000Z' },
+        };
+        const patch = await updater(current);
+        const first = auditFactory?.(current, patch);
+        const second = auditFactory?.(current, patch);
+        expect(first?.eventId).toBe(second?.eventId);
+        if (first) intents.push(first as Record<string, any>);
+        return patch;
+      }),
+    });
+
+    const res = mockRes();
+    await handleOrgDecision(
+      req({ token: 'org', body: { assessmentId: 'asmA', outcome: 'approved' } }),
+      res as any,
+      d
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(intents).toHaveLength(1);
+    expect(intents[0]).toMatchObject({
+      tenantId: 'org1',
+      eventType: 'decision.finalized',
+      actorId: 'user-1',
+      objectType: 'assessment',
+      objectId: 'asmA',
+    });
+    expect(String(intents[0].eventId)).toMatch(/^mat_[a-f0-9]{64}$/);
+    expect(intents[0].payload).toMatchObject({
+      outcome: 'approved',
+      residualRiskLevel: 'Medium',
+      remediationRequired: false,
+    });
+  });
+
   it('accepts remediate without treating decidedAt as a terminal lock', async () => {
     const { store, d } = transactionalStore();
     const res = mockRes();
