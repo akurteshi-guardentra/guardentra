@@ -1,7 +1,12 @@
 import type { DecodedIdToken } from 'firebase-admin/auth';
 import type { Request, Response } from 'express';
 import { getAuth } from 'firebase-admin/auth';
-import { FieldPath, FieldValue } from 'firebase-admin/firestore';
+import {
+  FieldPath,
+  FieldValue,
+  type Firestore,
+  type Transaction,
+} from 'firebase-admin/firestore';
 import { ensureAdmin } from '../middleware/requireFirebaseAuth.ts';
 import { getConfiguredStorageBucket } from './adminConfig.ts';
 import { getAdminDb } from './adminDb.ts';
@@ -73,6 +78,12 @@ export type EvidenceDeps = {
       current: Record<string, unknown>,
       patch: Record<string, unknown>,
     ) => boolean,
+    prepareRelatedWrites?: (
+      tx: Transaction,
+      db: Firestore,
+      current: Record<string, unknown>,
+      patch: Record<string, unknown>,
+    ) => Promise<(() => void) | void>,
   ) => Promise<Record<string, unknown>>;
 };
 
@@ -286,6 +297,7 @@ export function liveEvidenceDeps(): EvidenceDeps {
       updater,
       auditIntentFactory,
       skipProductWriteWhen,
+      prepareRelatedWrites,
     ) {
       ensureAdmin();
       const db = getAdminDb();
@@ -300,6 +312,9 @@ export function liveEvidenceDeps(): EvidenceDeps {
         const preparedAudit = auditIntent
           ? await prepareMaterialAuditIntent(tx, db, auditIntent)
           : null;
+        const commitRelatedWrites = prepareRelatedWrites
+          ? await prepareRelatedWrites(tx, db, current, patch)
+          : undefined;
         const skipProductWrite = Boolean(
           skipProductWriteWhen?.(current, patch),
         );
@@ -307,6 +322,7 @@ export function liveEvidenceDeps(): EvidenceDeps {
         if (!skipProductWrite) {
           tx.update(ref, toFirestoreAssessmentUpdate(patch));
         }
+        commitRelatedWrites?.();
         if (preparedAudit) {
           commitPreparedMaterialAuditIntent(tx, preparedAudit);
         }
@@ -572,6 +588,34 @@ export async function handlePortalSubmit(req: Request, res: Response, deps: Evid
               current.status === 'Completed' ||
               current.portalOpen === false),
         ),
+      async (tx, db, current) => {
+        const tenantId = String(current.organizationId || '').trim();
+        const vendorId = String(current.vendorId || '').trim();
+        if (!tenantId || !vendorId) {
+          throw new HttpError(
+            500,
+            'Assessment tenant/vendor binding is required for vendor projection',
+          );
+        }
+
+        const vendorRef = db.collection('vendors').doc(vendorId);
+        const vendorSnap = await tx.get(vendorRef);
+        if (!vendorSnap.exists) {
+          throw new HttpError(409, 'Assessment vendor no longer exists');
+        }
+        const vendor = vendorSnap.data() || {};
+        if (String(vendor.organizationId || '') !== tenantId) {
+          throw new HttpError(403, 'Assessment vendor tenant binding is invalid');
+        }
+
+        return () => {
+          tx.set(
+            vendorRef,
+            { assessmentStatus: 'Under Review' },
+            { merge: true },
+          );
+        };
+      },
     );
 
     res.json({ ok: true, deduplicated, patch });
