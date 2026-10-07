@@ -10,8 +10,13 @@ import {
   prepareMaterialAuditIntent,
 } from './audit/materialIntent.ts';
 import { buildCreateAssessmentFields } from '../../src/lib/vendor/assessmentLifecycle.ts';
+import {
+  applyTierQuestionCap,
+  buildQuestionsForPackIds,
+  resolvePackIdsForFrameworks,
+} from '../../src/lib/vendor/frameworkPacks.ts';
+import { FRAMEWORK_CATALOG } from '../../src/lib/vendor/constants.ts';
 import type { FrameworkId } from '../../src/lib/vendor/types.ts';
-import type { PortalQuestion } from '../../src/lib/vendor/questionBank.ts';
 
 export type AssessmentCreateDeps = {
   db?: Firestore;
@@ -39,23 +44,6 @@ function stringArray(value: unknown, label: string): string[] {
     throw new AssessmentCreateError(400, `${label} must be a string array`);
   }
   return value.map((item) => item.trim()).filter(Boolean);
-}
-
-function questions(value: unknown): PortalQuestion[] {
-  if (!Array.isArray(value) || !value.length || value.length > 500) {
-    throw new AssessmentCreateError(400, 'questions must contain 1-500 items');
-  }
-  for (const item of value) {
-    if (
-      !item ||
-      typeof item !== 'object' ||
-      typeof (item as { id?: unknown }).id !== 'string' ||
-      typeof (item as { question?: unknown }).question !== 'string'
-    ) {
-      throw new AssessmentCreateError(400, 'questions contain an invalid item');
-    }
-  }
-  return value as PortalQuestion[];
 }
 
 function optionalString(value: unknown): string | undefined {
@@ -127,22 +115,22 @@ export async function handleAssessmentCreate(
       throw new AssessmentCreateError(400, 'A valid idempotency requestId is required.');
     }
 
-    const frameworks = stringArray(req.body?.frameworks, 'frameworks') as FrameworkId[];
-    if (!frameworks.length || frameworks.length > 20) {
-      throw new AssessmentCreateError(400, 'At least one framework is required.');
+    const rawFrameworks = stringArray(req.body?.frameworks, 'frameworks');
+    const allowedFrameworkIds = new Set(FRAMEWORK_CATALOG.map((item) => item.id));
+    if (
+      !rawFrameworks.length ||
+      rawFrameworks.length > 20 ||
+      rawFrameworks.some((id) => !allowedFrameworkIds.has(id as FrameworkId))
+    ) {
+      throw new AssessmentCreateError(400, 'At least one valid framework is required.');
     }
-    const frameworkPackIds =
-      req.body?.frameworkPackIds == null
-        ? undefined
-        : stringArray(req.body.frameworkPackIds, 'frameworkPackIds');
-    const snapshotQuestions = questions(req.body?.questions);
+    const frameworks = rawFrameworks as FrameworkId[];
     const dueAt = String(req.body?.dueAt || '').trim();
     const dueMs = Date.parse(dueAt);
     if (!dueAt || Number.isNaN(dueMs)) {
       throw new AssessmentCreateError(400, 'A valid dueAt is required.');
     }
 
-    const sourceQuestionCount = Number(req.body?.sourceQuestionCount);
     const reminderSchedule =
       req.body?.reminderSchedule &&
       typeof req.body.reminderSchedule === 'object' &&
@@ -217,20 +205,43 @@ export async function handleAssessmentCreate(
       const org = orgSnap.data() || {};
       const at = now().toISOString();
 
+      const orgPackDefaults =
+        org.frameworkPackDefaults && typeof org.frameworkPackDefaults === 'object'
+          ? (org.frameworkPackDefaults as Partial<Record<FrameworkId, string>>)
+          : undefined;
+      const frameworkPackIds = resolvePackIdsForFrameworks(frameworks, orgPackDefaults);
+      const triageTier = optionalString(req.body?.triageTier) || null;
+      const snapshotQuestions = applyTierQuestionCap(
+        buildQuestionsForPackIds(frameworkPackIds),
+        triageTier,
+      );
+      if (!frameworkPackIds.length || !snapshotQuestions.length) {
+        throw new AssessmentCreateError(
+          409,
+          'No authoritative questionnaire pack is available for the selected frameworks.',
+        );
+      }
+      const frameworkName = frameworks
+        .map((id) => FRAMEWORK_CATALOG.find((item) => item.id === id)?.name || id)
+        .join(', ');
+      const sourceQuestionCount = frameworks.reduce(
+        (sum, id) =>
+          sum + (FRAMEWORK_CATALOG.find((item) => item.id === id)?.questionCount || 0),
+        0,
+      );
+
       const fields = buildCreateAssessmentFields({
         vendorId,
         vendorName: String(vendor.name || 'Vendor'),
         organizationId,
         frameworks,
         frameworkPackIds,
-        frameworkName: optionalString(req.body?.frameworkName),
+        frameworkName,
         questions: snapshotQuestions,
-        sourceQuestionCount: Number.isFinite(sourceQuestionCount)
-          ? sourceQuestionCount
-          : undefined,
+        sourceQuestionCount,
         dueAt,
         nowIso: at,
-        triageTier: optionalString(req.body?.triageTier) || null,
+        triageTier,
         reviewCadence: optionalString(req.body?.reviewCadence) || null,
         reminderScheduleId: optionalString(req.body?.reminderScheduleId) || null,
         reminderSchedule: reminderSchedule || null,
