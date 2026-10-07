@@ -301,7 +301,6 @@ export function VendorsDirectory() {
   }): Promise<string | null> => {
     if (!orgId) throw new Error('No organization on your profile — cannot save vendors.');
     const ownerName = profile?.displayName || profile?.email || 'Unassigned';
-    const payload = vendorPayload(orgId, { ...input, ownerName });
     const eventType = input.source === 'import' ? 'vendor.imported' : 'vendor.created';
 
     const saveLocal = () => {
