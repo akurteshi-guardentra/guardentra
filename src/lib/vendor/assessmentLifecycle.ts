@@ -118,6 +118,7 @@ export function buildPortalAutosavePatch(input: {
   answers: Record<string, string | string[] | undefined>;
   comments: PortalCommentsMap;
   evidenceByQuestion: PortalEvidenceMap;
+  currentStatus?: string;
   nowIso?: string;
 }): {
   answers: PortalAnswersMap;
@@ -126,7 +127,6 @@ export function buildPortalAutosavePatch(input: {
   progressPct: number;
   progress: number;
   status: 'Sent' | 'In Progress';
-  questions: PortalQuestion[];
   updatedAt: string;
 } {
   const answers = compactAnswers(input.answers);
@@ -137,8 +137,7 @@ export function buildPortalAutosavePatch(input: {
     evidenceByQuestion: input.evidenceByQuestion,
     progressPct: pct,
     progress: pct,
-    status: pct > 0 ? 'In Progress' : 'Sent',
-    questions: input.questions,
+    status: input.currentStatus === 'In Progress' || pct > 0 ? 'In Progress' : 'Sent',
     updatedAt: input.nowIso || new Date().toISOString(),
   };
 }
