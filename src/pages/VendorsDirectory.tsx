@@ -8,7 +8,6 @@ import {
   addDoc,
   doc,
   getDoc,
-  runTransaction,
 } from 'firebase/firestore';
 import {
   Building2,
@@ -56,33 +55,7 @@ import {
   shouldUseLocalPersistenceFallback,
 } from '../lib/vendor/localVendorStore';
 import { useOrgAssessments } from '../lib/vendor/useOrgAssessments';
-import { DEFAULT_VENDOR_CAP, getPlan } from '../lib/plans';
-
-function vendorPayload(
-  orgId: string,
-  input: {
-    name: string;
-    category: string;
-    criticality: RiskLevel;
-    primaryContactName?: string;
-    primaryContactEmail?: string;
-    ownerName?: string;
-  }
-) {
-  return {
-    name: input.name.trim(),
-    category: input.category,
-    criticality: input.criticality,
-    status: 'Active' as const,
-    riskScore: 0,
-    organizationId: orgId,
-    createdAt: new Date().toISOString(),
-    primaryContactName: input.primaryContactName?.trim() || undefined,
-    primaryContactEmail: input.primaryContactEmail?.trim() || undefined,
-    ownerName: input.ownerName || 'Unassigned',
-    assessmentStatus: 'Not Started' as const,
-  };
-}
+import { authHeaders } from '../lib/authHeaders';
 
 export function VendorsDirectory() {
   const { user, profile } = useAuth();
@@ -358,48 +331,26 @@ export function VendorsDirectory() {
     }
 
     try {
-      const writeTimeout = new Promise<never>((_, reject) => {
-        window.setTimeout(() => {
-          const err = new Error('Cloud write timed out');
-          (err as { code?: string }).code = 'unavailable';
-          reject(err);
-        }, 4000);
+      const response = await fetch('/api/org/vendor-create', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          name: input.name,
+          category: input.category,
+          criticality: input.criticality,
+          primaryContactName: input.primaryContactName,
+          primaryContactEmail: input.primaryContactEmail,
+          source: input.source || 'create',
+        }),
       });
-      // Transaction so the vendor create and the org's vendorCount stay in lockstep —
-      // Firestore rules enforce the actual cap (organizations.vendorCount < vendorCap,
-      // Starter default 25) using this same counter. This is soft enforcement: it stops
-      // normal over-cap growth through the app, but doesn't prevent a client bypassing
-      // the increment via direct Firestore access — see firestore.rules' orgField()
-      // comment and docs/KNOWN_ISSUES.md.
-      let createdId = '';
-      const write = runTransaction(db, async (tx) => {
-        const orgRef = doc(db, 'organizations', orgId);
-        const orgSnap = await tx.get(orgRef);
-        const orgData = orgSnap.data() || {};
-        const count = typeof orgData.vendorCount === 'number' ? orgData.vendorCount : 0;
-        const cap =
-          typeof orgData.vendorCap === 'number' ? orgData.vendorCap : DEFAULT_VENDOR_CAP;
-        if (count >= cap) {
-          const planName = getPlan(orgData.planId).name;
-          throw new Error(
-            `Vendor limit reached (${cap} on ${planName}). Upgrade your plan to add more vendors.`
-          );
-        }
-        const vendorRef = doc(collection(db, 'vendors'));
-        createdId = vendorRef.id;
-        tx.set(vendorRef, payload);
-        tx.set(orgRef, { vendorCount: count + 1 }, { merge: true });
-      });
-      await Promise.race([write, writeTimeout]);
-      void emitAuditBestEffort({
-        tenantId: orgId,
-        eventType,
-        actorId: user?.uid || null,
-        objectType: 'vendor',
-        objectId: createdId,
-        payload: { name: input.name, category: input.category, criticality: input.criticality },
-      });
-      return createdId;
+      const body = (await response.json().catch(() => ({}))) as {
+        vendorId?: string;
+        error?: string;
+      };
+      if (!response.ok || !body.vendorId) {
+        throw new Error(body.error || 'Could not create vendor.');
+      }
+      return body.vendorId;
     } catch (ex) {
       if (mayFallbackVendorCreateToLocal(ex)) {
         setDataError(
