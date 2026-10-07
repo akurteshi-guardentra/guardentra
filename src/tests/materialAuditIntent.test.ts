@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   MATERIAL_AUDIT_COLLECTION,
@@ -204,6 +206,18 @@ describe('#156 durable material audit intent', () => {
     expect(emit.mock.calls[1][0].eventId).toBe(eventId);
     expect(rows.get(eventId)?.state).toBe('relayed');
     expect(rows.get(eventId)?.lastError).toBeNull();
+  });
+
+  it('runs durable Firestore relay before draining the Postgres outbox', () => {
+    const worker = readFileSync(
+      resolve(process.cwd(), 'server/lib/audit/worker.ts'),
+      'utf8',
+    );
+    const materialIndex = worker.indexOf('await processMaterialAuditIntentBatch()');
+    const outboxIndex = worker.indexOf('await processAuditOutboxBatch()');
+
+    expect(materialIndex).toBeGreaterThan(-1);
+    expect(outboxIndex).toBeGreaterThan(materialIndex);
   });
 
   it('reclaims a stale processing lease using the same event id', async () => {
