@@ -246,6 +246,16 @@ async function main() {
     ),
   );
 
+  await check('browser client CANNOT read a durable material-audit journal row', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'audit_material_intents/server-event'), {
+        eventId: 'server-event',
+        state: 'pending',
+      });
+    });
+    await assertFails(getDoc(doc(db, 'audit_material_intents/server-event')));
+  });
+
   console.log('\nP0-1 portal assessment lock (issue #10):');
 
   const ASSESS = 'asm-portal-p0';
@@ -279,6 +289,33 @@ async function main() {
         progress: 75,
         status: 'In Progress',
         updatedAt: '2026-08-05T12:00:00.000Z',
+      }),
+    ),
+  );
+
+  await check('portal session CANNOT rewrite the immutable question snapshot', () =>
+    assertFails(
+      updateDoc(doc(portalDb, 'assessments', ASSESS), {
+        questions: [{ id: 'forged', question: 'Replace server snapshot?' }],
+        updatedAt: '2026-08-05T12:10:00.000Z',
+      }),
+    ),
+  );
+
+  await check('org browser CANNOT mint sentAt directly', () =>
+    assertFails(
+      updateDoc(doc(db, 'assessments', ASSESS), {
+        status: 'Sent',
+        sentAt: '2026-08-05T12:15:00.000Z',
+      }),
+    ),
+  );
+
+  await check('org browser CANNOT fake Under Review without server submit', () =>
+    assertFails(
+      updateDoc(doc(db, 'assessments', ASSESS), {
+        status: 'Under Review',
+        portalOpen: false,
       }),
     ),
   );
