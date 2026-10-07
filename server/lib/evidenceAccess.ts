@@ -1,7 +1,12 @@
 import type { DecodedIdToken } from 'firebase-admin/auth';
 import type { Request, Response } from 'express';
 import { getAuth } from 'firebase-admin/auth';
-import { FieldPath, FieldValue } from 'firebase-admin/firestore';
+import {
+  FieldPath,
+  FieldValue,
+  type Firestore,
+  type Transaction,
+} from 'firebase-admin/firestore';
 import { ensureAdmin } from '../middleware/requireFirebaseAuth.ts';
 import { getConfiguredStorageBucket } from './adminConfig.ts';
 import { getAdminDb } from './adminDb.ts';
@@ -73,10 +78,12 @@ export type EvidenceDeps = {
       current: Record<string, unknown>,
       patch: Record<string, unknown>,
     ) => boolean,
-    relatedVendorPatchFactory?: (
+    prepareRelatedWrites?: (
+      tx: Transaction,
+      db: Firestore,
       current: Record<string, unknown>,
       patch: Record<string, unknown>,
-    ) => { vendorId: string; patch: Record<string, unknown> } | null,
+    ) => Promise<(() => void) | void>,
   ) => Promise<Record<string, unknown>>;
 };
 
@@ -290,7 +297,7 @@ export function liveEvidenceDeps(): EvidenceDeps {
       updater,
       auditIntentFactory,
       skipProductWriteWhen,
-      relatedVendorPatchFactory,
+      prepareRelatedWrites,
     ) {
       ensureAdmin();
       const db = getAdminDb();
@@ -301,37 +308,21 @@ export function liveEvidenceDeps(): EvidenceDeps {
         const current = (snap.data() || {}) as Record<string, unknown>;
         const patch = await updater(current);
 
-        const relatedVendor = relatedVendorPatchFactory?.(current, patch) || null;
-        let vendorRef: FirebaseFirestore.DocumentReference | null = null;
-        if (relatedVendor) {
-          vendorRef = db.collection('vendors').doc(relatedVendor.vendorId);
-          const vendorSnap = await tx.get(vendorRef);
-          if (!vendorSnap.exists) {
-            throw new HttpError(409, 'Assessment vendor no longer exists');
-          }
-          const vendor = vendorSnap.data() || {};
-          if (
-            String(vendor.organizationId || '') !==
-            String(current.organizationId || '')
-          ) {
-            throw new HttpError(403, 'Assessment vendor tenant mismatch');
-          }
-        }
-
         const auditIntent = auditIntentFactory?.(current, patch) || null;
         const preparedAudit = auditIntent
           ? await prepareMaterialAuditIntent(tx, db, auditIntent)
           : null;
+        const commitRelatedWrites = prepareRelatedWrites
+          ? await prepareRelatedWrites(tx, db, current, patch)
+          : undefined;
         const skipProductWrite = Boolean(
           skipProductWriteWhen?.(current, patch),
         );
 
         if (!skipProductWrite) {
           tx.update(ref, toFirestoreAssessmentUpdate(patch));
-          if (vendorRef && relatedVendor) {
-            tx.set(vendorRef, relatedVendor.patch, { merge: true });
-          }
         }
+        commitRelatedWrites?.();
         if (preparedAudit) {
           commitPreparedMaterialAuditIntent(tx, preparedAudit);
         }
@@ -597,24 +588,32 @@ export async function handlePortalSubmit(req: Request, res: Response, deps: Evid
               current.status === 'Completed' ||
               current.portalOpen === false),
         ),
-      (current) => {
-        const alreadySubmitted = Boolean(
-          current.submittedSnapshot &&
-            (current.status === 'Under Review' ||
-              current.status === 'Completed' ||
-              current.portalOpen === false),
-        );
-        if (alreadySubmitted) return null;
+      async (tx, db, current) => {
+        const tenantId = String(current.organizationId || '').trim();
         const vendorId = String(current.vendorId || '').trim();
-        if (!vendorId) {
-          throw new HttpError(500, 'Assessment vendor is required for submit');
+        if (!tenantId || !vendorId) {
+          throw new HttpError(
+            500,
+            'Assessment tenant/vendor binding is required for vendor projection',
+          );
         }
-        return {
-          vendorId,
-          patch: {
-            assessmentStatus: 'Under Review',
-            lastAssessmentAt: nowIso,
-          },
+
+        const vendorRef = db.collection('vendors').doc(vendorId);
+        const vendorSnap = await tx.get(vendorRef);
+        if (!vendorSnap.exists) {
+          throw new HttpError(409, 'Assessment vendor no longer exists');
+        }
+        const vendor = vendorSnap.data() || {};
+        if (String(vendor.organizationId || '') !== tenantId) {
+          throw new HttpError(403, 'Assessment vendor tenant binding is invalid');
+        }
+
+        return () => {
+          tx.set(
+            vendorRef,
+            { assessmentStatus: 'Under Review' },
+            { merge: true },
+          );
         };
       },
     );

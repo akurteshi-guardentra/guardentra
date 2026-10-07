@@ -335,7 +335,7 @@ describe('#158 durable portal submit', () => {
     const intents: Array<Record<string, any>> = [];
     const d = deps({
       runAssessmentTransaction: vi.fn(
-        async (_id, updater, auditFactory, skipProductWriteWhen) => {
+        async (_id, updater, auditFactory, skipProductWriteWhen, prepareRelatedWrites) => {
           const current = {
             organizationId: 'org1',
             vendorId: 'vendor-1',
@@ -360,6 +360,30 @@ describe('#158 durable portal submit', () => {
           const second = auditFactory?.(current, patch);
           expect(first?.eventId).toBe(second?.eventId);
           if (first) intents.push(first as Record<string, any>);
+
+          const vendorSet = vi.fn();
+          const vendorRef = { id: 'vendor-1' } as any;
+          const tx = {
+            get: vi.fn(async () => ({
+              exists: true,
+              data: () => ({ organizationId: 'org1' }),
+            })),
+            set: vendorSet,
+          } as any;
+          const db = {
+            collection: vi.fn(() => ({
+              doc: vi.fn(() => vendorRef),
+            })),
+          } as any;
+          const commitRelated = await prepareRelatedWrites?.(tx, db, current, patch);
+          commitRelated?.();
+          expect(tx.get).toHaveBeenCalledWith(vendorRef);
+          expect(vendorSet).toHaveBeenCalledWith(
+            vendorRef,
+            { assessmentStatus: 'Under Review' },
+            { merge: true },
+          );
+
           return patch;
         }
       ),
@@ -395,11 +419,73 @@ describe('#158 durable portal submit', () => {
     expect(String(intents[0].eventId)).toMatch(/^mat_[a-f0-9]{64}$/);
   });
 
+  it('fails closed if the assessment vendor tenant binding is invalid', async () => {
+    const d = deps({
+      runAssessmentTransaction: vi.fn(
+        async (_id, updater, _auditFactory, _skipProductWriteWhen, prepareRelatedWrites) => {
+          const current = {
+            organizationId: 'org1',
+            vendorId: 'vendor-1',
+            portalOpen: true,
+            status: 'In Progress',
+            sentAt: '2026-10-07T10:00:00.000Z',
+            questions: [
+              {
+                id: 'q1',
+                controlKey: 'q1',
+                category: 'Access Control',
+                question: 'MFA?',
+                type: 'yesno',
+                options: ['Yes', 'No'],
+                required: true,
+              },
+            ],
+          };
+          const patch = await updater(current);
+          const vendorRef = { id: 'vendor-1' } as any;
+          const tx = {
+            get: vi.fn(async () => ({
+              exists: true,
+              data: () => ({ organizationId: 'org2' }),
+            })),
+            set: vi.fn(),
+          } as any;
+          const db = {
+            collection: vi.fn(() => ({
+              doc: vi.fn(() => vendorRef),
+            })),
+          } as any;
+          await prepareRelatedWrites?.(tx, db, current, patch);
+          return patch;
+        }
+      ),
+    });
+
+    const res = mockRes();
+    await handlePortalSubmit(
+      req({
+        token: 'portal-a',
+        body: {
+          assessmentId: 'asmA',
+          answers: { q1: 'Yes' },
+          comments: {},
+          evidenceByQuestion: {},
+          attestations: { accuracy: true, authority: true, attestedByName: 'Vendor User' },
+          answerProposals: {},
+        },
+      }),
+      res as any,
+      d
+    );
+
+    expect(res.statusCode).toBe(403);
+  });
+
   it('treats a retry of an already-submitted assessment as a product no-op', async () => {
     let skip = false;
     const d = deps({
       runAssessmentTransaction: vi.fn(
-        async (_id, updater, auditFactory, skipProductWriteWhen) => {
+        async (_id, updater, auditFactory, skipProductWriteWhen, prepareRelatedWrites) => {
           const current = {
             organizationId: 'org1',
             vendorId: 'vendor-1',
@@ -417,6 +503,29 @@ describe('#158 durable portal submit', () => {
           skip = Boolean(skipProductWriteWhen?.(current, patch));
           const audit = auditFactory?.(current, patch);
           expect(audit?.createdAt).toBe('2026-10-07T12:00:00.000Z');
+
+          const vendorSet = vi.fn();
+          const vendorRef = { id: 'vendor-1' } as any;
+          const tx = {
+            get: vi.fn(async () => ({
+              exists: true,
+              data: () => ({ organizationId: 'org1' }),
+            })),
+            set: vendorSet,
+          } as any;
+          const db = {
+            collection: vi.fn(() => ({
+              doc: vi.fn(() => vendorRef),
+            })),
+          } as any;
+          const commitRelated = await prepareRelatedWrites?.(tx, db, current, patch);
+          commitRelated?.();
+          expect(vendorSet).toHaveBeenCalledWith(
+            vendorRef,
+            { assessmentStatus: 'Under Review' },
+            { merge: true },
+          );
+
           return patch;
         }
       ),

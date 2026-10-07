@@ -24,7 +24,7 @@ describe('#158 portal submit durable audit coupling', () => {
     expect(submit).not.toContain("eventType: 'assessment.submitted'");
   });
 
-  it('keeps vendor Under Review state inside the same server transaction', () => {
+  it('keeps vendor Under Review projection inside the authoritative server transaction', () => {
     const portal = read('src/pages/VendorPortal.tsx');
     const start = portal.indexOf('const handleSubmit = async () => {');
     const end = portal.indexOf('\n  const goNext', start);
@@ -33,8 +33,9 @@ describe('#158 portal submit durable audit coupling', () => {
 
     expect(submit).toContain("fetch('/api/portal/submit'");
     expect(submit).not.toContain('syncVendorAfterAssessmentSubmit');
+    expect(server).toContain("db.collection('vendors').doc(vendorId)");
     expect(server).toContain("assessmentStatus: 'Under Review'");
-    expect(server).toContain('relatedVendorPatchFactory');
-    expect(server).toContain("db.collection('vendors').doc(relatedVendor.vendorId)");
+    expect(server).toContain('prepareRelatedWrites');
+    expect(server).toContain('commitRelatedWrites?.()');
   });
 });
