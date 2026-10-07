@@ -5,7 +5,6 @@ import {
   onSnapshot,
   query,
   where,
-  addDoc,
   doc,
   getDoc,
 } from 'firebase/firestore';
@@ -446,34 +445,6 @@ export function VendorsDirectory() {
       } catch (mailEx: any) {
         emailQueueError = mailEx?.message || 'Could not queue email';
         console.warn('Invite vendor: email queue failed', mailEx);
-      }
-
-      if (orgId) {
-        try {
-          await addDoc(collection(db, 'vendor_invites'), {
-            organizationId: orgId,
-            vendorName: input.name,
-            vendorEmail: input.primaryContactEmail,
-            invitedByEmail: profile?.email || null,
-            status: emailQueued ? 'email_queued' : 'vendor_created_email_failed',
-            emailError: emailQueued ? null : emailQueueError,
-            createdAt: new Date().toISOString(),
-          });
-        } catch (invEx) {
-          console.warn('Could not record vendor_invites audit entry', invEx);
-        }
-        void emitAuditBestEffort({
-          tenantId: orgId,
-          eventType: 'vendor.invite_queued',
-          actorId: user?.uid || null,
-          objectType: 'vendor',
-          objectId: vendorId,
-          payload: {
-            vendorName: input.name,
-            emailQueued,
-            toDomain: input.primaryContactEmail.split('@')[1] || null,
-          },
-        });
       }
 
       setShowInvite(false);
