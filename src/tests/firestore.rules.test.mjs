@@ -236,6 +236,18 @@ async function main() {
     ),
   );
 
+  await check('org member CANNOT forge a vendor welcome invite audit record', () =>
+    assertFails(
+      setDoc(doc(db, 'vendor_invites/direct-client-invite'), {
+        organizationId: ORG,
+        vendorId: 'v1',
+        vendorName: 'Vendor One',
+        vendorEmail: 'vendor@example.com',
+        status: 'email_queued',
+      }),
+    ),
+  );
+
   await check('browser client CANNOT create a durable material-audit journal row', () =>
     assertFails(
       setDoc(doc(db, 'audit_material_intents/forged-event'), {
