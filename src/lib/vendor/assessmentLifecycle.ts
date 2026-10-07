@@ -126,7 +126,6 @@ export function buildPortalAutosavePatch(input: {
   progressPct: number;
   progress: number;
   status: 'Sent' | 'In Progress';
-  questions: PortalQuestion[];
   updatedAt: string;
 } {
   const answers = compactAnswers(input.answers);
@@ -138,7 +137,6 @@ export function buildPortalAutosavePatch(input: {
     progressPct: pct,
     progress: pct,
     status: pct > 0 ? 'In Progress' : 'Sent',
-    questions: input.questions,
     updatedAt: input.nowIso || new Date().toISOString(),
   };
 }
