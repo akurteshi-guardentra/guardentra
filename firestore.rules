@@ -370,7 +370,9 @@ service cloud.firestore {
     // after creation.
     match /vendor_invites/{inviteId} {
       allow read: if isDocOrgMember();
-      allow create: if isCreatingForOwnOrg();
+      // Welcome invite truth is server-authoritative: mail queue + invite record +
+      // durable audit intent commit together in /api/notify/mail.
+      allow create: if false;
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
