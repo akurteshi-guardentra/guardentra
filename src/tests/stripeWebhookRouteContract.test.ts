@@ -27,6 +27,9 @@ describe('#144 Stripe webhook route contract', () => {
     expect(route).toContain('Stripe webhook customer mapping not found');
     expect(route).toContain('Stripe webhook organization mapping not found');
     expect(route).toContain('Stripe webhook customer mapping is ambiguous');
+    expect(route).toContain('requireMatchingStripeSubscription(');
+    expect(route).toContain('userData.stripeSubscriptionId');
+    expect(route).toContain('orgData.stripeSubscriptionId');
   });
 
   it('reconciles subscription events against Stripe current state before applying them', () => {

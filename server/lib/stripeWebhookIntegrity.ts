@@ -74,3 +74,16 @@ export function requireStripeMapping(value: unknown, label: string): string {
   }
   return value;
 }
+
+export function requireMatchingStripeSubscription(
+  storedSubscriptionId: unknown,
+  incomingSubscriptionId: string,
+  ownerLabel: 'user' | 'organization',
+): string {
+  const stored = requireStripeMapping(storedSubscriptionId, `${ownerLabel} subscription`);
+  const incoming = requireStripeMapping(incomingSubscriptionId, 'subscription');
+  if (stored !== incoming) {
+    throw new Error(`Stripe webhook subscription mapping mismatch for ${ownerLabel}`);
+  }
+  return incoming;
+}

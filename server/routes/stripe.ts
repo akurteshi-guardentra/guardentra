@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { ensureAdmin, requireFirebaseAuth } from '../middleware/requireFirebaseAuth';
 import {
+  requireMatchingStripeSubscription,
   requireStripeMapping,
   shouldApplyStripeBillingEvent,
   stripeBillingCursorFields,
@@ -356,12 +357,24 @@ router.post('/webhook', async (req, res) => {
       const userDoc = usersSnapshot.docs[0];
       const userRef = userDoc.ref;
       const userData = userDoc.data() || {};
+      const subscriptionId = requireStripeMapping(subscription.id, 'subscription');
+      requireMatchingStripeSubscription(
+        userData.stripeSubscriptionId,
+        subscriptionId,
+        'user',
+      );
       const orgId = requireStripeMapping(userData.organizationId, 'organization');
       const orgRef = db.collection('organizations').doc(orgId);
       const orgSnap = await tx.get(orgRef);
       if (!orgSnap.exists) {
         throw new Error(`Stripe webhook organization mapping not found for ${orgId}`);
       }
+      const orgData = orgSnap.data() || {};
+      requireMatchingStripeSubscription(
+        orgData.stripeSubscriptionId,
+        subscriptionId,
+        'organization',
+      );
 
       const currentCursor = {
         id: orgSnap.data()?.stripeLastEventId,
@@ -376,7 +389,7 @@ router.post('/webhook', async (req, res) => {
           userRef,
           {
             subscriptionStatus: inactive ? 'canceled' : status,
-            stripeSubscriptionId: subscription.id,
+            stripeSubscriptionId: subscriptionId,
             ...cursorFields,
             updatedAt: FieldValue.serverTimestamp(),
           },
@@ -388,7 +401,7 @@ router.post('/webhook', async (req, res) => {
             ...buildOrgPlanPatch(planId, {
               subscriptionStatus: inactive ? 'canceled' : status,
               stripeCustomerId: customerId,
-              stripeSubscriptionId: subscription.id,
+              stripeSubscriptionId: subscriptionId,
             }),
             ...cursorFields,
           },

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  requireMatchingStripeSubscription,
   requireStripeMapping,
   shouldApplyStripeBillingEvent,
   stripeBillingCursorFields,
@@ -82,6 +83,16 @@ describe('#144 Stripe webhook integrity helpers', () => {
       stripeLastEventCreated: 1234,
       stripeLastEventType: 'customer.subscription.updated',
     });
+  });
+
+  it('fails closed when the stored subscription does not match the incoming event', () => {
+    expect(requireMatchingStripeSubscription('sub_1', 'sub_1', 'user')).toBe('sub_1');
+    expect(() =>
+      requireMatchingStripeSubscription(undefined, 'sub_1', 'user'),
+    ).toThrow('Stripe webhook could not resolve required user subscription');
+    expect(() =>
+      requireMatchingStripeSubscription('sub_old', 'sub_new', 'organization'),
+    ).toThrow('Stripe webhook subscription mapping mismatch for organization');
   });
 
   it('fails closed when required internal mapping is absent', () => {
