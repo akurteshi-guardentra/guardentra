@@ -94,6 +94,101 @@ router.post('/mail', async (req, res) => {
 
     const ref = db.collection(MAIL_COLLECTION).doc(resolved.queueId);
 
+    if (resolved.intentType === 'vendor_welcome') {
+      const vendorRef = db.collection('vendors').doc(resolved.objectId);
+      const inviteRef = db.collection('vendor_invites').doc(resolved.queueId);
+      const result = await db.runTransaction(async (tx) => {
+        const queueSnap = await tx.get(ref);
+        const vendorSnap = await tx.get(vendorRef);
+        const inviteSnap = await tx.get(inviteRef);
+
+        if (!vendorSnap.exists) {
+          throw new NotificationIntentError(
+            404,
+            'vendor_missing',
+            'Authoritative vendor no longer exists',
+          );
+        }
+
+        const vendorData = vendorSnap.data() || {};
+        if (String(vendorData.organizationId || '') !== resolved.organizationId) {
+          throw new NotificationIntentError(
+            404,
+            'object_unavailable',
+            'Notification object is unavailable',
+          );
+        }
+
+        const currentRecipient = String(
+          vendorData.primaryContactEmail || '',
+        ).trim().toLowerCase();
+        if (!currentRecipient || currentRecipient !== resolved.recipient.toLowerCase()) {
+          throw new NotificationIntentError(
+            409,
+            'vendor_recipient_changed',
+            'Vendor recipient changed; retry notification resolution',
+          );
+        }
+
+        const existingInvite = inviteSnap.exists ? inviteSnap.data() || {} : {};
+        const createdAt =
+          typeof existingInvite.createdAt === 'string' && existingInvite.createdAt.trim()
+            ? existingInvite.createdAt
+            : new Date().toISOString();
+        const eventId = materialAuditEventId([
+          resolved.organizationId,
+          'vendor.invite_queued',
+          resolved.objectId,
+          resolved.queueId,
+        ]);
+        const preparedAudit = await prepareMaterialAuditIntent(tx, db, {
+          eventId,
+          tenantId: resolved.organizationId,
+          eventType: 'vendor.invite_queued',
+          actorId: uid,
+          actorType: 'user',
+          objectType: 'vendor',
+          objectId: resolved.objectId,
+          payload: {
+            queueId: resolved.queueId,
+            queueAccepted: true,
+            toDomain: currentRecipient.split('@')[1] || null,
+          },
+          createdAt,
+        });
+
+        const deduplicated = queueSnap.exists;
+        if (!deduplicated) {
+          tx.create(ref, queueDoc);
+        }
+
+        tx.set(
+          inviteRef,
+          {
+            organizationId: resolved.organizationId,
+            vendorId: resolved.objectId,
+            vendorName: String(vendorData.name || 'Vendor'),
+            vendorEmail: currentRecipient,
+            invitedByUid: uid,
+            status: 'email_queued',
+            queueId: resolved.queueId,
+            createdAt,
+            updatedAt: new Date().toISOString(),
+          },
+          { merge: true },
+        );
+        commitPreparedMaterialAuditIntent(tx, preparedAudit);
+
+        return { deduplicated };
+      });
+
+      return res.json({
+        queued: true,
+        id: ref.id,
+        deduplicated: result.deduplicated,
+      });
+    }
+
     if (resolved.intentType === 'assessment_invite') {
       const assessmentRef = db.collection('assessments').doc(resolved.objectId);
       const result = await db.runTransaction(async (tx) => {
