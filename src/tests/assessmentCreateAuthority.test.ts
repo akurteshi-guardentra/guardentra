@@ -100,17 +100,18 @@ const createBody = {
   requestId: 'req-12345678',
   vendorId: 'vendor-1',
   frameworks: ['soc2'],
-  frameworkPackIds: ['soc2-v1'],
-  frameworkName: 'SOC 2',
+  // These forged snapshot fields are intentionally ignored by the server.
+  frameworkPackIds: ['attacker-pack'],
+  frameworkName: 'Attacker Pack',
   questions: [
     {
-      id: 'q1',
+      id: 'attacker-question',
       category: 'Access Control',
-      question: 'Do you require MFA?',
-      required: true,
+      question: 'Trust the browser?',
+      required: false,
     },
   ],
-  sourceQuestionCount: 1,
+  sourceQuestionCount: 9999,
   dueAt: '2026-11-01T00:00:00.000Z',
   triageTier: 'Standard',
   reviewCadence: 'annual',
@@ -144,6 +145,13 @@ describe('#162 hosted assessment create authority', () => {
     expect(assessment?.sentAt).toBeUndefined();
     expect(assessment?.organizationId).toBe('org-1');
     expect(assessment?.vendorId).toBe('vendor-1');
+    expect(assessment?.frameworkPackIds).toEqual(['soc2@current']);
+    expect(Number(assessment?.questionCount)).toBeGreaterThan(0);
+    expect(
+      (assessment?.questions as Array<{ id?: string }>).some(
+        (question) => question.id === 'attacker-question',
+      ),
+    ).toBe(false);
 
     expect(rows.get('vendors/vendor-1')).toMatchObject({
       assessmentStatus: 'Not Started',
