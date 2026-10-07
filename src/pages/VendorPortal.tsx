@@ -265,6 +265,7 @@ export function VendorPortal() {
           answers: effective,
           comments: nextComments,
           evidenceByQuestion: nextEvidence,
+          currentStatus: assessment?.status,
         });
         await updateDoc(doc(db, 'assessments', assessmentId), {
           ...patch,
