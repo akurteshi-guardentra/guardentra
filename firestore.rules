@@ -455,6 +455,23 @@ service cloud.firestore {
         || resource.data.status == 'Sent';
     }
 
+    // Org browser clients may keep lifecycle state unchanged, or explicitly reopen
+    // a closed submission for correction. Under Review / Completed / Sent are all
+    // server-authoritative transitions.
+    function orgLifecycleTransitionAllowed() {
+      let lifecycleChanged = request.resource.data.status != resource.data.status
+        || request.resource.data.portalOpen != resource.data.portalOpen;
+      return !lifecycleChanged || (
+        request.resource.data.status == 'In Progress'
+        && request.resource.data.portalOpen == true
+        && request.resource.data.keys().hasAll([
+          'correctionReopenedAt',
+          'correctionReopenedBy',
+          'correctionReason'
+        ])
+      );
+    }
+
     // After send, org members cannot silently rewrite the questionnaire snapshot
     // (questions / packs / frameworks). Empty snapshots may still be recovered.
     function orgPreservesSentSnapshot() {
@@ -503,7 +520,8 @@ service cloud.firestore {
           && orgPreservesEvidenceTrust()
           && orgDeniesClientDecisionWrites()
           && orgDeniesClientMaterialTransitionWrites()
-          && orgCannotMintSentStatus()) ||
+          && orgCannotMintSentStatus()
+          && orgLifecycleTransitionAllowed()) ||
         (portalMayWriteAssessment(assessmentId)
           && onlyPortalAssessmentFieldsChanged()
           && portalAutosaveStateValid());
