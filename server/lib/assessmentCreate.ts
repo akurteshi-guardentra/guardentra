@@ -175,11 +175,19 @@ export async function handleAssessmentCreate(
       const vendorRef = db.collection('vendors').doc(vendorId);
       const orgRef = db.collection('organizations').doc(organizationId);
 
-      const [assessmentSnap, vendorSnap, orgSnap] = await Promise.all([
+      const [assessmentSnap, currentUserSnap, vendorSnap, orgSnap] = await Promise.all([
         tx.get(assessmentRef),
+        tx.get(userRef),
         tx.get(vendorRef),
         tx.get(orgRef),
       ]);
+
+      if (
+        !currentUserSnap.exists ||
+        String(currentUserSnap.data()?.organizationId || '') !== organizationId
+      ) {
+        throw new AssessmentCreateError(403, 'Organization membership changed; retry.');
+      }
 
       if (assessmentSnap.exists) {
         const existing = assessmentSnap.data() || {};
