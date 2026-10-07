@@ -7,6 +7,7 @@ import {
   handleOrgDecision,
   liveEvidenceDeps,
 } from '../lib/evidenceAccess.ts';
+import { handleAssessmentCreate } from '../lib/assessmentCreate.ts';
 
 const router = Router();
 const deps = liveEvidenceDeps();
@@ -20,6 +21,7 @@ router.get('/attachment-download', limiter, (req, res) =>
   handleOrgAttachmentDownload(req, res, deps)
 );
 
+router.post('/assessment-create', limiter, (req, res) => handleAssessmentCreate(req, res));
 router.post('/assessment-decision', limiter, (req, res) => handleOrgDecision(req, res, deps));
 
 router.post('/archive-empty-assessment', limiter, (req, res) =>
