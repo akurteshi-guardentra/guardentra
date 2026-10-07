@@ -421,25 +421,6 @@ export function Assessments() {
         evidenceByQuestion: reviewAssessment.evidenceByQuestion as any,
         evidenceTrustByStoragePath: reviewAssessment.evidenceTrustByStoragePath,
       });
-      void emitAuditBestEffort({
-        tenantId: orgId,
-        eventType: 'decision.finalized',
-        actorId: user?.uid || null,
-        objectType: 'assessment',
-        objectId: reviewAssessment.id,
-        payload: {
-          outcome,
-          vendorId: reviewAssessment.vendorId,
-          closesPortal: closes,
-          nextReviewAt: closes ? nextReviewAt : null,
-          exceptionCount: exceptions.length,
-          hasNotes: Boolean(decisionNotes.trim()),
-          residualRiskLevel,
-          remediationRequired: requiresPlan,
-          remediationOwnerPresent: requiresPlan ? Boolean(remediationOwner.trim()) : false,
-          remediationDueAt: requiresPlan ? normalizedRemediationDueAt : null,
-        },
-      });
       if (exceptions.length) {
         void emitAuditBestEffort({
           tenantId: orgId,

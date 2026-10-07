@@ -37,6 +37,8 @@ describe('local assessment store + vendor correlation', () => {
     });
     expect(branded.requesterOrgName).toBe('Acme Buyer');
     expect(branded.requesterLogoUrl).toBe('https://cdn.example.com/logo.png');
+    expect(branded.status).toBe('Not Started');
+    expect(branded.sentAt).toBeUndefined();
 
     const asm = createLocalAssessment(orgId, {
       vendorId: vendor.id,

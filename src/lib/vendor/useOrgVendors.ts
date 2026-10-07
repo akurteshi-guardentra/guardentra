@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { addDoc, collection, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { authHeaders } from '../authHeaders';
 import type { Vendor } from './types';
 import {
   HOSTED_VENDOR_LOAD_FAILED,
@@ -24,9 +25,27 @@ export async function promoteLocalVendors(orgId: string): Promise<Map<string, st
   const localOnly = listLocalVendors(orgId).filter((v) => v.id.startsWith('local_'));
   for (const vendor of localOnly) {
     try {
-      const { id, ...rest } = vendor;
-      const ref = await addDoc(collection(db, 'vendors'), rest);
-      idMap.set(id, ref.id);
+      const { id } = vendor;
+      const response = await fetch('/api/org/vendor-create', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          name: vendor.name,
+          category: vendor.category,
+          criticality: vendor.criticality,
+          primaryContactName: vendor.primaryContactName,
+          primaryContactEmail: vendor.primaryContactEmail,
+          source: 'create',
+        }),
+      });
+      const body = (await response.json().catch(() => ({}))) as {
+        vendorId?: string;
+        error?: string;
+      };
+      if (!response.ok || !body.vendorId) {
+        throw new Error(body.error || 'server-authoritative vendor promotion failed');
+      }
+      idMap.set(id, body.vendorId);
       removeLocalVendor(orgId, id);
     } catch (err) {
       console.warn('useOrgVendors: could not promote local-only vendor, will retry next reconnect', err);
