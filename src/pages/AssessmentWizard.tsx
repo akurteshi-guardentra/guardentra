@@ -337,61 +337,51 @@ export function AssessmentWizard() {
         requesterLogoUrl: requesterLogoUrl || null,
       });
 
-      const ref = await Promise.race([
-        addDoc(collection(db, 'assessments'), fields),
+      const createResponse = await Promise.race([
+        fetch('/api/org/assessment-create', {
+          method: 'POST',
+          headers: await authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({
+            requestId: createRequestId,
+            vendorId,
+            frameworks,
+            frameworkPackIds,
+            frameworkName,
+            questions: previewQuestions,
+            sourceQuestionCount: sourceQuestions,
+            dueAt: fields.dueAt,
+            triageTier: activeTier,
+            reviewCadence,
+            reminderScheduleId: schedule.id,
+            reminderSchedule: {
+              daysBeforeDue: schedule.daysBeforeDue,
+              onDue: schedule.onDue,
+              daysAfterDue: schedule.daysAfterDue,
+              label: schedule.label,
+            },
+          }),
+        }),
         writeTimeout,
       ]);
+      if (!createResponse.ok) {
+        const body = (await createResponse.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error || 'Cloud assessment create failed');
+      }
+      const created = (await createResponse.json()) as { assessmentId?: string };
+      const assessmentId = String(created.assessmentId || '').trim();
+      if (!assessmentId) throw new Error('Cloud assessment create returned no assessment id');
 
-      await syncVendorAfterAssessmentCreate(orgId, vendorId, false);
-
-      void emitAuditBestEffort({
-        tenantId: orgId,
-        eventType: 'assessment.created',
-        actorId: user?.uid || null,
-        objectType: 'assessment',
-        objectId: ref.id,
-        payload: {
-          vendorId,
-          frameworks,
-          triageTier: activeTier,
-          questionCount: fields.questionCount,
-        },
-      });
       const to = (selected.primaryContactEmail || '').trim();
       if (to) {
         try {
           await sendNotificationIntent({
             intentType: 'assessment_invite',
-            objectId: ref.id,
+            objectId: assessmentId,
           });
-
-          void emitAuditBestEffort({
-            tenantId: orgId,
-            eventType: 'assessment.sent',
-            actorId: user?.uid || null,
-            objectType: 'assessment',
-            objectId: ref.id,
-            payload: {
-              vendorId,
-              dueAt: fields.dueAt,
-              reminderScheduleId: schedule.id,
-              inviteEmail: true,
-              queueAccepted: true,
-            },
+          setSendBanner({
+            tone: 'ok',
+            text: `Assessment created. Invite queued to the vendor's authoritative contact ${to} (queue success is not delivery proof).`,
           });
-
-          try {
-            await syncVendorAfterAssessmentSent(orgId, vendorId, false);
-            setSendBanner({
-              tone: 'ok',
-              text: `Assessment created. Invite queued to the vendor's authoritative contact ${to} (queue success is not delivery proof).`,
-            });
-          } catch (syncEx: unknown) {
-            setSendBanner({
-              tone: 'warn',
-              text: `Assessment invite queued to ${to}, but the vendor status chip could not be confirmed${syncEx instanceof Error ? ` (${syncEx.message})` : ''}.`,
-            });
-          }
         } catch (mailEx: unknown) {
           setSendBanner({
             tone: 'warn',
@@ -406,7 +396,7 @@ export function AssessmentWizard() {
       }
 
       navigate(
-        `/assessments?vendorId=${encodeURIComponent(vendorId)}&created=${encodeURIComponent(ref.id)}`
+        `/assessments?vendorId=${encodeURIComponent(vendorId)}&created=${encodeURIComponent(assessmentId)}`
       );
     } catch (ex: unknown) {
       if (mayFallbackAssessmentCreateToLocal(ex)) {
