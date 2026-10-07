@@ -27,6 +27,12 @@ jobs:
       - name: Vitest
         run: npm run test:vitest
 
+      - name: Set up Java 21 for Firebase emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
       - name: Firestore rules
         run: npm run test:firestore-rules
 
