@@ -429,8 +429,13 @@ service cloud.firestore {
     }
 
     function portalAutosaveStateValid() {
-      return (resource.data.status == 'Sent' || resource.data.status == 'In Progress')
-        && (request.resource.data.status == 'Sent' || request.resource.data.status == 'In Progress');
+      return (
+        resource.data.status == 'Sent'
+        && (request.resource.data.status == 'Sent' || request.resource.data.status == 'In Progress')
+      ) || (
+        resource.data.status == 'In Progress'
+        && request.resource.data.status == 'In Progress'
+      );
     }
 
     function orgPreservesEvidenceTrust() {
