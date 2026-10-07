@@ -143,6 +143,16 @@ router.post('/mail', async (req, res) => {
             'Assessment vendor mapping is unavailable',
           );
         }
+        const currentRecipient = String(
+          vendorSnap.data()?.primaryContactEmail || '',
+        ).trim().toLowerCase();
+        if (!currentRecipient || currentRecipient !== resolved.recipient.toLowerCase()) {
+          throw new NotificationIntentError(
+            409,
+            'assessment_recipient_changed',
+            'Assessment recipient changed; retry notification resolution',
+          );
+        }
 
         const existingSentAt =
           typeof assessmentData.sentAt === 'string' && assessmentData.sentAt.trim()
