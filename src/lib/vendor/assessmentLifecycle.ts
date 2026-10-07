@@ -60,7 +60,7 @@ export function buildCreateAssessmentFields(input: {
   frameworkPackIds?: string[];
   questionBankVersion: string;
   frameworkName?: string;
-  status: 'Sent';
+  status: 'Not Started';
   dueAt: string;
   dueDate: string;
   progressPct: 0;
@@ -70,7 +70,6 @@ export function buildCreateAssessmentFields(input: {
   questions: PortalQuestion[];
   portalOpen: true;
   createdAt: string;
-  sentAt: string;
   triageTier?: string;
   reviewCadence?: string;
   reminderScheduleId?: string;
@@ -89,7 +88,7 @@ export function buildCreateAssessmentFields(input: {
     frameworkPackIds: input.frameworkPackIds,
     questionBankVersion: QUESTION_BANK_VERSION,
     frameworkName: input.frameworkName,
-    status: 'Sent',
+    status: 'Not Started',
     dueAt: input.dueAt,
     dueDate: input.dueAt.slice(0, 10),
     progressPct: 0,
@@ -99,7 +98,6 @@ export function buildCreateAssessmentFields(input: {
     questions: input.questions,
     portalOpen: true,
     createdAt: now,
-    sentAt: now,
     versionLocked: true,
     ...(input.triageTier ? { triageTier: input.triageTier } : {}),
     ...(input.reviewCadence ? { reviewCadence: input.reviewCadence } : {}),
