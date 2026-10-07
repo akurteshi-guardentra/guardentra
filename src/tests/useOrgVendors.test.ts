@@ -50,6 +50,13 @@ vi.mock('firebase/firestore', () => ({
   }),
 }));
 
+vi.mock('../lib/authHeaders', () => ({
+  authHeaders: vi.fn(async (headers: Record<string, string>) => headers),
+}));
+
+const fetchMock = vi.fn();
+vi.stubGlobal('fetch', fetchMock);
+
 vi.mock('../firebase', () => ({ db: {}, auth: {}, storage: {} }));
 
 import { useOrgVendors } from '../lib/vendor/useOrgVendors';
@@ -71,6 +78,11 @@ beforeEach(() => {
   unsubscribed = 0;
   listenCount = 0;
   addedDocs.length = 0;
+  fetchMock.mockReset();
+  fetchMock.mockResolvedValue({
+    ok: true,
+    json: vi.fn(async () => ({ vendorId: 'cloud_1' })),
+  } as unknown as Response);
 });
 
 afterEach(() => {
@@ -149,10 +161,14 @@ describe('useOrgVendors — local/Firestore fallback', () => {
 
     expect(result.current.mode).toBe('firestore');
 
-    // Written to Firestore without the local_ id tagging along.
-    expect(addedDocs).toHaveLength(1);
-    expect(addedDocs[0]).toMatchObject({ name: 'Created Offline' });
-    expect(addedDocs[0]).not.toHaveProperty('id');
+    // Promoted through the server-authoritative vendor route, never direct addDoc.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toBe('/api/org/vendor-create');
+    const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body || '{}')) as {
+      name: string;
+    };
+    expect(body.name).toBe('Created Offline');
+    expect(addedDocs).toHaveLength(0);
 
     // Removed from localStorage, so a later fallback cannot resurrect it.
     expect(listLocalVendors(ORG)).toHaveLength(0);
@@ -203,6 +219,7 @@ describe('useOrgVendors — local/Firestore fallback', () => {
     });
 
     expect(addedDocs).toHaveLength(0);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 
