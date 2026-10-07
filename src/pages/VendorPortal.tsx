@@ -32,7 +32,7 @@ import {
 } from '../lib/vendor/questionBank';
 import { uploadPortalEvidence, requestPortalEvidenceValidate, fetchPortalEvidenceDownloadUrl, type UploadedEvidence } from '../lib/vendor/evidenceUpload';
 import { evidenceStateLabel, trustedEvidenceFileNames, type EvidenceState } from '../lib/vendor/evidenceTrust';
-import { syncVendorAfterAssessmentProgress, syncVendorAfterAssessmentSubmit } from '../lib/vendor/syncVendorAssessment';
+import { syncVendorAfterAssessmentProgress } from '../lib/vendor/syncVendorAssessment';
 import {
   buildPortalAutosavePatch,
   isReceiptMode,
@@ -543,13 +543,6 @@ export function VendorPortal() {
         throw new Error(body.error || 'Submission failed.');
       }
 
-      if (assessment?.organizationId && assessment?.vendorId) {
-        void syncVendorAfterAssessmentSubmit(
-          assessment.organizationId,
-          assessment.vendorId,
-          false
-        );
-      }
       setIsSuccess(true);
     } catch (err) {
       console.error(err);
