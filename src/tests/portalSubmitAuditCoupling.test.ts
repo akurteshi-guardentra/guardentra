@@ -24,15 +24,18 @@ describe('#158 portal submit durable audit coupling', () => {
     expect(submit).not.toContain("eventType: 'assessment.submitted'");
   });
 
-  it('keeps vendor status as a post-submit projection rather than the authoritative transition', () => {
+  it('keeps vendor Under Review projection inside the authoritative server transaction', () => {
     const portal = read('src/pages/VendorPortal.tsx');
     const start = portal.indexOf('const handleSubmit = async () => {');
     const end = portal.indexOf('\n  const goNext', start);
     const submit = portal.slice(start, end);
+    const server = read('server/lib/evidenceAccess.ts');
 
-    const serverIndex = submit.indexOf("fetch('/api/portal/submit'");
-    const vendorSyncIndex = submit.indexOf('syncVendorAfterAssessmentSubmit');
-    expect(serverIndex).toBeGreaterThan(-1);
-    expect(vendorSyncIndex).toBeGreaterThan(serverIndex);
+    expect(submit).toContain("fetch('/api/portal/submit'");
+    expect(submit).not.toContain('syncVendorAfterAssessmentSubmit');
+    expect(server).toContain("db.collection('vendors').doc(vendorId)");
+    expect(server).toContain("assessmentStatus: 'Under Review'");
+    expect(server).toContain('prepareRelatedWrites');
+    expect(server).toContain('commitRelatedWrites?.()');
   });
 });
