@@ -35,7 +35,6 @@ import { evidenceStateLabel, trustedEvidenceFileNames, type EvidenceState } from
 import { syncVendorAfterAssessmentProgress, syncVendorAfterAssessmentSubmit } from '../lib/vendor/syncVendorAssessment';
 import {
   buildPortalAutosavePatch,
-  buildPortalSubmitPatch,
   isReceiptMode,
 } from '../lib/vendor/assessmentLifecycle';
 import {
@@ -527,29 +526,28 @@ export function VendorPortal() {
         attestedAt: new Date().toISOString(),
         attestedByName: attestedByName.trim(),
       };
-      const patch = buildPortalSubmitPatch({
-        answers: effective,
-        comments,
-        evidenceByQuestion: evidence,
-        attestations: attestationPayload,
-        answerProposals: proposals,
+      const response = await fetch('/api/portal/submit', {
+        method: 'POST',
+        headers: await getPortalAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          assessmentId,
+          answers: effective,
+          comments,
+          evidenceByQuestion: evidence,
+          attestations: attestationPayload,
+          answerProposals: proposals,
+        }),
       });
-      await updateDoc(doc(db, 'assessments', assessmentId), patch);
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error || 'Submission failed.');
+      }
+
       if (assessment?.organizationId && assessment?.vendorId) {
-        void syncVendorAfterAssessmentSubmit(assessment.organizationId, assessment.vendorId, false);
-        void emitAuditBestEffort(
-          {
-            tenantId: assessment.organizationId,
-            eventType: 'assessment.submitted',
-            objectType: 'assessment',
-            objectId: assessmentId,
-            payload: {
-              vendorId: assessment.vendorId,
-              questionCount: questions.length,
-              attestedByName: attestedByName.trim(),
-            },
-          },
-          { getAuthHeaders: getPortalAuthHeaders }
+        void syncVendorAfterAssessmentSubmit(
+          assessment.organizationId,
+          assessment.vendorId,
+          false
         );
       }
       setIsSuccess(true);
