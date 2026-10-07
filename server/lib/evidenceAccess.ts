@@ -73,6 +73,10 @@ export type EvidenceDeps = {
       current: Record<string, unknown>,
       patch: Record<string, unknown>,
     ) => boolean,
+    relatedVendorPatchFactory?: (
+      current: Record<string, unknown>,
+      patch: Record<string, unknown>,
+    ) => { vendorId: string; patch: Record<string, unknown> } | null,
   ) => Promise<Record<string, unknown>>;
 };
 
@@ -286,6 +290,7 @@ export function liveEvidenceDeps(): EvidenceDeps {
       updater,
       auditIntentFactory,
       skipProductWriteWhen,
+      relatedVendorPatchFactory,
     ) {
       ensureAdmin();
       const db = getAdminDb();
@@ -295,6 +300,23 @@ export function liveEvidenceDeps(): EvidenceDeps {
         if (!snap.exists) throw new HttpError(404, 'Assessment not found');
         const current = (snap.data() || {}) as Record<string, unknown>;
         const patch = await updater(current);
+
+        const relatedVendor = relatedVendorPatchFactory?.(current, patch) || null;
+        let vendorRef: FirebaseFirestore.DocumentReference | null = null;
+        if (relatedVendor) {
+          vendorRef = db.collection('vendors').doc(relatedVendor.vendorId);
+          const vendorSnap = await tx.get(vendorRef);
+          if (!vendorSnap.exists) {
+            throw new HttpError(409, 'Assessment vendor no longer exists');
+          }
+          const vendor = vendorSnap.data() || {};
+          if (
+            String(vendor.organizationId || '') !==
+            String(current.organizationId || '')
+          ) {
+            throw new HttpError(403, 'Assessment vendor tenant mismatch');
+          }
+        }
 
         const auditIntent = auditIntentFactory?.(current, patch) || null;
         const preparedAudit = auditIntent
@@ -306,6 +328,9 @@ export function liveEvidenceDeps(): EvidenceDeps {
 
         if (!skipProductWrite) {
           tx.update(ref, toFirestoreAssessmentUpdate(patch));
+          if (vendorRef && relatedVendor) {
+            tx.set(vendorRef, relatedVendor.patch, { merge: true });
+          }
         }
         if (preparedAudit) {
           commitPreparedMaterialAuditIntent(tx, preparedAudit);
@@ -572,6 +597,26 @@ export async function handlePortalSubmit(req: Request, res: Response, deps: Evid
               current.status === 'Completed' ||
               current.portalOpen === false),
         ),
+      (current) => {
+        const alreadySubmitted = Boolean(
+          current.submittedSnapshot &&
+            (current.status === 'Under Review' ||
+              current.status === 'Completed' ||
+              current.portalOpen === false),
+        );
+        if (alreadySubmitted) return null;
+        const vendorId = String(current.vendorId || '').trim();
+        if (!vendorId) {
+          throw new HttpError(500, 'Assessment vendor is required for submit');
+        }
+        return {
+          vendorId,
+          patch: {
+            assessmentStatus: 'Under Review',
+            lastAssessmentAt: nowIso,
+          },
+        };
+      },
     );
 
     res.json({ ok: true, deduplicated, patch });
