@@ -236,6 +236,38 @@ async function main() {
     ),
   );
 
+  await check('org member CANNOT directly write FastTrack triage', () =>
+    assertFails(
+      setDoc(doc(db, 'vendor_triage/direct-triage'), {
+        organizationId: ORG,
+        vendorId: 'direct-triage',
+        tier: 'Lite',
+        completedAt: '2026-10-08T00:00:00.000Z',
+      }),
+    ),
+  );
+
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'vendor_triage/server-triage'), {
+      organizationId: ORG,
+      vendorId: 'server-triage',
+      tier: 'Standard',
+      completedAt: '2026-10-08T00:00:00.000Z',
+    });
+  });
+
+  await check('same-tenant member CAN read server-authored FastTrack triage', () =>
+    assertSucceeds(getDoc(doc(db, 'vendor_triage/server-triage'))),
+  );
+
+  await check('same-tenant member CANNOT update server-authored FastTrack triage', () =>
+    assertFails(
+      updateDoc(doc(db, 'vendor_triage/server-triage'), {
+        tier: 'Enhanced',
+      }),
+    ),
+  );
+
   await check('browser client CANNOT create a durable material-audit journal row', () =>
     assertFails(
       setDoc(doc(db, 'audit_material_intents/forged-event'), {

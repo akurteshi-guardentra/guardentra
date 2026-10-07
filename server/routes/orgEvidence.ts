@@ -12,6 +12,7 @@ import {
   handleOrgVendorCreate,
   liveVendorMutationDeps,
 } from '../lib/vendorMutation.ts';
+import { handleOrgVendorTriage } from '../lib/vendorTriageMutation.ts';
 
 const router = Router();
 const deps = liveEvidenceDeps();
@@ -29,6 +30,8 @@ router.get('/attachment-download', limiter, (req, res) =>
 router.post('/vendor-create', limiter, (req, res) =>
   handleOrgVendorCreate(req, res, vendorDeps)
 );
+
+router.post('/vendor-triage', limiter, (req, res) => handleOrgVendorTriage(req, res));
 
 router.post('/assessment-create', limiter, (req, res) => handleAssessmentCreate(req, res));
 router.post('/assessment-decision', limiter, (req, res) => handleOrgDecision(req, res, deps));

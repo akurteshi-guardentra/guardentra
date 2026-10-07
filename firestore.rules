@@ -374,16 +374,11 @@ service cloud.firestore {
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
-    // FastTrack triage persistence (answers + Lite/Standard/Enhanced recommendation).
-    // Doc id = vendorId; org members may create/update their org's triage docs.
+    // FastTrack triage is a material transition. Hosted writes are server/Admin-only
+    // so the triage record, vendor review date, and durable audit intent stay atomic.
     match /vendor_triage/{vendorId} {
       allow read: if isDocOrgMember();
-      allow create: if isCreatingForOwnOrg() && childVendorBoundIfPresent();
-      allow update: if isDocOrgMember()
-        && orgIdUnchanged()
-        && parentVendorUnchanged()
-        && childVendorBoundIfPresent();
-      allow delete: if isDocOrgMember() && isAdmin();
+      allow create, update, delete: if false;
     }
 
     // Vendor Assessments Collections (handle both names)

@@ -1,9 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { doc, updateDoc } from 'firebase/firestore';
 import { ArrowLeft, Check, Sparkles } from 'lucide-react';
-import { db } from '../firebase';
 import { useAuth } from '../lib/AuthContext';
+import { authHeaders } from '../lib/authHeaders';
 import { Button } from '../components/ui/button';
 import { PageShell } from '../components/spine/PageShell';
 import { cn } from '../lib/utils';
@@ -14,7 +13,6 @@ import {
   TRIAGE_QUESTIONS,
   frameworksToParam,
   isTriageComplete,
-  nextReviewAtFromCadence,
   recommendFromTriage,
   type TriageAnswers,
 } from '../lib/vendor/fastTrackTriage';
@@ -27,7 +25,7 @@ export function FastTrackTriage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const presetVendorId = params.get('vendorId') || '';
-  const { vendors, loading } = useOrgVendors(orgId);
+  const { vendors, loading, mode } = useOrgVendors(orgId);
 
   const [vendorId, setVendorId] = useState(presetVendorId);
   const [step, setStep] = useState(0);
@@ -94,53 +92,59 @@ export function FastTrackTriage() {
     if (!vendorId || !recommendation || !orgId) return;
     setAccepting(true);
     setAcceptError('');
-    const completedAt = new Date().toISOString();
     try {
-      await saveVendorTriage({
-        organizationId: orgId,
-        vendorId,
-        answers,
-        tier: recommendation.tier,
-        frameworks: recommendation.frameworks,
-        rationale: recommendation.rationale,
-        questionTarget: recommendation.questionTarget,
-        vendorTimeTarget: recommendation.vendorTimeTarget,
-        reviewCadence: answers.reviewCadence,
-        completedAt,
-        completedBy: user?.uid || null,
-      });
+      let acceptedRecommendation = recommendation;
 
-      const nextReviewAt = nextReviewAtFromCadence(answers.reviewCadence);
-      if (nextReviewAt && !vendorId.startsWith('local_')) {
-        try {
-          await updateDoc(doc(db, 'vendors', vendorId), { nextReviewAt });
-        } catch {
-          /* local / offline vendors skip cloud stamp */
-        }
-      }
-
-      void emitAuditBestEffort({
-        tenantId: orgId,
-        eventType: 'triage.completed',
-        actorId: user?.uid || null,
-        objectType: 'vendor',
-        objectId: vendorId,
-        payload: {
+      if (mode === 'local' || vendorId.startsWith('local_')) {
+        const completedAt = new Date().toISOString();
+        await saveVendorTriage({
+          organizationId: orgId,
+          vendorId,
+          answers,
           tier: recommendation.tier,
           frameworks: recommendation.frameworks,
           rationale: recommendation.rationale,
+          questionTarget: recommendation.questionTarget,
+          vendorTimeTarget: recommendation.vendorTimeTarget,
           reviewCadence: answers.reviewCadence,
-          dataExposure: answers.dataExposure,
-          accessLevel: answers.accessLevel,
-          businessCriticality: answers.businessCriticality,
-          requirements: answers.requirements,
-        },
-      });
+          completedAt,
+          completedBy: user?.uid || null,
+        });
+        void emitAuditBestEffort({
+          tenantId: orgId,
+          eventType: 'triage.completed',
+          actorId: user?.uid || null,
+          objectType: 'vendor',
+          objectId: vendorId,
+          payload: {
+            tier: recommendation.tier,
+            frameworks: recommendation.frameworks,
+            local: true,
+          },
+        });
+      } else {
+        if (mode !== 'firestore') {
+          throw new Error('Cloud vendor authority is unavailable. Retry when the workspace reconnects.');
+        }
+        const response = await fetch('/api/org/vendor-triage', {
+          method: 'POST',
+          headers: await authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ vendorId, answers }),
+        });
+        const body = (await response.json().catch(() => ({}))) as {
+          error?: string;
+          recommendation?: typeof recommendation;
+        };
+        if (!response.ok || !body.recommendation) {
+          throw new Error(body.error || 'Could not save authoritative FastTrack triage.');
+        }
+        acceptedRecommendation = body.recommendation;
+      }
 
       const qs = new URLSearchParams({
         vendorId,
-        frameworks: frameworksToParam(recommendation.frameworks),
-        tier: recommendation.tier,
+        frameworks: frameworksToParam(acceptedRecommendation.frameworks),
+        tier: acceptedRecommendation.tier,
       });
       navigate(`/assessments/new?${qs.toString()}`);
     } catch (ex: unknown) {
