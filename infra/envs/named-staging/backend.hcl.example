@@ -1,0 +1,4 @@
+# Copy to a local, gitignored backend.hcl only after read-only state-bucket inventory.
+# Do NOT point this root at guardentra-tfstate-eu-staging/terraform/state.
+bucket = "<OWNER_VERIFIED_DEDICATED_STATE_BUCKET>"
+prefix = "guardentra/named-staging/audit"
