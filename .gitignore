@@ -51,6 +51,11 @@ GoogleService-Info.plist
 *.tfvars
 !*.tfvars.example
 .terraform.lock.hcl
+!infra/envs/named-staging/.terraform.lock.hcl
+!infra/bootstrap/named-staging-state/.terraform.lock.hcl
+infra/envs/named-staging/backend.hcl
+infra/bootstrap/named-staging-state/*.tfplan
+infra/envs/named-staging/*.tfplan
 
 # Local ops secrets (never commit)
 .local-secrets/

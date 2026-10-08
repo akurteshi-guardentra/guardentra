@@ -25,6 +25,33 @@ Production: **out of scope**
 Before apply, re-read every baseline value directly. This document does not turn stale
 inventory into live proof.
 
+### Owner-supplied read-only inventory checkpoint — 2026-10-08
+
+Evidence source: authenticated Windows PowerShell outputs supplied by the Owner.
+This workspace has not independently authenticated to Google Cloud.
+
+- serving revision: `guardentra-staging-build-2026-09-14-001`, previously reported 100% Ready;
+- resolved image digest:
+  `us-central1-docker.pkg.dev/guardentra-staging/firebaseapphosting-images/guardentra-staging@sha256:6b0ad89b731d401f540d1539ac554fa68b05eda8bbf00b4885bc443497479047`;
+- no global allocated ranges, VPC/PSA peerings, Cloud SQL instances or VPN tunnels
+  were returned in supplied inventory;
+- default VPC is auto mode with regional routing; us-central1 subnet is `10.128.0.0/20`;
+- scanner VM is `guardentra-staging-clamav-01`, private IP `10.128.0.2`;
+- scanner TCP 3310 firewall source remains `10.128.0.0/20`;
+- NAT router is `guardentra-staging-nat-router`; NAT reports 2 VM endpoints and
+  `minExtraNatIpsNeeded=0`. This is topology/capacity metadata, not a fresh scanner test;
+- only the Firebase application bucket was listed; no dedicated state bucket found;
+- existing `AUDIT_DATABASE_URL` version 1 remains enabled; payload not retrieved;
+- SQL Admin API was absent from the supplied enabled-service list;
+- `servicenetworking.googleapis.com` was enabled when the earlier inventory command
+  prompted the Owner. Record this baseline change; do not claim zero prior cloud changes.
+
+`10.20.0.0/16` is a proposed PSA candidate with no overlap in the supplied subnet/route
+inventory. Avoid the entire auto-mode `10.128.0.0/9` reservation. Recheck current routes,
+ranges and connectivity before finalizing the saved plan; a candidate is not allocated.
+An imageDigest proves the revision's image identifier, not an independent registry
+retention or successful rollback test. Verify image availability before deployment.
+
 ## Proposed topology
 
 Keep the App Hosting runtime on the current default VPC and us-central1 network path.
@@ -97,6 +124,19 @@ approved secure method and their credentials stored outside Terraform/Git.
 
 The application runtime must never receive migrator privileges.
 
+Correction checkpoint: the malformed `DO $ ... $;` delimiters are replaced with
+matching `$audit_roles$` delimiters. The cloud-neutral `audit-migrations` CI job runs
+both SQL files twice on a disposable PostgreSQL 16 database and checks a separately
+authenticated application login: allowed append/outbox/metadata operations, duplicate
+event rejection, and forbidden updates/deletes/truncation/DDL/elevation.
+Until the exact-head job succeeds, execution evidence remains pending.
+
+The existing migration runner can fall back to the application URL. Managed staging
+execution must explicitly supply `AUDIT_DATABASE_URL_MIGRATOR` through secure local
+handling and verify the migrator identity; never rely on that fallback. The CI SQL
+contract is not proof of Cloud SQL connectivity, IAM, the production migration runner,
+or tenant/event-delivery behavior.
+
 ## Retention ownership
 
 Infrastructure retention candidate:
@@ -133,6 +173,30 @@ Do not initialize or reuse:
 
 The named-staging root uses a partial GCS backend and requires an Owner-verified
 dedicated bucket/prefix before the first remote plan.
+
+Proposed bootstrap root: `infra/bootstrap/named-staging-state` (local state only).
+Proposed bucket: `guardentra-staging-tfstate-965959469996`; proposed audit-state prefix:
+`guardentra/named-staging/audit`. Availability, project number and operator identity
+remain unverified. Never silently adopt an existing bucket.
+
+Bootstrap intent: one US-CENTRAL1 STANDARD bucket with uniform access, public access
+prevention, versioning, seven-day soft delete and destroy protection, plus one
+bucket-scoped `roles/storage.objectAdmin` binding to a verified Terraform operator.
+No application/runtime state access is proposed. Inherited IAM still requires review.
+This is two proposed resources, not an executed plan or authorized mutation.
+
+Sequence when no backend exists:
+1. verify candidate bucket ownership/absence, project number and Google operator;
+2. prepare a local-state bootstrap plan and review access, cost and recovery custody;
+3. obtain narrowly scoped Owner bootstrap authorization before bucket/IAM creation,
+   including remote-backend initialization and lock-object writes;
+4. create only approved bootstrap resources and verify metadata/IAM readback;
+5. initialize the isolated audit backend and generate the exact database plan;
+6. request approval of the final staging infrastructure/configuration/deployment packet.
+
+The final database plan cannot be called executable against a nonexistent GCS backend.
+State bootstrap authorization does not authorize SQL, secrets or deployment. Keep local
+bootstrap state securely until its durable recovery custody is documented.
 
 Still required before exact plan:
 1. identify the dedicated state bucket and verify ownership/versioning/locking posture;

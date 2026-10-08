@@ -4,11 +4,15 @@ on:
   pull_request:
     paths:
       - 'infra/**'
+      - 'migrations/audit/**'
+      - 'scripts/audit-tests/**'
       - '.github/workflows/infra-ci.yml'
   push:
     branches: [main]
     paths:
       - 'infra/**'
+      - 'migrations/audit/**'
+      - 'scripts/audit-tests/**'
       - '.github/workflows/infra-ci.yml'
 
 # P0 #136: routine repository CI must remain cloud-neutral. Live Terraform
@@ -19,23 +23,61 @@ permissions:
 jobs:
   static-validate:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        root: [envs/eu-staging, envs/named-staging, bootstrap/named-staging-state]
     steps:
       - uses: actions/checkout@v4
 
       - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.15.8'
 
       - name: Terraform format check
         run: terraform fmt -check -recursive infra
 
       - name: Terraform init without remote backend
-        working-directory: infra/envs/eu-staging
-        run: terraform init -backend=false
+        working-directory: infra/${{ matrix.root }}
+        run: |
+          if [ '${{ matrix.root }}' != 'envs/eu-staging' ]; then
+            terraform init -backend=false -input=false -lockfile=readonly
+          else
+            terraform init -backend=false -input=false
+          fi
 
       - name: Terraform validate
-        working-directory: infra/envs/eu-staging
+        working-directory: infra/${{ matrix.root }}
         run: terraform validate
 
       - name: Live execution quarantine
         run: |
           echo "P0 #136: routine CI performs no cloud auth, remote plan, apply, or force-unlock."
           echo "Use #116 read-only inventory plus a fresh environment-bound execution packet for live Terraform work."
+
+  audit-migrations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: guardentra_audit_ci
+          # Disposable job-local database only. No real passwords or cloud credentials.
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d guardentra_audit_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGDATABASE: guardentra_audit_ci
+      PGUSER: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply, repeat, and verify audit migration privileges on PostgreSQL 16
+        run: bash scripts/audit-tests/run-migrations.sh

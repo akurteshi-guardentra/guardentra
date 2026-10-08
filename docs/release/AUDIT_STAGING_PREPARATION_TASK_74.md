@@ -1,0 +1,59 @@
+# Issue #74 preparation correction task packet
+
+- Updated UTC: 2026-10-08
+- Repository: `akurteshi-guardentra/guardentra`
+- Issue/source: #74 acceptance criteria; #183 existing preparation;
+  `docs/release/AUDIT_STAGING_OWNER_APPROVAL_PACKET.md`;
+  Owner-supplied authenticated CLI inventory in this session.
+- Verified starting branch/head: `infra/named-staging-audit-74` /
+  `766f8bdd11fcfa1296e36a56e3496a04584193e3`.
+- Exact application RC: `8db71492f5c1eac4d74b47ec239e4e94acac20ff`.
+- Management: Engineering/Release and QA responsibilities handled by the assigned
+  single preparation writer, Codex. No parallel branch writers or review agents engaged.
+- Classification: T3 migration/infrastructure preparation; CHECKPOINT until exact-head
+  CI and cloud plans are evidenced. Owner remains merge/deployment authority.
+- Authorization: continue existing preparation, isolated validation and concrete plan
+  packet. No cloud mutation, merge, deployment-connected push or production change.
+
+## Scope and impact
+
+Correct only the migration dollar-quote delimiters; retain the NOLOGIN privilege role
+and append-only grants. Add PostgreSQL 16 SQL execution/repeat and negative privilege
+tests, retain historical Terraform validation and include named-staging/bootstrap roots,
+track platform-verified provider locks, and prepare the staging state bootstrap.
+
+Affected paths: `.github/workflows/infra-ci.yml`, `.gitignore`,
+`migrations/audit/002_roles.sql`, `scripts/audit-tests/`,
+`infra/envs/named-staging/README.md` and lock file,
+`infra/bootstrap/named-staging-state/`, and this release task/approval documentation.
+
+No application API/UI behavior change. No schema/grant expansion. Bootstrap adds new
+proposed staging bucket/IAM intent only, with no API execution. Customer data and secret
+payloads are out of scope. Database identities, private TLS/connection method, pricing,
+residency/retention ownership and rollback execution still require final reconciliation.
+
+## Verification and evidence
+
+- Bash syntax, YAML parsing, git diff whitespace and Terraform fmt/validate are local checks.
+- Provider locks target Linux/Windows amd64, Google provider 6.50.0.
+- CI must execute both migrations twice on PostgreSQL 16 and test a distinct LOGIN
+  identity's positive and negative operations on synthetic job-local data.
+- This does not prove the Node migration runner, Cloud SQL migration permissions,
+  network/TLS, live event durability, retry handling, tenant isolation, email or scanner gates.
+- Exact Terraform plan is pending verified bootstrap bucket/operator and cloud credentials.
+- Production go-live evidence has not advanced; no numeric readiness score is inferred.
+
+## Rollback and remaining decisions
+
+Preparation changes may be reverted through a feature-branch PR; do not rewrite history.
+The Owner's Windows email checkout and local migration correction are preserved.
+Never destroy audit data/state or apply schema down-migrations as application rollback.
+
+Still required: bootstrap availability/ownership and operator verification; local
+bootstrap plan/cost/custody; explicit bootstrap authorization if creation is needed;
+final audit plan, DB identity and private connection design; exact application RC versus
+migration-preparation SHA provenance; final staging approval; live #74 acceptance.
+
+Handoff evidence must state the final branch/SHA, PR #183, exact changed paths,
+actual checks, working-tree state and NOT DEPLOYED status. No completion or live
+acceptance claim is authorized by this task packet.

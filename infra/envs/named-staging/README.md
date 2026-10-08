@@ -18,7 +18,8 @@ Do not run `terraform plan` until all of these are complete:
    historical `guardentra-tfstate-eu-staging/terraform/state`;
 4. the existing `AUDIT_DATABASE_URL` secret is confirmed preserved and outside this
    root's resource-creation scope;
-5. the proposed Cloud SQL shape/cost and retention ownership are approved.
+5. the proposed Cloud SQL shape/cost and retention ownership are documented for
+   Owner review; the exact plan is preparation, and approval remains required before apply.
 
 ## Read-only inventory examples
 
@@ -47,6 +48,11 @@ terraform validate
 ```
 
 ## Remote state initialization
+
+Owner-supplied inventory on 2026-10-08 found no dedicated Terraform state bucket.
+The preparation-only bootstrap is `infra/bootstrap/named-staging-state`; its proposed
+bucket name requires read-only availability/ownership verification. Do not run its
+apply before separate concrete bootstrap authorization.
 
 Create a local, gitignored `backend.hcl` from `backend.hcl.example` only after
 the Owner verifies the dedicated state bucket and ownership.
