@@ -286,3 +286,26 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
 - Production (`guardentra-prod`): **UNCHANGED** — still `build-2026-08-27-001` at **100%**; scanner **NOT DEPLOYED**; no production secrets/DNS/IAM/Eventarc changes from this workstream.
 - P0 authoritative evidence scanner workstream: **CLOSED**.
 - This documentation update (Issue #53 / Action #9A): docs/governance only when committed; **NOT DEPLOYED**; does not authorize production scanner rollout.
+
+## 2026-10-08 — Issue #74 migration correction and named-staging preparation evidence
+
+- Writer/verifier: Codex, single preparation writer; Owner authorized continuation of
+  existing preparation. No new automation or parallel branch writer created.
+- PR #183 remains draft/unmerged on `infra/named-staging-audit-74`.
+- Verified code checkpoint: `9cd2584ce2d6966e77ff499e3a49769ec8b2e21d`, parent
+  `766f8bdd11fcfa1296e36a56e3496a04584193e3`.
+- Confirmed defect: `002_roles.sql` used invalid `DO $ ... $;` delimiters; replaced with
+  matching `$audit_roles$` delimiters. NOLOGIN role and existing privileges retained.
+- PostgreSQL 16.15 job: first and repeated migration execution PASS; authenticated
+  application login's allowed appends/outbox/metadata operations and forbidden
+  mutation/DDL/elevation contract PASS. Synthetic disposable CI database only.
+- All three Terraform roots validated without cloud auth or remote backends. Google
+  provider 6.50.0 locks include Linux/Windows amd64 checksums.
+- Exact-code runs: infra-ci 37712224946 SUCCESS, CI 37712224826 SUCCESS.
+- Added preparation-only local-state backend bootstrap; proposed staging bucket and
+  bucket-scoped operator binding are NOT PLANNED/APPLIED against live Google Cloud.
+- Owner's Windows email changes and isolated local SQL correction were not touched.
+- No cloud mutation occurred in this turn. Owner's earlier Service Networking API
+  enablement is retained as baseline evidence, not hidden by a zero-change assertion.
+- NOT DEPLOYED; production unchanged by this preparation. Final plans, identity/TLS,
+  cost/retention/residency decisions, approvals and live #74 acceptance remain pending.

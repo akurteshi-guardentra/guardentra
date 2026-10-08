@@ -1,5 +1,29 @@
 # GuardEntra Project State
 
+## 2026-10-08 — Issue #74 preparation checkpoint (not deployed)
+
+This narrow addendum does not refresh the historical snapshot below.
+
+- Draft PR #183, branch `infra/named-staging-audit-74`, verified preparation commit
+  `9cd2584ce2d6966e77ff499e3a49769ec8b2e21d`; exact application RC remains
+  `8db71492f5c1eac4d74b47ec239e4e94acac20ff`.
+- Malformed SQL dollar quoting corrected; PostgreSQL 16.15 CI executed both migrations
+  twice and passed a distinct application-login append-only privilege contract.
+- Terraform CI now validates historical eu-staging, named-staging and the separate
+  local-state staging-backend bootstrap. All roots passed; provider locks are tracked
+  for named-staging/bootstrap on Linux and Windows amd64.
+- `infra-ci` run 37712224946 and `CI` run 37712224826 both succeeded on that exact code
+  commit. These are repository/preparation checks, not live #74 acceptance.
+- Owner-supplied authenticated CLI output establishes staging revision/image digest,
+  scanner/default-VPC/NAT topology, no listed SQL/PSA/state bucket and preserved audit
+  secret metadata. The earlier Service Networking API enablement is recorded in the
+  approval packet; this preparation turn performed no cloud mutation.
+- BLOCKED: verified state-bucket absence/ownership and operator principal; exact local
+  bootstrap plan/cost/custody; bootstrap approval if needed; final audit plan and DB
+  identity/private connection method; final staging authorization and live acceptance.
+- NOT DEPLOYED. No merge, staging/prod rollout, secret operation or production change.
+
+
 Current verified snapshot: 2026-09-15
 Repository: `akurteshi-guardentra/guardentra`
 Owner and merge/deployment authority: `@akurteshi-guardentra`

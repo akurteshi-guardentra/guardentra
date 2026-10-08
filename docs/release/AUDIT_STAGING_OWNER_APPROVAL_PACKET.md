@@ -280,3 +280,22 @@ Do not apply until the packet is updated with:
 
 Owner approval authorizes only the reviewed staging plan/config/deployment packet.
 Production always requires separate authorization.
+
+## Repository validation checkpoint — 2026-10-08
+
+Code preparation commit: `9cd2584ce2d6966e77ff499e3a49769ec8b2e21d` on draft PR #183.
+
+- infra-ci run 37712224946: SUCCESS; all three root validations and PostgreSQL migration job PASS.
+- CI run 37712224826: SUCCESS; verify and dispatcher PASS.
+- Migration job logs identify PostgreSQL 16.15; both execution passes and application
+  privilege contract PASS. Tests use synthetic disposable CI data, not Cloud SQL.
+- Windows Owner worktree remains separate; no local work was overwritten.
+- Workspace Terraform validation initially failed because Unix sockets are unavailable;
+  GitHub CI supplied the actual successful provider validation evidence.
+
+Evidence links:
+- https://github.com/akurteshi-guardentra/guardentra/actions/runs/37712224946
+- https://github.com/akurteshi-guardentra/guardentra/actions/runs/37712224826
+
+Any later documentation commit must be identified separately from this tested code
+commit. No exact live Terraform plan, apply, deployment or #74 acceptance is claimed.
