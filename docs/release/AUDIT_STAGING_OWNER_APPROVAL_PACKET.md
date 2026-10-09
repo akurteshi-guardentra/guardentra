@@ -314,7 +314,9 @@ proposal is therefore BLOCKED pending a complete state-isolation design.
 
 The preparation now adds a metadata-only PowerShell collector for all runtime role
 definitions and a default-false bucket precondition. No IAM grants have been removed
-or changed. The precondition is an approval gate, not a proof of effective access.
+or changed. The precondition requires a recorded technical isolation review, not
+pre-plan Owner approval or proof of effective access. Prepare the concrete plan before
+requesting Owner approval of cloud changes.
 
 Design review must compare: an isolated backend project (requires explicit project
 scope extension and a new guarded root) versus same-project corrections to every

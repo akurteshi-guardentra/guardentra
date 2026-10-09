@@ -324,3 +324,10 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
 - No live role removal, grant, bucket creation, state write, API enablement or deployment.
 - Next prerequisite: run the collector, reconcile all overlapping permissions and
   review isolated-backend versus same-project IAM correction scope with the Owner.
+
+### 2026-10-09 — Isolation gate ordering clarification
+
+- The initial preparation used an Owner-design-approval flag before plan. Corrected
+  to `state_isolation_review_complete`: record the technical isolation review, prepare
+  the concrete plan, then request Owner approval before cloud apply. The gate is not
+  proof of live access denial and cannot grant deployment/IAM authority.

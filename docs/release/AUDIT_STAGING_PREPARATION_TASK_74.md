@@ -63,7 +63,7 @@ acceptance claim is authorized by this task packet.
 Owner requested continuation after supplying authenticated bucket/IAM metadata.
 Runtime state access is not isolated by the current project policy. Preparation scope
 adds `scripts/guardentra/Get-AuditStateInventory74.ps1`, its Windows PowerShell syntax
-check in `.github/workflows/ci.yml`, a default-false state-bootstrap approval gate,
+check in `.github/workflows/ci.yml`, a default-false state-bootstrap technical review gate,
 bootstrap/release instructions and narrow ledger addenda. All code is metadata-only
 or unapplied Terraform; no live IAM remediation is selected or authorized.
 

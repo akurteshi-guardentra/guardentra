@@ -34,8 +34,8 @@ variable "state_operator_member" {
   }
 }
 
-variable "state_isolation_design_approved" {
-  description = "Owner approval of a reviewed state-access isolation design; not proof of live effective permissions."
+variable "state_isolation_review_complete" {
+  description = "Completed, recorded technical review of the proposed state-isolation design; not Owner apply approval or proof of live effective permissions."
   type        = bool
   default     = false
 }
@@ -61,8 +61,8 @@ resource "google_storage_bucket" "state" {
     prevent_destroy = true
 
     precondition {
-      condition     = var.state_isolation_design_approved
-      error_message = "BLOCKED: staging runtime has inherited Storage access. Approve a reviewed isolation correction before planning/applying this bucket. Do not set this flag to bypass the review."
+      condition     = var.state_isolation_review_complete
+      error_message = "BLOCKED: staging runtime has inherited Storage access. Complete and record the proposed isolation review before planning. Owner approval of the exact packet is still required before apply."
     }
   }
 }

@@ -11,9 +11,10 @@ Bucket-only grants and uniform access do not cancel project grants. Google's cur
 Firebase Admin role definition includes Storage object read/write permissions.
 Therefore the original same-project bootstrap must not be treated as isolated.
 
-`state_isolation_design_approved` defaults to false and blocks the bucket plan/apply.
-The flag represents a documented Owner design approval, not an automated permission
-proof. Never enable it merely to make Terraform succeed.
+`state_isolation_review_complete` defaults to false and blocks the bucket plan/apply.
+The flag represents a recorded technical review of the proposed correction, not an
+automated permission proof or Owner apply approval. Never enable it merely to make
+Terraform succeed. Prepare the exact plan before requesting approval of cloud changes.
 
 Collect all runtime role definitions in one metadata-only batch with
 `scripts/guardentra/Get-AuditStateInventory74.ps1`. Review ancestor/impersonation
@@ -69,8 +70,8 @@ The placeholder intentionally requires substitution. Keep the plan private; shar
 only reviewed resource identifiers/actions, operator metadata, and cost assumptions.
 
 Owner approval of the exact bootstrap packet is required before bucket/IAM creation.
-The approved isolation design must also be recorded before passing
-`-var='state_isolation_design_approved=true'` to the reviewed plan.
+The completed technical isolation review must also be recorded before passing
+`-var='state_isolation_review_complete=true'` to the plan. This does not authorize apply.
 Only then may the audit root initialize its new GCS backend and generate the final
 database plan. Initialization/planning may write lock objects; include that scope in
 bootstrap authorization. SQL provisioning, migrations, secret operations, runtime
