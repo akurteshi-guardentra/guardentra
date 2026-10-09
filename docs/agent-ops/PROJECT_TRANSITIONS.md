@@ -658,3 +658,48 @@ CI/documentation updates to GuardEntra draft PR #183, Owner directed “go ahead
 Scope is repository publication and cloud-neutral CI validation only. No project/API/
 secret creation, payload disclosure, IAM mutation, cloud plan/apply, merge or deployment
 authorization is added. The earlier auto-review rejection remains recorded as history.
+
+
+## 2026-10-10 Vienna — isolated credential project applied and metadata verified
+
+Owner approved the displayed four-resource plan by directing “continue” after the
+exact scope/hash approval request. Owner executed the hash-checked saved plan from
+infra/bootstrap/staging-audit-ops at source 0fe5e62e620ee7e95c449e8b1f2d826fb13af01e.
+Plan audit-ops-45829fb90aec4605a8293bc04c017c8c.tfplan SHA256
+4B384D224CC92F2917425B8D8547C5D773DE8DC06C51EDEAA196D6C008FD6E88.
+Apply output: four added, zero changed, zero destroyed; state lock released.
+
+Owner metadata readback: guardentra-staging-audit-ops ACTIVE, project number
+794923710344, parent organization 280975227603. Project allow policy contains only
+admin@guardentra.com Owner and the project's Cloud Services/Compute service agents.
+AUDIT_BOOTSTRAP_ADMIN_PASSWORD_74 and AUDIT_MIGRATOR_PASSWORD_74 both use user-managed
+us-central1 replicas; each resource IAM policy returns only an etag and each version
+inventory is []. No credential payload created or read. No runtime binding appears
+in the returned project/secret policies; these metadata checks do not constitute
+runtime-authenticated denial, inherited/deny/PAB analysis or full isolation proof.
+Secret API deletion protection is false; review protection before adding versions.
+
+The initial PowerShell project-name guard falsely counted an empty JSON array as
+one item. Raw lookup returned []; corrected foreach enumerates actual projectId
+matches. It stopped before worktree creation/plan; the corrected plan/apply above
+then succeeded. Existing staging runtime grants and state-only project unchanged.
+
+This advances infrastructure preparation only, not issue #74 acceptance. Bootstrap
+SQL/roles and secure password provisioning, job identities and per-secret grants,
+allowlisted image build/digest, live private migration execution, application
+connector/rollout and durable event/chain/failure/rollback proof remain NOT RUN.
+Application audit enablement and production deployment remain unauthorized here.
+Do not rerun the applied plan. Preserve GCS state; do not destroy/recreate the new
+project or secrets as rollback. For now keep the empty secrets unused. Any future
+credential/job execution needs its own concrete reviewed scope and Owner approval.
+
+Evidence checkpoint: branch infra/named-staging-audit-74; infrastructure source
+0fe5e62e620ee7e95c449e8b1f2d826fb13af01e; ledger update NOT COMMITTED at preparation;
+draft PR #183 https://github.com/akurteshi-guardentra/guardentra/pull/183.
+Exact checkpoint files: docs/agent-ops/PROJECT_STATE.md and
+ docs/agent-ops/PROJECT_TRANSITIONS.md. Owner apply and project/secret metadata checks
+PASS as pasted; live migrations/app tests NOT RUN. No readiness score generated.
+Deployment: credential infrastructure applied in guardentra-staging-audit-ops via
+Owner Terraform; no app revision deployment, merge, credential creation or production
+change. Source CI 37999314696 / infra-ci 37999314803 previously SUCCESS on 0fe5e62;
+this documentation-only checkpoint does not rerun infrastructure or database tests.
