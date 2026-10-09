@@ -77,6 +77,20 @@ Unique local pre-migration backup preserved; generated backend.tf stays Owner-lo
 Actual state recovery and database network/identity/transport gates remain pending.
 No Cloud SQL creation, application deployment, merge or production change.
 
+2026-10-09 database planning inventory: fresh transcript lists 42 default subnets,
+43 routes, zero global addresses/peerings/SQL instances. Candidate 10.20.0.0/16 has
+zero overlap with returned primary subnet/specific route ranges (Python ipaddress).
+Separate new-worktree database plan preparation permitted after audit state-prefix
+absence check. No SQL apply approval, credentials, TLS/runtime attachment or rollout
+is implied. Preserve existing Owner worktrees and bootstrap backend.
+
+2026-10-09 real database plan: 8 add / 0 change / 0 destroy; exact hash in approval
+packet. Review found no explicit encrypted-only SSL mode or API deletion protection.
+Local code correction/tests/CI prepared; ORIGINAL PLAN SUPERSEDED, DO NOT APPLY.
+Format/diff checks PASS; local provider startup prevents validation. New-code CI,
+replacement plan and DB identity/private transport/cost review pending. Publication
+blocked by automatic disclosure review; three earlier notes plus source changes local.
+
 This narrow addendum does not refresh the historical snapshot below.
 
 - Draft PR #183, branch `infra/named-staging-audit-74`, verified preparation commit

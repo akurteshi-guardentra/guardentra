@@ -471,3 +471,34 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
 - Actual state-version recovery remains pending; synthetic file download is not
   sufficient evidence for that claim. Audit/database state prefix remains separate.
 - No SQL creation, DB migration, app deployment, merge or production mutation.
+
+
+## 2026-10-09 — #74 database network planning checkpoint
+
+- Owner fresh staging inventory: 42 subnets / 43 routes; no listed global addresses,
+  default-VPC peerings or SQL instances. 10.20.0.0/16 primary-subnet/specific-route
+  overlap check PASS against returned snapshot; default Internet route excluded.
+- Prepare only separate audit-prefix database plan in a new pinned worktree, after
+  empty-prefix metadata check. Never overwrite Owner dirty audit/bootstrap worktrees.
+- No DB creation approval, secure credentials/TLS/runtime attachment proof, migration,
+  deployment, merge or production operation granted by this planning checkpoint.
+
+
+## 2026-10-09 — #74 database plan security correction prepared, not published
+
+- Real plan received: 8 additions, zero changes/deletions, hash recorded in packet.
+- Missing explicit SSL mode/API deletion flag found. Prepared ENCRYPTED_ONLY and
+  deletion_protection_enabled true; retained existing protections. Added negative
+  scope tests and security assertions, plus cloud-neutral CI root execution.
+- Original saved plan superseded, not applied. New-code schema/CI/mocks and a fresh
+  real plan are pending. Local fmt/diff PASS; provider startup validation BLOCKED.
+- GitHub auto-review rejected publishing sensitive inventory metadata; Owner disclosure
+  approval requested. No workaround/publish attempt, merge, SQL apply or rollout.
+
+
+## 2026-10-09 — #74 publication authorization reconciled
+
+- Owner directed continuation after the explicit request to publish the prepared
+  security corrections and reviewed infrastructure notes to existing draft PR #183.
+- Narrow publication scope recorded; no database apply, merge, secret payload or
+  application deployment authorization added. Superseded saved plan stays blocked.

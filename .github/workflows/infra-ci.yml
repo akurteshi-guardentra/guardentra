@@ -50,8 +50,8 @@ jobs:
         working-directory: infra/${{ matrix.root }}
         run: terraform validate
 
-      - name: Isolated state bootstrap mocked guardrails
-        if: matrix.root == 'bootstrap/isolated-staging-state'
+      - name: Terraform mocked security guardrails
+        if: matrix.root == 'bootstrap/isolated-staging-state' || matrix.root == 'envs/named-staging'
         working-directory: infra/${{ matrix.root }}
         run: terraform test -no-color
 

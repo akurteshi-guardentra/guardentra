@@ -372,3 +372,73 @@ See `AUDIT_STAGING_STATE_BOOTSTRAP_APPROVAL_PACKET_74.md` for exact actions, imp
 provider effects, cost/residency/custody, limits and pending apply prerequisites.
 No bootstrap execution or final audit/database plan is claimed. Initial PowerShell
 out-argument quoting was corrected by preserving/renaming the saved plan, not rerun.
+
+
+## 2026-10-09 database planning inventory checkpoint
+
+Owner fresh staging transcript: 42 default-VPC subnets, 43 routes (42 subnet routes
+plus default Internet route), no global addresses, no default-VPC peerings, no SQL
+instances. Python ipaddress overlap check of candidate 10.20.0.0/16 against all
+returned primary subnets and specific route destinations found no overlap. The
+0.0.0.0/0 Internet route is excluded from address-allocation collision checks. No
+secondary subnet ranges were returned. This is snapshot-bound project inventory,
+not evidence about future routes, other networks or an approved PSA creation.
+
+Bootstrap state is migrated to its separate GCS prefix; database planning may use
+bucket guardentra-staging-state-tfstate, prefix guardentra/named-staging/audit after
+metadata-only absence check including object versions. Do not attach to existing
+state or copy bootstrap state into this prefix. Use a new pinned worktree; preserve
+Owner's earlier dirty audit checkout and active bootstrap checkout. No apply in the
+planning command. Retain ignored plan locally and supply action summary/hash.
+
+Plan preparation is permitted; database apply/rollout remain gated on exact actions,
+cost/residency acceptance, separate app/migrator credential method, private network
+path and transport enforcement, live migrations/privileges and rollout/rollback.
+The prepared root does not provision DB credentials or finalize TLS/runtime attachment.
+Policy evaluations showed no runtime allow grant on the state bucket, with deny-
+explanation errors; no real runtime request denial or independent state backup claimed.
+
+
+## 2026-10-09 real database plan review — superseded, DO NOT APPLY
+
+Owner saved plan at executable SHA 83dcf9829a4f1ff7854b24e75c7771223460f162:
+8 add / 0 change / 0 destroy, plus apply-time read of existing default network.
+Filename audit-db-86f1b72351124982b277617d9ed00228.tfplan; SHA256
+AE54CD1BBC4016C037B1C03E572205283CAC357A50A1955D068E47E97411433E.
+Three API resources configure existing enabled services; Terraform create actions
+are not proof those services were disabled. Other additions are PSA range/peering,
+private PostgreSQL 16 Enterprise REGIONAL 2-vCPU/8-GiB/20-GiB SSD instance, database
+and additive runtime Cloud SQL Client role. No secret/user/deploy resource exists.
+
+Review found missing explicit ssl_mode and API deletion_protection_enabled. Prepared
+local correction sets ENCRYPTED_ONLY and API protection true, retaining Terraform
+protection/prevent_destroy. Original plan is superseded and MUST NOT be applied.
+New source tests exercise project/region/runtime/range rejection plus encrypted,
+private, API-protected and backed-up instance proposal. CI added for this root's
+mock tests; these prove no real cloud behavior. Source publication/CI/new plan pending.
+ENCRYPTED_ONLY is not proof of client certificate verification or an established
+private route. Finalize separate app/migrator identities and authenticated encrypted
+connector/client configuration before rollout. No password enters Terraform state.
+
+Published Iowa Enterprise on-demand HA compute subtotal for 730 hours:
+(2 * 0.0826 + 8 * 0.014) * 730 = USD 202.356/month. Storage, backups/PITR, network,
+tax and any account-specific discounts/credits are additional; this is NOT a total
+quote or hard spending cap. Disk autoresize remains uncapped in the candidate.
+Sources: https://cloud.google.com/sql/pricing
+https://registry.terraform.io/providers/hashicorp/google/6.49.2/docs/resources/sql_database_instance
+
+Local format and diff checks PASS. Provider schema validation BLOCKED in assistant
+container by plugin startup failure; never represent old-head CI as corrected-code
+validation. New CI/test execution and fresh plan are required before apply review.
+GitHub publication auto-review rejected inventory metadata disclosure; requested
+Owner authorization remains pending. Do not bypass the rejection via another tool.
+
+
+## 2026-10-09 publication authorization reconciliation
+
+After the explicit request to publish the prepared source corrections and reviewed
+infrastructure notes to existing draft PR #183, Owner directed the assistant to
+continue. This authorizes that narrow repository disclosure, not SQL apply, merge,
+secret payload publication or application deployment. Preserve the original automatic
+review rejection above as history. New exact-head validation remains pending until
+CI runs for the published corrections; original saved database plan remains superseded.

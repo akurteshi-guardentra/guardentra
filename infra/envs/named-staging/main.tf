@@ -70,16 +70,18 @@ resource "google_sql_database_instance" "audit" {
   database_version = var.database_version
 
   settings {
-    tier              = var.tier
-    edition           = "ENTERPRISE"
-    availability_type = var.availability_type
-    disk_type         = "PD_SSD"
-    disk_size         = var.disk_size_gb
-    disk_autoresize   = true
+    tier                        = var.tier
+    edition                     = "ENTERPRISE"
+    availability_type           = var.availability_type
+    disk_type                   = "PD_SSD"
+    disk_size                   = var.disk_size_gb
+    disk_autoresize             = true
+    deletion_protection_enabled = true
 
     ip_configuration {
       ipv4_enabled    = false
       private_network = data.google_compute_network.default.id
+      ssl_mode        = "ENCRYPTED_ONLY"
     }
 
     backup_configuration {
