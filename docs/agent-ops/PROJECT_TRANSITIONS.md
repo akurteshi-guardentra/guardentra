@@ -460,3 +460,14 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
 - Prepare interactive bootstrap state migration with unique local backup, lineage,
   serial and exact-resource checks; separate prefix from audit DB. Migration pending.
 - No application deployment, merge, SQL operation or production change.
+
+
+## 2026-10-09 — #74 bootstrap state migrated to GCS
+
+- Owner interactive migration found empty destination and copied local bootstrap
+  state to separate GCS bootstrap prefix. Provider stayed Google 6.50.0.
+- Owner verification PASS: lineage, four addresses; remote serial 6. Unique local
+  pre-migration backup retained; backend.tf generated only in Owner worktree.
+- Actual state-version recovery remains pending; synthetic file download is not
+  sufficient evidence for that claim. Audit/database state prefix remains separate.
+- No SQL creation, DB migration, app deployment, merge or production mutation.

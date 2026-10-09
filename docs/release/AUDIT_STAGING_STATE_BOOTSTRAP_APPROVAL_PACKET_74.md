@@ -205,3 +205,23 @@ existing conflicting state. Do not use force-copy, reconfigure, state push, forc
 or rerun the applied plan. Compare remote lineage/serial/resources before marking
 migration verified. A generated local backend.tf will appear untracked in the Owner
 worktree; do not silently discard it. Database root/prefix remains separate.
+
+## 2026-10-09 bootstrap remote migration checkpoint
+
+Owner interactive init -migrate-state found no existing destination state and copied
+local state to GCS. Provider remained Google 6.50.0 with readonly lock. Owner checks:
+Migration PASS, LineageMatch PASS, four exact ResourceAddresses PASS, RemoteSerial 6.
+Remote object:
+gs://guardentra-staging-state-tfstate/guardentra/bootstrap/isolated-staging-state/default.tfstate
+Local preserved backup:
+terraform.tfstate.pre-migration-4edc7bf92e034a7fa930e7c9584676a2.backup
+Generated backend.tf is Owner-local; absent from pinned executable code and may appear
+untracked. Do not delete/ignore its role when operating that worktree. Retain local
+backup until actual remote-state version recovery is verified. Do not reuse the saved
+local-backend plan, initialize historical state, or change the bootstrap prefix to audit.
+
+This verifies remote bootstrap lineage/address custody, not independent disaster
+backup, a real runtime access denial, database backend initialization, Cloud SQL
+creation, DB identity/transport/migration or application deployment. Next: exact-
+generation state recovery to a unique local path without printing payloads; fresh
+staging subnet/route/PSA/peering inventory for the separate database plan.

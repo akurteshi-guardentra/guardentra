@@ -70,6 +70,13 @@ Human synthetic upload, exact-generation download, hash match and current cleanu
 (75 bytes, generation 1791577394388974). Bootstrap migration is prepared separately;
 not performed yet. Retained test version is not a Terraform state backup.
 
+2026-10-09 remote bootstrap custody: Owner init -migrate-state confirmed empty GCS
+destination, migrated state, matched lineage/four resource addresses; remote serial 6.
+Bootstrap prefix guardentra/bootstrap/isolated-staging-state, distinct from audit.
+Unique local pre-migration backup preserved; generated backend.tf stays Owner-local.
+Actual state recovery and database network/identity/transport gates remain pending.
+No Cloud SQL creation, application deployment, merge or production change.
+
 This narrow addendum does not refresh the historical snapshot below.
 
 - Draft PR #183, branch `infra/named-staging-audit-74`, verified preparation commit
