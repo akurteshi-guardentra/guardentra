@@ -408,3 +408,17 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
 - Real plan/hash/actions, authenticated execution identity, encrypted recovery custody,
   residency/cost acceptance and live empty-bucket tests remain gates. No cloud writes,
   API enablement, token display, project creation, merge or deployment in this review.
+
+
+## 2026-10-09 — #74 exact real bootstrap plan received, not applied
+
+- Owner real plan at code `1f56352a81e91c48950fea45ea572cd2140ea9b6`:
+  4 additions, zero changes/deletions, fixed state-only scope.
+- Saved artifact SHA-256
+  `CB250BF233AF001005BAE761A534A94B3DDE98B5B2715625935B896D1D3B778C`.
+- Confirmed operator-command defect: PowerShell passed literal `$gePlanPath` as output
+  filename. Preserved and renamed the successful plan, then hashed it; no plan rerun
+  or cloud mutation. Future native argument must be quoted as `"-out=$gePlanPath"`.
+- Added concrete state-only approval packet and narrow ledger/source reconciliation.
+  Actual ADC identity and encrypted durable local-state custody remain prerequisites
+  to exact apply approval. No live access test, resource creation, merge or deployment.
