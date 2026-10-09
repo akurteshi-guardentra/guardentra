@@ -345,3 +345,22 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
 - Prior AST-only CI did not catch this semantic error. Corrected-head CI pending.
 - Report collection and state-isolation review remain pending. No apply, deployment,
   live IAM change, merge or change to the Owner's Windows worktrees.
+
+
+## 2026-10-09 — #74 full IAM inventory narrows state proposal
+
+- Verified collector code head `d899176e8eb7b4b377fbfec8f509b82927d3c697`:
+  CI 37870790611 SUCCESS (including Windows mocked-command regressions), infra-ci
+  37870790765 SUCCESS. Owner's live collection succeeded; capture time
+  `2026-10-09T01:45:34.8278659Z`.
+- Full metadata confirms project `965959469996`, direct organization `280975227603`,
+  and four unconditional overlapping Storage roles on staging runtime.
+- Subsequent returned organization IAM grants only admin@guardentra.com; runtime
+  account Token Creator is a self-grant. SDK account has no account-level bindings;
+  project-level SDK Token Creator/Storage Admin grants still exist.
+- No dedicated state project found in returned active direct-child project metadata;
+  no exhaustive folder/indirect-access or live denial assertion is made.
+- Recommended preparation route: separate state-only project proposal. Same-project
+  bootstrap remains blocked; new root/plan waits for billing/policy/name metadata.
+- Added proposal and narrow release/task/ledger reconciliation. No cloud mutation,
+  API enablement, token generation, plan/apply, merge or deployment in this review.

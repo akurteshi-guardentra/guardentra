@@ -18,6 +18,14 @@ roles, retaining resource project scope on other calls. Windows regression cover
 checks arguments, overlapping roles, failure-before-report and no-overwrite behavior.
 No complete live inventory or cloud changes are claimed; corrected-head CI is pending.
 
+2026-10-09 subsequent metadata: full collector validates project number and direct
+organization parent `280975227603`; four runtime Storage roles are unconditional.
+Returned organization IAM binds only the human operator; runtime Token Creator is
+account-level self access. No dedicated state project appeared among returned active
+direct organization children. Preparation now recommends a separate state-only
+project, documented in `docs/release/AUDIT_STAGING_STATE_ISOLATION_DESIGN_74.md`.
+No isolated root/plan, live denial test or approved project creation exists yet.
+
 This narrow addendum does not refresh the historical snapshot below.
 
 - Draft PR #183, branch `infra/named-staging-audit-74`, verified preparation commit

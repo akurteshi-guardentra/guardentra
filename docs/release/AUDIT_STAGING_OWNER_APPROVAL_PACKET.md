@@ -331,3 +331,20 @@ without overwriting files. This is not an autonomous automation or a cloud apply
 Source references:
 https://docs.cloud.google.com/storage/docs/access-control/iam
 https://docs.cloud.google.com/iam/docs/roles-permissions/firebase
+
+
+## 2026-10-09 authenticated ancestor/account review
+
+The full collector now verifies the staging project number and parent organization.
+All four overlapping runtime Storage grants are unconditional. Owner-provided
+organization policy lists only the human operator; runtime account-level Token Creator
+is a self-grant. No existing dedicated state project was identified in the returned
+active direct-child project list. These snapshots narrow the isolation design but do
+not substitute for fresh effective-access tests.
+
+Recommended preparation is documented in
+`docs/release/AUDIT_STAGING_STATE_ISOLATION_DESIGN_74.md`: a new state-only project
+candidate, preserving staging application/scanner IAM. This is not selection approval
+or permission to create/link/enable/apply. The existing same-project bootstrap stays
+blocked. Billing, organization constraints, names, guarded root and exact local-state
+plan are required before requesting concrete bootstrap approval.

@@ -74,3 +74,16 @@ CI must parse the collector on Windows PowerShell and validate the bootstrap roo
 Collector execution and state-isolation permission tests remain pending Owner's
 authenticated CLI output and a reviewed isolation design. Retain exact seven-field
 checkpoint evidence; no apply, merge, production change or autonomous automation.
+
+
+## 2026-10-09 read-only evidence reconciliation
+
+Owner supplied the full collector report plus organization IAM, direct-child project
+inventory and two service-account policies. Continue single-writer preparation with
+an isolated-state proposal and narrow ledger/approval addenda; no new Terraform root,
+cloud action or plan is claimed yet. Changed paths are this task packet, the owner
+packet, `AUDIT_STAGING_STATE_ISOLATION_DESIGN_74.md`, PROJECT_STATE and append-only
+PROJECT_TRANSITIONS. Check exact diff/whitespace and proposal consistency; no new
+executable behavior or additional low-impact documentation tests are introduced.
+Billing/policy/name inputs remain external dependencies. Revert through a feature PR;
+never touch Windows dirty worktrees or apply without the exact approved packet.
