@@ -26,7 +26,8 @@ direct organization children. Preparation now recommends a separate state-only
 project, documented in `docs/release/AUDIT_STAGING_STATE_ISOLATION_DESIGN_74.md`.
 Subsequent preparation adds an isolated root, required verified billing input,
 fixed identifiers/operator, default-false live-plan review gate and mocked guardrails.
-No live plan, live denial test or approved project creation exists yet. New-project
+No live plan, live denial test or approved project creation exists yet. CI caught and preparation corrected an overlength project display name; corrected
+head validation remains pending. New-project
 transient default-network cleanup and implicit Compute API enablement are disclosed
 in the proposed scope; staging networking is unchanged. Billing/policy metadata has
 advanced, while global names, operator policy admission, costs and custody remain open.

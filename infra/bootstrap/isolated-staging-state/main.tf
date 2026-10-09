@@ -60,7 +60,7 @@ variable "state_isolation_review_complete" {
 
 resource "google_project" "state" {
   project_id          = var.state_project_id
-  name                = "GuardEntra Staging Terraform State"
+  name                = "GuardEntra Staging State"
   org_id              = var.organization_id
   billing_account     = var.billing_account_id
   auto_create_network = false

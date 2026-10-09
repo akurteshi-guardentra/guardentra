@@ -383,3 +383,13 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
 - New head validation pending. No real plan, state/backend writes, apply, IAM mutation,
   project creation, rollout, merge or production action. Costs, residency, policy/name
   review, credentials/custody and empty-bucket denial tests remain gates.
+
+
+### Isolated-root correction cycle 1
+
+- New code head `4c47baed82746c777bfe8f80a6fd80dc0e230191` infra-ci
+  37980315215 caught an overlength project display name before mock tests ran.
+- Shortened display name to `GuardEntra Staging State` (23 characters). Project ID,
+  organization, billing, IAM and privacy/recovery guards are unchanged.
+- Existing three roots and PostgreSQL migration job passed on that head; corrected
+  head schema/mock verification pending. No live cloud operation occurred.
