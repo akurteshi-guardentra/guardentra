@@ -63,6 +63,13 @@ empty networks list. Effective access, remote migration and recovery remain unpr
 Both workflows on preparation head 6a78c6be839a1880bee1ab4a4a497efba89f3fdd PASS.
 No SQL creation, application rollout, merge or production mutation is evidenced.
 
+2026-10-09 access checkpoint: Owner enabled diagnostic API only in state project.
+Seven runtime Storage permissions evaluated NOT_GRANTED across bucket/project/org
+allow policies, with deny-explanation errors; no real runtime request denial claimed.
+Human synthetic upload, exact-generation download, hash match and current cleanup PASS
+(75 bytes, generation 1791577394388974). Bootstrap migration is prepared separately;
+not performed yet. Retained test version is not a Terraform state backup.
+
 This narrow addendum does not refresh the historical snapshot below.
 
 - Draft PR #183, branch `infra/named-staging-audit-74`, verified preparation commit

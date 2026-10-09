@@ -177,3 +177,31 @@ Next preparation: read-only Policy Troubleshooter evaluation with explicit stagi
 quota project for runtime Storage permissions and fresh org IAM. SERVICE_DISABLED,
 UNKNOWN or incomplete evidence must not be treated as a successful denial. No API
 activation or runtime impersonation permission grant is implicit in this step.
+
+## 2026-10-09 access and synthetic recovery checkpoint
+
+Owner enabled policytroubleshooter.googleapis.com in the new STATE project only;
+first requests returned SERVICE_DISABLED during propagation, then evaluation worked.
+No staging diagnostic API activation or new runtime IAM grant is reported.
+Seven runtime permissions: objects.get/list/create/update/delete and buckets.getIamPolicy/
+setIamPolicy each returned NOT_GRANTED at bucket, state-project and organization allow
+policies. Every result also reports ERROR_IAM_DENY / failed deny explanation. This is
+no matching allow grant in evaluated policies, not a real authenticated runtime request
+or a complete deny/PAB/impersonation proof. A deny evaluation error cannot add an allow
+permission. Keep that limitation visible; do not claim comprehensive isolation PASS.
+
+Human synthetic test: admin@guardentra.com uploaded 75 bytes under unique verification
+prefix a0f70421abf4442d8f0db2a8b8ef4b0c, downloaded exact generation 1791577394388974,
+SHA256 matched, current-object cleanup passed. No state/customer data was tested.
+Version-specific download while object was live is proven; recovery after deletion,
+whole-project disaster recovery and independent backup are not proven.
+
+Cloud custody continuation prepares ONLY bootstrap backend migration to
+bucket guardentra-staging-state-tfstate, prefix guardentra/bootstrap/isolated-staging-state.
+Preserve a unique local backup before migration, reject an existing backend file,
+verify local state lineage/four exact resource addresses, use interactive
+terraform init -migrate-state -lockfile=readonly, and stop if destination contains
+existing conflicting state. Do not use force-copy, reconfigure, state push, force-unlock
+or rerun the applied plan. Compare remote lineage/serial/resources before marking
+migration verified. A generated local backend.tf will appear untracked in the Owner
+worktree; do not silently discard it. Database root/prefix remains separate.

@@ -448,3 +448,15 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
   infra-ci 37983970717 PASS. Remote state/access denial/recovery checks still pending.
 - State-only bootstrap is applied; no audit DB, secret operation, app deployment,
   merge or production change. No Windows encryption setting was changed.
+
+
+## 2026-10-09 — #74 policy evaluation and operator storage test
+
+- Diagnostic API activated only in new state project; initial propagation errors
+  resolved. Seven runtime permissions have no allow grant across returned policies.
+  ERROR_IAM_DENY remains explicit; no real runtime denial/PAB/impersonation proof.
+- Owner synthetic 75-byte upload/exact-generation read/hash/cleanup PASS, generation
+  1791577394388974. No state or secret payload inspected or committed.
+- Prepare interactive bootstrap state migration with unique local backup, lineage,
+  serial and exact-resource checks; separate prefix from audit DB. Migration pending.
+- No application deployment, merge, SQL operation or production change.
