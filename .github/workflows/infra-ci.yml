@@ -28,7 +28,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        root: [envs/eu-staging, envs/named-staging, bootstrap/named-staging-state, bootstrap/isolated-staging-state]
+        root: [envs/eu-staging, envs/named-staging, bootstrap/named-staging-state, bootstrap/isolated-staging-state, bootstrap/staging-audit-ops]
     steps:
       - uses: actions/checkout@v4
 
@@ -53,7 +53,7 @@ jobs:
         run: terraform validate
 
       - name: Terraform mocked security guardrails
-        if: matrix.root == 'bootstrap/isolated-staging-state' || matrix.root == 'envs/named-staging'
+        if: matrix.root == 'bootstrap/isolated-staging-state' || matrix.root == 'envs/named-staging' || matrix.root == 'bootstrap/staging-audit-ops'
         working-directory: infra/${{ matrix.root }}
         run: terraform test -no-color
 

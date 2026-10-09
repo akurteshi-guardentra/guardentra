@@ -62,3 +62,6 @@ infra/envs/named-staging/*.tfplan
 # Local ops secrets (never commit)
 .local-secrets/
 
+
+# Reviewed operations credential root provider lock (metadata only).
+!infra/bootstrap/staging-audit-ops/.terraform.lock.hcl

@@ -137,3 +137,86 @@ and role metadata is needed before selecting isolated credential custody or scop
 IAM correction. No state-project repurpose, IAM removal, token/key creation or
 password operation is authorized. Runner bootstrap, build context/base-image pin,
 exact cloud execution packet and application connector integration remain pending.
+
+
+## 2026-10-09 — restricted runner real-database CI proof
+
+Runner source SHA 057707e3b424e7ea2b12cdfc5ed8c13c3f1b0fd3 on
+infra/named-staging-audit-74, draft PR #183. infra-ci run 37995757369 SUCCESS;
+managed-audit-runner job 114041281705 SUCCESS. Logs confirm three scope/manifest
+unit tests PASS and one real PostgreSQL 16 integration test PASS, zero failures.
+The integration test applies both migrations as audit_migrator, repeats with zero
+new applications, tests rollback-only app operations/denials, checksum tampering,
+unexpected role inheritance and concurrent execution. Existing audit-migrations
+fixture and all four Terraform root jobs also SUCCESS. Routine CI remains cloud-neutral.
+
+Local npm ci --ignore-scripts, Node syntax, connector import/cleanup, three unit tests,
+workflow YAML parse, dependency lock validation and git diff --check PASS. npm audit
+--omit=dev reported zero vulnerabilities. No local PostgreSQL server was available;
+real database test evidence comes from the CI service, not Cloud SQL. General CI
+run 37995757403 also completed SUCCESS on the exact runner source SHA.
+
+No cloud build/job/credential/bootstrap execution, app rollout, merge or production
+change. Bootstrap SQL/secure credential custody and immutable image/execution packet
+remain pending. Earlier runtime role definitions include secretmanager.versions.access
+through project-level roles/secretmanager.secretAccessor; fresh IAM readback is next.
+
+Exact runner-source changed files (Git diff from prior design head):
+- .github/workflows/infra-ci.yml
+- docs/agent-ops/PROJECT_STATE.md
+- docs/agent-ops/PROJECT_TRANSITIONS.md
+- docs/release/AUDIT_STAGING_MIGRATION_DESIGN_74.md
+- docs/release/AUDIT_STAGING_PREPARATION_TASK_74.md
+- scripts/audit-managed-staging/Dockerfile
+- scripts/audit-managed-staging/README.md
+- scripts/audit-managed-staging/core.mjs
+- scripts/audit-managed-staging/manifest.json
+- scripts/audit-managed-staging/package-lock.json
+- scripts/audit-managed-staging/package.json
+- scripts/audit-managed-staging/postgres.test.mjs
+- scripts/audit-managed-staging/run.mjs
+- scripts/audit-managed-staging/unit.test.mjs
+
+Source checkout git status --short was empty after fetched GitHub commit reconciliation.
+This is a preparation checkpoint, not #74 acceptance or a readiness score advance.
+
+
+## 2026-10-09 UTC / 2026-10-10 Vienna — fresh secret-access policy checkpoint
+
+Owner fresh project IAM output confirms runtime Cloud SQL Client and unchanged
+project-wide Secret Accessor for runtime, Cloud Build and App Hosting; runtime/hosting
+also have Secret Version Manager. Developer Connect retains an unconditional Secret
+Manager Admin binding as well as an expired setup binding. No grant removed. This
+confirms allow-policy exposure; deny/PAB and actual secret access were not evaluated.
+
+Prepared local UNAPPLIED infra/bootstrap/staging-audit-ops candidate: separate project,
+Secret Manager API and two region-pinned empty secret shells, no payloads/versions, IAM
+bindings, jobs, SQL, state-project repurpose or application changes. Backend prefix must
+be independently reviewed/unused; default-false review gate; separate exact-plan approval
+required. New root/schema/mocks need CI publication/validation; no live plan performed.
+Publication of the prior three-file checkpoint was auto-review rejected; Owner explicit
+payload/destination authorization remains pending. No indirect retry or workaround.
+
+Local credential-isolation candidate exact changed/untracked file list (NOT COMMITTED):
+- .github/workflows/infra-ci.yml
+- .gitignore
+- docs/agent-ops/PROJECT_STATE.md
+- docs/agent-ops/PROJECT_TRANSITIONS.md
+- docs/release/AUDIT_STAGING_PREPARATION_TASK_74.md
+- infra/bootstrap/staging-audit-ops/.terraform.lock.hcl
+- infra/bootstrap/staging-audit-ops/README.md
+- infra/bootstrap/staging-audit-ops/main.tf
+- infra/bootstrap/staging-audit-ops/tests/guardrails.tftest.hcl
+
+Local Terraform format/parse, workflow YAML/root wiring and diff checks PASS.
+Provider schema, mocked plan execution and candidate CI NOT RUN; publication pending.
+Runner source 057707e3b424e7ea2b12cdfc5ed8c13c3f1b0fd3 remains separately CI verified.
+
+
+## 2026-10-09 UTC / 2026-10-10 Vienna — proposal publication authorization
+
+After the explicit request to publish the nine-file credential-isolation proposal and
+CI/documentation updates to GuardEntra draft PR #183, Owner directed “go ahead”.
+Scope is repository publication and cloud-neutral CI validation only. No project/API/
+secret creation, payload disclosure, IAM mutation, cloud plan/apply, merge or deployment
+authorization is added. The earlier auto-review rejection remains recorded as history.
