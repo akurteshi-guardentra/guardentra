@@ -560,3 +560,14 @@ preparation, working tree limited to these nine paths. No merge/app rollout/clou
 build/job/credential/SQL execution or production change. Rollback: source revert;
 no live effect to reverse. No readiness score or deployment-date promise. Next
 bounded gate is real fixture proof, then exact credential/job/bootstrap packet.
+
+
+### Bootstrap fixture correction (first CI cycle)
+
+Source d4719629eb2e7e23846af52d80a322b01e5939ed: new bootstrap job 114070426857
+FAIL because PostgreSQL forbids removing SUPERUSER from the initial cluster
+bootstrap account (fixture setup, before candidate SQL). Other infrastructure jobs
+PASS. Corrected the disposable fixture: another superuser renames the original
+account; a newly created limited postgres role owns only the test database and is
+the actor. This changes fixture setup only, not the live SQL scope or permissions.
+No Cloud SQL execution occurred. Fresh real fixture CI required after publication.

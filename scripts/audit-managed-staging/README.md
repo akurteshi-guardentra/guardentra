@@ -113,8 +113,9 @@ in this dedicated empty database; migrator/runtime get CONNECT only. Existing
 objects/roles or an unexpected owner cause failure, not adoption or alteration.
 
 The bootstrap CI job uses a separate real PostgreSQL 16 service and changes only
-its disposable fixture: postgres is made a non-superuser database owner while a
-fixture rescue identity remains superuser. It checks wrong target/actor, advisory
+its disposable fixture: the original cluster bootstrap account is renamed by a separate fixture rescue
+identity, and a new restricted postgres database owner is created. The original
+PostgreSQL bootstrap account must retain SUPERUSER and is never used as the actor. It checks wrong target/actor, advisory
 lock, role collision/nonempty schema, transaction rollback, restricted attributes,
 zero password verifiers and denied login. The production target literal is replaced
 only in the fixture test. Native local PostgreSQL was unavailable; a local package

@@ -18,18 +18,25 @@ if (source.split("'guardentra_audit'").length !== 2) throw new Error('Bootstrap 
 const sql = source.replace("'guardentra_audit'", "'guardentra_audit_bootstrap_ci'");
 
 test('non-superuser bootstrap checks target, collisions, rollback and locked-down roles', async () => {
+  const initial = new pg.Client({ ...config, user: 'postgres' });
   const admin = new pg.Client({ ...config, user: 'postgres' });
   const root = new pg.Client({ ...config, user: 'bootstrap_ci_root' });
   let rootConnected = false;
-  await admin.connect();
+  await initial.connect();
   const rejected = async (client, text, pattern) => {
     try { await assert.rejects(client.query(text), pattern); }
     finally { await client.query('ROLLBACK'); }
   };
   try {
-    await admin.query('CREATE ROLE bootstrap_ci_root LOGIN SUPERUSER');
+    await initial.query('CREATE ROLE bootstrap_ci_root LOGIN SUPERUSER');
     await root.connect(); rootConnected = true;
-    await root.query('ALTER ROLE postgres NOSUPERUSER');
+    // PostgreSQL's original bootstrap OID cannot lose SUPERUSER. Rename that
+    // fixture identity, then create the distinct limited postgres actor to test.
+    await initial.end();
+    await root.query(`ALTER ROLE postgres RENAME TO bootstrap_ci_initial_root;
+      CREATE ROLE postgres LOGIN NOSUPERUSER CREATEDB CREATEROLE NOREPLICATION NOBYPASSRLS;
+      ALTER DATABASE guardentra_audit_bootstrap_ci OWNER TO postgres;`);
+    await admin.connect();
     assert.equal((await admin.query('SELECT rolsuper FROM pg_roles WHERE rolname=current_user')).rows[0].rolsuper, false);
 
     const wrongDatabase = new pg.Client({ ...config, user: 'postgres', database: 'postgres' });
@@ -82,7 +89,7 @@ test('non-superuser bootstrap checks target, collisions, rollback and locked-dow
     finally { await cannotLogin.end(); }
     await rejected(admin, sql, /ownership prerequisite|collision/);
   } finally {
-    if (rootConnected) await root.query('ALTER ROLE postgres SUPERUSER');
-    await root.end(); await admin.end();
+    if (rootConnected) await root.end();
+    await admin.end();
   }
 });
