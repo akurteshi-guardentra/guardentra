@@ -422,3 +422,15 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
 - Added concrete state-only approval packet and narrow ledger/source reconciliation.
   Actual ADC identity and encrypted durable local-state custody remain prerequisites
   to exact apply approval. No live access test, resource creation, merge or deployment.
+
+
+## 2026-10-09 — #74 cloud custody selected; Windows changes excluded
+
+- Owner ADC identity output: admin@guardentra.com, verified email true. No credential
+  value is recorded. Existing C: encryption status was a read-only observation.
+- Owner explicitly requests cloud custody and no enabling/changing Windows BitLocker.
+- Updated exact-plan packet with default cloud encryption, temporary local bootstrap
+  interval, isolation gate, separate bootstrap/audit prefixes and reviewed migration
+  plus version-specific recovery verification. This is a proposal, not live proof.
+- Prior documentation head ec4b03d1ceeafc09ae574f2601f2e214e0f39b03 passed both
+  workflows. Saved plan/code/hash unchanged. No apply, cloud write, merge or deployment.

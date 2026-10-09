@@ -60,8 +60,9 @@ readonly-lock init, validate and six tests PASS. A real cloud plan is now eviden
 this is not live resource creation, effective permission denial or #74 acceptance.
 
 Local ADC file exists; no reported inline/file/token overrides among checks supplied.
-Actual ADC identity still requires a metadata-only identity check without token
-output. Do not replace existing credentials unnecessarily or upload credential files.
+Owner-supplied identity output confirms ADC email admin@guardentra.com and
+email_verified true. Tokens and credential file contents are not recorded. Do not
+replace existing credentials unnecessarily or upload credential files.
 
 ## Proposed cost, residency and custody
 
@@ -75,18 +76,48 @@ Proposed state metadata location: US-CENTRAL1, matching staging runtime/scanner 
 Owner residency/cost acceptance remains required. Application/customer audit-record
 residency is a separate database gate, not implied by accepting state location.
 
-Bootstrap state remains LOCAL in the isolated Windows root. Before apply, select and
-verify encrypted storage/recovery custody for local bootstrap state and the retained
-plan, separate from source control. Disk-encryption and backup destination evidence
-are pending. Do not claim a worktree or ignore rule supplies encryption or recovery.
-No remote backend initialization/state writes are authorized by this packet alone.
+Owner selected cloud custody and explicitly rejected enabling/changing Windows
+BitLocker. The read-only output supplied earlier reported C: FullyEncrypted with
+ProtectionStatus On; this is an existing-device observation, not a requested change.
+No further Windows encryption inspection or modification is part of this work.
+
+Proposed cloud custody sequence:
+
+1. Apply only the exact approved bootstrap plan. Initial state necessarily remains
+   local until the bucket exists. Preserve local state and the saved plan; no cloud
+   backup exists during this short bootstrap interval. A lost PC/state in that interval
+   requires reconciliation, never blind re-apply or automatic import.
+2. Read back the new project, billing, APIs, bucket privacy/versioning/soft delete and
+   project/bucket/ancestor IAM. Reconcile runtime and alternate-account access paths.
+   State objects must not be uploaded until isolation evidence passes.
+3. After approval of the bounded test method, use synthetic objects under
+   guardentra/verification/74/<unique-run-id>/ to prove operator create/read and
+   runtime denial. Tests must not grant runtime impersonation or new IAM privileges.
+   An inability to test is BLOCKED, not a denial PASS. Delete only the synthetic current
+   objects; soft-deleted versions may remain billed. Never read application secrets.
+4. Prepare a GCS backend migration using bucket guardentra-staging-state-tfstate and
+   a separate bootstrap prefix guardentra/bootstrap/isolated-staging-state. Keep the
+   audit prefix guardentra/named-staging/audit separate. Review/approve the exact
+   migration commands before execution; never change the backend before applying this
+   saved local-backend plan. Use init -migrate-state, not force-copy or state push.
+5. Verify remote state lineage, serial and expected four resource addresses without
+   printing state contents, and verify a version-specific recovery download to a new
+   local path by checksum. Preserve local recovery copies until verification succeeds.
+   Bucket versions/soft delete provide recovery in the same project, not an independent
+   disaster backup. Later independent backup/KMS policy requires a separate design.
+
+Cloud Storage default Google-managed encryption at rest is the selected proposal.
+No KMS keys, Windows encryption settings or new encryption IAM are required by it.
+Backend migration, test writes and recovery downloads are prepared next; they are not
+performed or implicitly authorized by approving creation alone.
 
 ## Apply gate and failure/rollback handling
 
 Do not apply yet. Remaining prerequisites before asking for the final exact-plan
-approval: actual ADC principal, protected local storage and durable backup/custody
-choice, final reviewed residency/cost acceptance scope and post-bootstrap access-test
-method. Fresh relevant policy/IAM metadata and hash/code integrity must hold at apply.
+approval: final reviewed residency/cost acceptance and acceptance of the temporary
+local-state interval in the cloud-custody proposal. ADC identity and existing disk
+status are now evidenced. Fresh relevant policy/IAM metadata and hash/code integrity
+must hold at apply.
 
 Owner approval must explicitly cover this hash and state-only project/billing/API/
 transient-network-cleanup/bucket/operator-binding scope. No SQL/runtime/production
@@ -109,3 +140,7 @@ packet; Google Storage pricing and provider project behavior:
 https://cloud.google.com/storage/pricing
 https://registry.terraform.io/providers/hashicorp/google/6.50.0/docs/resources/google_project
 https://docs.cloud.google.com/iam/docs/service-account-permissions
+
+Cloud custody references:
+https://docs.cloud.google.com/storage/docs/encryption/default-keys
+https://developer.hashicorp.com/terraform/language/backend/gcs

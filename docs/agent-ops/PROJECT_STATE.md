@@ -45,6 +45,14 @@ Real state-bootstrap plan received for code `1f56352a81e91c48950fea45ea572cd2140
 planning evidence only. Actual ADC identity, encrypted local-state/recovery custody,
 exact apply approval and live access proof remain pending. NOT APPLIED/DEPLOYED.
 
+2026-10-09 custody steering: Owner-supplied ADC identity is admin@guardentra.com,
+verified email true. Owner selected cloud custody with no Windows encryption changes.
+Existing C: encryption was observed read-only; no setting changed. The exact-plan
+packet now proposes a temporary local bootstrap interval followed by isolation tests
+and a separately reviewed GCS migration/recovery check. No remote state or live access
+proof exists yet. Prior documentation head ec4b03d1ceeafc09ae574f2601f2e214e0f39b03
+passed CI 37982899583 and infra-ci 37982899577. Apply approval remains pending.
+
 This narrow addendum does not refresh the historical snapshot below.
 
 - Draft PR #183, branch `infra/named-staging-audit-74`, verified preparation commit
