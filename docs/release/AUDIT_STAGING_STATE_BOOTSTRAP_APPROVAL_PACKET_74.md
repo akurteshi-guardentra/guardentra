@@ -1,6 +1,7 @@
 # Issue #74 isolated state bootstrap — exact-plan approval packet
 
-Status: CONCRETE PLAN CHECKPOINT; not approved, not applied, not live verified.
+Status: BOOTSTRAP APPLIED per Owner terminal evidence; metadata reviewed.
+Remote state migration and effective runtime-denial verification remain pending.
 Scope is Terraform state bootstrap only. SQL, migrations, secret operations,
 application deployment, scanner changes and production remain outside this packet.
 
@@ -144,3 +145,35 @@ https://docs.cloud.google.com/iam/docs/service-account-permissions
 Cloud custody references:
 https://docs.cloud.google.com/storage/docs/encryption/default-keys
 https://developer.hashicorp.com/terraform/language/backend/gcs
+
+## 2026-10-09 execution and metadata checkpoint
+
+Owner requested execution after review and received the exact-hash guarded command.
+Owner terminal result: 4 added, zero changed/destroyed. Project creation 3m23s,
+Storage API 27s, bucket 2s, operator binding 5s. Do not re-apply this saved plan.
+The original approval-gate paragraphs above record the pre-execution boundary;
+this checkpoint supersedes pending creation, not pending access/migration proof.
+
+Uploaded metadata transcript reviewed in this session:
+- Project guardentra-staging-state ACTIVE, number 748382914138, direct org parent
+  280975227603; billing enabled on 019203-E57CB3-666105.
+- Project IAM: admin@guardentra.com Owner; new-project Cloud Services instance-group
+  manager service agent and Compute service agent only among returned bindings.
+  No staging runtime principal appears in this project policy snapshot.
+- Bucket US-CENTRAL1 STANDARD, public prevention enforced, uniform access, versioning,
+  604800-second soft delete; explicit human Object Admin.
+- Bucket also has Google-generated projectOwner/projectEditor/projectViewer convenience
+  bindings for legacy bucket/object roles. These refer to the STATE project, not staging;
+  they are not public grants. Future basic-role grants in this project would expand
+  state access. Do not remove them automatically or misreport an exact-human-only policy.
+- Enabled APIs returned: compute.googleapis.com, oslogin.googleapis.com,
+  storage.googleapis.com. Networks list empty. These are new-project effects;
+  scanner/staging network state was not re-read by this collection.
+- Metadata is not an operator object-write test or proof of runtime denial. Fresh
+  ancestor policy and effective-access checks remain before state upload. No state
+  payload, secret payload, credential, migration or deployment is claimed.
+
+Next preparation: read-only Policy Troubleshooter evaluation with explicit staging
+quota project for runtime Storage permissions and fresh org IAM. SERVICE_DISABLED,
+UNKNOWN or incomplete evidence must not be treated as a successful denial. No API
+activation or runtime impersonation permission grant is implicit in this step.

@@ -53,6 +53,16 @@ and a separately reviewed GCS migration/recovery check. No remote state or live 
 proof exists yet. Prior documentation head ec4b03d1ceeafc09ae574f2601f2e214e0f39b03
 passed CI 37982899583 and infra-ci 37982899577. Apply approval remains pending.
 
+2026-10-09 bootstrap execution checkpoint: Owner terminal reports 4 added, zero
+changed/deleted for the exact saved plan. Uploaded metadata confirms new state project
+748382914138 ACTIVE under org 280975227603, intended billing, protected/versioned
+US-CENTRAL1 bucket and human Object Admin. Project IAM also contains expected new-
+project service agents; bucket has generated STATE-project basic-role convenience
+bindings. No staging runtime grant is listed. Enabled Compute/OS Login/Storage APIs,
+empty networks list. Effective access, remote migration and recovery remain unproven.
+Both workflows on preparation head 6a78c6be839a1880bee1ab4a4a497efba89f3fdd PASS.
+No SQL creation, application rollout, merge or production mutation is evidenced.
+
 This narrow addendum does not refresh the historical snapshot below.
 
 - Draft PR #183, branch `infra/named-staging-audit-74`, verified preparation commit

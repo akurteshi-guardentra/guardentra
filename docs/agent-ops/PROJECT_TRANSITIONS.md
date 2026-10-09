@@ -434,3 +434,17 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
   plus version-specific recovery verification. This is a proposal, not live proof.
 - Prior documentation head ec4b03d1ceeafc09ae574f2601f2e214e0f39b03 passed both
   workflows. Saved plan/code/hash unchanged. No apply, cloud write, merge or deployment.
+
+
+## 2026-10-09 — #74 state bootstrap applied; metadata reviewed
+
+- Owner continued with exact-hash execution after the concrete scope review; guarded
+  Windows apply reports 4 added / 0 changed / 0 destroyed. Saved plan must not be rerun.
+- Uploaded readback confirms state project 748382914138, correct org/billing and bucket
+  privacy/versioning/soft delete. Project convenience grants on bucket are explicitly
+  recorded, not treated as public access or an exact-human-only policy.
+- Expected new-project Compute/OS Login/Storage APIs and empty network list returned.
+- Prior head 6a78c6be839a1880bee1ab4a4a497efba89f3fdd: CI 37983970422 and
+  infra-ci 37983970717 PASS. Remote state/access denial/recovery checks still pending.
+- State-only bootstrap is applied; no audit DB, secret operation, app deployment,
+  merge or production change. No Windows encryption setting was changed.
