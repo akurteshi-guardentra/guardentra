@@ -11,6 +11,13 @@ permissions. State isolation is BLOCKED; the bootstrap must not proceed until a
 reviewed correction is approved. Preparation adds a read-only collector and default-
 false isolation gate; no live IAM/cloud changes are authorized or performed.
 
+Collector correction: the Owner's first inventory attempt failed before report
+creation because predefined-role describes incorrectly received `--project`.
+The collector now uses the explicit staging billing project for global predefined
+roles, retaining resource project scope on other calls. Windows regression coverage
+checks arguments, overlapping roles, failure-before-report and no-overwrite behavior.
+No complete live inventory or cloud changes are claimed; corrected-head CI is pending.
+
 This narrow addendum does not refresh the historical snapshot below.
 
 - Draft PR #183, branch `infra/named-staging-audit-74`, verified preparation commit

@@ -331,3 +331,17 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
   to `state_isolation_review_complete`: record the technical isolation review, prepare
   the concrete plan, then request Owner approval before cloud apply. The gate is not
   proof of live access denial and cannot grant deployment/IAM authority.
+
+
+## 2026-10-09 — #74 predefined-role collector command correction
+
+- Owner's collector at `0f3a28e9c35e2d3ca63e8b090fb4844ba5ee35c7` failed on
+  `roles/datastore.user`: predefined roles cannot receive a project/organization parent.
+- Corrected global predefined-role requests to use `--billing-project=guardentra-staging`;
+  other fixed metadata calls retain `--project=guardentra-staging`.
+- Added Windows PowerShell 5.1 mocked-command regression tests: scope arguments,
+  overlapping Storage permissions, deduplication, failed request/no report and
+  existing-report preservation. No live credentials or cloud writes in these tests.
+- Prior AST-only CI did not catch this semantic error. Corrected-head CI pending.
+- Report collection and state-isolation review remain pending. No apply, deployment,
+  live IAM change, merge or change to the Owner's Windows worktrees.

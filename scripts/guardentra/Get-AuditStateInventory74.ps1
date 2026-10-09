@@ -15,7 +15,13 @@ if (Test-Path -LiteralPath $ReportPath) {
 function Read-GeCloudJson {
     param([string[]]$CommandArgs)
     # This collector invokes only the fixed metadata GET/list commands below.
-    $geArgs = @($CommandArgs) + @('--project=guardentra-staging', '--quiet', '--format=json')
+    # Predefined roles are global: --project selects a custom-role parent and is invalid.
+    # Keep the staging quota project explicit without changing the role's resource scope.
+    $geScopeFlag = '--project=guardentra-staging'
+    if ($CommandArgs.Count -eq 4 -and ($CommandArgs[0..2] -join ' ') -eq 'iam roles describe' -and $CommandArgs[3] -like 'roles/*') {
+        $geScopeFlag = '--billing-project=guardentra-staging'
+    }
+    $geArgs = @($CommandArgs) + @($geScopeFlag, '--quiet', '--format=json')
     $geRaw = @(& gcloud @geArgs)
     if ($LASTEXITCODE -ne 0) {
         throw ('Read-only gcloud metadata request failed: ' + ($CommandArgs -join ' '))
