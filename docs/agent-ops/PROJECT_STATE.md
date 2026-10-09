@@ -338,3 +338,15 @@ migration execution path and least-privilege identities. Preserve current secret
 versions and disabled audit state. No migration, credential rotation, runtime change,
 merge or production action executed. Actual state recovery and live SQL privilege
 tests remain pending; #74 is not complete.
+
+
+## 2026-10-09 — #74 migration preparation boundary
+
+Owner SQL metadata returns postgres only and confirms guardentra_audit exists.
+Active revision audit flag is false, AUDIT_DATABASE_URL secret alias 3 / version 1,
+no inline value; no payload inspected. Prepared cloud-job migration design in
+docs/release/AUDIT_STAGING_MIGRATION_DESIGN_74.md with separate administrative,
+migrator and runtime privileges, private authenticated transport and real-test gates.
+Runner/image/bootstrap implementation and exact additional-cloud approval remain
+pending. No credentials, SQL, job deployment, app config, merge or production changes.
+Existing Node migration URL fallback and lack of app connector are integration gaps.

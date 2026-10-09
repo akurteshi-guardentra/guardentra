@@ -103,3 +103,18 @@ protected project/bucket. Provider temporarily creates/deletes new-project defau
 network and enables Compute; include in the future packet. Never edit staging scanner
 networks or treat technical review as apply authorization. Live plan/deny tests/cost/
 residency/custody remain pending; exact changed-file and seven-field evidence required.
+
+
+## 2026-10-09 — #74 migration preparation boundary
+
+Owner SQL metadata returns postgres only and confirms guardentra_audit exists.
+Active revision audit flag is false, AUDIT_DATABASE_URL secret alias 3 / version 1,
+no inline value; no payload inspected. Prepared cloud-job migration design in
+docs/release/AUDIT_STAGING_MIGRATION_DESIGN_74.md with separate administrative,
+migrator and runtime privileges, private authenticated transport and real-test gates.
+Runner/image/bootstrap implementation and exact additional-cloud approval remain
+pending. No credentials, SQL, job deployment, app config, merge or production changes.
+Existing Node migration URL fallback and lack of app connector are integration gaps.
+
+Continuation is design and metadata preparation only. Validate exact changed paths
+and whitespace; no executable runner or live-test completion is claimed.
