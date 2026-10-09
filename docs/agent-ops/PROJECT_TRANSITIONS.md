@@ -529,3 +529,33 @@ This is an Owner-terminal infrastructure checkpoint; independent metadata readba
 scanner health, state recovery, credentials, migrations and runtime integration
 remain pending. No application rollout, audit activation, merge or production action.
 Never rerun the applied plan; preserve infrastructure and unrelated Owner work.
+
+
+## 2026-10-09 — #74 post-apply Owner API metadata checkpoint
+
+Owner attachment Pasted text(5).txt reports SQL RUNNABLE, POSTGRES_16, REGIONAL,
+db-custom-2-8192; only PRIVATE address 10.20.0.2; ipv4Enabled false;
+sslMode ENCRYPTED_ONLY; API deletionProtectionEnabled true. Legacy requireSsl false
+is not evidence of plaintext admission with this SSL mode. Server CA mode is
+GOOGLE_MANAGED_INTERNAL_CA; client certificate/server-identity verification remains
+unproven. Backups and PITR enabled, seven retained backups and seven log days.
+Automated backup 1791581139351 is SUCCESSFUL, location us (not a pinned single-region
+backup or successful restore proof). PSA servicenetworking-googleapis-com is ACTIVE.
+
+Cloud Run reports Direct VPC network interfaces on staging default network and
+us-central1 default subnet, private-ranges-only egress. This establishes configured
+network access, not successful database TCP/TLS/authentication. No cloudsql-instances
+annotation appears in the returned template; the documented /cloudsql socket path
+is not established by these settings. Existing revision
+guardentra-staging-build-2026-09-14-001 still receives 100 percent traffic.
+Scanner VM guardentra-staging-clamav-01 is RUNNING in us-central1-a, but nested IP
+projection returned no network address; no scanner health or scan request proof.
+NAT still reports auto-allocated 34.46.14.242, two mapped endpoints and zero extra
+IPs needed. These are metadata observations, not application connectivity tests.
+
+Next: inspect active revision audit flag and secret-version reference without values,
+SQL user metadata and database existence; prepare a separate encrypted private
+migration execution path and least-privilege identities. Preserve current secret
+versions and disabled audit state. No migration, credential rotation, runtime change,
+merge or production action executed. Actual state recovery and live SQL privilege
+tests remain pending; #74 is not complete.
