@@ -32,6 +32,13 @@ transient default-network cleanup and implicit Compute API enablement are disclo
 in the proposed scope; staging networking is unchanged. Billing/policy metadata has
 advanced, while global names, operator policy admission, costs and custody remain open.
 
+2026-10-09 planning prerequisite checkpoint: tested isolated root SHA
+`1f56352a81e91c48950fea45ea572cd2140ea9b6` passed CI/infra-ci and Owner Windows
+validation. Organization directory customer matches allowed-member policy; billing
+account is open USD under that organization. Recorded proposal review permits a real
+local-backend plan. Plan/apply, actual ADC identity, encrypted state custody,
+residency/cost acceptance and live access tests are still pending; no cloud mutation.
+
 This narrow addendum does not refresh the historical snapshot below.
 
 - Draft PR #183, branch `infra/named-staging-audit-74`, verified preparation commit

@@ -348,3 +348,16 @@ candidate, preserving staging application/scanner IAM. This is not selection app
 or permission to create/link/enable/apply. The existing same-project bootstrap stays
 blocked. Billing, organization constraints, names, guarded root and exact local-state
 plan are required before requesting concrete bootstrap approval.
+
+
+## 2026-10-09 real bootstrap plan preparation boundary
+
+Proposal review is recorded in `AUDIT_STAGING_STATE_ISOLATION_DESIGN_74.md` against
+code `1f56352a81e91c48950fea45ea572cd2140ea9b6`; Windows validation and both CI
+workflows PASS. Directory customer and billing account metadata are reconciled.
+A real local-backend plan may now be prepared under the existing preparation scope.
+No pre-plan Owner apply approval is required or inferred. Preserve raw plan/state and
+credentials locally; supply reviewed action metadata and plan SHA-256 for the packet.
+Final plan, actual ADC principal, encrypted recovery custody, residency/cost acceptance,
+name-conflict handling, provider API/network side effects and post-bootstrap live
+access tests remain apply gates. No cloud mutation or deployment was authorized here.

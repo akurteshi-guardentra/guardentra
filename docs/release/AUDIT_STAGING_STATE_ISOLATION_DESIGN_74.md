@@ -134,3 +134,57 @@ mocked plan tests; existing roots and application RC are retained. Provider lock
 copied unchanged from the signed/checksum-verified 6.50.0 Linux/Windows selection.
 Billing/name metadata narrows the proposal; live isolation, operator credentials,
 cost/residency/custody and exact plan remain pending. Mocked tests are not live plans.
+
+
+## 2026-10-09 proposal review recorded for a real local-backend plan
+
+Reviewed executable configuration: `1f56352a81e91c48950fea45ea572cd2140ea9b6`.
+CI 37980491095 and infra-ci 37980490973 SUCCESS. Owner's Windows worktree at that
+same SHA passed fmt, readonly-lock init, validate and six mocked tests; status clean.
+
+Additional Owner metadata: organization ACTIVE, display domain `guardentra.com`,
+owner directory customer `C02fbgmro` matching the allowed-member constraint. Billing
+account `019203-E57CB3-666105` is OPEN, USD and parented by organization `280975227603`.
+Local ADC file exists; inspected credential override flags were false. Presence does
+not establish ADC identity/validity. Do not overwrite existing credentials merely
+because gcloud and Terraform use different credential stores. Resolve any plan auth
+error before proceeding and confirm actual execution identity before apply.
+
+Technical review conclusion: the proposed isolated boundary, fixed identifiers and
+operator, bucket/recovery protection, policy/customer relationship, credential approach,
+provider side effects and rejection tests support preparing a REAL local-backend plan.
+`state_isolation_review_complete=true` may be passed for that reviewed proposal; it
+means review of the design is recorded, not that all apply gates or live tests pass.
+No remote backend is configured. No approval of creation, billing linking, service
+activation, IAM writes, temporary-network cleanup or deployment is granted here.
+
+Plan assumptions and deferred apply gates:
+
+- Candidate names are not proven available (project lookup 403, bucket 404). Request
+  creation only; if a conflict occurs, stop without import/adoption or forced changes.
+- US-CENTRAL1 is proposed for state metadata only, consistent with named staging.
+  Explicit residency/cost acceptance belongs in the exact bootstrap approval packet.
+- Initial plan and bootstrap state stay in the isolated Windows worktree, ignored by
+  Git. Choose and verify encrypted durable recovery custody BEFORE approved apply;
+  no local-file presence or worktree clean status proves encryption or backup.
+- Operator uses ADC with staging quota project; actual principal/credential validity
+  still needs confirmation. Runtime receives no state-project grant. Fresh inherited
+  IAM review and real empty-bucket access tests remain required after bootstrap.
+- Four resource declarations are design intent, not a verified plan count. Provider
+  auto-network cleanup enables Compute in the new project; creation also has default
+  API/identity side effects. Review these outside the displayed resource count too.
+
+Illustrative state cost, prices checked 2026-10-09 at
+https://cloud.google.com/storage/pricing: US-CENTRAL1 Standard rate
+USD 0.000027397/GiB-hour (about 0.02/GiB for 730 hours); single-region flat-namespace
+Class A 0.005/1,000 and Class B 0.0004/1,000. Assumption: 1 GiB average TOTAL billable
+state/versions/soft-deleted bytes, 1,000 Class A and 1,000 Class B operations/month.
+Result about USD 0.0254/month before network, taxes and account-specific/free-tier
+adjustments. This is a scenario, not measured usage, a cost cap or Cloud SQL pricing.
+Retained versions are not automatically purged and may grow. Real operator internet
+reads/exports can add network costs; include actual usage in ongoing cost review.
+
+Permitted next step: save a unique local-only plan at the tested code SHA, record its
+SHA-256, and review intended resource/actions plus the provider side effects. Do not
+apply it, initialize remote state or upload raw credential/state/plan files. The saved
+plan is still pending; no live isolation, project availability or #74 acceptance claim.
