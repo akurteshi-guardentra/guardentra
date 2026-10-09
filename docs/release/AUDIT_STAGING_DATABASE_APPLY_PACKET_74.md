@@ -1,6 +1,7 @@
 # Issue #74 — exact staging database infrastructure apply packet
 
-Status: reviewed replacement plan; NOT APPROVED/APPLIED. Infrastructure creation only.
+Status: Owner-approved plan APPLIED per Owner terminal output on 2026-10-09.
+Independent post-apply metadata readback remains pending. Infrastructure creation only.
 No runtime rollout, audit activation, DB user/password/secret operation or SQL migration.
 
 ## Provenance
@@ -96,3 +97,27 @@ If apply partially fails, preserve resources/state and stop. Never automatically
 retry/import/destroy or remove peering/deletion protection. Prepare a fresh corrective
 plan for review. Rollback for application keeps database/audit records and infrastructure;
 no destructive down-migration. Bootstrap/SQL decommission needs separate authorization.
+
+
+## 2026-10-09 — Owner approval and successful infrastructure apply
+
+Owner answered “yes” to the exact replacement-plan approval request, then supplied
+the apply result for executable 89637c01768808ecd203f89102c2dabe4707ee3a and
+SHA256 AA15806393F1872EFE907F5A295CFDC94C91914CB37EA977A81C2A9AEC9D08E9.
+Terminal reports 8 added, 0 changed, 0 destroyed and state lock released.
+This supersedes the earlier pending-approval checkpoint; do not apply the saved plan again.
+
+Reported outputs: instance guardentra-staging-audit, connection
+guardentra-staging:us-central1:guardentra-staging-audit, private IP 10.20.0.2,
+database guardentra_audit, region us-central1, staging default network, reserved
+range guardentra-staging-audit-psa and the intended Firebase App Hosting runtime SA.
+State list contains all eight managed resource addresses plus the default-network
+data source. Peering creation reports success; instance creation took 5m5s.
+
+Evidence is Owner-supplied Terraform terminal output, not an independent live API
+readback. Next checks cover instance settings, backup status/location, peering,
+runtime network attachment, scanner VM and NAT metadata. Actual scanner health,
+remote audit-state recovery, PostgreSQL privileges, migration, authenticated encrypted
+client connection and application audit writes remain unverified. No DB credential
+operation, migration, application rollout, audit activation, PR merge or production
+action is evidenced by this infrastructure apply. Preserve resources and remote state.
