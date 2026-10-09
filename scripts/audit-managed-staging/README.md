@@ -48,8 +48,23 @@ context from one exact reviewed Git commit with only:
 
 Dockerfile is intended for that staged context. Never copy .env, credentials, state,
 plans, dirty worktree files or application sources. Resolve/pin the Node base-image
-digest and record built runner digest before job deployment approval. No actual
-build-context generation or Cloud Build submission command is delivered yet.
+digest and record built runner digest before job deployment approval. Build-context generation is now implemented by stage-context.mjs. It reads only
+these eight files from Git objects at an explicit 40-hex source commit, rejects SQL
+set/checksum mismatches, and pins the Dockerfile to an explicitly supplied Node
+base-image digest. It never reads dirty working-tree contents. A fresh temporary
+context directory contains only allowlisted files; receipt.json is outside that
+directory and records source, base reference and per-file hashes.
+
+Preparation command (use an actually resolved/reviewed digest, not a synthetic value):
+`node scripts/audit-managed-staging/stage-context.mjs <repository-path> <40-hex-commit> <sha256:base-image-digest>`
+
+This command stages files only. It does not verify registry availability/provenance,
+resolve the Node base digest, build/upload an image, submit Cloud Build or deploy a
+job. Only the returned context directory may be considered for a later approved
+build. Do not upload its parent, the repository or the current working directory.
+Tests use a real disposable Git repository with tracked synthetic .env/state decoys,
+a dirty runner file, modified committed SQL and an extra migration. They verify the
+exact file set, committed bytes, digest transformation and receipt, plus failures.
 
 BLOCKED: secret isolation must be reconciled before provisioning any credentials.
 Earlier staging IAM includes project-wide Secret Accessor for application runtime,
@@ -65,3 +80,17 @@ project/resource/version references and access evidence; API/resource changes; e
 source/image digest; build costs; job specification; positive and negative live tests;
 rollback/custody. No credential mutation, cloud job execution, app rollout or
 production action is authorized by this package.
+
+
+## 2026-10-10 — isolated secret containers now exist
+
+Owner applied the separate four-resource proposal from source
+0fe5e62e620ee7e95c449e8b1f2d826fb13af01e. Project guardentra-staging-audit-ops
+(number 794923710344) is ACTIVE under organization 280975227603. Both
+AUDIT_BOOTSTRAP_ADMIN_PASSWORD_74 and AUDIT_MIGRATOR_PASSWORD_74 have us-central1
+replicas and no versions. Returned project/secret policies show no application
+runtime grants. Earlier isolation blocker text remains historical; container
+creation is verified, while actual credential/version custody and runtime denial
+remain unproven. No passwords, job IAM or job execution have been provisioned.
+Bootstrap implementation, base-image resolution, cloud build and live acceptance
+still require preparation and their exact execution approvals.

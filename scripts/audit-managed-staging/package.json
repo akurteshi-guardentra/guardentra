@@ -4,7 +4,7 @@
   "type": "module",
   "engines": { "node": "22.x || 24.x" },
   "scripts": {
-    "test": "node --test unit.test.mjs",
+    "test": "node --test unit.test.mjs stage-context.test.mjs",
     "test:postgres": "node --test postgres.test.mjs"
   },
   "dependencies": {

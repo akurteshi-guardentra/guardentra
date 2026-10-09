@@ -220,3 +220,39 @@ CI/documentation updates to GuardEntra draft PR #183, Owner directed “go ahead
 Scope is repository publication and cloud-neutral CI validation only. No project/API/
 secret creation, payload disclosure, IAM mutation, cloud plan/apply, merge or deployment
 authorization is added. The earlier auto-review rejection remains recorded as history.
+
+
+## 2026-10-10 — allowlisted migration build context checkpoint
+
+Issue #74 preparation on infra/named-staging-audit-74 / draft PR #183, starting
+bcb608e717bb4cf917785a07e3a2b5c827883662. Owner directed continuation toward dev,
+test/staging and production rollout. This authorizes further preparation, not an
+application release or production mutation. Added a Git-object-only eight-file
+runner context generator requiring exact source SHA and Node base-image digest.
+It rejects extra/modified SQL, mutable source refs and unpinned base inputs; a
+receipt outside the context records hashes. No build submission/cloud mutation.
+
+Local npm test PASS: five tests, zero failures, including two real disposable-Git
+context/exclusion/negative tests and the existing three scope/manifest tests. The
+new generator does not verify registry provenance or image availability. No local
+PostgreSQL server: existing real PostgreSQL CI proof is unchanged; fresh CI pending
+publication. Exact update files: scripts/audit-managed-staging/stage-context.mjs,
+scripts/audit-managed-staging/stage-context.test.mjs,
+scripts/audit-managed-staging/package.json, scripts/audit-managed-staging/README.md,
+docs/release/AUDIT_STAGING_MIGRATION_DESIGN_74.md,
+docs/release/AUDIT_STAGING_PREPARATION_TASK_74.md,
+docs/agent-ops/PROJECT_STATE.md, docs/agent-ops/PROJECT_TRANSITIONS.md.
+Source checkpoint NOT COMMITTED at preparation; working changes limited to this
+list (verified by git status). No application deployment, merge, new secret version,
+SQL/bootstrap execution, IAM mutation or production change. Rollback of this source
+preparation is a feature-branch revert; it has no live resource side effects.
+
+Deployment mapping is documented as dev -> guardentra-dev sandbox,
+test -> guardentra-staging, main -> guardentra-prod. ENVIRONMENTS.md still says dev
+"create when ready" and also contains stale "only demo exists" text, contradicted
+by current staging/prod evidence; documentation is not live backend inventory.
+Do not claim a live dev backend or deploy to legacy demo from those instructions.
+The next actual app rollout remains blocked by bootstrap/credential/job setup,
+live migrations and separate app connector/rollout approval. Production follows
+staging durable events/chain/failure/rollback acceptance, never just Terraform apply.
+No numeric readiness score or calendar deployment promise is minted here.
