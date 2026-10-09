@@ -1,0 +1,14 @@
+{
+  "name": "guardentra-audit-managed-staging",
+  "private": true,
+  "type": "module",
+  "engines": { "node": "22.x || 24.x" },
+  "scripts": {
+    "test": "node --test unit.test.mjs",
+    "test:postgres": "node --test postgres.test.mjs"
+  },
+  "dependencies": {
+    "@google-cloud/cloud-sql-connector": "1.12.0",
+    "pg": "8.16.3"
+  }
+}

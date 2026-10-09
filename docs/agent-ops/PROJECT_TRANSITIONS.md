@@ -571,3 +571,22 @@ migrator and runtime privileges, private authenticated transport and real-test g
 Runner/image/bootstrap implementation and exact additional-cloud approval remain
 pending. No credentials, SQL, job deployment, app config, merge or production changes.
 Existing Node migration URL fallback and lack of app connector are integration gaps.
+
+
+## 2026-10-09 — runner candidate and credential-isolation correction
+
+Owner inventory returns no jobs, no matching audit service accounts and only staging
+AUDIT_DATABASE_URL secret. Prepared isolated scripts/audit-managed-staging package,
+locked connector/pg dependencies, exact-target/no-fallback guardrails, migration
+checksums/advisory lock and restricted PostgreSQL 16 CI execution/privilege contract.
+Local Node syntax and three unit tests PASS; real PostgreSQL/CI pending at publication.
+No cloud build, role/password creation, secret write or job execution performed.
+
+The candidate secret-placement design above is BLOCKED: earlier staging IAM grants
+application runtime and build/hosting principals project-wide Secret Accessor.
+Resource-level access assigned to a job cannot cancel inherited runtime access.
+Do not create admin/migrator secrets in staging and claim separation. Fresh policy
+and role metadata is needed before selecting isolated credential custody or scoped
+IAM correction. No state-project repurpose, IAM removal, token/key creation or
+password operation is authorized. Runner bootstrap, build context/base-image pin,
+exact cloud execution packet and application connector integration remain pending.

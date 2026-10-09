@@ -107,3 +107,22 @@ https://github.com/GoogleCloudPlatform/cloud-sql-nodejs-connector
 https://docs.cloud.google.com/run/docs/configuring/vpc-direct-vpc
 https://docs.cloud.google.com/run/docs/configuring/jobs/secrets
 https://docs.cloud.google.com/sql/docs/postgres/users
+
+
+## 2026-10-09 — runner candidate and credential-isolation correction
+
+Owner inventory returns no jobs, no matching audit service accounts and only staging
+AUDIT_DATABASE_URL secret. Prepared isolated scripts/audit-managed-staging package,
+locked connector/pg dependencies, exact-target/no-fallback guardrails, migration
+checksums/advisory lock and restricted PostgreSQL 16 CI execution/privilege contract.
+Local Node syntax and three unit tests PASS; real PostgreSQL/CI pending at publication.
+No cloud build, role/password creation, secret write or job execution performed.
+
+The candidate secret-placement design above is BLOCKED: earlier staging IAM grants
+application runtime and build/hosting principals project-wide Secret Accessor.
+Resource-level access assigned to a job cannot cancel inherited runtime access.
+Do not create admin/migrator secrets in staging and claim separation. Fresh policy
+and role metadata is needed before selecting isolated credential custody or scoped
+IAM correction. No state-project repurpose, IAM removal, token/key creation or
+password operation is authorized. Runner bootstrap, build context/base-image pin,
+exact cloud execution packet and application connector integration remain pending.
