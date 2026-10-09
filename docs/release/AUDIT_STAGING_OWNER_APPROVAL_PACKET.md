@@ -442,3 +442,13 @@ continue. This authorizes that narrow repository disclosure, not SQL apply, merg
 secret payload publication or application deployment. Preserve the original automatic
 review rejection above as history. New exact-head validation remains pending until
 CI runs for the published corrections; original saved database plan remains superseded.
+
+
+## 2026-10-09 replacement database plan reviewed
+
+Corrected executable head 89637c01768808ecd203f89102c2dabe4707ee3a passed CI
+37988873225 and infra-ci 37988873231. Owner real replacement plan confirms encrypted-
+only SSL and API deletion protection: 8 add / 0 change / 0 destroy. Exact hash/scope,
+USD ~211 scenario and infrastructure-only approval boundary are recorded in
+AUDIT_STAGING_DATABASE_APPLY_PACKET_74.md. Previous plan remains superseded.
+No SQL apply, secret operation, schema migration, rollout or production action.

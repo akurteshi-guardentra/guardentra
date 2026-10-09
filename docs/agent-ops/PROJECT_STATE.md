@@ -91,6 +91,13 @@ Format/diff checks PASS; local provider startup prevents validation. New-code CI
 replacement plan and DB identity/private transport/cost review pending. Publication
 blocked by automatic disclosure review; three earlier notes plus source changes local.
 
+2026-10-09 replacement DB plan review: executable 89637c01768808ecd203f89102c2dabe4707ee3a
+passed CI 37988873225 / infra-ci 37988873231; named-staging five security tests PASS.
+Owner saved replacement plan 8 add / 0 change / 0 destroy explicitly includes encrypted-
+only SSL and API deletion protection. Exact hash/action/cost packet prepared for
+infrastructure-only approval; no SQL apply authorized yet. DB credentials, actual
+private client path, migrations, runtime integration and rollout remain separate gates.
+
 This narrow addendum does not refresh the historical snapshot below.
 
 - Draft PR #183, branch `infra/named-staging-audit-74`, verified preparation commit

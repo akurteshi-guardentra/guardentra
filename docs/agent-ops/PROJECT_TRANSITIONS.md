@@ -502,3 +502,14 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
   security corrections and reviewed infrastructure notes to existing draft PR #183.
 - Narrow publication scope recorded; no database apply, merge, secret payload or
   application deployment authorization added. Superseded saved plan stays blocked.
+
+
+## 2026-10-09 — #74 replacement database plan reviewed for exact approval
+
+- Executable 89637c01768808ecd203f89102c2dabe4707ee3a passed CI/infra-ci; five new
+  named-staging mock tests and existing PostgreSQL privilege contract PASS.
+- Owner real plan confirms 8 additions and both explicit protections; exact hash
+  AA15806393F1872EFE907F5A295CFDC94C91914CB37EA977A81C2A9AEC9D08E9.
+- Prepared infrastructure-only packet with exact resources, HA cost scenario, residency,
+  managed-service side effects, limits, post-apply checks and preserve-on-failure handling.
+- No database apply, DB credentials/schema migration, rollout, merge or production action.
