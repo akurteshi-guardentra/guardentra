@@ -94,3 +94,39 @@ creation is verified, while actual credential/version custody and runtime denial
 remain unproven. No passwords, job IAM or job execution have been provisioned.
 Bootstrap implementation, base-image resolution, cloud build and live acceptance
 still require preparation and their exact execution approvals.
+
+
+## Bootstrap prerequisite candidate (not executed)
+
+bootstrap-prerequisites.sql is a separate one-time preparation candidate, excluded
+from the migration runner's eight-file build context. It is not wired to run.mjs
+or a cloud job. It hard-limits the database, PostgreSQL 16 and postgres session
+identity with CREATEROLE and no superuser. It requires database/schema ownership,
+no audit role collisions, no public objects/non-default extensions/custom schemas
+or event triggers, and acquires the migration advisory lock in one transaction.
+It creates pgcrypto plus three restricted NOLOGIN roles without any passwords.
+It grants runtime inherited audit_app privileges without SET/ADMIN options. A
+non-superuser schema transfer temporarily grants database CREATE and actor SET
+access to audit_migrator, then removes them and verifies final privileges before
+commit. Public schema access and public database CONNECT/TEMP grants are revoked
+in this dedicated empty database; migrator/runtime get CONNECT only. Existing
+objects/roles or an unexpected owner cause failure, not adoption or alteration.
+
+The bootstrap CI job uses a separate real PostgreSQL 16 service and changes only
+its disposable fixture: postgres is made a non-superuser database owner while a
+fixture rescue identity remains superuser. It checks wrong target/actor, advisory
+lock, role collision/nonempty schema, transaction rollback, restricted attributes,
+zero password verifiers and denied login. The production target literal is replaced
+only in the fixture test. Native local PostgreSQL was unavailable; a local package
+setup attempt failed due environment UID/group restrictions. This is not a Windows
+setup requirement and no user/cloud machine was changed.
+
+Actual Cloud SQL schema/database ownership and administrator authentication are
+still unverified; this fixture cannot establish Cloud SQL-specific permissions.
+The candidate intentionally leaves migrator/runtime unable to log in. Credential
+provisioning, role activation and version-pinned job execution need another reviewed
+packet. Do not execute this SQL in Windows/Cloud SQL merely because CI passes.
+Primary privilege references:
+https://www.postgresql.org/docs/16/sql-alterschema.html
+https://www.postgresql.org/docs/16/sql-createrole.html
+https://docs.cloud.google.com/sql/docs/postgres/extensions

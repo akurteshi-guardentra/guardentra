@@ -749,3 +749,35 @@ running CI, Owner directed “go ahead”. This resolves the prior automatic app
 review rejection of the additional payload/destination. Authorization is source
 publication and CI only; no app deployment, cloud build/job execution, credential
 mutation, merge or production change. Earlier rejection remains recorded in chat.
+
+
+## 2026-10-10 — password-free bootstrap prerequisite preparation
+
+Owner instructed continuation while away. Prepared source only, no new live cloud
+or credential action. Starting head 141161bfb0dc6de96808a460796392519637c98f on
+infra/named-staging-audit-74 / draft PR #183. One-time transaction candidate creates
+restricted NOLOGIN audit_app/audit_migrator/audit_runtime and pgcrypto in an exact,
+fresh PostgreSQL 16 database; existing roles/objects/owners fail for reconciliation.
+Temporary database CREATE/actor SET grants for schema ownership are removed and
+verified. No password payload or verifier is created, read or logged by live code;
+roles remain unable to log in. This is outside the migration image allowlist and
+has no cloud entry point/job. Credential setup and live bootstrap remain unapproved.
+
+Added isolated real PostgreSQL 16 CI fixture with postgres stripped of superuser,
+checking target/actor/lock/collisions, rollback, NOLOGIN/privilege/password absence.
+Local npm test: five PASS; Node syntax, workflow YAML and diff check PASS. New real
+bootstrap integration NOT RUN at local checkpoint (no native PostgreSQL; local apt
+setup failed with UID/group restrictions, no escalation/workaround). CI publication
+will be reported separately if permitted. Cloud-specific privileges remain unproved.
+
+Exact source/checkpoint files: .github/workflows/infra-ci.yml;
+scripts/audit-managed-staging/bootstrap-prerequisites.sql;
+scripts/audit-managed-staging/bootstrap.test.mjs;
+scripts/audit-managed-staging/package.json; scripts/audit-managed-staging/README.md;
+docs/agent-ops/PROJECT_STATE.md; docs/agent-ops/PROJECT_TRANSITIONS.md;
+docs/release/AUDIT_STAGING_MIGRATION_DESIGN_74.md;
+docs/release/AUDIT_STAGING_PREPARATION_TASK_74.md. Checkpoint NOT COMMITTED at
+preparation, working tree limited to these nine paths. No merge/app rollout/cloud
+build/job/credential/SQL execution or production change. Rollback: source revert;
+no live effect to reverse. No readiness score or deployment-date promise. Next
+bounded gate is real fixture proof, then exact credential/job/bootstrap packet.

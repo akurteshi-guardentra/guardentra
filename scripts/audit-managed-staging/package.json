@@ -5,7 +5,8 @@
   "engines": { "node": "22.x || 24.x" },
   "scripts": {
     "test": "node --test unit.test.mjs stage-context.test.mjs",
-    "test:postgres": "node --test postgres.test.mjs"
+    "test:postgres": "node --test postgres.test.mjs",
+    "test:bootstrap": "node --test bootstrap.test.mjs"
   },
   "dependencies": {
     "@google-cloud/cloud-sql-connector": "1.12.0",
