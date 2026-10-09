@@ -26,7 +26,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        root: [envs/eu-staging, envs/named-staging, bootstrap/named-staging-state]
+        root: [envs/eu-staging, envs/named-staging, bootstrap/named-staging-state, bootstrap/isolated-staging-state]
     steps:
       - uses: actions/checkout@v4
 
@@ -49,6 +49,11 @@ jobs:
       - name: Terraform validate
         working-directory: infra/${{ matrix.root }}
         run: terraform validate
+
+      - name: Isolated state bootstrap mocked guardrails
+        if: matrix.root == 'bootstrap/isolated-staging-state'
+        working-directory: infra/${{ matrix.root }}
+        run: terraform test -no-color
 
       - name: Live execution quarantine
         run: |

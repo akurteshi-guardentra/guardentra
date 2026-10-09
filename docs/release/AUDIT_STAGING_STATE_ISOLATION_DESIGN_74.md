@@ -39,17 +39,20 @@ These are metadata snapshots, not a live effective-access test or perpetual proo
 
 | Item | Proposal | Remaining verification |
 |---|---|---|
-| State project | `guardentra-staging-state` | Global ID availability, billing account, applicable policies and exact plan |
+| State project | `guardentra-staging-state` | Global ID availability (describe 403), effective policies and exact plan |
 | Parent | Organization `280975227603`, directly | Fresh inherited policy review before execution |
-| State bucket | `guardentra-staging-state-tfstate` | Global name availability, ownership and final plan |
+| State bucket | `guardentra-staging-state-tfstate` | Lookup 404; global name availability and final plan remain unproven |
 | Location | `US-CENTRAL1` | Policy compatibility and explicit residency approval; US state metadata storage |
 | Operator | `user:admin@guardentra.com` | Effective project/billing permissions and credential method |
 | State prefix | `guardentra/named-staging/audit` | Exact backend configuration after bootstrap approval |
 | Application infrastructure | Remains in `guardentra-staging` | Existing database/network/app packet still applies |
 
-Prepare a separate guarded local-state Terraform root after billing/policy/name
-metadata is reconciled. It must restrict the exact project and organization, avoid
-creating a default network or enabling Firebase, and propose only reviewed services.
+Prepared root: `infra/bootstrap/isolated-staging-state`, still blocked for live planning.
+It restricts the project, organization, verified billing account and human operator.
+It does not enable Firebase. Provider `auto_create_network=false` removes a transient
+new-project default network and implicitly enables Compute API; the earlier intent
+to avoid any network creation was too strong. These new-project side effects must be
+included in the exact bootstrap approval scope; staging networks are not changed.
 Expected resource intent: project with billing association, required Storage API
 configuration, state bucket, and bucket-scoped operator Object Admin binding. This is
 not a verified resource count; project provisioning can create service identities and
@@ -115,3 +118,19 @@ https://docs.cloud.google.com/storage/docs/access-control/iam
 https://docs.cloud.google.com/iam/docs/service-account-permissions
 https://docs.cloud.google.com/sdk/gcloud/reference/billing/projects/describe
 https://docs.cloud.google.com/sdk/gcloud/reference/org-policies/list
+
+
+## 2026-10-09 subsequent preparation checkpoint
+
+Owner billing lookup confirms account `019203-E57CB3-666105`, billing enabled.
+Organization Policy API query returned SERVICE_DISABLED in staging; Resource Manager
+fallback returned seven configured organization policies, including uniform bucket
+access, allowed customer `C02fbgmro` and service-account key/default-IAM restrictions.
+No API was enabled by this preparation. Verify allowed-customer membership and
+applicable custom/default/effective policy limits before live plan.
+
+New guarded root declares four resources and is added to cloud-neutral CI with six
+mocked plan tests; existing roots and application RC are retained. Provider lock is
+copied unchanged from the signed/checksum-verified 6.50.0 Linux/Windows selection.
+Billing/name metadata narrows the proposal; live isolation, operator credentials,
+cost/residency/custody and exact plan remain pending. Mocked tests are not live plans.

@@ -87,3 +87,19 @@ PROJECT_TRANSITIONS. Check exact diff/whitespace and proposal consistency; no ne
 executable behavior or additional low-impact documentation tests are introduced.
 Billing/policy/name inputs remain external dependencies. Revert through a feature PR;
 never touch Windows dirty worktrees or apply without the exact approved packet.
+
+
+## 2026-10-09 guarded isolated bootstrap preparation
+
+Owner requested continuation with read-only billing/policy/name output. Scope adds
+`infra/bootstrap/isolated-staging-state/` (main, README, provider lock and six mocked
+plan tests), narrow .gitignore lock/plan rules, infra-ci fourth-root/test coverage,
+isolation proposal and ledger reconciliation. No runtime or application RC change.
+Tests: recursive Terraform formatting, whitespace and existing lock equality locally;
+CI provider schema validation and six mock-only guardrail tests. Local provider process
+validation remains unavailable in this managed runtime; CI is the execution verifier.
+Impact/rollback: state isolation candidate only, fixed human principal and identifiers,
+protected project/bucket. Provider temporarily creates/deletes new-project default
+network and enables Compute; include in the future packet. Never edit staging scanner
+networks or treat technical review as apply authorization. Live plan/deny tests/cost/
+residency/custody remain pending; exact changed-file and seven-field evidence required.

@@ -24,7 +24,12 @@ Returned organization IAM binds only the human operator; runtime Token Creator i
 account-level self access. No dedicated state project appeared among returned active
 direct organization children. Preparation now recommends a separate state-only
 project, documented in `docs/release/AUDIT_STAGING_STATE_ISOLATION_DESIGN_74.md`.
-No isolated root/plan, live denial test or approved project creation exists yet.
+Subsequent preparation adds an isolated root, required verified billing input,
+fixed identifiers/operator, default-false live-plan review gate and mocked guardrails.
+No live plan, live denial test or approved project creation exists yet. New-project
+transient default-network cleanup and implicit Compute API enablement are disclosed
+in the proposed scope; staging networking is unchanged. Billing/policy metadata has
+advanced, while global names, operator policy admission, costs and custody remain open.
 
 This narrow addendum does not refresh the historical snapshot below.
 

@@ -53,6 +53,8 @@ GoogleService-Info.plist
 .terraform.lock.hcl
 !infra/envs/named-staging/.terraform.lock.hcl
 !infra/bootstrap/named-staging-state/.terraform.lock.hcl
+!infra/bootstrap/isolated-staging-state/.terraform.lock.hcl
+infra/bootstrap/isolated-staging-state/*.tfplan
 infra/envs/named-staging/backend.hcl
 infra/bootstrap/named-staging-state/*.tfplan
 infra/envs/named-staging/*.tfplan

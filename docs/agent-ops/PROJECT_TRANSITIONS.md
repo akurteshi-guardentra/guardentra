@@ -364,3 +364,22 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
   bootstrap remains blocked; new root/plan waits for billing/policy/name metadata.
 - Added proposal and narrow release/task/ledger reconciliation. No cloud mutation,
   API enablement, token generation, plan/apply, merge or deployment in this review.
+
+
+## 2026-10-09 — #74 guarded isolated state root prepared, not applied
+
+- Starting preparation head `7b83f357eaff7995a3c4cb16b18b3d3dbe623212`; exact-head
+  CI 37872539201 and infra-ci 37872539214 verified SUCCESS before new edits.
+- Owner reauthenticated. Billing metadata confirms staging account
+  `019203-E57CB3-666105`; Resource Manager fallback returned seven org policies after
+  orgpolicy API SERVICE_DISABLED. Candidate bucket 404, candidate project 403:
+  global availability is not proven. No API enablement performed.
+- Added a separate fixed-project/organization/billing/human-operator root, protected
+  project/bucket, required billing input and default-false technical review precondition.
+  Added six mocked plan guardrails to CI; no live Google calls in routine CI.
+- Corrected earlier network-free intent: provider false auto-network flag cleans up a
+  transient new-project default network and enables Compute API there. These side
+  effects require explicit future bootstrap scope, with no staging network modification.
+- New head validation pending. No real plan, state/backend writes, apply, IAM mutation,
+  project creation, rollout, merge or production action. Costs, residency, policy/name
+  review, credentials/custody and empty-bucket denial tests remain gates.
