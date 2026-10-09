@@ -57,3 +57,20 @@ migration-preparation SHA provenance; final staging approval; live #74 acceptanc
 Handoff evidence must state the final branch/SHA, PR #183, exact changed paths,
 actual checks, working-tree state and NOT DEPLOYED status. No completion or live
 acceptance claim is authorized by this task packet.
+
+## 2026-10-09 bounded continuation
+
+Owner requested continuation after supplying authenticated bucket/IAM metadata.
+Runtime state access is not isolated by the current project policy. Preparation scope
+adds `scripts/guardentra/Get-AuditStateInventory74.ps1`, its Windows PowerShell syntax
+check in `.github/workflows/ci.yml`, a default-false state-bootstrap approval gate,
+bootstrap/release instructions and narrow ledger addenda. All code is metadata-only
+or unapplied Terraform; no live IAM remediation is selected or authorized.
+
+Relevant evidence: Owner's 404 bucket lookup and project IAM; public Google Storage
+IAM and Firebase role references. Existing migration/app code remains unchanged.
+Local checks: Terraform formatting, Git diff whitespace and workflow parsing.
+CI must parse the collector on Windows PowerShell and validate the bootstrap root.
+Collector execution and state-isolation permission tests remain pending Owner's
+authenticated CLI output and a reviewed isolation design. Retain exact seven-field
+checkpoint evidence; no apply, merge, production change or autonomous automation.

@@ -309,3 +309,18 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
   enablement is retained as baseline evidence, not hidden by a zero-change assertion.
 - NOT DEPLOYED; production unchanged by this preparation. Final plans, identity/TLS,
   cost/retention/residency decisions, approvals and live #74 acceptance remain pending.
+
+## 2026-10-09 — #74 state-isolation prerequisite identified (preparation only)
+
+- Current verified prior head: `193343d95ce2002d6e167db81ed01bcdf9ea5ad8`, draft PR #183.
+  Both exact-head workflows SUCCESS: CI 37712508453, infra-ci 37712508458.
+- Authenticated Owner evidence: candidate state bucket lookup 404; operator
+  `user:admin@guardentra.com` has project Owner; runtime has project-wide Storage
+  Object Viewer and overlapping broad Firebase roles.
+- Public Google role reference confirms Firebase Admin also has Storage object access.
+  Bucket-scoped operator grants do not remove inherited access.
+- Transition: original same-project bootstrap candidate -> BLOCKED pending isolation
+  design. Added read-only role inventory collector and default-false approval gate.
+- No live role removal, grant, bucket creation, state write, API enablement or deployment.
+- Next prerequisite: run the collector, reconcile all overlapping permissions and
+  review isolated-backend versus same-project IAM correction scope with the Owner.

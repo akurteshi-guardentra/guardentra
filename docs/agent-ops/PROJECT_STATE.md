@@ -2,6 +2,15 @@
 
 ## 2026-10-08 — Issue #74 preparation checkpoint (not deployed)
 
+2026-10-09 addendum: both workflows on the documentation head
+`193343d95ce2002d6e167db81ed01bcdf9ea5ad8` are verified SUCCESS (CI 37712508453;
+infra-ci 37712508458). Authenticated Owner output returned 404 for the proposed state
+bucket and confirmed the operator's project Owner binding. The same IAM snapshot
+exposes inherited runtime Storage access, including overlapping Firebase Admin
+permissions. State isolation is BLOCKED; the bootstrap must not proceed until a
+reviewed correction is approved. Preparation adds a read-only collector and default-
+false isolation gate; no live IAM/cloud changes are authorized or performed.
+
 This narrow addendum does not refresh the historical snapshot below.
 
 - Draft PR #183, branch `infra/named-staging-audit-74`, verified preparation commit

@@ -47,3 +47,12 @@ jobs:
       - name: GuardEntra dispatcher PowerShell suite
         shell: powershell
         run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/guardentra/tests/Run-Tests.ps1
+
+      - name: Parse read-only audit state inventory collector on Windows PowerShell
+        shell: powershell
+        run: |
+          $geTokens = $null
+          $geErrors = $null
+          $geScript = Join-Path $env:GITHUB_WORKSPACE 'scripts/guardentra/Get-AuditStateInventory74.ps1'
+          [System.Management.Automation.Language.Parser]::ParseFile($geScript, [ref]$geTokens, [ref]$geErrors) | Out-Null
+          if ($geErrors.Count -gt 0) { throw ($geErrors | Out-String) }

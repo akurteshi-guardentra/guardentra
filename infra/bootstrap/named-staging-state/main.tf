@@ -34,6 +34,12 @@ variable "state_operator_member" {
   }
 }
 
+variable "state_isolation_design_approved" {
+  description = "Owner approval of a reviewed state-access isolation design; not proof of live effective permissions."
+  type        = bool
+  default     = false
+}
+
 resource "google_storage_bucket" "state" {
   project                     = var.project_id
   name                        = "guardentra-staging-tfstate-965959469996"
@@ -53,6 +59,11 @@ resource "google_storage_bucket" "state" {
 
   lifecycle {
     prevent_destroy = true
+
+    precondition {
+      condition     = var.state_isolation_design_approved
+      error_message = "BLOCKED: staging runtime has inherited Storage access. Approve a reviewed isolation correction before planning/applying this bucket. Do not set this flag to bypass the review."
+    }
   }
 }
 

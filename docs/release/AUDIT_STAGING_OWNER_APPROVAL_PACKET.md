@@ -299,3 +299,33 @@ Evidence links:
 
 Any later documentation commit must be identified separately from this tested code
 commit. No exact live Terraform plan, apply, deployment or #74 acceptance is claimed.
+
+## State-access correction checkpoint — 2026-10-09
+
+Owner-supplied authenticated output on 2026-10-08 returned 404 for the proposed state
+bucket and shows `user:admin@guardentra.com` with project `roles/owner`. The omitted
+project-describe output still needs capture; the metadata collector includes it.
+
+The same policy gives the runtime project-wide `roles/storage.objectViewer` plus broad
+Firebase roles. Google's role reference confirms `roles/firebase.admin` includes
+Storage object read/write permissions. Uniform access and an operator-only bucket
+binding do not override those inherited allows. The earlier two-resource bootstrap
+proposal is therefore BLOCKED pending a complete state-isolation design.
+
+The preparation now adds a metadata-only PowerShell collector for all runtime role
+definitions and a default-false bucket precondition. No IAM grants have been removed
+or changed. The precondition is an approval gate, not a proof of effective access.
+
+Design review must compare: an isolated backend project (requires explicit project
+scope extension and a new guarded root) versus same-project corrections to every
+overlapping direct/inherited/impersonation access path. Preserve app/scanner permissions
+and require negative state-access tests before writing any state/lock object. Do not
+pretend that removing `storage.objectViewer` alone establishes isolation.
+
+The collector's report includes IAM metadata and role definitions, not secret payloads
+or access tokens. Run it in the authenticated Windows session; save a fresh report
+without overwriting files. This is not an autonomous automation or a cloud apply.
+
+Source references:
+https://docs.cloud.google.com/storage/docs/access-control/iam
+https://docs.cloud.google.com/iam/docs/roles-permissions/firebase
