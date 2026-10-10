@@ -4,12 +4,16 @@
 # are committed here so the Vite client never falls back to guardentra-7f582.
 # VITE_FIREBASE_API_KEY remains a Secret Manager reference (per-project value).
 #
-# Operator prerequisite (do not skip): set the guardentra-staging App Hosting
+# Operator prerequisite (do not skip): set the guardentra App Hosting
 # backend Environment name to exactly "staging". Until that is set, only
 # apphosting.yaml applies and these BUILD vars are ignored.
 #
+# Current App Hosting backend: guardentra / us-east4 (owner readback 2026-10-10).
+# Cloud Tasks queue and ClamAV remain in their existing locations; their resources
+# were not moved with App Hosting. Reverify private connectivity and OIDC/IAM
+# before scanner acceptance on this backend.
 # Direct VPC egress (staging only) for private ClamAV.
-# Operator-verified: App Hosting → ClamAV private TCP/3310 is REACHABLE
+# Historical us-central1 backend proof: App Hosting → ClamAV TCP/3310 REACHABLE
 # (connectivity test guardentra-staging-clamav-3310 → 10.128.0.2:3310).
 # EVIDENCE_SCANNER_SECRET: Secret Manager injected (revision
 # guardentra-staging-build-2026-09-12-002); symbolic reference only.
@@ -79,7 +83,7 @@ env:
       - BUILD
 
   # Authoritative evidence scanner (docs/EVIDENCE_SCANNER.md) — STAGING ONLY.
-  # Private App Hosting → ClamAV TCP/3310: proven REACHABLE.
+  # Private ClamAV TCP/3310: historical proof only; reverify from us-east4.
   # EVIDENCE_SCANNER_SECRET: Secret Manager reference (LIVE on build-2026-09-12-002).
   # Manual authenticated scan proof PASSED (Action #8E).
   # EVIDENCE_SCANNER_ENABLED: on for staging E2E validation of post-validate enqueue.
@@ -128,12 +132,12 @@ env:
       - RUNTIME
 
   - variable: EVIDENCE_SCANNER_TASK_TARGET_URL
-    value: https://guardentra-staging--guardentra-staging.us-central1.hosted.app/api/internal/evidence-scan-task
+    value: https://guardentra--guardentra-staging.us-east4.hosted.app/api/internal/evidence-scan-task
     availability:
       - RUNTIME
 
   - variable: EVIDENCE_SCANNER_TASK_AUDIENCE
-    value: https://guardentra-staging--guardentra-staging.us-central1.hosted.app/api/internal/evidence-scan-task
+    value: https://guardentra--guardentra-staging.us-east4.hosted.app/api/internal/evidence-scan-task
     availability:
       - RUNTIME
 
