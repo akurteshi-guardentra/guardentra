@@ -8,6 +8,15 @@ This is a navigation ledger, not independent proof. Verify claims using the issu
 
 Management hierarchy: `docs/agent-ops/AGENTIC_MANAGEMENT_MODEL.md` (L0 Owner → L1 Chief Dispatcher → L2 Managers → L3 Leads → L4 Execution → L5 Assurance). Hierarchy does not grant AI merge/deploy authority.
 
+## 2026-10-10 — Staging startup readback and notification URL correction
+
+- Owner reports successful remaining-backend rollout after environment name correction. Health readback: status ok; environment staging; projectId guardentra-staging; service guardentra; revision guardentra-build-2026-10-10-001; sourceSha null. Startup and reported runtime identity pass; exact deployed source still needs App Hosting rollout metadata. No full acceptance is inferred.
+- Owner created a test vendor/assessment but reported no receipt and then the reminder error toast. Source review shows the toast covers notification API failure, not a verified provider result. PUBLIC_APP_URL is required for hosted assessment notifications and absent from shared/staging YAML; actual runtime overrides and failed API code were not captured.
+- Owner instruction: merge 190. PR https://github.com/akurteshi-guardentra/guardentra/pull/190 merged into release/rc-2026-10-08 at 3f7021615e08094c79f629a58c326a35ce956cbf. Tested branch fix/staging-notification-public-url, head ec2bd120f7d68fdcb65c025c4c8a49e1114b2649; CI https://github.com/akurteshi-guardentra/guardentra/actions/runs/38088952059 SUCCESS.
+- Exact changed file: apphosting.staging.yaml. Adds PUBLIC_APP_URL=https://guardentra--guardentra-staging.us-east4.hosted.app at RUNTIME only; keeps hosted URL validation and authority checks. No production, provider activation, IAM, rules, index or SQL migration change.
+- Current source candidate is 3f7021615e08094c79f629a58c326a35ce956cbf, NOT YET DEPLOYED/verified live. Required next proof: exact rollout commit, API queue response/code, consumer configuration and inbox receipt. New mail worker remains disabled/unwired. Queuing does not prove delivery.
+- Working-tree evidence: GitHub-based operations only; Windows files untouched and local status not independently rechecked. Rollback: revert #190 configuration addition; live rollback baseline requires remaining-backend rollout metadata.
+
 ## 2026-10-10 — Remaining staging backend and PR #188 merge checkpoint
 
 - Owner authorized staging-first promotion, superseding the dedicated DEV-first sequence while DEV billing linking is quota-blocked. Owner reports guardentra-dev project creation succeeded; billing linking failed with Cloud billing QuotaFailure. Firebase enablement/backend provisioning is not verified.
