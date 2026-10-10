@@ -27,6 +27,11 @@ jobs:
       - name: Vitest
         run: npm run test:vitest
 
+      - name: Build application and mail worker
+        run: |
+          npm run build
+          npm run build:mail-worker
+
       - name: Set up Java 21 for Firebase emulator
         uses: actions/setup-java@v4
         with:
@@ -35,6 +40,9 @@ jobs:
 
       - name: Firestore rules
         run: npm run test:firestore-rules
+
+      - name: Mail worker Firestore transactions
+        run: npm run test:mail-worker-firestore
 
   # #88 correction cycle 3: prove the GuardEntra PowerShell dispatcher suite
   # on Windows PowerShell (PS 5.1 path), including the empty `gh pr list`
