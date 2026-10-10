@@ -32,6 +32,12 @@ runConfig:
         subnetwork: default
 
 env:
+  # Required for server-authoritative assessment invitation/reminder links.
+  - variable: PUBLIC_APP_URL
+    value: https://guardentra--guardentra-staging.us-east4.hosted.app
+    availability:
+      - RUNTIME
+
   - variable: APP_ENV
     value: staging
     availability:
