@@ -2,16 +2,13 @@ import { Router } from 'express';
 import { ensureAdmin } from '../middleware/requireFirebaseAuth';
 import { getAdminDb } from '../lib/adminDb';
 import { createRateLimiter } from '../middleware/rateLimit';
-import { buildMailQueueDocument, MAIL_COLLECTION } from '../lib/mailQueue';
+import { buildMailQueueDocument, MAIL_COLLECTION, validateMailInput } from '../lib/mailQueue';
 
 const router = Router();
 
 // Queuing emails is abuse-prone (spam any address, run up email-provider cost) —
 // keep it tighter than the AI rate limit.
 router.use(createRateLimiter({ windowMs: 60_000, max: 10 }));
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const MAX_TEXT_LENGTH = 5000;
 
 /**
  * Queues an email via the Firebase "Trigger Email from Firestore" extension —
@@ -22,24 +19,13 @@ const MAX_TEXT_LENGTH = 5000;
  * this route is the only path that can queue an email.
  *
  * This route only proves queue write success — not delivery.
- * Delivery is performed by the extension + SMTP (SendGrid for staging).
- * See docs/STAGING_EMAIL_DELIVERY.md.
+ * Delivery is performed by the exclusively selected consumer: #72 extension +
+ * SMTP, or the separately activated #80 worker. See docs/SELF_MANAGED_EMAIL.md.
  */
 router.post('/mail', async (req, res) => {
-  const { to, subject, text, html } = req.body || {};
-
-  if (typeof to !== 'string' || !EMAIL_RE.test(to)) {
-    return res.status(400).json({ error: 'A valid "to" email address is required' });
-  }
-  if (typeof subject !== 'string' || !subject.trim()) {
-    return res.status(400).json({ error: 'subject is required' });
-  }
-  if (typeof text !== 'string' || !text.trim()) {
-    return res.status(400).json({ error: 'text is required' });
-  }
-  if (subject.length > 300 || text.length > MAX_TEXT_LENGTH || (html && html.length > MAX_TEXT_LENGTH * 2)) {
-    return res.status(413).json({ error: 'subject/text exceeds allowed length' });
-  }
+  const invalid = validateMailInput(req.body);
+  if (invalid) return res.status(invalid.status).json({ error: invalid.error });
+  const { to, subject, text, html } = req.body;
 
   try {
     ensureAdmin();
@@ -52,8 +38,8 @@ router.post('/mail', async (req, res) => {
     });
     const ref = await db.collection(MAIL_COLLECTION).add(doc);
     return res.json({ queued: true, id: ref.id });
-  } catch (err) {
-    console.error('[notify] failed to queue email', err);
+  } catch {
+    console.error('[notify] QUEUE_WRITE_FAILED');
     return res.status(502).json({ error: 'Could not queue email' });
   }
 });

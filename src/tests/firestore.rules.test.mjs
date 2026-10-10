@@ -15,7 +15,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertFails, assertSucceeds, initializeTestEnvironment } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
+import { deleteDoc, doc, getDoc, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '../..');
@@ -59,6 +59,19 @@ async function main() {
 
   const db = testEnv.authenticatedContext('member-1', { email: 'm@example.com' }).firestore();
   const memberDb = testEnv.authenticatedContext('member-2', { email: 'm2@example.com' }).firestore();
+  const unauthenticatedDb = testEnv.unauthenticatedContext().firestore();
+  const mailPortalDb = testEnv.authenticatedContext('portal-user', { portalAssessmentId: 'assessment-a' }).firestore();
+  await testEnv.withSecurityRulesDisabled(async ctx => {
+    await setDoc(doc(ctx.firestore(), 'mail/existing'), { to: ['synthetic@example.test'], message: { subject: 'Invite', text: 'Synthetic' } });
+  });
+  for (const [role, clientDb] of [['admin', db], ['member', memberDb], ['unauthenticated', unauthenticatedDb], ['portal', mailPortalDb]]) {
+    await check(`${role} CANNOT directly enqueue mail`, () => assertFails(setDoc(doc(clientDb, `mail/new-${role}`), {
+      to: ['synthetic@example.test'], message: { subject: 'Invite', text: 'Synthetic' },
+    })));
+    await check(`${role} CANNOT read mail`, () => assertFails(getDoc(doc(clientDb, 'mail/existing'))));
+    await check(`${role} CANNOT rewrite delivery status`, () => assertFails(updateDoc(doc(clientDb, 'mail/existing'), { delivery: { state: 'RETRY' } })));
+    await check(`${role} CANNOT delete mail`, () => assertFails(deleteDoc(doc(clientDb, 'mail/existing'))));
+  }
   const write = (col, id, data) => setDoc(doc(db, `${col}/${id}`), { organizationId: ORG, ...data });
 
   console.log('Accepts real document shapes:');

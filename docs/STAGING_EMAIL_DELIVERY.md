@@ -1,5 +1,11 @@
 # Staging email delivery (Issue #72)
 
+This is the short-term managed-extension path. The repository-side self-managed
+2nd-gen worker, separate authorization gates, required configuration, migration,
+and rollback are documented in [SELF_MANAGED_EMAIL.md](SELF_MANAGED_EMAIL.md)
+(Issue #80). The new worker is disabled by default and must never consume `mail`
+concurrently with this extension. No installation or delivery proof is implied.
+
 **Scope:** `guardentra-staging` only. Do **not** install the extension, enable APIs,
 create secrets, or configure SendGrid on `guardentra-prod` until a separate Owner
 command authorizes production.
