@@ -18,6 +18,16 @@ This checkpoint supplements the historical snapshot above; it does not refresh a
 - Application and rules: **NOT DEPLOYED by this merge**. No production readiness score or live verification is inferred.
 - Evidence and limitations: appended 2026-10-10 entry in `PROJECT_TRANSITIONS.md`.
 
+## Email release checkpoint — 2026-10-10
+
+- PR #185 ledger merged into `release/rc-2026-10-08` at `66a3baa7ba2ef474ac82efdcdb93d5ddfb2f0bda`.
+- PR #186 self-managed email worker merged into that candidate at `97b63a014e0fbef02e00e8d90852485b7edf9c0c`.
+- PR #186 tested head `181404abf8ec483942f4b8b49fcc80222c626f13`: CI run `38053939131` passed, including both builds, 44 worker tests, five entrypoint tests, 79 Firestore rules tests and three actual Firestore transaction tests.
+- The candidate notification route retains server-authoritative recipient/content resolution, deterministic queue IDs and atomic assessment invitation audit intent.
+- Worker recovery filters ownership before the query limit. Its composite index is declared in source, not verified deployed.
+- Worker default remains disabled and `firebase.json` remains unwired. Email delivery/cutover is **NOT DEPLOYED / NOT LIVE VERIFIED**.
+- PR #182 remains unmerged into `main`; exact combined-candidate CI and environment acceptance are separate gates.
+
 ## State vocabulary
 
 | State | Meaning |

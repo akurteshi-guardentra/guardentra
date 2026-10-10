@@ -303,3 +303,19 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
 - Deployment: **NOT DEPLOYED**. This records repository state only; no rules release, application rollout, IAM, secrets, DNS or data mutation.
 - Remaining gate: required CI and exact scope review on the updated release candidate, plus explicit owner authorization for PR #182 merge and separate deployment.
 - Rollback: revert PR #184 on the release candidate before any rules deployment.
+
+## 2026-10-10 — Email worker and founder ledger merged into release candidate
+
+- Verifier: Codex via GitHub exact-SHA CI, job logs, PR diff and merge readback. Owner instructed `merge` for #185 and #186.
+- Issue/source: #80 acceptance criteria; #61/PR #184 ledger evidence; release PR #182.
+- Previous → new: PR #185 and #186 ready → **MERGED INTO RELEASE CANDIDATE**, not into main.
+- PR #185: tested head `210cfcf352558c5369dd43336ef76f7f2812f0a7`, branch `docs/atomic-founder-184-merge-ledger`, merge `66a3baa7ba2ef474ac82efdcdb93d5ddfb2f0bda`; CI `38051975605` SUCCESS. Files: PROJECT_STATE.md and PROJECT_TRANSITIONS.md under docs/agent-ops.
+- PR #186: branch `feat/mail-worker-80-release-integration`, tested head `181404abf8ec483942f4b8b49fcc80222c626f13`, merge `97b63a014e0fbef02e00e8d90852485b7edf9c0c` at `2026-10-10T13:03:01Z`.
+- Exact #186 files: .github/workflows/ci.yml; docs/SELF_MANAGED_EMAIL.md; docs/adr/0080-self-managed-mail.md; firestore.indexes.json; package-lock.json; package.json; server/lib/mailQueue.ts; server/lib/mailWorker/firestoreStore.ts; server/lib/mailWorker/provider.ts; server/lib/mailWorker/worker.ts; server/mailWorkerFunctions.ts; src/tests/mailWorker.firestore.test.ts; src/tests/mailWorker.test.ts; src/tests/mailWorkerFunctions.test.ts.
+- CI https://github.com/akurteshi-guardentra/guardentra/actions/runs/38053939131 SUCCESS: npm ci, lint, Jest, Vitest, application/worker builds, Firestore rules and dispatcher suite PASS.
+- Job `114218466310` logs verified 44 worker tests, five entrypoint tests, 79 rules tests and three actual Firestore transaction tests PASS. The integration suite skips during generic Vitest but explicitly executes inside the emulator in its separate CI step.
+- Fixes: owner-filtered due query prevents foreign-record starvation; response cleanup errors preserve known provider HTTP outcomes; regressions added. Existing notification authorization, deterministic deduplication and atomic audit writes preserved.
+- Live reconciliation: **NOT DEPLOYED**. Worker is disabled by default and not wired into firebase.json. No index deployment, IAM, secrets, provider calls, queue cutover or live email performed.
+- Working-tree state: GitHub-only integration and merges; owner Windows files untouched, current status not independently rechecked.
+- Remaining gates: exact combined-candidate CI, environment acceptance, explicit release/main merge and separate deployment authorization. Onboarding local-work reconciliation remains separate.
+- Rollback: revert PR #186 before worker activation; preserve existing queue/audit contracts. Historical transition entries remain unchanged.
