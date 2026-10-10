@@ -4,6 +4,11 @@ import { getAdminDb } from '../lib/adminDb';
 import { createRateLimiter } from '../middleware/rateLimit';
 import { buildMailQueueDocument, MAIL_COLLECTION } from '../lib/mailQueue';
 import {
+  commitPreparedMaterialAuditIntent,
+  materialAuditEventId,
+  prepareMaterialAuditIntent,
+} from '../lib/audit/materialIntent';
+import {
   NotificationIntentError,
   parseNotificationIntentRequest,
   resolveNotificationIntent,
@@ -88,6 +93,130 @@ router.post('/mail', async (req, res) => {
     };
 
     const ref = db.collection(MAIL_COLLECTION).doc(resolved.queueId);
+
+    if (resolved.intentType === 'assessment_invite') {
+      const assessmentRef = db.collection('assessments').doc(resolved.objectId);
+      const result = await db.runTransaction(async (tx) => {
+        const queueSnap = await tx.get(ref);
+        const assessmentSnap = await tx.get(assessmentRef);
+        if (!assessmentSnap.exists) {
+          throw new NotificationIntentError(
+            404,
+            'assessment_missing',
+            'Authoritative assessment no longer exists',
+          );
+        }
+
+        const assessmentData = assessmentSnap.data() || {};
+        if (assessmentData.organizationId !== resolved.organizationId) {
+          throw new NotificationIntentError(
+            404,
+            'object_unavailable',
+            'Notification object is unavailable',
+          );
+        }
+
+        const currentStatus =
+          typeof assessmentData.status === 'string' ? assessmentData.status : '';
+        if (currentStatus !== 'Not Started' && currentStatus !== 'Sent') {
+          throw new NotificationIntentError(
+            409,
+            'assessment_not_invitable',
+            'Assessment is no longer eligible for an initial invite',
+          );
+        }
+
+        const vendorId = String(assessmentData.vendorId || '').trim();
+        if (!vendorId) {
+          throw new NotificationIntentError(
+            409,
+            'assessment_vendor_missing',
+            'Assessment vendor mapping is unavailable',
+          );
+        }
+        const vendorRef = db.collection('vendors').doc(vendorId);
+        const vendorSnap = await tx.get(vendorRef);
+        if (!vendorSnap.exists || vendorSnap.data()?.organizationId !== resolved.organizationId) {
+          throw new NotificationIntentError(
+            409,
+            'assessment_vendor_unavailable',
+            'Assessment vendor mapping is unavailable',
+          );
+        }
+        const currentRecipient = String(
+          vendorSnap.data()?.primaryContactEmail || '',
+        ).trim().toLowerCase();
+        if (!currentRecipient || currentRecipient !== resolved.recipient.toLowerCase()) {
+          throw new NotificationIntentError(
+            409,
+            'assessment_recipient_changed',
+            'Assessment recipient changed; retry notification resolution',
+          );
+        }
+
+        const existingSentAt =
+          typeof assessmentData.sentAt === 'string' && assessmentData.sentAt.trim()
+            ? assessmentData.sentAt
+            : null;
+        const sentAt = existingSentAt || new Date().toISOString();
+        const eventId = materialAuditEventId([
+          resolved.organizationId,
+          'assessment.sent',
+          resolved.objectId,
+          String(assessmentData.createdAt || 'initial'),
+        ]);
+        const preparedAudit = await prepareMaterialAuditIntent(tx, db, {
+          eventId,
+          tenantId: resolved.organizationId,
+          eventType: 'assessment.sent',
+          actorId: uid,
+          actorType: 'user',
+          objectType: 'assessment',
+          objectId: resolved.objectId,
+          payload: {
+            vendorId,
+            queueId: resolved.queueId,
+            queueAccepted: true,
+          },
+          createdAt: sentAt,
+        });
+
+        const deduplicated = queueSnap.exists;
+        if (!deduplicated) {
+          tx.create(ref, queueDoc);
+        }
+
+        if (currentStatus !== 'Sent' || !existingSentAt) {
+          tx.set(
+            assessmentRef,
+            {
+              status: 'Sent',
+              sentAt,
+              updatedAt: sentAt,
+            },
+            { merge: true },
+          );
+        }
+        tx.set(
+          vendorRef,
+          {
+            assessmentStatus: 'Sent',
+            lastAssessmentAt: sentAt,
+          },
+          { merge: true },
+        );
+        commitPreparedMaterialAuditIntent(tx, preparedAudit);
+
+        return { deduplicated };
+      });
+
+      return res.json({
+        queued: true,
+        id: ref.id,
+        deduplicated: result.deduplicated,
+      });
+    }
+
     try {
       await ref.create(queueDoc);
       return res.json({ queued: true, id: ref.id, deduplicated: false });

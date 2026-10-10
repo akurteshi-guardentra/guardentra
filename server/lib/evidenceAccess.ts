@@ -1,7 +1,12 @@
 import type { DecodedIdToken } from 'firebase-admin/auth';
 import type { Request, Response } from 'express';
 import { getAuth } from 'firebase-admin/auth';
-import { FieldPath, FieldValue } from 'firebase-admin/firestore';
+import {
+  FieldPath,
+  FieldValue,
+  type Firestore,
+  type Transaction,
+} from 'firebase-admin/firestore';
 import { ensureAdmin } from '../middleware/requireFirebaseAuth.ts';
 import { getConfiguredStorageBucket } from './adminConfig.ts';
 import { getAdminDb } from './adminDb.ts';
@@ -24,6 +29,19 @@ import {
 import { decisionRequiresNotes, decisionRequiresRemediationPlan, normalizeRemediationDueAt } from '../../src/lib/vendor/assessmentLifecycle.ts';
 import type { DecisionOutcome } from '../../src/lib/vendor/assessmentExceptions.ts';
 import type { RiskLevel } from '../../src/lib/vendor/types.ts';
+import { isAnswered, type PortalQuestion } from '../../src/lib/vendor/questionBank.ts';
+import {
+  attestationsComplete,
+  effectiveAnswersForProgress,
+  type AnswerProposal,
+  type PortalAttestations,
+} from '../../src/lib/vendor/portalProposals.ts';
+import {
+  commitPreparedMaterialAuditIntent,
+  materialAuditEventId,
+  prepareMaterialAuditIntent,
+} from './audit/materialIntent.ts';
+import type { AuditEmitEnvelope } from './audit/types.ts';
 
 const DECISION_OUTCOMES: readonly DecisionOutcome[] = [
   'approved',
@@ -51,7 +69,21 @@ export type EvidenceDeps = {
   signReadUrl: (storagePath: string) => Promise<string>;
   runAssessmentTransaction: (
     assessmentId: string,
-    updater: (current: Record<string, unknown>) => Record<string, unknown> | Promise<Record<string, unknown>>
+    updater: (current: Record<string, unknown>) => Record<string, unknown> | Promise<Record<string, unknown>>,
+    auditIntentFactory?: (
+      current: Record<string, unknown>,
+      patch: Record<string, unknown>,
+    ) => (AuditEmitEnvelope & { eventId: string }) | null,
+    skipProductWriteWhen?: (
+      current: Record<string, unknown>,
+      patch: Record<string, unknown>,
+    ) => boolean,
+    prepareRelatedWrites?: (
+      tx: Transaction,
+      db: Firestore,
+      current: Record<string, unknown>,
+      patch: Record<string, unknown>,
+    ) => Promise<(() => void) | void>,
   ) => Promise<Record<string, unknown>>;
 };
 
@@ -260,15 +292,40 @@ export function liveEvidenceDeps(): EvidenceDeps {
       });
       return url;
     },
-    async runAssessmentTransaction(assessmentId, updater) {
+    async runAssessmentTransaction(
+      assessmentId,
+      updater,
+      auditIntentFactory,
+      skipProductWriteWhen,
+      prepareRelatedWrites,
+    ) {
       ensureAdmin();
-      const ref = getAdminDb().collection('assessments').doc(assessmentId);
-      return getAdminDb().runTransaction(async (tx) => {
+      const db = getAdminDb();
+      const ref = db.collection('assessments').doc(assessmentId);
+      return db.runTransaction(async (tx) => {
         const snap = await tx.get(ref);
         if (!snap.exists) throw new HttpError(404, 'Assessment not found');
         const current = (snap.data() || {}) as Record<string, unknown>;
         const patch = await updater(current);
-        tx.update(ref, toFirestoreAssessmentUpdate(patch));
+
+        const auditIntent = auditIntentFactory?.(current, patch) || null;
+        const preparedAudit = auditIntent
+          ? await prepareMaterialAuditIntent(tx, db, auditIntent)
+          : null;
+        const commitRelatedWrites = prepareRelatedWrites
+          ? await prepareRelatedWrites(tx, db, current, patch)
+          : undefined;
+        const skipProductWrite = Boolean(
+          skipProductWriteWhen?.(current, patch),
+        );
+
+        if (!skipProductWrite) {
+          tx.update(ref, toFirestoreAssessmentUpdate(patch));
+        }
+        commitRelatedWrites?.();
+        if (preparedAudit) {
+          commitPreparedMaterialAuditIntent(tx, preparedAudit);
+        }
         return patch;
       });
     },
@@ -365,6 +422,205 @@ export async function handlePortalValidate(req: Request, res: Response, deps: Ev
     });
   } catch (err) {
     sendError(res, err, 'Could not validate evidence.');
+  }
+}
+
+export async function handlePortalSubmit(req: Request, res: Response, deps: EvidenceDeps) {
+  try {
+    const decoded = await requireVerifiedToken(req, deps);
+    const assessmentId = String(req.body?.assessmentId || '').trim();
+    if (!assessmentId || assessmentId.length > 128 || /[/.\s]/.test(assessmentId)) {
+      res.status(400).json({ error: 'A valid assessmentId is required.' });
+      return;
+    }
+    await requirePortalAssessment(decoded, assessmentId);
+
+    const rawAnswers =
+      req.body?.answers && typeof req.body.answers === 'object'
+        ? (req.body.answers as Record<string, string | string[] | undefined>)
+        : {};
+    const rawComments =
+      req.body?.comments && typeof req.body.comments === 'object'
+        ? (req.body.comments as Record<string, string>)
+        : {};
+    const rawEvidence =
+      req.body?.evidenceByQuestion && typeof req.body.evidenceByQuestion === 'object'
+        ? (req.body.evidenceByQuestion as Record<string, unknown[]>)
+        : {};
+    const rawProposals =
+      req.body?.answerProposals && typeof req.body.answerProposals === 'object'
+        ? (req.body.answerProposals as Record<string, AnswerProposal>)
+        : {};
+    const rawAttestations =
+      req.body?.attestations && typeof req.body.attestations === 'object'
+        ? (req.body.attestations as PortalAttestations)
+        : null;
+    const attestedByName = String(rawAttestations?.attestedByName || '').trim();
+
+    if (!attestationsComplete(rawAttestations) || !attestedByName) {
+      res.status(400).json({
+        error: 'Both attestations and attestedByName are required before submission.',
+      });
+      return;
+    }
+
+    let deduplicated = false;
+    const nowIso = new Date().toISOString();
+
+    const patch = await deps.runAssessmentTransaction(
+      assessmentId,
+      async (current) => {
+        const submittedSnapshot =
+          current.submittedSnapshot && typeof current.submittedSnapshot === 'object'
+            ? (current.submittedSnapshot as Record<string, unknown>)
+            : null;
+        const alreadySubmitted = Boolean(
+          submittedSnapshot &&
+            (current.status === 'Under Review' ||
+              current.status === 'Completed' ||
+              current.portalOpen === false),
+        );
+
+        if (alreadySubmitted) {
+          deduplicated = true;
+          return {};
+        }
+        if (current.portalOpen !== true) {
+          throw new HttpError(403, 'Portal is closed');
+        }
+
+        const questions = Array.isArray(current.questions)
+          ? (current.questions as PortalQuestion[])
+          : [];
+        if (!questions.length) {
+          throw new HttpError(409, 'Assessment has no snapshotted questions');
+        }
+
+        const effectiveAnswers = effectiveAnswersForProgress(
+          rawAnswers,
+          rawProposals,
+        );
+        const missing = questions.filter(
+          (question) => question.required && !isAnswered(effectiveAnswers[question.id]),
+        );
+        if (missing.length) {
+          throw new HttpError(
+            400,
+            `Answer all required questions (${missing.length} remaining).`,
+          );
+        }
+
+        const serverAttestations = {
+          accuracy: true,
+          authority: true,
+          attestedAt: nowIso,
+          attestedByName,
+        };
+
+        const { buildPortalSubmitPatch } = await import(
+          '../../src/lib/vendor/assessmentLifecycle.ts'
+        );
+        return buildPortalSubmitPatch({
+          answers: effectiveAnswers,
+          comments: rawComments,
+          evidenceByQuestion: rawEvidence,
+          nowIso,
+          attestations: serverAttestations,
+          answerProposals: rawProposals,
+        }) as unknown as Record<string, unknown>;
+      },
+      (current, submitPatch) => {
+        const tenantId = String(current.organizationId || '').trim();
+        const vendorId = String(current.vendorId || '').trim();
+        if (!tenantId || !vendorId) {
+          throw new HttpError(
+            500,
+            'Assessment tenant/vendor binding is required for durable audit',
+          );
+        }
+
+        const cycleToken = String(
+          current.correctionReopenedAt ||
+            current.sentAt ||
+            current.createdAt ||
+            'initial',
+        );
+        const existingSnapshot =
+          current.submittedSnapshot && typeof current.submittedSnapshot === 'object'
+            ? (current.submittedSnapshot as Record<string, unknown>)
+            : {};
+        const submittedSnapshot =
+          submitPatch.submittedSnapshot && typeof submitPatch.submittedSnapshot === 'object'
+            ? (submitPatch.submittedSnapshot as Record<string, unknown>)
+            : existingSnapshot;
+        const submittedAt = String(
+          submittedSnapshot.submittedAt || current.completedAt || nowIso,
+        );
+        const questions = Array.isArray(current.questions)
+          ? (current.questions as PortalQuestion[])
+          : [];
+
+        return {
+          eventId: materialAuditEventId([
+            tenantId,
+            'assessment.submitted',
+            assessmentId,
+            cycleToken,
+          ]),
+          tenantId,
+          eventType: 'assessment.submitted',
+          actorId: decoded.uid,
+          actorType: 'portal',
+          objectType: 'assessment',
+          objectId: assessmentId,
+          createdAt: submittedAt,
+          payload: {
+            vendorId,
+            questionCount: questions.length,
+            attestedByNamePresent: true,
+          },
+        };
+      },
+      (current) =>
+        Boolean(
+          current.submittedSnapshot &&
+            (current.status === 'Under Review' ||
+              current.status === 'Completed' ||
+              current.portalOpen === false),
+        ),
+      async (tx, db, current) => {
+        const tenantId = String(current.organizationId || '').trim();
+        const vendorId = String(current.vendorId || '').trim();
+        if (!tenantId || !vendorId) {
+          throw new HttpError(
+            500,
+            'Assessment tenant/vendor binding is required for vendor projection',
+          );
+        }
+
+        const vendorRef = db.collection('vendors').doc(vendorId);
+        const vendorSnap = await tx.get(vendorRef);
+        if (!vendorSnap.exists) {
+          throw new HttpError(409, 'Assessment vendor no longer exists');
+        }
+        const vendor = vendorSnap.data() || {};
+        if (String(vendor.organizationId || '') !== tenantId) {
+          throw new HttpError(403, 'Assessment vendor tenant binding is invalid');
+        }
+
+        return () => {
+          tx.set(
+            vendorRef,
+            { assessmentStatus: 'Under Review' },
+            { merge: true },
+          );
+        };
+      },
+    );
+
+    res.json({ ok: true, deduplicated, patch });
+  } catch (err) {
+    sendError(res, err, 'Could not submit assessment.');
   }
 }
 
@@ -497,7 +753,9 @@ export async function handleOrgDecision(req: Request, res: Response, deps: Evide
       '../../src/lib/vendor/assessmentLifecycle.ts'
     );
 
-    const patch = await deps.runAssessmentTransaction(assessmentId, async (current) => {
+    const patch = await deps.runAssessmentTransaction(
+      assessmentId,
+      async (current) => {
       await requireOrgAssessmentAccess(decoded, current, deps.getUser);
       if (hasTerminalOrgDecision(current)) {
         throw new HttpError(409, 'A terminal decision already exists');
@@ -564,7 +822,51 @@ export async function handleOrgDecision(req: Request, res: Response, deps: Evide
         remediationDueAt: remediationDueAt || undefined,
         residualRiskLevel,
       }) as unknown as Record<string, unknown>;
-    });
+      },
+      (current, decisionPatch) => {
+        const tenantId = String(current.organizationId || '').trim();
+        if (!tenantId) {
+          throw new HttpError(500, 'Assessment organization is required for durable audit');
+        }
+        const submittedSnapshot =
+          current.submittedSnapshot && typeof current.submittedSnapshot === 'object'
+            ? (current.submittedSnapshot as Record<string, unknown>)
+            : {};
+        const cycleToken = String(
+          submittedSnapshot.submittedAt ||
+            current.correctionReopenedAt ||
+            current.completedAt ||
+            current.createdAt ||
+            'initial',
+        );
+        const eventId = materialAuditEventId([
+          tenantId,
+          'decision.finalized',
+          assessmentId,
+          cycleToken,
+          outcome,
+        ]);
+
+        return {
+          eventId,
+          tenantId,
+          eventType: 'decision.finalized',
+          actorId: decoded.uid,
+          actorType: 'user',
+          objectType: 'assessment',
+          objectId: assessmentId,
+          payload: {
+            outcome,
+            closesPortal: decisionPatch.portalOpen === false,
+            residualRiskLevel,
+            remediationRequired: decisionRequiresRemediationPlan(outcome),
+            remediationOwnerPresent: Boolean(remediationOwner),
+            remediationDueAt: remediationDueAt || null,
+            hasNotes: Boolean(decisionNotes.trim()),
+          },
+        };
+      },
+    );
 
     res.json({ ok: true, patch });
   } catch (err) {
