@@ -8,6 +8,16 @@ This is a navigation ledger, not independent proof. Verify claims using the issu
 
 Management hierarchy: `docs/agent-ops/AGENTIC_MANAGEMENT_MODEL.md` (L0 Owner → L1 Chief Dispatcher → L2 Managers → L3 Leads → L4 Execution → L5 Assurance). Hierarchy does not grant AI merge/deploy authority.
 
+## Bounded release checkpoint — 2026-10-10
+
+This checkpoint supplements the historical snapshot above; it does not refresh all live environments.
+
+- PR #184 merged into `release/rc-2026-10-08` at `52008f86f40378c8d70f003a400e0921a05091b1`, closing the missing atomic founder organization/profile checks identified during #61 local-work reconciliation.
+- Tested head `e02c0102d1632dbdb9701bf34250c7cffd5698b2`: CI run `38051666433` **SUCCESS**, including Firestore emulator, lint, Jest, Vitest, and dispatcher checks.
+- Release PR #182 remains **OPEN / NOT MERGED INTO MAIN**. Updated candidate CI must be checked separately.
+- Application and rules: **NOT DEPLOYED by this merge**. No production readiness score or live verification is inferred.
+- Evidence and limitations: appended 2026-10-10 entry in `PROJECT_TRANSITIONS.md`.
+
 ## State vocabulary
 
 | State | Meaning |
