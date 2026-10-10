@@ -1,198 +1,159 @@
 /**
- * LIVE portal-evidence smoke test — runs against a REAL Firebase project, not the emulator.
+ * STAGING-ONLY portal evidence smoke using existing synthetic assessments.
+ * Not proof of answer persistence, submission, reviewer decisions or scanning.
  *
- * Companion to src/tests/storage.rules.test.mjs (which covers the same rules in the
- * emulator). This one exists because the emulator can't prove the cross-service
- * firestore.get() in storage.rules resolves correctly against a real database, real
- * IAM, and the real `(default)` vs named-DB question — see docs/KNOWN_ISSUES.md #1/#16.
+ * Required: PORTAL_API_BASE=https://guardentra--guardentra-staging.us-east4.hosted.app
+ * and VITE_FIREBASE_API_KEY supplied privately for staging.
+ * node src/tests/portal.smoke.mjs --project guardentra-staging --open <synthetic-id>
+ *   --closed <closed-or-nonexistent-id> --other-open <second-open-id> --allow-test-upload
  *
- * Prerequisites (all of docs/KNOWN_ISSUES.md #16):
- *   1. Anonymous Authentication enabled on the target project.
- *   2. Current firestore.rules + storage.rules deployed to it.
- *   3. .env.local contains VITE_FIREBASE_API_KEY for that project.
- *   4. Two assessment docs exist — one with portalOpen: true, one the anonymous
- *      session must NOT be able to touch. Create them through the app (an org
- *      member has to, anonymous users can't create assessments by design).
- *
- * Usage:
- *   node src/tests/portal.smoke.mjs --open <assessmentId> --other <assessmentId>
- *
- * Writes one small file to portal/<open>/ and attempts one write to portal/<other>/.
- * Point it at a demo/dev project, never prod.
+ * Successful uploads remain for owner cleanup: portal clients cannot delete them.
+ * Failed denial probes may also leave objects. Never use customer fixtures.
+ * CI runs only syntax/preflight tests, never this live upload flow.
  */
-import { readFileSync } from 'node:fs';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken } from 'firebase/auth';
+import { getAuth, signInWithCustomToken } from 'firebase/auth';
 import { getFirestore, doc, getDoc } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 function arg(name) {
-  const i = process.argv.indexOf(`--${name}`);
-  return i > -1 ? process.argv[i + 1] : undefined;
+  const index = process.argv.indexOf('--' + name);
+  return index > -1 ? process.argv[index + 1] : undefined;
 }
-
+const PROJECT = 'guardentra-staging';
+const API_BASE = 'https://guardentra--guardentra-staging.us-east4.hosted.app';
 const openId = arg('open');
-// Defaults to an id that cannot exist, which is the same rules outcome as a closed
-// assessment (isOpenPortalAssessment() is false either way) — so the gating deny check
-// still runs even without a real closed assessment on hand.
-const closedId = arg('closed') || `__nonexistent_${Date.now()}`;
+const closedId = arg('closed');
 const otherOpenId = arg('other-open');
-if (!openId) {
-  console.error(
-    'Usage: node src/tests/portal.smoke.mjs --open <assessmentId> [--closed <assessmentId>] [--other-open <assessmentId>]\n' +
-      '  --open        an assessment with portalOpen: true (the allow path)\n' +
-      '  --closed      an assessment with portalOpen: false (gating deny; defaults to a nonexistent id)\n' +
-      '  --other-open  a second portalOpen: true assessment (probes KNOWN_ISSUES #17)',
-  );
+function stop(message) {
+  console.error(message);
   process.exit(2);
 }
+if (!process.argv.includes('--allow-test-upload')) {
+  stop('Live test uploads require --allow-test-upload; use only existing synthetic fixtures.');
+}
+if (arg('project') !== PROJECT || process.env.PORTAL_API_BASE !== API_BASE) {
+  stop('Explicit staging project and current us-east4 PORTAL_API_BASE are required.');
+}
+const ids = [openId, closedId, otherOpenId];
+if (ids.some(id => !id || id.length > 128 || /[/.\s]/.test(id)) || new Set(ids).size !== 3) {
+  stop('Provide distinct valid --open, --closed and --other-open synthetic assessment IDs.');
+}
+for (const name of ['VITE_FIREBASE_PROJECT_ID', 'GCLOUD_PROJECT', 'GOOGLE_CLOUD_PROJECT']) {
+  if (process.env[name] && process.env[name] !== PROJECT) stop('Conflicting Firebase project override.');
+}
+if (process.env.VITE_FIRESTORE_DATABASE_ID && process.env.VITE_FIRESTORE_DATABASE_ID !== '(default)') {
+  stop('This staging smoke requires the (default) Firestore database.');
+}
+if (process.env.FIRESTORE_EMULATOR_HOST || process.env.FIREBASE_AUTH_EMULATOR_HOST ||
+    process.env.FIREBASE_STORAGE_EMULATOR_HOST) {
+  stop('Emulator overrides are not permitted in this live staging smoke.');
+}
+const apiKey = process.env.VITE_FIREBASE_API_KEY;
+if (!apiKey || !apiKey.trim()) stop('Missing explicit staging VITE_FIREBASE_API_KEY.');
 
-// Same resolution order as src/firebase.ts: explicit env wins, applet config fills the rest.
-const applet = JSON.parse(readFileSync(new URL('../../firebase-applet-config.json', import.meta.url), 'utf8'));
-let envApiKey = process.env.VITE_FIREBASE_API_KEY;
-if (!envApiKey) {
-  try {
-    const envLocal = readFileSync(new URL('../../.env.local', import.meta.url), 'utf8');
-    // Strip surrounding quotes the way dotenv/Vite do — a quoted value in .env.local is
-    // valid and works in the app, so this parser must not pass the quotes through.
-    envApiKey = envLocal
-      .match(/^\s*VITE_FIREBASE_API_KEY\s*=\s*(.+?)\s*$/m)?.[1]
-      ?.replace(/^(['"])(.*)\1$/, '$2')
-      .trim();
-  } catch {
-    /* no .env.local — fall through to the error below */
+const allowedErrorCodes = new Set([
+  'permission-denied', 'storage/unauthorized', 'auth/operation-not-allowed',
+  'auth/invalid-custom-token', 'auth/custom-token-mismatch', 'auth/network-request-failed',
+  'storage/retry-limit-exceeded', 'unavailable',
+]);
+function safeErrorCode(error) {
+  return allowedErrorCodes.has(error?.code) ? error.code : 'UNEXPECTED_ERROR';
+}
+// sourceSha may be null; this does not establish exact deployment commit identity.
+try {
+  const response = await fetch(API_BASE + '/api/health', {
+    redirect: 'error', signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) throw new Error('HEALTH_FAILED');
+  const health = await response.json();
+  if (health.status !== 'ok' || health.release?.environment !== 'staging' ||
+      health.release?.projectId !== PROJECT || health.release?.service !== 'guardentra') {
+    throw new Error('HEALTH_IDENTITY_MISMATCH');
   }
+} catch {
+  stop('Staging health/identity preflight failed; no portal session or upload attempted.');
 }
-if (!envApiKey) {
-  console.error('Missing VITE_FIREBASE_API_KEY (env or .env.local). See docs/SECRETS.md.');
-  process.exit(2);
+async function openSessionToken(assessmentId) {
+  const response = await fetch(API_BASE + '/api/portal/session', {
+    method: 'POST', redirect: 'error', signal: AbortSignal.timeout(15_000),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ assessmentId }),
+  });
+  if (!response.ok) throw new Error('PORTAL_SESSION_FAILED');
+  const session = await response.json();
+  if (typeof session.token !== 'string' || !session.token || session.branding?.portalOpen !== true) {
+    throw new Error('OPEN_FIXTURE_INVALID');
+  }
+  return session.token;
 }
-
-const firestoreDatabaseId = process.env.VITE_FIRESTORE_DATABASE_ID || applet.firestoreDatabaseId;
-const app = initializeApp({ ...applet, apiKey: envApiKey });
-const db = firestoreDatabaseId ? getFirestore(app, firestoreDatabaseId) : getFirestore(app);
+// Verify the other fixture is actually open; do not sign in using its token.
+try {
+  await openSessionToken(otherOpenId);
+} catch {
+  stop('Second OPEN fixture could not be verified; no Firebase sign-in or upload attempted.');
+}
+const app = initializeApp({
+  apiKey, projectId: PROJECT, authDomain: 'guardentra-staging.firebaseapp.com',
+  storageBucket: 'guardentra-staging.firebasestorage.app',
+  appId: '1:965959469996:web:25526a3a432460c6ef0809', messagingSenderId: '965959469996',
+});
+const db = getFirestore(app);
 const storage = getStorage(app);
-
 const results = [];
-function record(name, passed, detail, informational = false) {
-  results.push({ name, passed, detail, informational });
-  const tag = informational ? (passed ? 'OK  ' : 'GAP ') : passed ? 'PASS' : 'FAIL';
-  console.log(`${tag}  ${name}${detail ? ` — ${detail}` : ''}`);
+function record(name, passed, detail) {
+  results.push({ name, passed, detail });
+  console.log((passed ? 'PASS' : 'FAIL') + '  ' + name + (detail ? ' — ' + detail : ''));
 }
-
-/** Expect the operation to succeed. */
-async function expectAllow(name, fn) {
-  try {
-    await fn();
-    record(name, true);
-  } catch (err) {
-    record(name, false, `unexpectedly denied: ${err?.code || err?.message}`);
+async function expectAllow(name, operation) {
+  try { await operation(); record(name, true); }
+  catch (error) { record(name, false, 'unexpected failure: ' + safeErrorCode(error)); }
+}
+async function expectDeny(name, operation) {
+  try { await operation(); record(name, false, 'was ALLOWED — rules are not scoping this path'); }
+  catch (error) {
+    const code = safeErrorCode(error);
+    const denied = code === 'permission-denied' || code === 'storage/unauthorized';
+    record(name, denied, denied ? 'denied (' + code + ')' : 'unexpected failure: ' + code);
   }
 }
-
-/** Expect the operation to be rejected by rules (not by a network/config error). */
-async function expectDeny(name, fn, informational = false) {
-  try {
-    await fn();
-    record(name, false, 'was ALLOWED — rules are not scoping this path', informational);
-  } catch (err) {
-    const code = err?.code || '';
-    const isPermissionError = /unauthorized|permission-denied|storage\/unauthorized/.test(code);
-    record(
-      name,
-      isPermissionError,
-      isPermissionError ? `denied (${code})` : `denied, but with an unexpected error: ${code || err?.message}`,
-      informational,
-    );
-  }
+console.log('\nProject: ' + PROJECT + '  DB: (default)  API: ' + API_BASE + '\n');
+try {
+  const token = await openSessionToken(openId);
+  const credential = await signInWithCustomToken(getAuth(app), token);
+  const identity = await credential.user.getIdTokenResult();
+  if (identity.claims.portalAssessmentId !== openId) throw new Error('PORTAL_CLAIM_MISMATCH');
+} catch (error) {
+  console.error('Scoped portal session failed: ' + safeErrorCode(error) + '; anonymous fallback is disabled.');
+  process.exit(1);
 }
-
-const stamp = `smoke-${Date.now()}.pdf`;
-const payload = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d]); // "%PDF-" so the contentType check is honest
-const meta = { contentType: 'application/pdf' };
-
-console.log(`\nProject: ${applet.projectId}  DB: ${firestoreDatabaseId || '(default)'}\n`);
-
-// Mirrors what VendorPortal.tsx does: ask the server for a session scoped to this one
-// assessment. Falls back to anonymous so the script still reports something useful
-// against an environment where the portal endpoint isn't deployed yet — the run is
-// labelled either way, since the two modes prove very different things.
-const serverBase = process.env.PORTAL_API_BASE || 'http://localhost:8080';
-let mode = 'scoped-token';
-const cred = await (async () => {
-  try {
-    const res = await fetch(`${serverBase}/api/portal/session`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ assessmentId: openId }),
-    });
-    if (!res.ok) throw new Error(`portal session endpoint returned ${res.status}`);
-    const { token } = await res.json();
-    return await signInWithCustomToken(getAuth(app), token);
-  } catch (err) {
-    mode = 'anonymous-fallback';
-    console.warn(
-      `Could not mint a scoped portal session (${err?.message}).\n` +
-        `Falling back to anonymous auth — this tests the OLD unscoped behaviour.\n` +
-        `Start the server (npm run dev) or set PORTAL_API_BASE to test the real fix.\n`,
-    );
-    return signInAnonymously(getAuth(app)).catch((anonErr) => {
-      console.error(
-        `\nCould not sign in anonymously either (${anonErr?.code}).` +
-          '\nIf this is auth/operation-not-allowed, Anonymous Authentication is disabled' +
-          '\non this project — Console → Authentication → Sign-in method → Anonymous.\n',
-      );
-      process.exit(1);
-    });
-  }
-})();
-console.log(`Signed in as ${cred.user.uid}  [mode: ${mode}]\n`);
-
-await expectAllow('read own OPEN assessment doc', () => getDoc(doc(db, 'assessments', openId)));
-
-await expectAllow('upload evidence to own portal path', () =>
-  uploadBytes(ref(storage, `portal/${openId}/${stamp}`), payload, meta),
-);
-
-await expectAllow('read back own uploaded evidence', () =>
-  getDownloadURL(ref(storage, `portal/${openId}/${stamp}`)),
-);
-
-// Gating deny: an assessment this session must not reach because it is not open
-// (closed, or nonexistent — both make isOpenPortalAssessment() false).
-await expectDeny('upload to a CLOSED/unknown assessment\'s portal path', () =>
-  uploadBytes(ref(storage, `portal/${closedId}/${stamp}`), payload, meta),
-);
-
-// docs/KNOWN_ISSUES.md #17 — the check that matters most. With a scoped token this
-// MUST be denied, so it gates. Under the anonymous fallback it is expected to be
-// allowed (that's the old broken behaviour), so it only reports.
-if (otherOpenId) {
-  await expectDeny(
-    `upload to a DIFFERENT but also-OPEN assessment's portal path (KNOWN_ISSUES #17)`,
-    () => uploadBytes(ref(storage, `portal/${otherOpenId}/${stamp}`), payload, meta),
-    mode !== 'scoped-token',
-  );
+console.log('Signed in [mode: scoped-token]\n');
+await expectAllow('read own OPEN assessment doc', async () => {
+  const snapshot = await getDoc(doc(db, 'assessments', openId));
+  if (!snapshot.exists() || snapshot.data().portalOpen !== true) throw new Error('OPEN_FIXTURE_INVALID');
+});
+await expectDeny('read different assessment doc', () => getDoc(doc(db, 'assessments', otherOpenId)));
+if (results.some(result => !result.passed)) {
+  console.error('Firestore scope/fixture check failed; no Storage uploads attempted.');
+  process.exit(1);
 }
-
-// Informational only — this is docs/KNOWN_ISSUES.md #18, a known-and-deferred gap:
-// the legacy orgs/.../evidence/ path still has a bare isSignedIn() rule. Expect a GAP
-// line here until #18 is closed; it does not gate the smoke result.
-await expectDeny(
-  'write to the legacy unscoped org evidence path (KNOWN_ISSUES #18)',
-  () => uploadBytes(ref(storage, `orgs/smoke-org/vendors/smoke-vendor/evidence/${stamp}`), payload, meta),
-  true,
-);
-
-const gating = results.filter((r) => !r.informational);
-const failed = gating.filter((r) => !r.passed);
-console.log(`\n${gating.length - failed.length}/${gating.length} gating checks passed`);
-if (failed.length) {
-  console.log('\nFailures:');
-  for (const f of failed) console.log(`  - ${f.name}: ${f.detail}`);
-}
-const gaps = results.filter((r) => r.informational && !r.passed);
-if (gaps.length) {
-  console.log(`\nKnown gaps still present (not gating): ${gaps.length}`);
-}
+const stamp = 'smoke-' + Date.now() + '.pdf';
+const payload = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d]);
+const metadata = { contentType: 'application/pdf' };
+const paths = [
+  'portal/' + openId + '/' + stamp,
+  'portal/' + closedId + '/' + stamp,
+  'portal/' + otherOpenId + '/' + stamp,
+  'orgs/smoke-org/vendors/smoke-vendor/evidence/' + stamp,
+];
+await expectAllow('upload evidence to own portal path', () => uploadBytes(ref(storage, paths[0]), payload, metadata));
+await expectAllow('read back own uploaded evidence', () => getDownloadURL(ref(storage, paths[0])));
+await expectDeny('upload to CLOSED/unknown assessment portal path', () => uploadBytes(ref(storage, paths[1]), payload, metadata));
+await expectDeny('upload to DIFFERENT also-OPEN assessment portal path', () => uploadBytes(ref(storage, paths[2]), payload, metadata));
+await expectDeny('write to legacy org evidence path', () => uploadBytes(ref(storage, paths[3]), payload, metadata));
+const failed = results.filter(result => !result.passed);
+console.log('\n' + (results.length - failed.length) + '/' + results.length + ' gating checks passed');
+for (const failure of failed) console.log('FAIL  ' + failure.name + ': ' + failure.detail);
+console.log('Owner cleanup: inspect these synthetic test object paths for any successful write:');
+for (const objectPath of paths) console.log(objectPath);
 process.exit(failed.length ? 1 : 0);
