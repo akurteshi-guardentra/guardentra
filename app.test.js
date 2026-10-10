@@ -72,6 +72,9 @@ describe("Guardentra HTTP server", () => {
           ...process.env,
           PORT: "8080",
           NODE_ENV: "production",
+          GCLOUD_PROJECT: "guardentra-test",
+          GOOGLE_CLOUD_PROJECT: "guardentra-test",
+          FIREBASE_STORAGE_BUCKET: "guardentra-test.firebasestorage.app",
         },
         stdio: ["ignore", "pipe", "pipe"],
       }

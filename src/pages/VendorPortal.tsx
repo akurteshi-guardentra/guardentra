@@ -32,10 +32,9 @@ import {
 } from '../lib/vendor/questionBank';
 import { uploadPortalEvidence, requestPortalEvidenceValidate, fetchPortalEvidenceDownloadUrl, type UploadedEvidence } from '../lib/vendor/evidenceUpload';
 import { evidenceStateLabel, trustedEvidenceFileNames, type EvidenceState } from '../lib/vendor/evidenceTrust';
-import { syncVendorAfterAssessmentProgress, syncVendorAfterAssessmentSubmit } from '../lib/vendor/syncVendorAssessment';
+import { syncVendorAfterAssessmentProgress } from '../lib/vendor/syncVendorAssessment';
 import {
   buildPortalAutosavePatch,
-  buildPortalSubmitPatch,
   isReceiptMode,
 } from '../lib/vendor/assessmentLifecycle';
 import {
@@ -266,6 +265,7 @@ export function VendorPortal() {
           answers: effective,
           comments: nextComments,
           evidenceByQuestion: nextEvidence,
+          currentStatus: assessment?.status,
         });
         await updateDoc(doc(db, 'assessments', assessmentId), {
           ...patch,
@@ -527,31 +527,23 @@ export function VendorPortal() {
         attestedAt: new Date().toISOString(),
         attestedByName: attestedByName.trim(),
       };
-      const patch = buildPortalSubmitPatch({
-        answers: effective,
-        comments,
-        evidenceByQuestion: evidence,
-        attestations: attestationPayload,
-        answerProposals: proposals,
+      const response = await fetch('/api/portal/submit', {
+        method: 'POST',
+        headers: await getPortalAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          assessmentId,
+          answers: effective,
+          comments,
+          evidenceByQuestion: evidence,
+          attestations: attestationPayload,
+          answerProposals: proposals,
+        }),
       });
-      await updateDoc(doc(db, 'assessments', assessmentId), patch);
-      if (assessment?.organizationId && assessment?.vendorId) {
-        void syncVendorAfterAssessmentSubmit(assessment.organizationId, assessment.vendorId, false);
-        void emitAuditBestEffort(
-          {
-            tenantId: assessment.organizationId,
-            eventType: 'assessment.submitted',
-            objectType: 'assessment',
-            objectId: assessmentId,
-            payload: {
-              vendorId: assessment.vendorId,
-              questionCount: questions.length,
-              attestedByName: attestedByName.trim(),
-            },
-          },
-          { getAuthHeaders: getPortalAuthHeaders }
-        );
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error || 'Submission failed.');
       }
+
       setIsSuccess(true);
     } catch (err) {
       console.error(err);

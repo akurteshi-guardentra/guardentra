@@ -46,14 +46,15 @@ service cloud.firestore {
       return role == 'admin' || role == 'member';
     }
 
-    // Founder path: brand-new tenant only. Same-batch org+profile create cannot
-    // see the sibling org write, so "org does not exist yet" is the authority
-    // signal. An existing tenant id can never be claimed this way.
+    // Founder authority requires a new organization in this atomic write.
+    // getAfter sees sibling writes; exists checks the pre-write state.
+    // The organization create rule reciprocally binds the founder's profile.
     function isNewOrgFounderCreate() {
       return request.resource.data.role == 'admin'
         && request.resource.data.organizationId is string
         && request.resource.data.organizationId.size() > 0
-        && !exists(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId));
+        && !exists(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId))
+        && getAfter(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)).data is map;
     }
 
     function pendingInviteData() {
@@ -219,14 +220,12 @@ service cloud.firestore {
         && request.resource.data.organizationId == resource.data.organizationId;
     }
 
-    // Only seatCount (orgBootstrap.ts, incremented in the same batch as a joining
-    // member's own profile) and vendorCount (VendorsDirectory.tsx's cap-check
-    // transaction) are legitimately written by a non-admin member. Everything else —
-    // name, industry, onboarded, setupAt — is a settings field only Onboarding.tsx's
-    // isOrgCreator branch writes, and that branch already only runs for admins.
+    // Only seatCount remains a legitimate non-admin organization write.
+    // Hosted vendor creation is now server-authoritative and updates vendorCount
+    // through the Admin SDK, so browser clients must not mutate that meter.
     function onlyMemberWritableOrgFieldsChanged() {
       return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['seatCount', 'vendorCount']);
+        .hasOnly(['seatCount']);
     }
 
     // P2B: dataRegion ('eu'|'us') is immutable after first set.
@@ -238,9 +237,11 @@ service cloud.firestore {
     // Organizations Collection
     match /organizations/{orgId} {
       allow read: if isAuthenticated() && isOrgMember(orgId);
-      // Only a user with no profile yet may create an org (founder bootstrap).
+      // Only a new user's atomic founder bootstrap may create its one org.
       allow create: if isAuthenticated()
-        && !exists(/databases/$(database)/documents/users/$(request.auth.uid));
+        && !exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId == orgId
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
       // Deeper token/role review (task #27) found this allowed ANY member to write
       // ANY field, including name/industry — so Onboarding.tsx's isOrgCreator check
       // (KI#8: stop an invited member from overwriting the shared org's settings) was
@@ -360,9 +361,9 @@ service cloud.firestore {
 
     match /vendors/{vendorId} {
       allow read: if isDocOrgMember();
-      allow create: if isCreatingForOwnOrg() && vendorFieldsValid() &&
-        orgField(request.resource.data.organizationId, 'vendorCount', 0) <
-        orgField(request.resource.data.organizationId, 'vendorCap', 25);
+      // Material vendor creation is server-authoritative so its vendorCount update
+      // and durable audit intent cannot be bypassed by an SDK/REST client.
+      allow create: if false;
       allow update: if isDocOrgMember() && orgIdUnchanged() && vendorFieldsValid();
       allow delete: if isDocOrgMember() && isAdmin();
     }
@@ -376,16 +377,11 @@ service cloud.firestore {
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
-    // FastTrack triage persistence (answers + Lite/Standard/Enhanced recommendation).
-    // Doc id = vendorId; org members may create/update their org's triage docs.
+    // FastTrack triage is a material transition. Hosted writes are server/Admin-only
+    // so the triage record, vendor review date, and durable audit intent stay atomic.
     match /vendor_triage/{vendorId} {
       allow read: if isDocOrgMember();
-      allow create: if isCreatingForOwnOrg() && childVendorBoundIfPresent();
-      allow update: if isDocOrgMember()
-        && orgIdUnchanged()
-        && parentVendorUnchanged()
-        && childVendorBoundIfPresent();
-      allow delete: if isDocOrgMember() && isAdmin();
+      allow create, update, delete: if false;
     }
 
     // Vendor Assessments Collections (handle both names)
@@ -427,7 +423,17 @@ service cloud.firestore {
     // clients must not write evidenceTrustByStoragePath.
     function onlyPortalAssessmentFieldsChanged() {
       return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['answers', 'comments', 'evidenceByQuestion', 'progressPct', 'progress', 'status', 'questions', 'updatedAt', 'completedAt', 'attestations', 'answerProposals', 'confirmedAnswerIds']);
+        .hasOnly(['answers', 'comments', 'evidenceByQuestion', 'progressPct', 'progress', 'status', 'updatedAt', 'attestations', 'answerProposals', 'confirmedAnswerIds']);
+    }
+
+    function portalAutosaveStateValid() {
+      return (
+        resource.data.status == 'Sent'
+        && (request.resource.data.status == 'Sent' || request.resource.data.status == 'In Progress')
+      ) || (
+        resource.data.status == 'In Progress'
+        && request.resource.data.status == 'In Progress'
+      );
     }
 
     function orgPreservesEvidenceTrust() {
@@ -440,18 +446,33 @@ service cloud.firestore {
         .hasAny(['decisionOutcome', 'decisionNotes', 'decidedAt', 'decidedBy']);
     }
 
-    function portalSubmitTransition() {
-      return resource.data.portalOpen == true
-        && resource.data.status != 'Under Review'
-        && resource.data.status != 'Completed'
-        && request.resource.data.status == 'Under Review'
-        && request.resource.data.portalOpen == false
-        && request.resource.data.keys().hasAny(['submittedSnapshot']);
+    // Initial send and final submit are server-authoritative material transitions.
+    // Browser clients may not mint the durable truth fields that prove those events.
+    function orgDeniesClientMaterialTransitionWrites() {
+      return !request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(['sentAt', 'submittedSnapshot']);
     }
 
-    function portalSubmitFieldsChanged() {
-      return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['answers', 'comments', 'evidenceByQuestion', 'progressPct', 'progress', 'status', 'completedAt', 'attestations', 'answerProposals', 'portalOpen', 'submittedSnapshot', 'versionLocked']);
+    function orgCannotMintSentStatus() {
+      return request.resource.data.status != 'Sent'
+        || resource.data.status == 'Sent';
+    }
+
+    // Org browser clients may keep lifecycle state unchanged, or explicitly reopen
+    // a closed submission for correction. Under Review / Completed / Sent are all
+    // server-authoritative transitions.
+    function orgLifecycleTransitionAllowed() {
+      let lifecycleChanged = request.resource.data.status != resource.data.status
+        || request.resource.data.portalOpen != resource.data.portalOpen;
+      return !lifecycleChanged || (
+        request.resource.data.status == 'In Progress'
+        && request.resource.data.portalOpen == true
+        && request.resource.data.keys().hasAll([
+          'correctionReopenedAt',
+          'correctionReopenedBy',
+          'correctionReason'
+        ])
+      );
     }
 
     // After send, org members cannot silently rewrite the questionnaire snapshot
@@ -490,10 +511,23 @@ service cloud.firestore {
 
     match /assessments/{assessmentId} {
       allow read: if isDocOrgMember() || (isPortalSessionFor(assessmentId) && isPortalReadableAssessment());
-      allow create: if isCreatingForOwnOrg() && childVendorBoundIfPresent();
-      allow update: if (isDocOrgMember() && orgIdUnchanged() && parentVendorUnchanged() && childVendorBoundIfPresent() && orgPreservesSentSnapshot() && orgPreservesFinalDecision() && orgPreservesEvidenceTrust() && orgDeniesClientDecisionWrites()) ||
-        (isPortalSessionFor(assessmentId) && portalSubmitTransition() && portalSubmitFieldsChanged()) ||
-        (portalMayWriteAssessment(assessmentId) && onlyPortalAssessmentFieldsChanged());
+      // Material assessment creation is server-authoritative so assessment.created
+      // cannot be bypassed by a direct browser write.
+      allow create: if false;
+      allow update: if (isDocOrgMember()
+          && orgIdUnchanged()
+          && parentVendorUnchanged()
+          && childVendorBoundIfPresent()
+          && orgPreservesSentSnapshot()
+          && orgPreservesFinalDecision()
+          && orgPreservesEvidenceTrust()
+          && orgDeniesClientDecisionWrites()
+          && orgDeniesClientMaterialTransitionWrites()
+          && orgCannotMintSentStatus()
+          && orgLifecycleTransitionAllowed()) ||
+        (portalMayWriteAssessment(assessmentId)
+          && onlyPortalAssessmentFieldsChanged()
+          && portalAutosaveStateValid());
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
@@ -587,6 +621,12 @@ service cloud.firestore {
     // System Collection (for connectivity tests)
     match /system/{docId} {
       allow read: if isAuthenticated();
+    }
+
+    // Durable material-audit journal is server/Admin-only. Client access would
+    // allow deletion, forgery, or acknowledgement tampering of required audit intent.
+    match /audit_material_intents/{eventId} {
+      allow read, write: if false;
     }
 
     // Mail queue (Firebase "Trigger Email from Firestore" extension shape). Only

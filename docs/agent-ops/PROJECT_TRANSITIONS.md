@@ -286,3 +286,20 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
 - Production (`guardentra-prod`): **UNCHANGED** — still `build-2026-08-27-001` at **100%**; scanner **NOT DEPLOYED**; no production secrets/DNS/IAM/Eventarc changes from this workstream.
 - P0 authoritative evidence scanner workstream: **CLOSED**.
 - This documentation update (Issue #53 / Action #9A): docs/governance only when committed; **NOT DEPLOYED**; does not authorize production scanner rollout.
+
+## 2026-10-10 — Atomic founder enrollment merged into release candidate
+
+- Verifier: Codex using GitHub PR, exact diff, workflow jobs, and merge readback; owner instruction: `merge` for PR #184.
+- Issue/source: #61 continuation, required outcomes 1–6 and negative enrollment criteria.
+- Transition: missing atomic founder enrollment checks in the release candidate → **MERGED INTO RELEASE CANDIDATE**, not merged into `main`.
+- Branch: `security/atomic-founder-enrollment-61-20261010`; tested head: `e02c0102d1632dbdb9701bf34250c7cffd5698b2`.
+- PR: https://github.com/akurteshi-guardentra/guardentra/pull/184; squash merge: `52008f86f40378c8d70f003a400e0921a05091b1`; merged at `2026-10-10T12:24:50Z`.
+- Target: `release/rc-2026-10-08`; PR #182 remains open against `main`.
+- Exact files: `firestore.rules`, `src/tests/firestore.rules.test.mjs`.
+- Checks on tested head: CI https://github.com/akurteshi-guardentra/guardentra/actions/runs/38051666433 **SUCCESS**; `npm run lint`, `npm test`, `npm run test:vitest`, `npm run test:firestore-rules`, and dispatcher PowerShell suite **PASS**.
+- Behavior: founder organization and admin profile must be created together with reciprocal binding. Four added denial tests cover orphan profile, orphan organization, multiple organizations, and mismatched organization/profile. Existing valid founder and invited enrollment coverage remains passing.
+- Server-only vendor, assessment, and triage creation and existing strict parent binding are preserved.
+- Working-tree evidence: remote GitHub operations only; owner's local Windows worktrees untouched, current status not rechecked.
+- Deployment: **NOT DEPLOYED**. This records repository state only; no rules release, application rollout, IAM, secrets, DNS or data mutation.
+- Remaining gate: required CI and exact scope review on the updated release candidate, plus explicit owner authorization for PR #182 merge and separate deployment.
+- Rollback: revert PR #184 on the release candidate before any rules deployment.
