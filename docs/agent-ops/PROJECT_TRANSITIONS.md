@@ -303,3 +303,25 @@ Date/verifier; issue; previous → new state; branch/commit/PR; checks; deployme
 - Deployment: **NOT DEPLOYED**. This records repository state only; no rules release, application rollout, IAM, secrets, DNS or data mutation.
 - Remaining gate: required CI and exact scope review on the updated release candidate, plus explicit owner authorization for PR #182 merge and separate deployment.
 - Rollback: revert PR #184 on the release candidate before any rules deployment.
+
+## 2026-10-10 — Remaining staging backend and PR #188 merge checkpoint
+
+- Owner authorized staging-first promotion, superseding the dedicated DEV-first sequence while DEV billing linking is quota-blocked. Owner reports guardentra-dev project creation succeeded; billing linking failed with Cloud billing QuotaFailure. Firebase enablement/backend provisioning is not verified.
+- Owner reports deleting the previous guardentra-staging/us-central1 App Hosting backend. The remaining backend is guardentra/us-east4 in project guardentra-staging, URL https://guardentra--guardentra-staging.us-east4.hosted.app/.
+- Attempted source 97b63a014e0fbef02e00e8d90852485b7edf9c0c produced failed revision guardentra-build-2026-10-10-000. Owner logs show exit(1), stack frames and TCP startup probe failure; the root exception is NOT captured. This is not a verified live release.
+- Environment name was blank; owner reports saving it as staging. Repository overrides must be re-evaluated on the next rollout; successful runtime configuration is not inferred from this setting alone.
+- Owner instruction: merge 188. PR https://github.com/akurteshi-guardentra/guardentra/pull/188 merged into release/rc-2026-10-08, squash 2e0215d76d750fdcdb035da3f910459dc0c3eeb9. Tested branch fix/staging-east4-backend-callbacks, head 48bf0f71f0756d37bde37a377b92123240ec406a; CI https://github.com/akurteshi-guardentra/guardentra/actions/runs/38087735333 SUCCESS.
+- Exact changed file: apphosting.staging.yaml. Scanner task target and OIDC audience now point to the remaining backend. Existing queue region us-central1, scanner host, VPC, secret references and flags retain their values. Historical connectivity proof is explicitly qualified.
+- Current release candidate: 2e0215d76d750fdcdb035da3f910459dc0c3eeb9. PR #182 remains open against main. No production change or main merge is inferred.
+- Acceptance pending: startup, staging health/project identity, remaining-backend rollback baseline, VPC-to-ClamAV reachability, secret access, queue/OIDC invocation, rules/index release and tenant/vendor flows. The deleted backend's September build is not a verified rollback target for the remaining backend.
+- Working-tree evidence: GitHub-based operations; Windows working files untouched, local status not independently rechecked.
+- Deployment: configuration correction NOT DEPLOYED; earlier rollout FAILED. Mail consumer activation and SQL audit activation remain separate. Revert #188 in Git for source rollback; live rollback requires a remaining-backend baseline.
+
+## 2026-10-10 — Staging startup readback and notification URL correction
+
+- Owner reports successful remaining-backend rollout after environment name correction. Health readback: status ok; environment staging; projectId guardentra-staging; service guardentra; revision guardentra-build-2026-10-10-001; sourceSha null. Startup and reported runtime identity pass; exact deployed source still needs App Hosting rollout metadata. No full acceptance is inferred.
+- Owner created a test vendor/assessment but reported no receipt and then the reminder error toast. Source review shows the toast covers notification API failure, not a verified provider result. PUBLIC_APP_URL is required for hosted assessment notifications and absent from shared/staging YAML; actual runtime overrides and failed API code were not captured.
+- Owner instruction: merge 190. PR https://github.com/akurteshi-guardentra/guardentra/pull/190 merged into release/rc-2026-10-08 at 3f7021615e08094c79f629a58c326a35ce956cbf. Tested branch fix/staging-notification-public-url, head ec2bd120f7d68fdcb65c025c4c8a49e1114b2649; CI https://github.com/akurteshi-guardentra/guardentra/actions/runs/38088952059 SUCCESS.
+- Exact changed file: apphosting.staging.yaml. Adds PUBLIC_APP_URL=https://guardentra--guardentra-staging.us-east4.hosted.app at RUNTIME only; keeps hosted URL validation and authority checks. No production, provider activation, IAM, rules, index or SQL migration change.
+- Current source candidate is 3f7021615e08094c79f629a58c326a35ce956cbf, NOT YET DEPLOYED/verified live. Required next proof: exact rollout commit, API queue response/code, consumer configuration and inbox receipt. New mail worker remains disabled/unwired. Queuing does not prove delivery.
+- Working-tree evidence: GitHub-based operations only; Windows files untouched and local status not independently rechecked. Rollback: revert #190 configuration addition; live rollback baseline requires remaining-backend rollout metadata.
