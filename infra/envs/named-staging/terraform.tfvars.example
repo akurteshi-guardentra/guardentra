@@ -1,0 +1,17 @@
+project_id                    = "guardentra-staging"
+region                        = "us-central1"
+runtime_service_account_email = "firebase-app-hosting-compute@guardentra-staging.iam.gserviceaccount.com"
+
+# REQUIRED before plan. Replace only after explicit read-only inspection of:
+# existing allocated ranges, VPC routes, peerings, scanner path, and collisions.
+# The placeholder is intentionally invalid so a copied file cannot plan accidentally.
+private_service_range_cidr = "REPLACE_AFTER_ROUTE_INVENTORY"
+
+instance_name                  = "guardentra-staging-audit"
+database_name                  = "guardentra_audit"
+database_version               = "POSTGRES_16"
+tier                           = "db-custom-2-8192"
+availability_type              = "REGIONAL"
+disk_size_gb                   = 20
+retained_backups               = 7
+transaction_log_retention_days = 7

@@ -1,5 +1,125 @@
 # GuardEntra Project State
 
+## 2026-10-08 — Issue #74 preparation checkpoint (not deployed)
+
+2026-10-09 addendum: both workflows on the documentation head
+`193343d95ce2002d6e167db81ed01bcdf9ea5ad8` are verified SUCCESS (CI 37712508453;
+infra-ci 37712508458). Authenticated Owner output returned 404 for the proposed state
+bucket and confirmed the operator's project Owner binding. The same IAM snapshot
+exposes inherited runtime Storage access, including overlapping Firebase Admin
+permissions. State isolation is BLOCKED; the bootstrap must not proceed until a
+reviewed correction is approved. Preparation adds a read-only collector and default-
+false isolation gate; no live IAM/cloud changes are authorized or performed.
+
+Collector correction: the Owner's first inventory attempt failed before report
+creation because predefined-role describes incorrectly received `--project`.
+The collector now uses the explicit staging billing project for global predefined
+roles, retaining resource project scope on other calls. Windows regression coverage
+checks arguments, overlapping roles, failure-before-report and no-overwrite behavior.
+No complete live inventory or cloud changes are claimed; corrected-head CI is pending.
+
+2026-10-09 subsequent metadata: full collector validates project number and direct
+organization parent `280975227603`; four runtime Storage roles are unconditional.
+Returned organization IAM binds only the human operator; runtime Token Creator is
+account-level self access. No dedicated state project appeared among returned active
+direct organization children. Preparation now recommends a separate state-only
+project, documented in `docs/release/AUDIT_STAGING_STATE_ISOLATION_DESIGN_74.md`.
+Subsequent preparation adds an isolated root, required verified billing input,
+fixed identifiers/operator, default-false live-plan review gate and mocked guardrails.
+No live plan, live denial test or approved project creation exists yet. CI caught and preparation corrected an overlength project display name; corrected
+head validation remains pending. New-project
+transient default-network cleanup and implicit Compute API enablement are disclosed
+in the proposed scope; staging networking is unchanged. Billing/policy metadata has
+advanced, while global names, operator policy admission, costs and custody remain open.
+
+2026-10-09 planning prerequisite checkpoint: tested isolated root SHA
+`1f56352a81e91c48950fea45ea572cd2140ea9b6` passed CI/infra-ci and Owner Windows
+validation. Organization directory customer matches allowed-member policy; billing
+account is open USD under that organization. Recorded proposal review permits a real
+local-backend plan. Plan/apply, actual ADC identity, encrypted state custody,
+residency/cost acceptance and live access tests are still pending; no cloud mutation.
+
+Real state-bootstrap plan received for code `1f56352a81e91c48950fea45ea572cd2140ea9b6`:
+4 add / 0 change / 0 destroy; Owner-supplied saved-plan SHA-256 recorded in
+`docs/release/AUDIT_STAGING_STATE_BOOTSTRAP_APPROVAL_PACKET_74.md`. This advances
+planning evidence only. Actual ADC identity, encrypted local-state/recovery custody,
+exact apply approval and live access proof remain pending. NOT APPLIED/DEPLOYED.
+
+2026-10-09 custody steering: Owner-supplied ADC identity is admin@guardentra.com,
+verified email true. Owner selected cloud custody with no Windows encryption changes.
+Existing C: encryption was observed read-only; no setting changed. The exact-plan
+packet now proposes a temporary local bootstrap interval followed by isolation tests
+and a separately reviewed GCS migration/recovery check. No remote state or live access
+proof exists yet. Prior documentation head ec4b03d1ceeafc09ae574f2601f2e214e0f39b03
+passed CI 37982899583 and infra-ci 37982899577. Apply approval remains pending.
+
+2026-10-09 bootstrap execution checkpoint: Owner terminal reports 4 added, zero
+changed/deleted for the exact saved plan. Uploaded metadata confirms new state project
+748382914138 ACTIVE under org 280975227603, intended billing, protected/versioned
+US-CENTRAL1 bucket and human Object Admin. Project IAM also contains expected new-
+project service agents; bucket has generated STATE-project basic-role convenience
+bindings. No staging runtime grant is listed. Enabled Compute/OS Login/Storage APIs,
+empty networks list. Effective access, remote migration and recovery remain unproven.
+Both workflows on preparation head 6a78c6be839a1880bee1ab4a4a497efba89f3fdd PASS.
+No SQL creation, application rollout, merge or production mutation is evidenced.
+
+2026-10-09 access checkpoint: Owner enabled diagnostic API only in state project.
+Seven runtime Storage permissions evaluated NOT_GRANTED across bucket/project/org
+allow policies, with deny-explanation errors; no real runtime request denial claimed.
+Human synthetic upload, exact-generation download, hash match and current cleanup PASS
+(75 bytes, generation 1791577394388974). Bootstrap migration is prepared separately;
+not performed yet. Retained test version is not a Terraform state backup.
+
+2026-10-09 remote bootstrap custody: Owner init -migrate-state confirmed empty GCS
+destination, migrated state, matched lineage/four resource addresses; remote serial 6.
+Bootstrap prefix guardentra/bootstrap/isolated-staging-state, distinct from audit.
+Unique local pre-migration backup preserved; generated backend.tf stays Owner-local.
+Actual state recovery and database network/identity/transport gates remain pending.
+No Cloud SQL creation, application deployment, merge or production change.
+
+2026-10-09 database planning inventory: fresh transcript lists 42 default subnets,
+43 routes, zero global addresses/peerings/SQL instances. Candidate 10.20.0.0/16 has
+zero overlap with returned primary subnet/specific route ranges (Python ipaddress).
+Separate new-worktree database plan preparation permitted after audit state-prefix
+absence check. No SQL apply approval, credentials, TLS/runtime attachment or rollout
+is implied. Preserve existing Owner worktrees and bootstrap backend.
+
+2026-10-09 real database plan: 8 add / 0 change / 0 destroy; exact hash in approval
+packet. Review found no explicit encrypted-only SSL mode or API deletion protection.
+Local code correction/tests/CI prepared; ORIGINAL PLAN SUPERSEDED, DO NOT APPLY.
+Format/diff checks PASS; local provider startup prevents validation. New-code CI,
+replacement plan and DB identity/private transport/cost review pending. Publication
+blocked by automatic disclosure review; three earlier notes plus source changes local.
+
+2026-10-09 replacement DB plan review: executable 89637c01768808ecd203f89102c2dabe4707ee3a
+passed CI 37988873225 / infra-ci 37988873231; named-staging five security tests PASS.
+Owner saved replacement plan 8 add / 0 change / 0 destroy explicitly includes encrypted-
+only SSL and API deletion protection. Exact hash/action/cost packet prepared for
+infrastructure-only approval; no SQL apply authorized yet. DB credentials, actual
+private client path, migrations, runtime integration and rollout remain separate gates.
+
+This narrow addendum does not refresh the historical snapshot below.
+
+- Draft PR #183, branch `infra/named-staging-audit-74`, verified preparation commit
+  `9cd2584ce2d6966e77ff499e3a49769ec8b2e21d`; exact application RC remains
+  `8db71492f5c1eac4d74b47ec239e4e94acac20ff`.
+- Malformed SQL dollar quoting corrected; PostgreSQL 16.15 CI executed both migrations
+  twice and passed a distinct application-login append-only privilege contract.
+- Terraform CI now validates historical eu-staging, named-staging and the separate
+  local-state staging-backend bootstrap. All roots passed; provider locks are tracked
+  for named-staging/bootstrap on Linux and Windows amd64.
+- `infra-ci` run 37712224946 and `CI` run 37712224826 both succeeded on that exact code
+  commit. These are repository/preparation checks, not live #74 acceptance.
+- Owner-supplied authenticated CLI output establishes staging revision/image digest,
+  scanner/default-VPC/NAT topology, no listed SQL/PSA/state bucket and preserved audit
+  secret metadata. The earlier Service Networking API enablement is recorded in the
+  approval packet; this preparation turn performed no cloud mutation.
+- BLOCKED: verified state-bucket absence/ownership and operator principal; exact local
+  bootstrap plan/cost/custody; bootstrap approval if needed; final audit plan and DB
+  identity/private connection method; final staging authorization and live acceptance.
+- NOT DEPLOYED. No merge, staging/prod rollout, secret operation or production change.
+
+
 Current verified snapshot: 2026-09-15
 Repository: `akurteshi-guardentra/guardentra`
 Owner and merge/deployment authority: `@akurteshi-guardentra`
@@ -172,3 +292,282 @@ Ledger updates in this PR remain documentation of verified state. They do **not*
 ## Daily reporting
 
 `GuardEntra Daily Brief` runs daily at 22:30 `Europe/Vienna`. It must separate repository and live state and must not mutate GitHub or deploy.
+
+
+## 2026-10-09 — #74 database infrastructure applied; integration pending
+
+Owner explicitly approved the replacement plan and supplied successful Terraform
+apply output: 8 added / 0 changed / 0 destroyed, lock released. Executable SHA
+89637c01768808ecd203f89102c2dabe4707ee3a; exact approved plan hash
+AA15806393F1872EFE907F5A295CFDC94C91914CB37EA977A81C2A9AEC9D08E9.
+Reported PostgreSQL instance guardentra-staging-audit has private IP 10.20.0.2,
+connection guardentra-staging:us-central1:guardentra-staging-audit and database
+guardentra_audit. State lists eight managed resources and one network data source.
+See docs/release/AUDIT_STAGING_DATABASE_APPLY_PACKET_74.md for scope and limitations.
+This is an Owner-terminal infrastructure checkpoint; independent metadata readback,
+scanner health, state recovery, credentials, migrations and runtime integration
+remain pending. No application rollout, audit activation, merge or production action.
+Never rerun the applied plan; preserve infrastructure and unrelated Owner work.
+
+
+## 2026-10-09 — #74 post-apply Owner API metadata checkpoint
+
+Owner attachment Pasted text(5).txt reports SQL RUNNABLE, POSTGRES_16, REGIONAL,
+db-custom-2-8192; only PRIVATE address 10.20.0.2; ipv4Enabled false;
+sslMode ENCRYPTED_ONLY; API deletionProtectionEnabled true. Legacy requireSsl false
+is not evidence of plaintext admission with this SSL mode. Server CA mode is
+GOOGLE_MANAGED_INTERNAL_CA; client certificate/server-identity verification remains
+unproven. Backups and PITR enabled, seven retained backups and seven log days.
+Automated backup 1791581139351 is SUCCESSFUL, location us (not a pinned single-region
+backup or successful restore proof). PSA servicenetworking-googleapis-com is ACTIVE.
+
+Cloud Run reports Direct VPC network interfaces on staging default network and
+us-central1 default subnet, private-ranges-only egress. This establishes configured
+network access, not successful database TCP/TLS/authentication. No cloudsql-instances
+annotation appears in the returned template; the documented /cloudsql socket path
+is not established by these settings. Existing revision
+guardentra-staging-build-2026-09-14-001 still receives 100 percent traffic.
+Scanner VM guardentra-staging-clamav-01 is RUNNING in us-central1-a, but nested IP
+projection returned no network address; no scanner health or scan request proof.
+NAT still reports auto-allocated 34.46.14.242, two mapped endpoints and zero extra
+IPs needed. These are metadata observations, not application connectivity tests.
+
+Next: inspect active revision audit flag and secret-version reference without values,
+SQL user metadata and database existence; prepare a separate encrypted private
+migration execution path and least-privilege identities. Preserve current secret
+versions and disabled audit state. No migration, credential rotation, runtime change,
+merge or production action executed. Actual state recovery and live SQL privilege
+tests remain pending; #74 is not complete.
+
+
+## 2026-10-09 — #74 migration preparation boundary
+
+Owner SQL metadata returns postgres only and confirms guardentra_audit exists.
+Active revision audit flag is false, AUDIT_DATABASE_URL secret alias 3 / version 1,
+no inline value; no payload inspected. Prepared cloud-job migration design in
+docs/release/AUDIT_STAGING_MIGRATION_DESIGN_74.md with separate administrative,
+migrator and runtime privileges, private authenticated transport and real-test gates.
+Runner/image/bootstrap implementation and exact additional-cloud approval remain
+pending. No credentials, SQL, job deployment, app config, merge or production changes.
+Existing Node migration URL fallback and lack of app connector are integration gaps.
+
+
+## 2026-10-09 — runner candidate and credential-isolation correction
+
+Owner inventory returns no jobs, no matching audit service accounts and only staging
+AUDIT_DATABASE_URL secret. Prepared isolated scripts/audit-managed-staging package,
+locked connector/pg dependencies, exact-target/no-fallback guardrails, migration
+checksums/advisory lock and restricted PostgreSQL 16 CI execution/privilege contract.
+Local Node syntax and three unit tests PASS; real PostgreSQL/CI pending at publication.
+No cloud build, role/password creation, secret write or job execution performed.
+
+The candidate secret-placement design above is BLOCKED: earlier staging IAM grants
+application runtime and build/hosting principals project-wide Secret Accessor.
+Resource-level access assigned to a job cannot cancel inherited runtime access.
+Do not create admin/migrator secrets in staging and claim separation. Fresh policy
+and role metadata is needed before selecting isolated credential custody or scoped
+IAM correction. No state-project repurpose, IAM removal, token/key creation or
+password operation is authorized. Runner bootstrap, build context/base-image pin,
+exact cloud execution packet and application connector integration remain pending.
+
+
+## 2026-10-09 — restricted runner real-database CI proof
+
+Runner source SHA 057707e3b424e7ea2b12cdfc5ed8c13c3f1b0fd3 on
+infra/named-staging-audit-74, draft PR #183. infra-ci run 37995757369 SUCCESS;
+managed-audit-runner job 114041281705 SUCCESS. Logs confirm three scope/manifest
+unit tests PASS and one real PostgreSQL 16 integration test PASS, zero failures.
+The integration test applies both migrations as audit_migrator, repeats with zero
+new applications, tests rollback-only app operations/denials, checksum tampering,
+unexpected role inheritance and concurrent execution. Existing audit-migrations
+fixture and all four Terraform root jobs also SUCCESS. Routine CI remains cloud-neutral.
+
+Local npm ci --ignore-scripts, Node syntax, connector import/cleanup, three unit tests,
+workflow YAML parse, dependency lock validation and git diff --check PASS. npm audit
+--omit=dev reported zero vulnerabilities. No local PostgreSQL server was available;
+real database test evidence comes from the CI service, not Cloud SQL. General CI
+run 37995757403 also completed SUCCESS on the exact runner source SHA.
+
+No cloud build/job/credential/bootstrap execution, app rollout, merge or production
+change. Bootstrap SQL/secure credential custody and immutable image/execution packet
+remain pending. Earlier runtime role definitions include secretmanager.versions.access
+through project-level roles/secretmanager.secretAccessor; fresh IAM readback is next.
+
+Exact runner-source changed files (Git diff from prior design head):
+- .github/workflows/infra-ci.yml
+- docs/agent-ops/PROJECT_STATE.md
+- docs/agent-ops/PROJECT_TRANSITIONS.md
+- docs/release/AUDIT_STAGING_MIGRATION_DESIGN_74.md
+- docs/release/AUDIT_STAGING_PREPARATION_TASK_74.md
+- scripts/audit-managed-staging/Dockerfile
+- scripts/audit-managed-staging/README.md
+- scripts/audit-managed-staging/core.mjs
+- scripts/audit-managed-staging/manifest.json
+- scripts/audit-managed-staging/package-lock.json
+- scripts/audit-managed-staging/package.json
+- scripts/audit-managed-staging/postgres.test.mjs
+- scripts/audit-managed-staging/run.mjs
+- scripts/audit-managed-staging/unit.test.mjs
+
+Source checkout git status --short was empty after fetched GitHub commit reconciliation.
+This is a preparation checkpoint, not #74 acceptance or a readiness score advance.
+
+
+## 2026-10-09 UTC / 2026-10-10 Vienna — fresh secret-access policy checkpoint
+
+Owner fresh project IAM output confirms runtime Cloud SQL Client and unchanged
+project-wide Secret Accessor for runtime, Cloud Build and App Hosting; runtime/hosting
+also have Secret Version Manager. Developer Connect retains an unconditional Secret
+Manager Admin binding as well as an expired setup binding. No grant removed. This
+confirms allow-policy exposure; deny/PAB and actual secret access were not evaluated.
+
+Prepared local UNAPPLIED infra/bootstrap/staging-audit-ops candidate: separate project,
+Secret Manager API and two region-pinned empty secret shells, no payloads/versions, IAM
+bindings, jobs, SQL, state-project repurpose or application changes. Backend prefix must
+be independently reviewed/unused; default-false review gate; separate exact-plan approval
+required. New root/schema/mocks need CI publication/validation; no live plan performed.
+Publication of the prior three-file checkpoint was auto-review rejected; Owner explicit
+payload/destination authorization remains pending. No indirect retry or workaround.
+
+
+## 2026-10-09 UTC / 2026-10-10 Vienna — proposal publication authorization
+
+After the explicit request to publish the nine-file credential-isolation proposal and
+CI/documentation updates to GuardEntra draft PR #183, Owner directed “go ahead”.
+Scope is repository publication and cloud-neutral CI validation only. No project/API/
+secret creation, payload disclosure, IAM mutation, cloud plan/apply, merge or deployment
+authorization is added. The earlier auto-review rejection remains recorded as history.
+
+
+## 2026-10-10 Vienna — isolated credential project applied and metadata verified
+
+Owner approved the displayed four-resource plan by directing “continue” after the
+exact scope/hash approval request. Owner executed the hash-checked saved plan from
+infra/bootstrap/staging-audit-ops at source 0fe5e62e620ee7e95c449e8b1f2d826fb13af01e.
+Plan audit-ops-45829fb90aec4605a8293bc04c017c8c.tfplan SHA256
+4B384D224CC92F2917425B8D8547C5D773DE8DC06C51EDEAA196D6C008FD6E88.
+Apply output: four added, zero changed, zero destroyed; state lock released.
+
+Owner metadata readback: guardentra-staging-audit-ops ACTIVE, project number
+794923710344, parent organization 280975227603. Project allow policy contains only
+admin@guardentra.com Owner and the project's Cloud Services/Compute service agents.
+AUDIT_BOOTSTRAP_ADMIN_PASSWORD_74 and AUDIT_MIGRATOR_PASSWORD_74 both use user-managed
+us-central1 replicas; each resource IAM policy returns only an etag and each version
+inventory is []. No credential payload created or read. No runtime binding appears
+in the returned project/secret policies; these metadata checks do not constitute
+runtime-authenticated denial, inherited/deny/PAB analysis or full isolation proof.
+Secret API deletion protection is false; review protection before adding versions.
+
+The initial PowerShell project-name guard falsely counted an empty JSON array as
+one item. Raw lookup returned []; corrected foreach enumerates actual projectId
+matches. It stopped before worktree creation/plan; the corrected plan/apply above
+then succeeded. Existing staging runtime grants and state-only project unchanged.
+
+This advances infrastructure preparation only, not issue #74 acceptance. Bootstrap
+SQL/roles and secure password provisioning, job identities and per-secret grants,
+allowlisted image build/digest, live private migration execution, application
+connector/rollout and durable event/chain/failure/rollback proof remain NOT RUN.
+Application audit enablement and production deployment remain unauthorized here.
+Do not rerun the applied plan. Preserve GCS state; do not destroy/recreate the new
+project or secrets as rollback. For now keep the empty secrets unused. Any future
+credential/job execution needs its own concrete reviewed scope and Owner approval.
+
+Evidence checkpoint: branch infra/named-staging-audit-74; infrastructure source
+0fe5e62e620ee7e95c449e8b1f2d826fb13af01e; ledger update NOT COMMITTED at preparation;
+draft PR #183 https://github.com/akurteshi-guardentra/guardentra/pull/183.
+Exact checkpoint files: docs/agent-ops/PROJECT_STATE.md and
+ docs/agent-ops/PROJECT_TRANSITIONS.md. Owner apply and project/secret metadata checks
+PASS as pasted; live migrations/app tests NOT RUN. No readiness score generated.
+Deployment: credential infrastructure applied in guardentra-staging-audit-ops via
+Owner Terraform; no app revision deployment, merge, credential creation or production
+change. Source CI 37999314696 / infra-ci 37999314803 previously SUCCESS on 0fe5e62;
+this documentation-only checkpoint does not rerun infrastructure or database tests.
+
+
+## 2026-10-10 — allowlisted migration build context checkpoint
+
+Issue #74 preparation on infra/named-staging-audit-74 / draft PR #183, starting
+bcb608e717bb4cf917785a07e3a2b5c827883662. Owner directed continuation toward dev,
+test/staging and production rollout. This authorizes further preparation, not an
+application release or production mutation. Added a Git-object-only eight-file
+runner context generator requiring exact source SHA and Node base-image digest.
+It rejects extra/modified SQL, mutable source refs and unpinned base inputs; a
+receipt outside the context records hashes. No build submission/cloud mutation.
+
+Local npm test PASS: five tests, zero failures, including two real disposable-Git
+context/exclusion/negative tests and the existing three scope/manifest tests. The
+new generator does not verify registry provenance or image availability. No local
+PostgreSQL server: existing real PostgreSQL CI proof is unchanged; fresh CI pending
+publication. Exact update files: scripts/audit-managed-staging/stage-context.mjs,
+scripts/audit-managed-staging/stage-context.test.mjs,
+scripts/audit-managed-staging/package.json, scripts/audit-managed-staging/README.md,
+docs/release/AUDIT_STAGING_MIGRATION_DESIGN_74.md,
+docs/release/AUDIT_STAGING_PREPARATION_TASK_74.md,
+docs/agent-ops/PROJECT_STATE.md, docs/agent-ops/PROJECT_TRANSITIONS.md.
+Source checkpoint NOT COMMITTED at preparation; working changes limited to this
+list (verified by git status). No application deployment, merge, new secret version,
+SQL/bootstrap execution, IAM mutation or production change. Rollback of this source
+preparation is a feature-branch revert; it has no live resource side effects.
+
+Deployment mapping is documented as dev -> guardentra-dev sandbox,
+test -> guardentra-staging, main -> guardentra-prod. ENVIRONMENTS.md still says dev
+"create when ready" and also contains stale "only demo exists" text, contradicted
+by current staging/prod evidence; documentation is not live backend inventory.
+Do not claim a live dev backend or deploy to legacy demo from those instructions.
+The next actual app rollout remains blocked by bootstrap/credential/job setup,
+live migrations and separate app connector/rollout approval. Production follows
+staging durable events/chain/failure/rollback acceptance, never just Terraform apply.
+No numeric readiness score or calendar deployment promise is minted here.
+
+
+### 2026-10-10 Vienna — eight-file publication approved
+
+Following the explicit request to approve publishing the eight files listed in the
+build-context checkpoint to draft PR #183 in akurteshi-guardentra/guardentra and
+running CI, Owner directed “go ahead”. This resolves the prior automatic approval
+review rejection of the additional payload/destination. Authorization is source
+publication and CI only; no app deployment, cloud build/job execution, credential
+mutation, merge or production change. Earlier rejection remains recorded in chat.
+
+
+## 2026-10-10 — password-free bootstrap prerequisite preparation
+
+Owner instructed continuation while away. Prepared source only, no new live cloud
+or credential action. Starting head 141161bfb0dc6de96808a460796392519637c98f on
+infra/named-staging-audit-74 / draft PR #183. One-time transaction candidate creates
+restricted NOLOGIN audit_app/audit_migrator/audit_runtime and pgcrypto in an exact,
+fresh PostgreSQL 16 database; existing roles/objects/owners fail for reconciliation.
+Temporary database CREATE/actor SET grants for schema ownership are removed and
+verified. No password payload or verifier is created, read or logged by live code;
+roles remain unable to log in. This is outside the migration image allowlist and
+has no cloud entry point/job. Credential setup and live bootstrap remain unapproved.
+
+Added isolated real PostgreSQL 16 CI fixture with postgres stripped of superuser,
+checking target/actor/lock/collisions, rollback, NOLOGIN/privilege/password absence.
+Local npm test: five PASS; Node syntax, workflow YAML and diff check PASS. New real
+bootstrap integration NOT RUN at local checkpoint (no native PostgreSQL; local apt
+setup failed with UID/group restrictions, no escalation/workaround). CI publication
+will be reported separately if permitted. Cloud-specific privileges remain unproved.
+
+Exact source/checkpoint files: .github/workflows/infra-ci.yml;
+scripts/audit-managed-staging/bootstrap-prerequisites.sql;
+scripts/audit-managed-staging/bootstrap.test.mjs;
+scripts/audit-managed-staging/package.json; scripts/audit-managed-staging/README.md;
+docs/agent-ops/PROJECT_STATE.md; docs/agent-ops/PROJECT_TRANSITIONS.md;
+docs/release/AUDIT_STAGING_MIGRATION_DESIGN_74.md;
+docs/release/AUDIT_STAGING_PREPARATION_TASK_74.md. Checkpoint NOT COMMITTED at
+preparation, working tree limited to these nine paths. No merge/app rollout/cloud
+build/job/credential/SQL execution or production change. Rollback: source revert;
+no live effect to reverse. No readiness score or deployment-date promise. Next
+bounded gate is real fixture proof, then exact credential/job/bootstrap packet.
+
+
+### Bootstrap fixture correction (first CI cycle)
+
+Source d4719629eb2e7e23846af52d80a322b01e5939ed: new bootstrap job 114070426857
+FAIL because PostgreSQL forbids removing SUPERUSER from the initial cluster
+bootstrap account (fixture setup, before candidate SQL). Other infrastructure jobs
+PASS. Corrected the disposable fixture: another superuser renames the original
+account; a newly created limited postgres role owns only the test database and is
+the actor. This changes fixture setup only, not the live SQL scope or permissions.
+No Cloud SQL execution occurred. Fresh real fixture CI required after publication.
