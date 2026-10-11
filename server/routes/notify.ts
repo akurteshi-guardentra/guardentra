@@ -88,6 +88,71 @@ router.post('/mail', async (req, res) => {
     };
 
     const ref = db.collection(MAIL_COLLECTION).doc(resolved.queueId);
+
+    if (resolved.intentType === 'assessment_invite') {
+      const assessmentRef = db.collection('assessments').doc(resolved.objectId);
+      const result = await db.runTransaction(async (tx) => {
+        const queueSnap = await tx.get(ref);
+        const assessmentSnap = await tx.get(assessmentRef);
+        if (!assessmentSnap.exists) {
+          throw new NotificationIntentError(
+            404,
+            'assessment_missing',
+            'Authoritative assessment no longer exists',
+          );
+        }
+
+        const assessmentData = assessmentSnap.data() || {};
+        if (assessmentData.organizationId !== resolved.organizationId) {
+          throw new NotificationIntentError(
+            404,
+            'object_unavailable',
+            'Notification object is unavailable',
+          );
+        }
+
+        const currentStatus =
+          typeof assessmentData.status === 'string' ? assessmentData.status : '';
+        if (currentStatus !== 'Not Started' && currentStatus !== 'Sent') {
+          throw new NotificationIntentError(
+            409,
+            'assessment_not_invitable',
+            'Assessment is no longer eligible for an initial invite',
+          );
+        }
+
+        const deduplicated = queueSnap.exists;
+        if (!deduplicated) {
+          tx.create(ref, queueDoc);
+        }
+
+        const existingSentAt =
+          typeof assessmentData.sentAt === 'string' && assessmentData.sentAt.trim()
+            ? assessmentData.sentAt
+            : null;
+        if (currentStatus !== 'Sent' || !existingSentAt) {
+          const sentAt = existingSentAt || new Date().toISOString();
+          tx.set(
+            assessmentRef,
+            {
+              status: 'Sent',
+              sentAt,
+              updatedAt: sentAt,
+            },
+            { merge: true },
+          );
+        }
+
+        return { deduplicated };
+      });
+
+      return res.json({
+        queued: true,
+        id: ref.id,
+        deduplicated: result.deduplicated,
+      });
+    }
+
     try {
       await ref.create(queueDoc);
       return res.json({ queued: true, id: ref.id, deduplicated: false });

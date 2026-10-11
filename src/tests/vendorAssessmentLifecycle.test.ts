@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   syncVendorAfterAssessmentApprove,
   syncVendorAfterAssessmentCreate,
+  syncVendorAfterAssessmentSent,
   syncVendorAfterAssessmentProgress,
   syncVendorAfterAssessmentSubmit,
 } from '../lib/vendor/syncVendorAssessment';
@@ -93,7 +94,7 @@ describe('vendor assessment portal/tracker lifecycle', () => {
     return { vendor, assessment, questions: qs, fields };
   }
 
-  it('create fields stamp Sent + portalOpen + zero progress (wizard/cloud shape)', () => {
+  it('create fields stay Not Started without sentAt until invite queue acceptance', () => {
     const packIds = resolvePackIdsForFrameworks(['soc2']);
     const questions = buildQuestionsForPackIds(packIds).slice(0, 2);
     const fields = buildCreateAssessmentFields({
@@ -107,7 +108,8 @@ describe('vendor assessment portal/tracker lifecycle', () => {
       dueAt: '2026-08-19T12:00:00.000Z',
       nowIso: '2026-08-05T12:00:00.000Z',
     });
-    expect(fields.status).toBe('Sent');
+    expect(fields.status).toBe('Not Started');
+    expect(fields).not.toHaveProperty('sentAt');
     expect(fields.portalOpen).toBe(true);
     expect(fields.progressPct).toBe(0);
     expect(fields.questionCount).toBe(2);
@@ -119,10 +121,15 @@ describe('vendor assessment portal/tracker lifecycle', () => {
     const { vendor, assessment, questions } = seedVendorAndAssessment();
 
     await syncVendorAfterAssessmentCreate(orgId, vendor.id, true);
-    expect(listLocalVendors(orgId)[0]?.assessmentStatus).toBe('Sent');
-    expect(assessment.status).toBe('Sent');
+    expect(listLocalVendors(orgId)[0]?.assessmentStatus).toBe('Not Started');
+    expect(assessment.status).toBe('Not Started');
+    expect(assessment.sentAt).toBeUndefined();
     expect(assessment.portalOpen).toBe(true);
     expect(canSignOffAssessment(assessment)).toBe(false);
+
+    // Queue acceptance is the separate boundary that marks the vendor Sent.
+    await syncVendorAfterAssessmentSent(orgId, vendor.id, true);
+    expect(listLocalVendors(orgId)[0]?.assessmentStatus).toBe('Sent');
 
     // Autosave first answer — In Progress, never Completed / Under Review
     const draft = buildPortalAutosavePatch({

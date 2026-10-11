@@ -31,7 +31,10 @@ import {
   mayCreateLocalAssessment,
   mayFallbackAssessmentCreateToLocal,
 } from '../lib/vendor/localVendorStore';
-import { syncVendorAfterAssessmentCreate } from '../lib/vendor/syncVendorAssessment';
+import {
+  syncVendorAfterAssessmentCreate,
+  syncVendorAfterAssessmentSent,
+} from '../lib/vendor/syncVendorAssessment';
 import { buildCreateAssessmentFields } from '../lib/vendor/assessmentLifecycle';
 import { sendNotificationIntent } from '../lib/notifications';
 import { isTriageTier, parseFrameworksParam } from '../lib/vendor/fastTrackTriage';
@@ -353,20 +356,6 @@ export function AssessmentWizard() {
           questionCount: fields.questionCount,
         },
       });
-      void emitAuditBestEffort({
-        tenantId: orgId,
-        eventType: 'assessment.sent',
-        actorId: user?.uid || null,
-        objectType: 'assessment',
-        objectId: ref.id,
-        payload: {
-          vendorId,
-          dueAt: fields.dueAt,
-          reminderScheduleId: schedule.id,
-          inviteEmail: Boolean(selected.primaryContactEmail),
-        },
-      });
-
       const to = (selected.primaryContactEmail || '').trim();
       if (to) {
         try {
@@ -374,16 +363,45 @@ export function AssessmentWizard() {
             intentType: 'assessment_invite',
             objectId: ref.id,
           });
-          setSendBanner({
-            tone: 'ok',
-            text: `Assessment created. Invite queued to the vendor's authoritative contact ${to} (queue success is not delivery proof).`,
+
+          void emitAuditBestEffort({
+            tenantId: orgId,
+            eventType: 'assessment.sent',
+            actorId: user?.uid || null,
+            objectType: 'assessment',
+            objectId: ref.id,
+            payload: {
+              vendorId,
+              dueAt: fields.dueAt,
+              reminderScheduleId: schedule.id,
+              inviteEmail: true,
+              queueAccepted: true,
+            },
           });
+
+          try {
+            await syncVendorAfterAssessmentSent(orgId, vendorId, false);
+            setSendBanner({
+              tone: 'ok',
+              text: `Assessment created. Invite queued to the vendor's authoritative contact ${to} (queue success is not delivery proof).`,
+            });
+          } catch (syncEx: unknown) {
+            setSendBanner({
+              tone: 'warn',
+              text: `Assessment invite queued to ${to}, but the vendor status chip could not be confirmed${syncEx instanceof Error ? ` (${syncEx.message})` : ''}.`,
+            });
+          }
         } catch (mailEx: unknown) {
           setSendBanner({
             tone: 'warn',
-            text: `Assessment created; authorized invite could not be queued${mailEx instanceof Error ? ` (${mailEx.message})` : ''}.`,
+            text: `Assessment created but not marked Sent; authorized invite could not be queued${mailEx instanceof Error ? ` (${mailEx.message})` : ''}.`,
           });
         }
+      } else {
+        setSendBanner({
+          tone: 'warn',
+          text: 'Assessment created as Not Started. Add a primary contact email before sending an invite.',
+        });
       }
 
       navigate(
