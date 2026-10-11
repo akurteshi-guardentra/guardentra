@@ -94,7 +94,7 @@ export type AssessmentReviewPanelProps = {
   orgPackDefaults: FrameworkPackDefaults;
   isLocal: boolean;
   onClose: () => void;
-  onCopyPortalLink: () => void;
+  onOpenPortalLink: () => void;
   onRecoverEmpty: () => void;
   onArchiveEmpty: () => void;
   onDecide: (outcome: DecisionOutcome) => void;
@@ -127,7 +127,7 @@ export function AssessmentReviewPanel({
   orgPackDefaults,
   isLocal,
   onClose,
-  onCopyPortalLink,
+  onOpenPortalLink,
   onRecoverEmpty,
   onArchiveEmpty,
   onDecide,
@@ -285,10 +285,10 @@ export function AssessmentReviewPanel({
                       size="sm"
                       variant="outline"
                       className="border-amber-500/40 text-amber-100"
-                      onClick={onCopyPortalLink}
+                      onClick={onOpenPortalLink}
                     >
                       <ExternalLink className="mr-2 h-3.5 w-3.5" />
-                      Copy portal link
+                      Open portal in new tab
                     </Button>
                   )}
                 </div>
