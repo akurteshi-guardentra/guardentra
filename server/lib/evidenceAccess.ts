@@ -24,6 +24,12 @@ import {
 import { decisionRequiresNotes, decisionRequiresRemediationPlan, normalizeRemediationDueAt } from '../../src/lib/vendor/assessmentLifecycle.ts';
 import type { DecisionOutcome } from '../../src/lib/vendor/assessmentExceptions.ts';
 import type { RiskLevel } from '../../src/lib/vendor/types.ts';
+import {
+  commitPreparedMaterialAuditIntent,
+  materialAuditEventId,
+  prepareMaterialAuditIntent,
+} from './audit/materialIntent.ts';
+import type { AuditEmitEnvelope } from './audit/types.ts';
 
 const DECISION_OUTCOMES: readonly DecisionOutcome[] = [
   'approved',
@@ -51,7 +57,11 @@ export type EvidenceDeps = {
   signReadUrl: (storagePath: string) => Promise<string>;
   runAssessmentTransaction: (
     assessmentId: string,
-    updater: (current: Record<string, unknown>) => Record<string, unknown> | Promise<Record<string, unknown>>
+    updater: (current: Record<string, unknown>) => Record<string, unknown> | Promise<Record<string, unknown>>,
+    auditIntentFactory?: (
+      current: Record<string, unknown>,
+      patch: Record<string, unknown>,
+    ) => (AuditEmitEnvelope & { eventId: string }) | null,
   ) => Promise<Record<string, unknown>>;
 };
 
@@ -260,15 +270,25 @@ export function liveEvidenceDeps(): EvidenceDeps {
       });
       return url;
     },
-    async runAssessmentTransaction(assessmentId, updater) {
+    async runAssessmentTransaction(assessmentId, updater, auditIntentFactory) {
       ensureAdmin();
-      const ref = getAdminDb().collection('assessments').doc(assessmentId);
-      return getAdminDb().runTransaction(async (tx) => {
+      const db = getAdminDb();
+      const ref = db.collection('assessments').doc(assessmentId);
+      return db.runTransaction(async (tx) => {
         const snap = await tx.get(ref);
         if (!snap.exists) throw new HttpError(404, 'Assessment not found');
         const current = (snap.data() || {}) as Record<string, unknown>;
         const patch = await updater(current);
+
+        const auditIntent = auditIntentFactory?.(current, patch) || null;
+        const preparedAudit = auditIntent
+          ? await prepareMaterialAuditIntent(tx, db, auditIntent)
+          : null;
+
         tx.update(ref, toFirestoreAssessmentUpdate(patch));
+        if (preparedAudit) {
+          commitPreparedMaterialAuditIntent(tx, preparedAudit);
+        }
         return patch;
       });
     },
@@ -497,7 +517,9 @@ export async function handleOrgDecision(req: Request, res: Response, deps: Evide
       '../../src/lib/vendor/assessmentLifecycle.ts'
     );
 
-    const patch = await deps.runAssessmentTransaction(assessmentId, async (current) => {
+    const patch = await deps.runAssessmentTransaction(
+      assessmentId,
+      async (current) => {
       await requireOrgAssessmentAccess(decoded, current, deps.getUser);
       if (hasTerminalOrgDecision(current)) {
         throw new HttpError(409, 'A terminal decision already exists');
@@ -564,7 +586,51 @@ export async function handleOrgDecision(req: Request, res: Response, deps: Evide
         remediationDueAt: remediationDueAt || undefined,
         residualRiskLevel,
       }) as unknown as Record<string, unknown>;
-    });
+      },
+      (current, decisionPatch) => {
+        const tenantId = String(current.organizationId || '').trim();
+        if (!tenantId) {
+          throw new HttpError(500, 'Assessment organization is required for durable audit');
+        }
+        const submittedSnapshot =
+          current.submittedSnapshot && typeof current.submittedSnapshot === 'object'
+            ? (current.submittedSnapshot as Record<string, unknown>)
+            : {};
+        const cycleToken = String(
+          submittedSnapshot.submittedAt ||
+            current.correctionReopenedAt ||
+            current.completedAt ||
+            current.createdAt ||
+            'initial',
+        );
+        const eventId = materialAuditEventId([
+          tenantId,
+          'decision.finalized',
+          assessmentId,
+          cycleToken,
+          outcome,
+        ]);
+
+        return {
+          eventId,
+          tenantId,
+          eventType: 'decision.finalized',
+          actorId: decoded.uid,
+          actorType: 'user',
+          objectType: 'assessment',
+          objectId: assessmentId,
+          payload: {
+            outcome,
+            closesPortal: decisionPatch.portalOpen === false,
+            residualRiskLevel,
+            remediationRequired: decisionRequiresRemediationPlan(outcome),
+            remediationOwnerPresent: Boolean(remediationOwner),
+            remediationDueAt: remediationDueAt || null,
+            hasNotes: Boolean(decisionNotes.trim()),
+          },
+        };
+      },
+    );
 
     res.json({ ok: true, patch });
   } catch (err) {

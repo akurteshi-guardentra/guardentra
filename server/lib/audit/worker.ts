@@ -1,5 +1,6 @@
 import { getAuditPool, isAuditSpineEnabled } from './pool.ts';
 import { persistOutboxPayload } from './hashChain.ts';
+import { processMaterialAuditIntentBatch } from './materialIntent.ts';
 import type { AuditEmitEnvelope } from './types.ts';
 
 let timer: ReturnType<typeof setInterval> | null = null;
@@ -105,6 +106,7 @@ async function tick() {
   if (running) return;
   running = true;
   try {
+    await processMaterialAuditIntentBatch();
     await processAuditOutboxBatch();
   } catch (err) {
     console.error('[audit-worker] tick error', err);
