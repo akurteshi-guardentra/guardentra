@@ -11,6 +11,7 @@ This runbook is the final runtime release gate. It does not grant deployment or 
 - #72 invitation email delivery is live accepted in staging;
 - #73 production scanner parity/proof is ready for promotion;
 - #74 staging audit spine is live accepted;
+- #126 legacy `guardentra-7f582` automatic main-rollout integrity is resolved with live readback;
 - current staging build/revision/source SHA is recorded;
 - current production rollback baseline is recorded;
 - controlled test identities/data are used;

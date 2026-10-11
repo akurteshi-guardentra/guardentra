@@ -13,6 +13,7 @@ Before the staging journey starts, record all of the following as PASS with exac
 - #72 invitation email delivery is live accepted.
 - #73 production scanner parity/proof is ready for promotion.
 - #74 staging audit spine is live accepted.
+- #126 legacy `guardentra-7f582` automatic main-rollout integrity is resolved and read back live.
 - protected `main` / release SHA is exact and required CI is green.
 - release/config drift check is PASS.
 - rollback baseline is recorded.

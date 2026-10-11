@@ -27,6 +27,7 @@ describe('#124 go-live E2E evidence contract', () => {
     expect(doc.production).toHaveProperty('build_id');
     expect(doc.production).toHaveProperty('revision');
     expect(doc.production).toHaveProperty('source_sha');
+    expect(doc.prerequisites.issue_126_legacy_rollout_integrity_resolved).toBe(false);
   });
 
   it('requires the full staging customer journey and release-critical controls', () => {
