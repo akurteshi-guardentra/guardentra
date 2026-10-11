@@ -4,18 +4,22 @@ const { Pool } = pg;
 
 let pool: pg.Pool | null = null;
 
-export function isAuditSpineEnabled(): boolean {
-  const raw = (process.env.AUDIT_SPINE_ENABLED || '').toLowerCase();
+export function isAuditSpineEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const raw = (env.AUDIT_SPINE_ENABLED || '').toLowerCase();
   return raw === 'true' || raw === '1';
+}
+
+export function assertAuditRuntimeConfig(env: NodeJS.ProcessEnv = process.env): void {
+  if (!isAuditSpineEnabled(env)) return;
+  if (!env.AUDIT_DATABASE_URL?.trim()) {
+    throw new Error('AUDIT_SPINE_ENABLED requires AUDIT_DATABASE_URL');
+  }
 }
 
 export function getAuditPool(): pg.Pool | null {
   if (!isAuditSpineEnabled()) return null;
-  const url = process.env.AUDIT_DATABASE_URL;
-  if (!url) {
-    console.warn('[audit] AUDIT_SPINE_ENABLED but AUDIT_DATABASE_URL missing');
-    return null;
-  }
+  assertAuditRuntimeConfig();
+  const url = process.env.AUDIT_DATABASE_URL!.trim();
   if (!pool) {
     pool = new Pool({ connectionString: url, max: 5 });
   }
