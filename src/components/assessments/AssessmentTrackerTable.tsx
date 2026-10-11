@@ -114,7 +114,7 @@ export type AssessmentTrackerTableProps = {
   assessmentsCount: number;
   reminderState: Record<string, 'sending' | 'sent' | 'error'>;
   isLocalAssessment: (a: StoredAssessment) => boolean;
-  onCopyPortalLink: (a: StoredAssessment) => void;
+  onOpenPortalLink: (a: StoredAssessment) => void;
   onSendReminder: (a: StoredAssessment) => void;
   onReview: (a: StoredAssessment) => void;
   onCreateNew: () => void;
@@ -132,7 +132,7 @@ export function AssessmentTrackerTable({
   assessmentsCount,
   reminderState,
   isLocalAssessment,
-  onCopyPortalLink,
+  onOpenPortalLink,
   onSendReminder,
   onReview,
   onCreateNew,
@@ -293,11 +293,11 @@ export function AssessmentTrackerTable({
                             : 'text-slate-400 hover:text-primary'
                         )}
                         disabled={isLocalAssessment(a)}
-                        onClick={() => void onCopyPortalLink(a)}
+                        onClick={() => void onOpenPortalLink(a)}
                         title={
                           isLocalAssessment(a)
                             ? 'Portal link available after cloud sync'
-                            : 'Copy Vendor Portal Link'
+                            : 'Open Vendor Portal in new tab'
                         }
                       >
                         <ExternalLink className="h-4 w-4" />

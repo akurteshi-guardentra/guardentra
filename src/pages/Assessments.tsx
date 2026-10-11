@@ -141,7 +141,7 @@ export function Assessments() {
   const isLocalAssessment = (a: StoredAssessment) =>
     a.id.startsWith('local_asm_') || mode === 'local';
 
-  const copyPortalLink = async (a: StoredAssessment) => {
+  const openPortalLink = (a: StoredAssessment) => {
     if (isLocalAssessment(a)) {
       setToast({
         tone: 'warn',
@@ -149,13 +149,8 @@ export function Assessments() {
       });
       return;
     }
-    const url = `${window.location.origin}/portal/${a.id}`;
-    try {
-      await navigator.clipboard.writeText(url);
-      setToast({ tone: 'ok', text: `Portal link copied: ${url}` });
-    } catch {
-      setToast({ tone: 'err', text: 'Could not copy link — copy it manually from the address bar after opening.' });
-    }
+    const url = `${window.location.origin}/portal/${encodeURIComponent(a.id)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   const handleSendReminder = async (assessment: StoredAssessment) => {
@@ -198,7 +193,7 @@ export function Assessments() {
   useEffect(() => {
     if (!createdId || createdId.startsWith('local_')) return;
     const url = `${window.location.origin}/portal/${createdId}`;
-    setToast({ tone: 'ok', text: `Assessment created. Portal link ready — copy from the row actions: ${url}` });
+    setToast({ tone: 'ok', text: `Assessment created. Portal link ready — open it from the row actions: ${url}` });
     // Drop ?created= so refresh doesn't re-toast
     const next = new URLSearchParams(params);
     next.delete('created');
@@ -626,7 +621,7 @@ export function Assessments() {
             assessmentsCount={assessments.length}
             reminderState={reminderState}
             isLocalAssessment={isLocalAssessment}
-            onCopyPortalLink={copyPortalLink}
+            onOpenPortalLink={openPortalLink}
             onSendReminder={handleSendReminder}
             onReview={handleReviewAssessment}
             onCreateNew={() => navigate('/assessments/triage')}
@@ -699,7 +694,7 @@ export function Assessments() {
             orgPackDefaults={orgPackDefaults}
             isLocal={isLocalAssessment(reviewAssessment)}
             onClose={() => setIsReviewing(false)}
-            onCopyPortalLink={() => void copyPortalLink(reviewAssessment)}
+            onOpenPortalLink={() => void openPortalLink(reviewAssessment)}
             onRecoverEmpty={() => void handleRecoverEmptyAssessment()}
             onArchiveEmpty={() => void handleArchiveEmptyAssessment()}
             onDecide={(outcome) => void handleDecideAssessment(outcome)}
