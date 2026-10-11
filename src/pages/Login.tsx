@@ -21,9 +21,8 @@ export function Login() {
     return <ProfileLoadErrorPanel />;
   }
 
-  // Wait until auth + profile are resolved. Cloud profile.onboarded is
-  // authoritative; the local flag is only a loading-time cache to avoid an
-  // onboarding flash while the snapshot arrives after a durable completion.
+  // Wait until auth + durable tenant bootstrap (#61). Issue #67: incomplete
+  // optional setup does not block Dashboard — progressive checklist lives there.
   if (authLoading || (user && !profile)) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
@@ -33,9 +32,7 @@ export function Login() {
   }
 
   if (user && profile) {
-    // Prefer cloud. Local alone never manufactures success when cloud says incomplete.
-    const done = !!profile.onboarded;
-    return <Navigate to={done ? '/dashboard' : '/onboarding'} replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
   const handleSubmit = async (e: React.FormEvent) => {

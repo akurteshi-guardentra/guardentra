@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/AuthContext';
-import { hasOnboardingAck } from './lib/onboardingAck';
+import { isProfileBootstrapped } from './lib/bootstrapGate';
 import { ProfileLoadErrorPanel } from './components/ProfileLoadErrorPanel';
 import { ComingLater } from './pages/ComingLater';
 import { RouteErrorBoundary } from './components/spine/RouteErrorBoundary';
@@ -69,8 +69,9 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <ProfileLoadErrorPanel />;
   }
 
-  // Wait for auth + profile. Cloud users/{uid}.onboarded is authoritative;
-  // session ack only bridges the post-write listener race.
+  // Wait for auth + durable tenant bootstrap (#61). Issue #67: do not block on
+  // the old three-step wizard / users/{uid}.onboarded — progressive setup lives
+  // on the Dashboard after organizationId is bound.
   if (loading || (user && !profile)) {
     return <RouteFallback />;
   }
@@ -79,15 +80,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/login" />;
   }
 
-  const completionAck = hasOnboardingAck(user.uid);
-  const needsOnboarding =
-    !profile?.onboarded &&
-    !completionAck &&
-    window.location.pathname !== '/onboarding' &&
-    window.location.pathname !== '/login';
-
-  if (needsOnboarding) {
-    return <Navigate to="/onboarding" replace />;
+  if (!isProfileBootstrapped(profile)) {
+    return <RouteFallback />;
   }
 
   return <>{children}</>;
@@ -117,6 +111,7 @@ export default function AppAuthenticated() {
             path="/onboarding"
             element={
               <ProtectedRoute>
+                {/* Legacy bookmark: progressive setup is on Dashboard (#67). */}
                 <Onboarding />
               </ProtectedRoute>
             }

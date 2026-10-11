@@ -1,17 +1,26 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, limit, query, where, getDocs } from 'firebase/firestore';
-import { Building2, ClipboardList, Loader2, Plus, Settings2, Sparkles } from 'lucide-react';
+import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/firestore';
+import { Building2, ClipboardList, FileCheck, Loader2, Plus } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/src/components/ui/card';
 import { Button } from '@/src/components/ui/button';
+import { SetupChecklist } from '../components/SetupChecklist';
 import { db } from '../firebase';
 import { useAuth } from '../lib/AuthContext';
+import {
+  deriveSetupChecklist,
+  isSetupChecklistComplete,
+  type OrgSetupSnapshot,
+} from '../lib/setupProgress';
 
 type DashStats = {
   vendorCount: number;
   pendingAssessments: number;
   completedAssessments: number;
+  assessmentCount: number;
   readinessScore: number | null;
+  pendingTeammateInviteCount: number;
+  org: OrgSetupSnapshot | null;
 };
 
 export function Dashboard() {
@@ -21,7 +30,10 @@ export function Dashboard() {
     vendorCount: 0,
     pendingAssessments: 0,
     completedAssessments: 0,
+    assessmentCount: 0,
     readinessScore: null,
+    pendingTeammateInviteCount: 0,
+    org: null,
   });
   const [loadingStats, setLoadingStats] = useState(true);
 
@@ -37,10 +49,19 @@ export function Dashboard() {
 
     (async () => {
       try {
-        const [vendorsSnap, assessSnap, auditSnap] = await Promise.all([
+        const [vendorsSnap, assessSnap, auditSnap, invitesSnap, orgSnap] = await Promise.all([
           getDocs(query(collection(db, 'vendors'), where('organizationId', '==', orgId), limit(500))),
           getDocs(query(collection(db, 'assessments'), where('organizationId', '==', orgId), limit(500))),
           getDocs(query(collection(db, 'audit_readiness'), where('organizationId', '==', orgId), limit(5))),
+          getDocs(
+            query(
+              collection(db, 'org_invites'),
+              where('organizationId', '==', orgId),
+              where('status', '==', 'pending'),
+              limit(50),
+            ),
+          ),
+          getDoc(doc(db, 'organizations', orgId)),
         ]);
 
         const pending = assessSnap.docs.filter((d) => d.data().status !== 'Completed').length;
@@ -51,12 +72,17 @@ export function Dashboard() {
           readiness = Number(row.readinessScore ?? row.score ?? 0) || null;
         }
 
+        const orgData = orgSnap.exists() ? (orgSnap.data() as OrgSetupSnapshot) : null;
+
         if (!cancelled) {
           setStats({
             vendorCount: vendorsSnap.size,
             pendingAssessments: pending,
             completedAssessments: completed,
+            assessmentCount: assessSnap.size,
             readinessScore: readiness,
+            pendingTeammateInviteCount: invitesSnap.size,
+            org: orgData,
           });
         }
       } catch (err) {
@@ -71,6 +97,20 @@ export function Dashboard() {
     };
   }, [loading, profile?.organizationId]);
 
+  const checklist = useMemo(
+    () =>
+      deriveSetupChecklist({
+        org: stats.org,
+        vendorCount: stats.vendorCount,
+        assessmentCount: stats.assessmentCount,
+        pendingTeammateInviteCount: stats.pendingTeammateInviteCount,
+        role: profile?.role,
+      }),
+    [stats, profile?.role],
+  );
+
+  const checklistComplete = isSetupChecklistComplete(checklist);
+
   if (loading || loadingStats) {
     return (
       <div className="flex items-center justify-center py-24 text-slate-400">
@@ -80,7 +120,6 @@ export function Dashboard() {
   }
 
   const firstName = profile?.displayName?.split(' ')[0] || 'there';
-  const showQuickStart = stats.vendorCount === 0;
 
   return (
     <div className="mx-auto max-w-6xl space-y-8 animate-in fade-in duration-500">
@@ -100,7 +139,7 @@ export function Dashboard() {
             className="border-white/10 bg-white/5 text-white hover:bg-white/10"
           >
             <Building2 className="mr-2 h-4 w-4" />
-            {showQuickStart ? 'Add first vendor' : 'Vendors'}
+            Vendors
           </Button>
           <Button
             onClick={() => navigate('/assessments/new')}
@@ -111,6 +150,8 @@ export function Dashboard() {
           </Button>
         </div>
       </div>
+
+      <SetupChecklist items={checklist} hidden={checklistComplete} />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <Card
@@ -155,50 +196,6 @@ export function Dashboard() {
         </Card>
       </div>
 
-      {showQuickStart && (
-        <Card className="border-primary/20 bg-primary/5">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-white">
-              <Sparkles className="h-5 w-5 text-primary" />
-              Quick start
-            </CardTitle>
-            <CardDescription>
-              Your GuardEntra workspace is ready. Add your first vendor to begin your third-party risk
-              workflow. Organization profile and assessment-pack defaults can be completed at any time.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <button
-              type="button"
-              onClick={() => navigate('/vendors')}
-              className="rounded-xl border border-white/10 bg-black/20 p-4 text-left transition hover:border-primary/40"
-            >
-              <Building2 className="mb-2 h-5 w-5 text-emerald-400" />
-              <p className="text-sm font-semibold text-white">1. Add your first vendor</p>
-              <p className="mt-1 text-xs text-slate-500">Start with a real third party — no demo records are created.</p>
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate('/assessments/new')}
-              className="rounded-xl border border-white/10 bg-black/20 p-4 text-left transition hover:border-primary/40"
-            >
-              <ClipboardList className="mb-2 h-5 w-5 text-indigo-400" />
-              <p className="text-sm font-semibold text-white">2. Create your first assessment</p>
-              <p className="mt-1 text-xs text-slate-500">Choose GuardEntra assessment packs when you create it.</p>
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate('/settings')}
-              className="rounded-xl border border-white/10 bg-black/20 p-4 text-left transition hover:border-primary/40"
-            >
-              <Settings2 className="mb-2 h-5 w-5 text-amber-400" />
-              <p className="text-sm font-semibold text-white">3. Complete organization profile</p>
-              <p className="mt-1 text-xs text-slate-500">Add industry, branding, and optional pack defaults later.</p>
-            </button>
-          </CardContent>
-        </Card>
-      )}
-
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Card className="border-white/10 bg-slate-900/40">
           <CardHeader>
@@ -211,6 +208,7 @@ export function Dashboard() {
               className="border-white/10"
               onClick={() => navigate('/assessments')}
             >
+              <ClipboardList className="mr-2 h-4 w-4" />
               Open assessments →
             </Button>
           </CardContent>
@@ -226,6 +224,7 @@ export function Dashboard() {
               className="border-white/10"
               onClick={() => navigate('/audit-readiness')}
             >
+              <FileCheck className="mr-2 h-4 w-4" />
               Open Audit Lab →
             </Button>
           </CardContent>
