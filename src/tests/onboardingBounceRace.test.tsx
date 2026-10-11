@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes, Navigate } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { ProtectedRoute } from '../AppAuthenticated';
 import { Onboarding } from '../pages/Onboarding';
-import { isProfileBootstrapped } from '../lib/bootstrapGate';
 import {
   __resetOnboardingAcksForTests,
 } from '../lib/onboardingAck';
@@ -11,6 +11,7 @@ import { clearLocallyOnboarded } from '../lib/onboardingFlag';
 /**
  * Issue #67: after secure bootstrap, users are not bounced to the old wizard.
  * Bootstrapped profiles (organizationId) reach Dashboard regardless of onboarded.
+ * Unbound organizationId uses BootstrapRecoveryPanel — never indefinite spinner.
  */
 
 const authState = vi.hoisted(() => ({
@@ -23,6 +24,8 @@ const authState = vi.hoisted(() => ({
     onboarded: false,
   } as any,
   loading: false,
+  profileError: null as string | null,
+  retryProfileLoad: vi.fn(),
   acknowledgeDurableOnboarding: () => {},
 }));
 
@@ -31,6 +34,8 @@ vi.mock('../lib/AuthContext', () => ({
     user: authState.user,
     profile: authState.profile,
     loading: authState.loading,
+    profileError: authState.profileError,
+    retryProfileLoad: () => authState.retryProfileLoad(),
     acknowledgeDurableOnboarding: () => authState.acknowledgeDurableOnboarding(),
   }),
   AuthProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -41,28 +46,22 @@ vi.mock('../lib/firebase-utils', () => ({
 }));
 
 function AppShell() {
-  const profile = authState.profile;
-  const user = authState.user;
-  const loading = authState.loading;
-  if (loading || (user && !profile)) return <div>Loading</div>;
-  if (!user) return <div>Login</div>;
-
-  const bootstrapped = isProfileBootstrapped(profile);
-
   return (
     <Routes>
       <Route
         path="/onboarding"
-        element={bootstrapped ? <Navigate to="/dashboard" replace /> : <Onboarding />}
+        element={
+          <ProtectedRoute>
+            <Onboarding />
+          </ProtectedRoute>
+        }
       />
       <Route
         path="/dashboard"
         element={
-          !bootstrapped ? (
-            <Navigate to="/onboarding" replace />
-          ) : (
+          <ProtectedRoute>
             <div>Dashboard Active</div>
-          )
+          </ProtectedRoute>
         }
       />
     </Routes>
@@ -109,7 +108,7 @@ describe('Issue #67 bootstrap → dashboard (no wizard bounce)', () => {
     });
   });
 
-  it('missing organizationId does not grant dashboard (no tenant bypass)', async () => {
+  it('missing organizationId shows recovery UI, not spinner or Dashboard', async () => {
     authState.profile = { ...authState.profile, organizationId: '' };
     render(
       <MemoryRouter initialEntries={['/dashboard']}>
@@ -117,8 +116,9 @@ describe('Issue #67 bootstrap → dashboard (no wizard bounce)', () => {
       </MemoryRouter>,
     );
     await waitFor(() => {
-      // Redirect target may show loading Onboarding shell
-      expect(screen.queryByText('Dashboard Active')).not.toBeInTheDocument();
+      expect(screen.getByTestId('bootstrap-recovery-panel')).toBeInTheDocument();
     });
+    expect(screen.queryByText('Dashboard Active')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Loading')).not.toBeInTheDocument();
   });
 });

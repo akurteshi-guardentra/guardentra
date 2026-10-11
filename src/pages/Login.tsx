@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../lib/AuthContext';
+import { isProfileBootstrapped } from '../lib/bootstrapGate';
 import { signInWithGoogle, signInWithEmail, signUpWithEmail, resetPassword } from '../lib/firebase-utils';
+import { BootstrapRecoveryPanel } from '../components/BootstrapRecoveryPanel';
 import { ProfileLoadErrorPanel } from '../components/ProfileLoadErrorPanel';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -32,6 +34,10 @@ export function Login() {
   }
 
   if (user && profile) {
+    // Never grant Dashboard without organizationId; show recovery instead.
+    if (!isProfileBootstrapped(profile)) {
+      return <BootstrapRecoveryPanel />;
+    }
     return <Navigate to="/dashboard" replace />;
   }
 

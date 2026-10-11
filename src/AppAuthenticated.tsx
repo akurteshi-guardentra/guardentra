@@ -2,6 +2,7 @@ import React, { Suspense, lazy, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/AuthContext';
 import { isProfileBootstrapped } from './lib/bootstrapGate';
+import { BootstrapRecoveryPanel } from './components/BootstrapRecoveryPanel';
 import { ProfileLoadErrorPanel } from './components/ProfileLoadErrorPanel';
 import { ComingLater } from './pages/ComingLater';
 import { RouteErrorBoundary } from './components/spine/RouteErrorBoundary';
@@ -60,7 +61,8 @@ function FeatureGate({ flag, children }: { flag: FeatureKey; children: React.Rea
   return <>{isFeatureEnabled(flag) ? children : <ComingLater />}</>;
 }
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
+/** Exported for regression tests of the #67 bootstrap gate (no tenant bypass). */
+export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, profile, loading, profileError } = useAuth();
 
   // Hosted profile load exhausted retries with no cloud profile — recoverable UI,
@@ -80,8 +82,9 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/login" />;
   }
 
+  // Profile exists but organizationId is unbound — recoverable, never Dashboard.
   if (!isProfileBootstrapped(profile)) {
-    return <RouteFallback />;
+    return <BootstrapRecoveryPanel />;
   }
 
   return <>{children}</>;

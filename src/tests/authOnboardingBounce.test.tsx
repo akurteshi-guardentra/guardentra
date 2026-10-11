@@ -59,29 +59,23 @@ function Probe() {
   if (loading || (user && !profile)) return <div>Loading</div>;
   if (!user || !profile) return <div>LoggedOut</div>;
   // Issue #67: organizationId (bootstrap) gates app access — not wizard onboarded.
+  // Unbound org matches production BootstrapRecoveryPanel (not onboarding wizard).
   const bootstrapped = Boolean(profile.organizationId?.trim());
+  if (!bootstrapped) {
+    return <div data-testid="bootstrap-recovery-panel">BootstrapRecovery</div>;
+  }
   return (
     <Routes>
-      <Route
-        path="/onboarding"
-        element={bootstrapped ? <Navigate to="/dashboard" replace /> : <div>OnboardingPage</div>}
-      />
+      <Route path="/onboarding" element={<Navigate to="/dashboard" replace />} />
       <Route
         path="/dashboard"
         element={
-          !bootstrapped ? (
-            <Navigate to="/onboarding" replace />
-          ) : (
-            <div>
-              DashboardPage org={profile.organizationId} onboarded={String(profile.onboarded)}
-            </div>
-          )
+          <div>
+            DashboardPage org={profile.organizationId} onboarded={String(profile.onboarded)}
+          </div>
         }
       />
-      <Route
-        path="/"
-        element={<Navigate to={bootstrapped ? '/dashboard' : '/onboarding'} replace />}
-      />
+      <Route path="/" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   );
 }
@@ -290,12 +284,13 @@ describe('AuthContext hosted onboarding bounce', () => {
     expect(screen.queryByText('OnboardingPage')).toBeNull();
   });
 
-  it('F3: profile without organizationId does not grant dashboard (no tenant bypass)', async () => {
+  it('F3: profile without organizationId shows recovery, not dashboard (no tenant bypass)', async () => {
     renderApp('/');
     await signIn();
     await emitCloudProfile({ ...cloudIncomplete, organizationId: '' });
-    await waitFor(() => expect(screen.getByText('OnboardingPage')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId('bootstrap-recovery-panel')).toBeInTheDocument());
     expect(screen.queryByText(/DashboardPage/)).toBeNull();
+    expect(screen.queryByText('OnboardingPage')).toBeNull();
   });
 
   it('G: hosted listener error before profile → retry, no local_org, no onboarding', async () => {
