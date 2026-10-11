@@ -57,9 +57,9 @@ function Probe() {
     );
   }
   if (loading || (user && !profile)) return <div>Loading</div>;
-  if (!user) return <div>LoggedOut</div>;
+  if (!user || !profile) return <div>LoggedOut</div>;
   // Issue #67: organizationId (bootstrap) gates app access — not wizard onboarded.
-  const bootstrapped = Boolean(profile?.organizationId?.trim());
+  const bootstrapped = Boolean(profile.organizationId?.trim());
   return (
     <Routes>
       <Route
