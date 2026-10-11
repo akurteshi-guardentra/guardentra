@@ -18,6 +18,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Portal smoke syntax (no live execution)
+        run: node --check src/tests/portal.smoke.mjs
+
       - name: Type check
         run: npm run lint
 
