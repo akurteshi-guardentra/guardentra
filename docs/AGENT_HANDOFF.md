@@ -1,29 +1,24 @@
-# Agent handoff
+# Agent handoff — HISTORICAL / QUARANTINED
 
-Living status for parallel Claude + Cursor sessions. Update and **push** at the end of every meaningful chunk of work so the other machine can `git fetch` and continue without a long paste.
+> **DO NOT USE THIS FILE AS CURRENT DISPATCH OR OPERATOR AUTHORITY.**
 
----
+This file was an August 2026 handoff between ad-hoc Claude/Cursor sessions. Its old
+"living status" model and deployment TODOs are obsolete. Current GuardEntra work is
+coordinated through issue-bound GitHub branches/PRs, exact-SHA evidence, repository
+agent-operating rules, and the active P0 control-plane issues.
 
-- **Last-Updated:** 2026-08-09T00:40:00Z
-- **Agent:** Cursor
-- **Branch / SHA:** local (FastTrack Phase 2 plan complete F0–S6 + P2B prep + E2E gate; uncommitted)
-- **Doing now:** Idle — all plan todos complete.
-- **Done this session:**
-  - Full FastTrack + Phase 2 plan (F0–S6)
-  - P2B: `dataRegion` immutable + region router + Settings card + isolation tests
-  - E2E gate: `npm run test:e2e-gate` automated suite + staging checklist in docs
-- **Blocked / next:**
-  - Deploy `firestore.rules`
-  - Optional: enable audit spine locally/staging after `npm run test:e2e-gate`
-  - Dual Firebase projects before live EU/US routing
-  - **Manual:** Trigger Email + SMTP for real delivery
-- **Do not touch:**
-  - `.env.local` / secrets (never commit)
-  - KI#12 unless explicitly un-parked
+Current authority:
+- #126: legacy Firebase App Hosting source-connection release-integrity blocker.
+- #116: read-only cloud-authority inventory.
+- #106/#90: Owner-local runner/checkpoint acceptance; no local provider execution is
+  proven without a real `GUARDENTRA_LOCAL_CHECKPOINT v1`.
+- #72/#73/#74: live staging/production evidence lanes after cloud authority is proven.
+- #124: final staging-to-production E2E contract after prerequisite P0 gates.
+- #138: this stale handoff quarantine.
 
-## Verify
+Do not use the historical content that previously lived here to deploy rules, create
+Firebase projects, enable audit infrastructure, configure email delivery, or infer cloud
+state. Git history preserves that record for audit.
 
-```bash
-npm run lint
-npm run test:e2e-gate
-```
+Every current action must use the bound issue/PR, current protected-main SHA, explicit
+environment, least privilege, and readback/rollback evidence where applicable.
