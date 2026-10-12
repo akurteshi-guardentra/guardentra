@@ -57,31 +57,25 @@ function Probe() {
     );
   }
   if (loading || (user && !profile)) return <div>Loading</div>;
-  if (!user) return <div>LoggedOut</div>;
+  if (!user || !profile) return <div>LoggedOut</div>;
+  // Issue #67: organizationId (bootstrap) gates app access — not wizard onboarded.
+  // Unbound org matches production BootstrapRecoveryPanel (not onboarding wizard).
+  const bootstrapped = Boolean(profile.organizationId?.trim());
+  if (!bootstrapped) {
+    return <div data-testid="bootstrap-recovery-panel">BootstrapRecovery</div>;
+  }
   return (
     <Routes>
-      <Route
-        path="/onboarding"
-        element={
-          profile?.onboarded ? <Navigate to="/dashboard" replace /> : <div>OnboardingPage</div>
-        }
-      />
+      <Route path="/onboarding" element={<Navigate to="/dashboard" replace />} />
       <Route
         path="/dashboard"
         element={
-          !profile?.onboarded ? (
-            <Navigate to="/onboarding" replace />
-          ) : (
-            <div>
-              DashboardPage org={profile.organizationId} onboarded={String(profile.onboarded)}
-            </div>
-          )
+          <div>
+            DashboardPage org={profile.organizationId} onboarded={String(profile.onboarded)}
+          </div>
         }
       />
-      <Route
-        path="/"
-        element={<Navigate to={profile?.onboarded ? '/dashboard' : '/onboarding'} replace />}
-      />
+      <Route path="/" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   );
 }
@@ -214,12 +208,12 @@ describe('AuthContext hosted onboarding bounce', () => {
     expect(screen.getByText(/org=org_real_staging/)).toBeInTheDocument();
   });
 
-  it('C: cloud onboarded=false → onboarding', async () => {
+  it('C: cloud onboarded=false with organizationId → dashboard (progressive setup)', async () => {
     renderApp('/');
     await signIn();
     await emitCloudProfile(cloudIncomplete);
-    await waitFor(() => expect(screen.getByText('OnboardingPage')).toBeInTheDocument());
-    expect(screen.queryByText(/DashboardPage/)).toBeNull();
+    await waitFor(() => expect(screen.getByText(/DashboardPage/)).toBeInTheDocument());
+    expect(screen.queryByText('OnboardingPage')).toBeNull();
   });
 
   it('D: logout then login with cloud onboarded=true → dashboard (no bounce)', async () => {
@@ -290,12 +284,13 @@ describe('AuthContext hosted onboarding bounce', () => {
     expect(screen.queryByText('OnboardingPage')).toBeNull();
   });
 
-  it('F3: legacy incomplete cloud profile still routes to bounded migration bridge', async () => {
+  it('F3: profile without organizationId shows recovery, not dashboard (no tenant bypass)', async () => {
     renderApp('/');
     await signIn();
-    await emitCloudProfile(cloudIncomplete);
-    await waitFor(() => expect(screen.getByText('OnboardingPage')).toBeInTheDocument());
+    await emitCloudProfile({ ...cloudIncomplete, organizationId: '' });
+    await waitFor(() => expect(screen.getByTestId('bootstrap-recovery-panel')).toBeInTheDocument());
     expect(screen.queryByText(/DashboardPage/)).toBeNull();
+    expect(screen.queryByText('OnboardingPage')).toBeNull();
   });
 
   it('G: hosted listener error before profile → retry, no local_org, no onboarding', async () => {
@@ -389,13 +384,14 @@ describe('AuthContext local/demo fallback still available', () => {
     vi.stubEnv('VITE_FIREBASE_API_KEY', 'AIzaSyDummyVitestFirebaseKey000');
   });
 
-  it('demo project may use local profile after timeout', async () => {
+  it('demo project may use local profile after timeout → dashboard (bootstrapped local_org)', async () => {
     renderApp('/');
     await signIn();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5000);
     });
-    await waitFor(() => expect(screen.getByText('OnboardingPage')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/DashboardPage/)).toBeInTheDocument());
     expect(localStorage.getItem(`guardentra.localProfile.v1.${harness.user.uid}`)).toBeTruthy();
+    expect(screen.queryByText('OnboardingPage')).toBeNull();
   });
 });

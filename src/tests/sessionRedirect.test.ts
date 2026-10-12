@@ -1,20 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-describe('sessionRedirect cloud authority', () => {
+describe('sessionRedirect cloud authority (#67)', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
     localStorage.clear();
   });
 
-  it('routes completed cloud profile to dashboard and syncs local cache', async () => {
+  it('routes bootstrapped cloud profile to dashboard', async () => {
     vi.doMock('../firebase', () => ({
       auth: { currentUser: { uid: 'u1' } },
       db: {},
     }));
     vi.doMock('firebase/auth', () => ({
       onAuthStateChanged: (_auth: unknown, cb: (u: { uid: string } | null) => void) => {
-        // Defer so unsub assignment completes (matches real Firebase async delivery).
         queueMicrotask(() => cb({ uid: 'u1' }));
         return () => {};
       },
@@ -33,7 +32,7 @@ describe('sessionRedirect cloud authority', () => {
     expect(isLocallyOnboarded('u1')).toBe(true);
   });
 
-  it('routes incomplete cloud profile to onboarding even if stale local flag exists', async () => {
+  it('routes incomplete optional setup (onboarded=false) to dashboard when organizationId is bound', async () => {
     vi.doMock('../firebase', () => ({
       auth: { currentUser: { uid: 'u2' } },
       db: {},
@@ -57,7 +56,31 @@ describe('sessionRedirect cloud authority', () => {
     expect(flag.isLocallyOnboarded('u2')).toBe(true);
 
     const { resolveSignedInRedirect } = await import('../lib/sessionRedirect');
-    await expect(resolveSignedInRedirect()).resolves.toBe('/onboarding');
+    await expect(resolveSignedInRedirect()).resolves.toBe('/dashboard');
+    // Local onboarded cache cleared when cloud onboarded is false — cache is not routing authority.
     expect(flag.isLocallyOnboarded('u2')).toBe(false);
+  });
+
+  it('does not invent dashboard access without organizationId', async () => {
+    vi.doMock('../firebase', () => ({
+      auth: { currentUser: { uid: 'u3' } },
+      db: {},
+    }));
+    vi.doMock('firebase/auth', () => ({
+      onAuthStateChanged: (_auth: unknown, cb: (u: { uid: string } | null) => void) => {
+        queueMicrotask(() => cb({ uid: 'u3' }));
+        return () => {};
+      },
+    }));
+    vi.doMock('firebase/firestore', () => ({
+      doc: vi.fn(() => ({ path: 'users/u3' })),
+      getDoc: vi.fn(async () => ({
+        exists: () => true,
+        data: () => ({ onboarded: false }),
+      })),
+    }));
+
+    const { resolveSignedInRedirect } = await import('../lib/sessionRedirect');
+    await expect(resolveSignedInRedirect()).resolves.toBeNull();
   });
 });

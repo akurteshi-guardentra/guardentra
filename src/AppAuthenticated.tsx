@@ -1,7 +1,8 @@
 import React, { Suspense, lazy, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/AuthContext';
-import { hasOnboardingAck } from './lib/onboardingAck';
+import { isProfileBootstrapped } from './lib/bootstrapGate';
+import { BootstrapRecoveryPanel } from './components/BootstrapRecoveryPanel';
 import { ProfileLoadErrorPanel } from './components/ProfileLoadErrorPanel';
 import { ComingLater } from './pages/ComingLater';
 import { RouteErrorBoundary } from './components/spine/RouteErrorBoundary';
@@ -60,7 +61,8 @@ function FeatureGate({ flag, children }: { flag: FeatureKey; children: React.Rea
   return <>{isFeatureEnabled(flag) ? children : <ComingLater />}</>;
 }
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
+/** Exported for regression tests of the #67 bootstrap gate (no tenant bypass). */
+export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, profile, loading, profileError } = useAuth();
 
   // Hosted profile load exhausted retries with no cloud profile — recoverable UI,
@@ -69,8 +71,9 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <ProfileLoadErrorPanel />;
   }
 
-  // Wait for auth + profile. Cloud users/{uid}.onboarded is authoritative;
-  // session ack only bridges the post-write listener race.
+  // Wait for auth + durable tenant bootstrap (#61). Issue #67: do not block on
+  // the old three-step wizard / users/{uid}.onboarded — progressive setup lives
+  // on the Dashboard after organizationId is bound.
   if (loading || (user && !profile)) {
     return <RouteFallback />;
   }
@@ -79,15 +82,9 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/login" />;
   }
 
-  const completionAck = hasOnboardingAck(user.uid);
-  const needsOnboarding =
-    !profile?.onboarded &&
-    !completionAck &&
-    window.location.pathname !== '/onboarding' &&
-    window.location.pathname !== '/login';
-
-  if (needsOnboarding) {
-    return <Navigate to="/onboarding" replace />;
+  // Profile exists but organizationId is unbound — recoverable, never Dashboard.
+  if (!isProfileBootstrapped(profile)) {
+    return <BootstrapRecoveryPanel />;
   }
 
   return <>{children}</>;
@@ -117,6 +114,7 @@ export default function AppAuthenticated() {
             path="/onboarding"
             element={
               <ProtectedRoute>
+                {/* Legacy bookmark: progressive setup is on Dashboard (#67). */}
                 <Onboarding />
               </ProtectedRoute>
             }
