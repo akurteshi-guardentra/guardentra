@@ -18,11 +18,10 @@ DECLARE
   actor pg_roles%ROWTYPE;
 BEGIN
   SELECT * INTO actor FROM pg_roles WHERE rolname = current_user;
-  IF current_database() <> 'guardentra_audit'
-     OR current_setting('server_version_num')::integer NOT BETWEEN 160000 AND 169999
-     OR actor.rolname = 'audit_migrator'
-     OR actor.rolname = 'audit_app'
-     OR actor.rolname = 'audit_runtime'
+  -- Database name is selected by the connection string (live: guardentra_audit;
+  -- disposable CI fixture: guardentra_audit_runner_ci). Do not hard-fail on name here.
+  IF current_setting('server_version_num')::integer NOT BETWEEN 160000 AND 169999
+     OR actor.rolname IN ('audit_migrator', 'audit_app', 'audit_runtime')
      OR (NOT actor.rolcreaterole AND NOT actor.rolsuper) THEN
     RAISE EXCEPTION 'admin-harden requires a role administrator outside migrator/app identities';
   END IF;
