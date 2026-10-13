@@ -792,3 +792,35 @@ PASS. Corrected the disposable fixture: another superuser renames the original
 account; a newly created limited postgres role owns only the test database and is
 the actor. This changes fixture setup only, not the live SQL scope or permissions.
 No Cloud SQL execution occurred. Fresh real fixture CI required after publication.
+
+## 2026-10-13 — PR #183 reconciles RC ef758f9 and migrator-safe 003 (source only)
+
+- Writer: Cursor in clean worktree `guardentra-183-rc` on `infra/named-staging-audit-74`.
+- Merged authorized RC tip `ef758f9ca6f62b4c7f830c7fefb8099b51cbaba0` into feature head
+  `2cdab9a8814434da4d2aa7890dfc6d16cecbae69` without force-push.
+- Conflict resolution: `docs/agent-ops/PROJECT_TRANSITIONS.md` kept #183 chronology and
+  retained RC founder-enrollment entry; CI/workflow auto-merge preserved RC protections.
+- Architecture: role attribute harden (`ALTER/CREATE NOLOGIN`, `PASSWORD NULL`) moved to
+  admin-only `scripts/audit-managed-staging/admin-harden-audit-app.sql`. Restricted
+  migrator `003_harden_audit_app_nologin.sql` verifies NOLOGIN + grants only.
+- Runner allowlist/manifest updated for `001`–`003`. Unit/stage-context tests updated.
+- Disposable PostgreSQL 16 integration tests updated for fresh + LOGIN-repair paths;
+  local Docker/psql unavailable in this environment — infra-ci fixture required.
+- NOT DEPLOYED; no SQL/Terraform/IAM/Firebase/secret apply; draft PR only.
+
+## 2026-10-10 — Atomic founder enrollment merged into release candidate
+
+- Verifier: Codex using GitHub PR, exact diff, workflow jobs, and merge readback; owner instruction: `merge` for PR #184.
+- Issue/source: #61 continuation, required outcomes 1–6 and negative enrollment criteria.
+- Transition: missing atomic founder enrollment checks in the release candidate → **MERGED INTO RELEASE CANDIDATE**, not merged into `main`.
+- Branch: `security/atomic-founder-enrollment-61-20261010`; tested head: `e02c0102d1632dbdb9701bf34250c7cffd5698b2`.
+- PR: https://github.com/akurteshi-guardentra/guardentra/pull/184; squash merge: `52008f86f40378c8d70f003a400e0921a05091b1`; merged at `2026-10-10T12:24:50Z`.
+- Target: `release/rc-2026-10-08`; PR #182 remains open against `main`.
+- Exact files: `firestore.rules`, `src/tests/firestore.rules.test.mjs`.
+- Checks on tested head: CI https://github.com/akurteshi-guardentra/guardentra/actions/runs/38051666433 **SUCCESS**; `npm run lint`, `npm test`, `npm run test:vitest`, `npm run test:firestore-rules`, and dispatcher PowerShell suite **PASS**.
+- Behavior: founder organization and admin profile must be created together with reciprocal binding. Four added denial tests cover orphan profile, orphan organization, multiple organizations, and mismatched organization/profile. Existing valid founder and invited enrollment coverage remains passing.
+- Server-only vendor, assessment, and triage creation and existing strict parent binding are preserved.
+- Working-tree evidence: remote GitHub operations only; owner's local Windows worktrees untouched, current status not rechecked.
+- Deployment: **NOT DEPLOYED**. This records repository state only; no rules release, application rollout, IAM, secrets, DNS or data mutation.
+- Remaining gate: required CI and exact scope review on the updated release candidate, plus explicit owner authorization for PR #182 merge and separate deployment.
+- Rollback: revert PR #184 on the release candidate before any rules deployment.

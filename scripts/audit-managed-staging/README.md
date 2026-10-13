@@ -13,11 +13,14 @@ Cloud SQL Connector PRIVATE transport uses the job's attached identity; no key f
 or credential override. Its encrypted connector transport is not inferred from
 PostgreSQL pg_stat_ssl. Raw errors and credentials are never printed.
 
-Both reviewed SQL migrations are hashed over UTF-8 text with CRLF normalized to LF.
+The three reviewed SQL migrations (`001_init`, `002_roles`,
+`003_harden_audit_app_nologin`) are hashed over UTF-8 text with CRLF normalized to LF.
 The exact manifest/set is checked before connecting. PostgreSQL 16, exact database,
 restricted login/session identity, no inherited migrator memberships, an unprivileged
 NOLOGIN audit_app with no inherited memberships, installed pgcrypto and ownership
 of public schema must already be established by a separately approved bootstrap.
+Role attribute repair (`ALTER … NOLOGIN` / `PASSWORD NULL`) is admin-only via
+`admin-harden-audit-app.sql` and is never performed by `audit_migrator`.
 This package does not create LOGIN identities or provision passwords.
 
 Execution acquires a nonblocking advisory lock; transactions apply migrations and
@@ -44,12 +47,13 @@ actual job IAM/secrets, application connector, tenant isolation or durable event
 Do NOT submit the repository root to Cloud Build. First stage an allowlisted build
 context from one exact reviewed Git commit with only:
 - Dockerfile, package.json, package-lock.json, core.mjs, run.mjs, manifest.json
-- migrations/001_init.sql and migrations/002_roles.sql from that same commit
+- migrations/001_init.sql, migrations/002_roles.sql and
+  migrations/003_harden_audit_app_nologin.sql from that same commit
 
 Dockerfile is intended for that staged context. Never copy .env, credentials, state,
 plans, dirty worktree files or application sources. Resolve/pin the Node base-image
 digest and record built runner digest before job deployment approval. Build-context generation is now implemented by stage-context.mjs. It reads only
-these eight files from Git objects at an explicit 40-hex source commit, rejects SQL
+these nine allowlisted files from Git objects at an explicit 40-hex source commit, rejects SQL
 set/checksum mismatches, and pins the Dockerfile to an explicitly supplied Node
 base-image digest. It never reads dirty working-tree contents. A fresh temporary
 context directory contains only allowlisted files; receipt.json is outside that

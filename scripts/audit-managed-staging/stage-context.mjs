@@ -8,7 +8,7 @@ import { migrationDigest } from './core.mjs';
 
 const files = ['Dockerfile', 'package.json', 'package-lock.json', 'core.mjs',
   'run.mjs', 'manifest.json'];
-const migrations = ['001_init.sql', '002_roles.sql'];
+const migrations = ['001_init.sql', '002_roles.sql', '003_harden_audit_app_nologin.sql'];
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 
 // Reads Git objects only: never the working tree, archive, .env or Terraform files.

@@ -21,7 +21,7 @@ async function fixture() {
     const relative = `scripts/audit-managed-staging/${name}`;
     await writeFile(path.join(repo, relative), await readFile(path.join(source, relative)));
   }
-  for (const name of ['001_init.sql', '002_roles.sql']) {
+  for (const name of ['001_init.sql', '002_roles.sql', '003_harden_audit_app_nologin.sql']) {
     const relative = `migrations/audit/${name}`;
     await writeFile(path.join(repo, relative), await readFile(path.join(source, relative)));
   }
@@ -41,10 +41,11 @@ test('stages only reviewed committed bytes, excluding tracked decoys and dirty f
   try {
     await writeFile(path.join(f.repo, 'scripts/audit-managed-staging/run.mjs'), 'DIRTY_DECOY');
     staged = await stageContext(f.repo, f.sha, digest);
-    assert.equal(staged.fileCount, 8);
+    assert.equal(staged.fileCount, 9);
     assert.deepEqual((await readdir(staged.context)).sort(),
       ['Dockerfile', 'core.mjs', 'manifest.json', 'migrations', 'package-lock.json', 'package.json', 'run.mjs']);
-    assert.deepEqual((await readdir(path.join(staged.context, 'migrations'))).sort(), ['001_init.sql', '002_roles.sql']);
+    assert.deepEqual((await readdir(path.join(staged.context, 'migrations'))).sort(),
+      ['001_init.sql', '002_roles.sql', '003_harden_audit_app_nologin.sql']);
     const run = await readFile(path.join(staged.context, 'run.mjs'));
     assert.equal(run.toString(), f.git(['show', `${f.sha}:scripts/audit-managed-staging/run.mjs`]) + '\n');
     assert.match(await readFile(path.join(staged.context, 'Dockerfile'), 'utf8'),
@@ -67,7 +68,7 @@ test('rejects mutable references, missing digest, tampered committed SQL and ext
     await writeFile(path.join(f.repo, 'migrations/audit/001_init.sql'), 'SELECT 1;\n');
     f.git(['add', '.']); const changed = f.commit();
     await assert.rejects(stageContext(f.repo, changed, digest), /checksum/);
-    await writeFile(path.join(f.repo, 'migrations/audit/003_extra.sql'), 'SELECT 1;\n');
+    await writeFile(path.join(f.repo, 'migrations/audit/004_extra.sql'), 'SELECT 1;\n');
     f.git(['add', '.']); const extra = f.commit();
     await assert.rejects(stageContext(f.repo, extra, digest), /Migration set/);
   } finally { await rm(f.repo, { recursive: true, force: true }); }

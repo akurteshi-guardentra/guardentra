@@ -626,8 +626,7 @@ export function VendorPortal() {
                 </p>
                 <p className="mt-4 font-mono text-xs text-slate-400">Ref: {assessmentId}</p>
                 <p className="mt-6 text-sm text-slate-400">
-                  You can close this window. This link stays available as a receipt — there is no
-                  vendor dashboard to return to.
+                  You can close this window or return to GuardEntra. This link stays available as a receipt.
                 </p>
                 <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
                   <Button
@@ -647,6 +646,12 @@ export function VendorPortal() {
                     Close window
                   </Button>
                 </div>
+                <a
+                  href="/assessments"
+                  className="mt-4 inline-block text-sm text-primary underline-offset-4 hover:underline"
+                >
+                  Return to GuardEntra
+                </a>
                 <p className="mt-4 text-xs text-slate-500">
                   If review needs more detail, {branding.requesterOrgName} will email you a new
                   link.
@@ -816,7 +821,7 @@ export function VendorPortal() {
             />
           </div>
           <div className="flex items-center gap-4">
-            <div className="hidden w-40 sm:block">
+            <div className="hidden w-40 shrink-0 sm:block">
               <div className="mb-1 flex justify-between text-[10px] font-bold uppercase tracking-widest text-slate-500">
                 <span>Progress</span>
                 <span>{progress}%</span>
@@ -827,7 +832,7 @@ export function VendorPortal() {
             </div>
             <span
               className={cn(
-                'text-xs tabular-nums',
+                'flex h-10 w-36 shrink-0 items-center justify-end text-right text-xs tabular-nums sm:w-52',
                 saveState === 'error' ? 'text-rose-400' : 'text-slate-500'
               )}
               aria-live="polite"

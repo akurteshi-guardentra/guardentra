@@ -17,7 +17,7 @@ if [[ "$server_version" -lt 160000 || "$server_version" -ge 170000 ]]; then
 fi
 
 for pass in 1 2; do
-  for migration in migrations/audit/001_init.sql migrations/audit/002_roles.sql; do
+  for migration in migrations/audit/001_init.sql migrations/audit/002_roles.sql migrations/audit/003_harden_audit_app_nologin.sql; do
     psql -X -v ON_ERROR_STOP=1 --single-transaction -f "$migration"
   done
   echo "Audit migrations execution pass $pass: PASS"

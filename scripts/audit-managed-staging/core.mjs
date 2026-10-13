@@ -8,7 +8,7 @@ export function migrationDigest(sql) {
 }
 
 export async function prepareMigrations(dir, manifest) {
-  const expected = ['001_init.sql', '002_roles.sql'];
+  const expected = ['001_init.sql', '002_roles.sql', '003_harden_audit_app_nologin.sql'];
   const actual = (await readdir(dir)).filter(name => name.endsWith('.sql')).sort();
   if (JSON.stringify(actual) !== JSON.stringify(expected) ||
       JSON.stringify(Object.keys(manifest).sort()) !== JSON.stringify(expected)) {

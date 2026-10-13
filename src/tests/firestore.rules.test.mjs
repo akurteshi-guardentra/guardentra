@@ -1051,6 +1051,34 @@ async function main() {
     ),
   );
 
+
+  console.log('\nIssue #61 continuation: atomic founder enrollment:');
+
+  await check('fresh user CANNOT reserve a nonexistent tenant with an orphan admin profile', () =>
+    assertFails(setDoc(doc(attackerDb, 'users/attacker-fresh'), {
+      organizationId: 'orphan-tenant-61', role: 'admin',
+    })),
+  );
+  await check('fresh user CANNOT create an orphan organization', () =>
+    assertFails(setDoc(doc(testEnv.authenticatedContext('orphan-founder-61').firestore(),
+      'organizations/orphan-org-61'), { name: 'Orphan' })),
+  );
+  await check('founder batch CANNOT create multiple organizations', async () => {
+    const fs = testEnv.authenticatedContext('multi-founder-61').firestore();
+    const batch = writeBatch(fs);
+    batch.set(doc(fs, 'users/multi-founder-61'), { organizationId: 'multi-org-a', role: 'admin' });
+    batch.set(doc(fs, 'organizations/multi-org-a'), { name: 'A' });
+    batch.set(doc(fs, 'organizations/multi-org-b'), { name: 'B' });
+    await assertFails(batch.commit());
+  });
+  await check('founder batch CANNOT claim a different organization from the one created', async () => {
+    const fs = testEnv.authenticatedContext('mismatch-founder-61').firestore();
+    const batch = writeBatch(fs);
+    batch.set(doc(fs, 'users/mismatch-founder-61'), { organizationId: 'mismatch-org-a', role: 'admin' });
+    batch.set(doc(fs, 'organizations/mismatch-org-b'), { name: 'B' });
+    await assertFails(batch.commit());
+  });
+
   await testEnv.cleanup();
   console.log(`\nResult: ${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);
