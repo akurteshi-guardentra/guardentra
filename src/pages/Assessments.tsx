@@ -182,7 +182,10 @@ export function Assessments() {
     } catch (e) {
       console.warn('Send reminder failed', e);
       setReminderState((prev) => ({ ...prev, [assessment.id]: 'error' }));
-      setToast({ tone: 'err', text: 'Reminder failed — check email delivery (Trigger Email extension) or try again.' });
+      setToast({
+        tone: 'err',
+        text: 'Reminder could not be queued. Confirm you are signed in with org access, then try again. Queue acceptance is not inbox delivery.',
+      });
     }
   };
 

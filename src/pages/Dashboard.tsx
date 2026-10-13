@@ -12,6 +12,7 @@ import {
   isSetupChecklistComplete,
   type OrgSetupSnapshot,
 } from '../lib/setupProgress';
+import { parseReadinessScore } from '../lib/dashboardStats';
 
 type DashStats = {
   vendorCount: number;
@@ -36,11 +37,14 @@ export function Dashboard() {
     org: null,
   });
   const [loadingStats, setLoadingStats] = useState(true);
+  const [statsError, setStatsError] = useState<string | null>(null);
+  const [retryToken, setRetryToken] = useState(0);
 
   useEffect(() => {
     if (loading) return;
     if (!profile?.organizationId) {
       setLoadingStats(false);
+      setStatsError(null);
       return;
     }
 
@@ -48,6 +52,8 @@ export function Dashboard() {
     let cancelled = false;
 
     (async () => {
+      setLoadingStats(true);
+      setStatsError(null);
       try {
         const [vendorsSnap, assessSnap, auditSnap, invitesSnap, orgSnap] = await Promise.all([
           getDocs(query(collection(db, 'vendors'), where('organizationId', '==', orgId), limit(500))),
@@ -68,8 +74,9 @@ export function Dashboard() {
         const completed = assessSnap.docs.filter((d) => d.data().status === 'Completed').length;
         let readiness: number | null = null;
         if (!auditSnap.empty) {
-          const row = auditSnap.docs[0].data() as { readinessScore?: number; score?: number };
-          readiness = Number(row.readinessScore ?? row.score ?? 0) || null;
+          readiness = parseReadinessScore(
+            auditSnap.docs[0].data() as { readinessScore?: unknown; score?: unknown },
+          );
         }
 
         const orgData = orgSnap.exists() ? (orgSnap.data() as OrgSetupSnapshot) : null;
@@ -84,9 +91,16 @@ export function Dashboard() {
             pendingTeammateInviteCount: invitesSnap.size,
             org: orgData,
           });
+          setStatsError(null);
         }
       } catch (err) {
         console.error('Dashboard: failed to load spine stats', err);
+        if (!cancelled) {
+          // Do not present initial zeros as authoritative when the read failed.
+          setStatsError(
+            'Dashboard data could not be loaded. Counts below may be unavailable — retry or check your connection.',
+          );
+        }
       } finally {
         if (!cancelled) setLoadingStats(false);
       }
@@ -95,7 +109,7 @@ export function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [loading, profile?.organizationId]);
+  }, [loading, profile?.organizationId, retryToken]);
 
   const checklist = useMemo(
     () =>
@@ -120,6 +134,14 @@ export function Dashboard() {
   }
 
   const firstName = profile?.displayName?.split(' ')[0] || 'there';
+  const countUnavailable = Boolean(statsError);
+  const vendorDisplay = countUnavailable ? '—' : String(stats.vendorCount);
+  const pendingDisplay = countUnavailable ? '—' : String(stats.pendingAssessments);
+  const completedLabel = countUnavailable
+    ? 'Completed count unavailable'
+    : `${stats.completedAssessments} completed`;
+  const readinessDisplay =
+    countUnavailable || stats.readinessScore == null ? '—' : `${stats.readinessScore}%`;
 
   return (
     <div className="mx-auto max-w-6xl space-y-8 animate-in fade-in duration-500">
@@ -151,7 +173,25 @@ export function Dashboard() {
         </div>
       </div>
 
-      <SetupChecklist items={checklist} hidden={checklistComplete} />
+      {statsError && (
+        <div
+          data-testid="dashboard-stats-error"
+          className="flex flex-col gap-3 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100 md:flex-row md:items-center md:justify-between"
+          role="alert"
+        >
+          <p>{statsError}</p>
+          <Button
+            type="button"
+            variant="outline"
+            className="border-rose-400/40 bg-transparent text-rose-50 hover:bg-rose-500/20"
+            onClick={() => setRetryToken((n) => n + 1)}
+          >
+            Retry
+          </Button>
+        </div>
+      )}
+
+      <SetupChecklist items={checklist} hidden={checklistComplete || countUnavailable} />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <Card
@@ -162,9 +202,13 @@ export function Dashboard() {
             <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
               Vendors
             </CardDescription>
-            <CardTitle className="font-mono text-3xl text-white">{stats.vendorCount}</CardTitle>
+            <CardTitle className="font-mono text-3xl text-white" data-testid="dashboard-vendor-count">
+              {vendorDisplay}
+            </CardTitle>
           </CardHeader>
-          <CardContent className="text-xs text-slate-500">Registered third parties</CardContent>
+          <CardContent className="text-xs text-slate-500">
+            {countUnavailable ? 'Count unavailable' : 'Registered third parties'}
+          </CardContent>
         </Card>
         <Card
           className="cursor-pointer border-white/10 bg-slate-900/50 transition-colors hover:border-primary/40"
@@ -174,11 +218,11 @@ export function Dashboard() {
             <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
               Pending assessments
             </CardDescription>
-            <CardTitle className="font-mono text-3xl text-white">{stats.pendingAssessments}</CardTitle>
+            <CardTitle className="font-mono text-3xl text-white" data-testid="dashboard-pending-count">
+              {pendingDisplay}
+            </CardTitle>
           </CardHeader>
-          <CardContent className="text-xs text-slate-500">
-            {stats.completedAssessments} completed
-          </CardContent>
+          <CardContent className="text-xs text-slate-500">{completedLabel}</CardContent>
         </Card>
         <Card
           className="cursor-pointer border-white/10 bg-slate-900/50 transition-colors hover:border-primary/40"
@@ -188,8 +232,8 @@ export function Dashboard() {
             <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
               Audit Lab
             </CardDescription>
-            <CardTitle className="font-mono text-3xl text-white">
-              {stats.readinessScore != null ? `${stats.readinessScore}%` : '—'}
+            <CardTitle className="font-mono text-3xl text-white" data-testid="dashboard-readiness">
+              {readinessDisplay}
             </CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-slate-500">Latest readiness score</CardContent>
