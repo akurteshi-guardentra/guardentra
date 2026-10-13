@@ -2,32 +2,48 @@
 
 ## Purpose
 
-Correct unsafe `audit_app LOGIN PASSWORD 'audit_app'` behavior that may exist from
-`migrations/audit/002_roles.sql` on release baseline `237a6260…`, without rewriting
-already-applied migration history and without overwriting infrastructure work in
-[PR #183](https://github.com/akurteshi-guardentra/guardentra/pull/183).
+Keep `audit_app` as a NOLOGIN privilege role without putting role-administration
+authority into the restricted `audit_migrator` path, and without rewriting applied
+`002_roles.sql` history.
 
-## Change
+## Split authority (required)
 
-- New versioned migration: `migrations/audit/003_harden_audit_app_nologin.sql`
-- Forces `audit_app` to `NOLOGIN` and clears any role password
-- Re-asserts append-only grants/revokes (idempotent)
+| Path | Actor | Responsibility |
+|---|---|---|
+| `scripts/audit-managed-staging/bootstrap-prerequisites.sql` | Role admin on empty DB | Create `audit_app` NOLOGIN (+ migrator/runtime) |
+| `scripts/audit-managed-staging/admin-harden-audit-app.sql` | Role admin on non-empty/unsafe DB | `ALTER … NOLOGIN` / `PASSWORD NULL` or create if missing |
+| `migrations/audit/003_harden_audit_app_nologin.sql` | `audit_migrator` only | **Verify** NOLOGIN + re-assert GRANTs/REVOKEs |
 
-## Reconciliation with PR #183
+PostgreSQL 16 requires a role administrator to change another role’s attributes.
+The restricted migrator must fail closed on `ALTER ROLE` / elevated memberships
+(`scripts/audit-managed-staging/core.mjs`). Merely making `ALTER` idempotent does
+not remove that privilege requirement.
 
-PR #183 changes greenfield `002_roles.sql` to create `audit_app NOLOGIN`. This branch
-leaves `002_roles.sql` untouched so it does not fight that PR. After both land:
+## Managed runner set
 
-1. Fresh installs: `002` creates NOLOGIN; `003` is a no-op harden + grant assert
-2. Environments that already applied unsafe `002`: `003` removes LOGIN/password
+Allowlisted migrations (lexical order):
+
+1. `001_init.sql`
+2. `002_roles.sql` (greenfield `CREATE ROLE audit_app NOLOGIN` if missing)
+3. `003_harden_audit_app_nologin.sql` (verify + grants)
+
+Checksums live in `scripts/audit-managed-staging/manifest.json`.
+
+## Existing LOGIN / password environments
+
+1. Run `admin-harden-audit-app.sql` under an approved role administrator (separate Owner apply).
+2. Then run the restricted migrator for `001`–`003`.
+3. Do **not** expect `runMigrations()` to repair LOGIN attributes.
+4. Do **not** fabricate `schema_migrations` rows for admin SQL.
 
 ## Explicit non-actions
 
-- SQL is **not** applied by this PR
-- Terraform / IAM / Firebase / Cloud SQL are **not** modified
+- SQL is **not** applied by this documentation/source PR
+- Terraform / IAM / Firebase / Cloud SQL are **not** modified here
 - Staging and production are **not** deployed
 
-## Validation (local, safe)
+## Validation
 
-- Static contract test: `src/tests/auditAppRoleNologinMigration.test.ts`
-- Does not require a live database
+- Unit: `scripts/audit-managed-staging/unit.test.mjs`
+- Disposable PostgreSQL 16: `scripts/audit-managed-staging/postgres.test.mjs`
+- Static Vitest: `src/tests/auditAppRoleNologinMigration.test.ts`

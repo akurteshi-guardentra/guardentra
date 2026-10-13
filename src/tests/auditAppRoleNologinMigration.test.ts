@@ -8,24 +8,41 @@ function readMigration(name: string): string {
   return readFileSync(resolve(root, 'migrations/audit', name), 'utf8');
 }
 
-describe('audit #74 NOLOGIN hardening migration', () => {
-  it('003 hardens audit_app to NOLOGIN and clears password without inventing LOGIN', () => {
+function executableSql(sql: string): string {
+  return sql
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('--'))
+    .join('\n');
+}
+
+describe('audit #74 NOLOGIN hardening migration (restricted-migrator safe)', () => {
+  it('003 verifies NOLOGIN without ALTER/CREATE role attributes or passwords', () => {
     const sql = readMigration('003_harden_audit_app_nologin.sql');
-    const executable = sql
-      .split('\n')
-      .filter((line) => !line.trimStart().startsWith('--'))
-      .join('\n');
-    expect(executable).toMatch(/ALTER ROLE audit_app WITH NOLOGIN/i);
-    expect(executable).toMatch(/ALTER ROLE audit_app WITH PASSWORD NULL/i);
-    expect(executable).toMatch(/CREATE ROLE audit_app NOLOGIN/i);
-    expect(executable).not.toMatch(/\bLOGIN\b(?!\s*;)/i); // NOLOGIN is allowed; bare LOGIN is not
+    const executable = executableSql(sql);
+    expect(executable).toMatch(/RAISE EXCEPTION/i);
+    expect(executable).toMatch(/rolcanlogin/i);
+    expect(executable).toMatch(/GRANT SELECT, INSERT ON audit_events/i);
+    expect(executable).not.toMatch(/ALTER ROLE/i);
+    expect(executable).not.toMatch(/CREATE ROLE/i);
     expect(executable).not.toMatch(/PASSWORD\s+'[^']+'/i);
   });
 
-  it('003 remains additive — does not rewrite 002_roles.sql content', () => {
+  it('admin-harden path holds role attribute authority separately from migrator SQL', () => {
+    const admin = readFileSync(
+      resolve(root, 'scripts/audit-managed-staging/admin-harden-audit-app.sql'),
+      'utf8',
+    );
+    const executable = executableSql(admin);
+    expect(executable).toMatch(/ALTER ROLE audit_app WITH NOLOGIN/i);
+    expect(executable).toMatch(/ALTER ROLE audit_app WITH PASSWORD NULL/i);
+    expect(executable).toMatch(/admin-harden requires a role administrator/i);
+    expect(executable).not.toMatch(/PASSWORD\s+'[^']+'/i);
+  });
+
+  it('002 remains NOLOGIN greenfield create without rewriting history via 003 attributes', () => {
     const two = readMigration('002_roles.sql');
-    // Baseline may still contain the unsafe pattern; 003 is the corrective migration.
-    expect(two.length).toBeGreaterThan(0);
+    expect(two).toMatch(/CREATE ROLE audit_app NOLOGIN/i);
+    expect(two).not.toMatch(/LOGIN\s+PASSWORD/i);
     const three = readMigration('003_harden_audit_app_nologin.sql');
     expect(three).toMatch(/Issue #74/i);
   });
