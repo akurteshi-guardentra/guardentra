@@ -116,7 +116,10 @@ describe('mail worker package preparation', () => {
   });
 
   it('records unresolved runtime inputs instead of inventing values', () => {
-    const { unresolved, resolved } = collectUnresolvedInputs({});
+    const { unresolved, resolved } = collectUnresolvedInputs({}) as {
+      unresolved: string[];
+      resolved: Record<string, string | null>;
+    };
     expect(unresolved).toEqual([
       'database',
       'region',

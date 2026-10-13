@@ -155,8 +155,13 @@ export function assertTarget(target, projectId) {
   }
 }
 
+/**
+ * @param {Record<string, unknown>} [inputs]
+ * @returns {{ unresolved: string[], resolved: Record<string, string | null> }}
+ */
 export function collectUnresolvedInputs(inputs = {}) {
   const unresolved = [];
+  /** @type {Record<string, string | null>} */
   const resolved = {};
 
   for (const key of RUNTIME_INPUT_KEYS) {
