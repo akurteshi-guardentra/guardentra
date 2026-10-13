@@ -324,7 +324,7 @@ exports.handleMailCreated = async function handleMailCreated() {
 
     const result = smokeCleanInstallAndLoad(smokeRoot, {
       runNpmCi: () => {
-        // No network — package has zero dependencies.
+        // No network - package has zero dependencies.
       },
     });
     expect(result.exports).toEqual(['deliverMail', 'recoverMail']);
