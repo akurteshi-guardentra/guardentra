@@ -21,6 +21,16 @@ describe('parseReadinessScore (#42)', () => {
     expect(parseReadinessScore({ readinessScore: Infinity })).toBeNull();
   });
 
+  it('rejects whitespace, booleans, and arrays instead of coercing them', () => {
+    expect(parseReadinessScore({ readinessScore: ' 72' })).toBeNull();
+    expect(parseReadinessScore({ readinessScore: '72 ' })).toBeNull();
+    expect(parseReadinessScore({ readinessScore: true })).toBeNull();
+    expect(parseReadinessScore({ readinessScore: false })).toBeNull();
+    expect(parseReadinessScore({ readinessScore: [] })).toBeNull();
+    expect(parseReadinessScore({ readinessScore: [72] })).toBeNull();
+    expect(parseReadinessScore({ score: ' 0 ' })).toBeNull();
+  });
+
   it('returns finite nonzero scores', () => {
     expect(parseReadinessScore({ readinessScore: 72 })).toBe(72);
     expect(parseReadinessScore({ score: '41.5' })).toBe(41.5);

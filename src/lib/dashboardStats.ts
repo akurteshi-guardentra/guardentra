@@ -9,8 +9,8 @@ export function parseReadinessScore(row: {
 } | null | undefined): number | null {
   if (!row) return null;
   const raw = row.readinessScore ?? row.score;
-  if (raw === null || raw === undefined || raw === '') return null;
-  const n = typeof raw === 'number' ? raw : Number(raw);
-  if (!Number.isFinite(n)) return null;
-  return n;
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
+  if (typeof raw !== 'string' || !/^-?(?:\d+|\d+\.\d+)$/.test(raw)) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
 }

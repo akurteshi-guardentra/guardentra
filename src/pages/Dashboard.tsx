@@ -50,10 +50,10 @@ export function Dashboard() {
 
     const orgId = profile.organizationId;
     let cancelled = false;
+    setLoadingStats(true);
+    setStatsError(null);
 
     (async () => {
-      setLoadingStats(true);
-      setStatsError(null);
       try {
         const [vendorsSnap, assessSnap, auditSnap, invitesSnap, orgSnap] = await Promise.all([
           getDocs(query(collection(db, 'vendors'), where('organizationId', '==', orgId), limit(500))),
@@ -125,7 +125,7 @@ export function Dashboard() {
 
   const checklistComplete = isSetupChecklistComplete(checklist);
 
-  if (loading || loadingStats) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center py-24 text-slate-400">
         <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading…
@@ -134,7 +134,7 @@ export function Dashboard() {
   }
 
   const firstName = profile?.displayName?.split(' ')[0] || 'there';
-  const countUnavailable = Boolean(statsError);
+  const countUnavailable = Boolean(statsError) || loadingStats;
   const vendorDisplay = countUnavailable ? '—' : String(stats.vendorCount);
   const pendingDisplay = countUnavailable ? '—' : String(stats.pendingAssessments);
   const completedLabel = countUnavailable

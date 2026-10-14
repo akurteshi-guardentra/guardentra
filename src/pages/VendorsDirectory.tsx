@@ -112,6 +112,12 @@ export function VendorsDirectory() {
     vendorCap: number;
   } | null>(null);
   const [planMeterError, setPlanMeterError] = useState<string | null>(null);
+  const [planMeterOrgId, setPlanMeterOrgId] = useState<string | undefined>(orgId);
+  if (planMeterOrgId !== orgId) {
+    setPlanMeterOrgId(orgId);
+    setPlanMeter(null);
+    setPlanMeterError(null);
+  }
 
   const refreshLocal = (id: string) => {
     if (!shouldUseLocalPersistenceFallback()) {
@@ -134,6 +140,7 @@ export function VendorsDirectory() {
       return;
     }
     let cancelled = false;
+    setPlanMeter(null);
     setPlanMeterError(null);
     void getDoc(doc(db, 'organizations', orgId))
       .then((snap) => {

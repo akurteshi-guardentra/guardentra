@@ -121,6 +121,48 @@ describe('Dashboard load/error/zero states (#42)', () => {
     });
     expect(screen.getByTestId('dashboard-vendor-count')).toHaveTextContent('0');
   });
+
+  it('hides the previous organization count while the next organization is loading', async () => {
+    let releaseNext: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      releaseNext = resolve;
+    });
+    let phase: 'first' | 'second' = 'first';
+    vi.mocked(firestore.getDocs).mockImplementation(async () => {
+      if (phase === 'second') await gate;
+      const size = phase === 'first' ? 4 : 1;
+      return {
+        size,
+        empty: false,
+        docs: Array.from({ length: size }, () => ({ data: () => ({ status: 'Sent' }) })),
+      } as any;
+    });
+
+    const view = render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId('dashboard-vendor-count')).toHaveTextContent('4');
+    });
+
+    phase = 'second';
+    authState.profile = { ...authState.profile, organizationId: 'org-other' };
+    view.rerender(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId('dashboard-vendor-count')).toHaveTextContent('—');
+    });
+    expect(screen.getByTestId('dashboard-vendor-count')).not.toHaveTextContent('4');
+    releaseNext();
+    await waitFor(() => {
+      expect(screen.getByTestId('dashboard-vendor-count')).toHaveTextContent('1');
+    });
+  });
 });
 
 describe('VendorsDirectory plan meter (#42)', () => {
