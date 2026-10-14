@@ -21,6 +21,7 @@ import { startAuditWorker } from "./server/lib/audit/worker.ts";
 import { assertAuditRuntimeConfig, closeAuditPool } from "./server/lib/audit/pool.ts";
 import { startAssessmentReminderWorker } from "./server/lib/reminders/worker.ts";
 import { buildReleaseIdentity } from "./server/lib/releaseIdentity.ts";
+import { resolveListenHost } from "./server/lib/listenHost.ts";
 
 /** Cloud Run / Firebase App Hosting: always prefer process.env.PORT, fallback 8080. */
 export function resolvePort(): number {
@@ -115,11 +116,12 @@ export async function startServer(): Promise<Server> {
 
   console.log(`[BOOT] process.env.PORT: ${process.env.PORT}`);
   console.log(`[BOOT] Resolved PORT to listen: ${PORT}`);
-  console.log(`[BOOT] Binding host: 0.0.0.0`);
+  const host = resolveListenHost();
+  console.log(`[BOOT] Binding host: ${host}`);
 
   return await new Promise<Server>((resolve, reject) => {
-    const server = app.listen(PORT, "0.0.0.0", () => {
-      console.log(`Server running on http://0.0.0.0:${PORT}`);
+    const server = app.listen(PORT, host, () => {
+      console.log(`Server running on http://${host}:${PORT}`);
       startAuditWorker();
       startAssessmentReminderWorker();
       resolve(server);
