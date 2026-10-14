@@ -7,6 +7,7 @@ import { ProfileLoadErrorPanel } from './components/ProfileLoadErrorPanel';
 import { ComingLater } from './pages/ComingLater';
 import { RouteErrorBoundary } from './components/spine/RouteErrorBoundary';
 import { isFeatureEnabled, type FeatureKey } from './lib/featureFlags';
+import { LocalSyntheticBanner } from './components/LocalSyntheticBanner';
 // Spine pages: eager so Vendor → Assess / Impact / triage never white-screens
 // on a stale lazy chunk after deploy.
 import { VendorsDirectory } from './pages/VendorsDirectory';
@@ -106,6 +107,7 @@ export default function AppAuthenticated() {
   return (
     <AuthProvider>
       <ClearChunkReloadFlag />
+      <LocalSyntheticBanner />
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/login" element={<Login />} />
