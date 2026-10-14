@@ -14,3 +14,10 @@ export function parseReadinessScore(row: {
   const n = Number(raw);
   return Number.isFinite(n) ? n : null;
 }
+
+/** Visible caption. A synthetic label is sample data, never an audit result. */
+export function readinessMetricCaption(syntheticLabel: unknown): string {
+  return typeof syntheticLabel === 'string' && syntheticLabel.trim()
+    ? 'Sample data — not an audit result'
+    : 'Latest readiness score';
+}

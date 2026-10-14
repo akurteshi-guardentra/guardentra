@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseReadinessScore } from '../lib/dashboardStats';
+import { parseReadinessScore, readinessMetricCaption } from '../lib/dashboardStats';
 
 describe('parseReadinessScore (#42)', () => {
   it('preserves a valid zero readiness score', () => {
@@ -35,5 +35,15 @@ describe('parseReadinessScore (#42)', () => {
     expect(parseReadinessScore({ readinessScore: 72 })).toBe(72);
     expect(parseReadinessScore({ score: '41.5' })).toBe(41.5);
     expect(parseReadinessScore({ readinessScore: undefined, score: 9 })).toBe(9);
+  });
+});
+
+describe('readinessMetricCaption', () => {
+  it('labels a synthetic readiness row and leaves a real score unlabeled', () => {
+    expect(readinessMetricCaption('LOCAL_FIXTURE_NOT_AN_AUDIT')).toMatch(/Sample data/);
+    expect(readinessMetricCaption('  sample  ')).toMatch(/Sample data/);
+    expect(readinessMetricCaption('')).toBe('Latest readiness score');
+    expect(readinessMetricCaption(undefined)).toBe('Latest readiness score');
+    expect(readinessMetricCaption(64)).toBe('Latest readiness score');
   });
 });

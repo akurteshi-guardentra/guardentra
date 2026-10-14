@@ -12,7 +12,7 @@ import {
   isSetupChecklistComplete,
   type OrgSetupSnapshot,
 } from '../lib/setupProgress';
-import { parseReadinessScore } from '../lib/dashboardStats';
+import { parseReadinessScore, readinessMetricCaption } from '../lib/dashboardStats';
 
 type DashStats = {
   vendorCount: number;
@@ -20,6 +20,7 @@ type DashStats = {
   completedAssessments: number;
   assessmentCount: number;
   readinessScore: number | null;
+  readinessSample: boolean;
   pendingTeammateInviteCount: number;
   org: OrgSetupSnapshot | null;
 };
@@ -33,6 +34,7 @@ export function Dashboard() {
     completedAssessments: 0,
     assessmentCount: 0,
     readinessScore: null,
+    readinessSample: false,
     pendingTeammateInviteCount: 0,
     org: null,
   });
@@ -73,10 +75,15 @@ export function Dashboard() {
         const pending = assessSnap.docs.filter((d) => d.data().status !== 'Completed').length;
         const completed = assessSnap.docs.filter((d) => d.data().status === 'Completed').length;
         let readiness: number | null = null;
+        let readinessSample = false;
         if (!auditSnap.empty) {
-          readiness = parseReadinessScore(
-            auditSnap.docs[0].data() as { readinessScore?: unknown; score?: unknown },
-          );
+          const auditRow = auditSnap.docs[0].data() as {
+            readinessScore?: unknown;
+            score?: unknown;
+            syntheticLabel?: unknown;
+          };
+          readiness = parseReadinessScore(auditRow);
+          readinessSample = readinessMetricCaption(auditRow.syntheticLabel).startsWith('Sample');
         }
 
         const orgData = orgSnap.exists() ? (orgSnap.data() as OrgSetupSnapshot) : null;
@@ -88,6 +95,7 @@ export function Dashboard() {
             completedAssessments: completed,
             assessmentCount: assessSnap.size,
             readinessScore: readiness,
+            readinessSample,
             pendingTeammateInviteCount: invitesSnap.size,
             org: orgData,
           });
@@ -236,7 +244,9 @@ export function Dashboard() {
               {readinessDisplay}
             </CardTitle>
           </CardHeader>
-          <CardContent className="text-xs text-slate-500">Latest readiness score</CardContent>
+          <CardContent className="text-xs text-slate-500" data-testid={stats.readinessSample ? 'dashboard-readiness-sample' : undefined}>
+            {readinessMetricCaption(stats.readinessSample ? 'sample' : '')}
+          </CardContent>
         </Card>
       </div>
 

@@ -111,6 +111,7 @@ export function Assessments() {
     recommendation: string;
   } | null>(null);
   const [reviewAiError, setReviewAiError] = useState('');
+  const [reviewManual, setReviewManual] = useState(false);
   const [reviewAiLoading, setReviewAiLoading] = useState(false);
   const [approving, setApproving] = useState(false);
   const [reviewFilter, setReviewFilter] = useState<'exceptions' | 'all'>('exceptions');
@@ -250,6 +251,7 @@ export function Assessments() {
     setReviewAssessment(assessment);
     setReviewAnalysis(null);
     setReviewAiError('');
+    setReviewManual(false);
     setReviewFilter('exceptions');
     setDecisionNotes('');
     setDecisionOutcome('approved');
@@ -299,6 +301,13 @@ export function Assessments() {
         ),
         body: JSON.stringify({ prompt, responseMimeType: 'application/json' }),
       });
+      if (response.status === 503) {
+        const unavailable = (await response.json().catch(() => ({}))) as { code?: string };
+        if (unavailable.code === 'manual_review') {
+          setReviewManual(true);
+          return;
+        }
+      }
       if (!response.ok) throw new Error('AI generation failed');
       const { text } = await response.json();
       setReviewAnalysis(JSON.parse(text || '{}'));
@@ -675,6 +684,7 @@ export function Assessments() {
             assessment={reviewAssessment}
             reviewAnalysis={reviewAnalysis}
             reviewAiError={reviewAiError}
+            reviewManual={reviewManual}
             reviewAiLoading={reviewAiLoading}
             reviewFilter={reviewFilter}
             onReviewFilterChange={setReviewFilter}
