@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -7,13 +8,15 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   PrepareError,
+  assertClosureBoundToSource,
+  assertTarget,
+  buildIsolatedLockfile,
   collectUnresolvedInputs,
   extractExternalImports,
   parseArgs,
   prepareMailWorkerPackage,
   resolveDependencyVersions,
   smokeCleanInstallAndLoad,
-  assertTarget,
 } from '../../scripts/prepare-mail-worker-package.mjs';
 
 const nodeRequire = createRequire(import.meta.url);
@@ -43,17 +46,23 @@ exports.handleMailCreated = async function handleMailCreated() { return; };
   return source;
 }
 
-function baseOptions(dirs: { outDir: string; receipt: string }, overrides: Record<string, unknown> = {}) {
-  const bundlePath = path.join(dirs.outDir, '..', 'fixture-bundle.cjs');
+function baseOptions(dirs: { root: string; outDir: string; receipt: string }, overrides: Record<string, unknown> = {}) {
+  const bundlePath = path.join(dirs.root, 'fixture-bundle.cjs');
   writeMiniBundle(bundlePath);
+  const repoRoot = path.join(dirs.root, 'repo');
+  fs.mkdirSync(repoRoot, { recursive: true });
+  if (!fs.existsSync(path.join(repoRoot, 'firebase.json'))) {
+    fs.writeFileSync(path.join(repoRoot, 'firebase.json'), JSON.stringify({ firestore: {} }));
+  }
   return {
-    repoRoot: dirs.outDir, // unused when build/git mocked
+    repoRoot,
     sourceSha: SOURCE_SHA,
     target: 'staging',
     projectId: 'guardentra-staging',
     outDir: dirs.outDir,
     receipt: dirs.receipt,
     skipSmoke: true,
+    fixtureMode: true,
     bundlePath,
     gitRevParse: () => SOURCE_SHA,
     lockfile: {
@@ -233,7 +242,12 @@ describe('mail worker package preparation', () => {
     expect(descriptor.projectId).toBe('guardentra-staging');
     expect(descriptor.mailWorkerEnabled).toBe(false);
     expect(descriptor.params.MAIL_WORKER_ENABLED).toBe(false);
-    expect(descriptor.exports).toEqual(['deliverMail', 'recoverMail']);
+    expect(descriptor.exports).toEqual([
+      'deliverMail',
+      'recoverMail',
+      'handleMailCreated',
+      'handleMailRecovery',
+    ]);
     expect(descriptor.unresolvedInputs.length).toBeGreaterThan(0);
 
     const mod = nodeRequire(path.join(dirs.outDir, 'index.cjs'));
@@ -331,5 +345,242 @@ exports.handleMailCreated = async function handleMailCreated() {
       },
     });
     expect(result.exports).toEqual(['deliverMail', 'recoverMail']);
+  });
+});
+
+function git(cwd: string, args: string[]) {
+  const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+  if (result.status !== 0) {
+    throw new Error(result.stderr || result.stdout || `git ${args.join(' ')} failed`);
+  }
+  return result.stdout.trim();
+}
+
+function sourceLockFixture() {
+  return {
+    lockfileVersion: 3,
+    requires: true,
+    packages: {
+      '': { dependencies: { 'firebase-admin': '1.2.3' } },
+      'node_modules/firebase-admin': {
+        version: '1.2.3',
+        resolved: 'https://example.invalid/firebase-admin-1.2.3.tgz',
+        integrity: 'sha512-clean',
+        dependencies: { 'transitive-lib': '4.5.6' },
+        optionalDependencies: { 'optional-lib': '1.0.0' },
+      },
+      'node_modules/transitive-lib': {
+        version: '4.5.6',
+        resolved: 'https://example.invalid/transitive-lib-4.5.6.tgz',
+        integrity: 'sha512-transitive',
+      },
+      'node_modules/optional-lib': {
+        version: '1.0.0',
+        resolved: 'https://example.invalid/optional-lib-1.0.0.tgz',
+        integrity: 'sha512-optional',
+      },
+      'node_modules/unrelated': {
+        version: '9.9.9',
+        resolved: 'https://example.invalid/unrelated-9.9.9.tgz',
+        integrity: 'sha512-unrelated',
+      },
+    },
+  };
+}
+
+const FIXTURE_BUILD = `import fs from 'node:fs';
+const src = fs.readFileSync('server/mailWorkerFunctions.ts', 'utf8');
+fs.mkdirSync('dist/mail-worker', { recursive: true });
+const body = [
+  'exports.deliverMail=function(){};',
+  'exports.recoverMail=function(){};',
+  'require("firebase-admin/app");',
+  '// ' + src,
+].join('\\n');
+fs.writeFileSync('dist/mail-worker/index.cjs', body);
+`;
+
+function initSourceRepo(dir: string) {
+  fs.mkdirSync(path.join(dir, 'server'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'server', 'mailWorkerFunctions.ts'), 'export const marker = "CLEAN_WORKER";\n');
+  fs.writeFileSync(path.join(dir, 'firebase.json'), '{}\n');
+  fs.writeFileSync(path.join(dir, 'build-fixture.mjs'), FIXTURE_BUILD);
+  fs.writeFileSync(path.join(dir, 'package-lock.json'), `${JSON.stringify(sourceLockFixture(), null, 2)}\n`);
+  fs.writeFileSync(
+    path.join(dir, 'package.json'),
+    `${JSON.stringify(
+      {
+        name: 'fixture-mail-source',
+        private: true,
+        scripts: { 'build:mail-worker': 'node build-fixture.mjs' },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  git(dir, ['init', '-b', 'main']);
+  git(dir, ['config', 'user.email', 'mail-package-test@example.com']);
+  git(dir, ['config', 'user.name', 'Mail Package Test']);
+  git(dir, ['config', 'commit.gpgsign', 'false']);
+  git(dir, ['add', '.']);
+  git(dir, ['commit', '-m', 'fixture source']);
+  return git(dir, ['rev-parse', 'HEAD']);
+}
+
+describe('mail worker package path safety', () => {
+  it('refuses a populated output directory and leaves the sentinel untouched', () => {
+    const dirs = tempDirs();
+    scratch.push(dirs.root);
+    fs.mkdirSync(dirs.outDir, { recursive: true });
+    const sentinel = path.join(dirs.outDir, 'sentinel.txt');
+    fs.writeFileSync(sentinel, 'keep');
+    expect(() => prepareMailWorkerPackage(baseOptions(dirs))).toThrowError(/OUTPUT_EXISTS/);
+    expect(fs.readFileSync(sentinel, 'utf8')).toBe('keep');
+  });
+
+  it('refuses checkout overlap and an ancestor of the checkout', () => {
+    const dirs = tempDirs();
+    scratch.push(dirs.root);
+    const repo = path.join(dirs.root, 'repo');
+    fs.mkdirSync(repo, { recursive: true });
+    const sentinel = path.join(repo, 'sentinel.txt');
+    fs.writeFileSync(sentinel, 'keep');
+    fs.writeFileSync(path.join(repo, 'firebase.json'), '{}\n');
+    expect(() =>
+      prepareMailWorkerPackage(baseOptions(dirs, { repoRoot: repo, outDir: path.join(repo, 'pkg') })),
+    ).toThrowError(/PATH_OVERLAP/);
+    expect(() =>
+      prepareMailWorkerPackage(baseOptions(dirs, { repoRoot: repo, outDir: dirs.root })),
+    ).toThrowError(/PATH_OVERLAP|OUTPUT_EXISTS/);
+    expect(fs.readFileSync(sentinel, 'utf8')).toBe('keep');
+  });
+
+  it('refuses a symlinked output path and a symlinked ancestor without following them', () => {
+    const dirs = tempDirs();
+    scratch.push(dirs.root);
+    const target = path.join(dirs.root, 'real-target');
+    fs.mkdirSync(target, { recursive: true });
+    const sentinel = path.join(target, 'sentinel.txt');
+    fs.writeFileSync(sentinel, 'keep');
+    const link = path.join(dirs.root, 'linked-out');
+    fs.symlinkSync(target, link);
+    expect(() => prepareMailWorkerPackage(baseOptions(dirs, { outDir: link }))).toThrowError(/LINKED_PATH/);
+
+    const outside = path.join(dirs.root, 'outside');
+    fs.mkdirSync(outside, { recursive: true });
+    const outsideSentinel = path.join(outside, 'sentinel.txt');
+    fs.writeFileSync(outsideSentinel, 'keep');
+    const parentLink = path.join(dirs.root, 'parent-link');
+    fs.symlinkSync(outside, parentLink);
+    expect(() =>
+      prepareMailWorkerPackage(baseOptions(dirs, { outDir: path.join(parentLink, 'new-package') })),
+    ).toThrowError(/LINKED_PATH/);
+    expect(fs.readFileSync(sentinel, 'utf8')).toBe('keep');
+    expect(fs.readFileSync(outsideSentinel, 'utf8')).toBe('keep');
+  });
+
+  it('refuses an existing receipt and leaves its bytes untouched', () => {
+    const dirs = tempDirs();
+    scratch.push(dirs.root);
+    fs.mkdirSync(path.dirname(dirs.receipt), { recursive: true });
+    fs.writeFileSync(dirs.receipt, 'keep-receipt');
+    expect(() => prepareMailWorkerPackage(baseOptions(dirs))).toThrowError(/RECEIPT_EXISTS/);
+    expect(fs.readFileSync(dirs.receipt, 'utf8')).toBe('keep-receipt');
+  });
+});
+
+describe('mail worker exact source binding', () => {
+  it('packages the committed worker, lockfile, and build script when the worktree is dirty', () => {
+    const dirs = tempDirs();
+    scratch.push(dirs.root);
+    const repo = path.join(dirs.root, 'src-repo');
+    fs.mkdirSync(repo, { recursive: true });
+    const sha = initSourceRepo(repo);
+    fs.writeFileSync(path.join(repo, 'server', 'mailWorkerFunctions.ts'), 'export const marker = "DIRTY_WORKER";\n');
+    const lock = sourceLockFixture() as { packages: Record<string, { version?: string; integrity?: string }> };
+    lock.packages['node_modules/firebase-admin'].version = '9.9.9';
+    lock.packages['node_modules/firebase-admin'].integrity = 'sha512-dirty';
+    fs.writeFileSync(path.join(repo, 'package-lock.json'), `${JSON.stringify(lock, null, 2)}\n`);
+    const pkgPath = path.join(repo, 'package.json');
+    const dirtyPkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+    dirtyPkg.scripts['build:mail-worker'] = 'node -e "process.stdout.write(\'DIRTY_SCRIPT\')"';
+    fs.writeFileSync(pkgPath, `${JSON.stringify(dirtyPkg, null, 2)}\n`);
+
+    const receipt = prepareMailWorkerPackage({
+      repoRoot: repo,
+      sourceSha: sha,
+      target: 'staging',
+      projectId: 'guardentra-staging',
+      outDir: dirs.outDir,
+      receipt: dirs.receipt,
+      skipSmoke: true,
+      runNpmInstall: () => {
+        throw new Error('npm install must not generate the isolated lock');
+      },
+    });
+
+    const bundle = fs.readFileSync(path.join(dirs.outDir, 'index.cjs'), 'utf8');
+    expect(bundle).toContain('CLEAN_WORKER');
+    expect(bundle).not.toContain('DIRTY_WORKER');
+    expect((receipt.dependencies as Record<string, string>)['firebase-admin']).toBe('1.2.3');
+    const isolated = JSON.parse(fs.readFileSync(path.join(dirs.outDir, 'package-lock.json'), 'utf8'));
+    expect(isolated.packages['node_modules/transitive-lib'].integrity).toBe('sha512-transitive');
+    expect(isolated.packages['node_modules/firebase-admin'].integrity).toBe('sha512-clean');
+    expect(fs.readFileSync(path.join(repo, 'server', 'mailWorkerFunctions.ts'), 'utf8')).toContain('DIRTY_WORKER');
+    expect(fs.readFileSync(pkgPath, 'utf8')).toContain('DIRTY_SCRIPT');
+    expect(receipt.sourceBinding).toBe('git-archive');
+    const identity = receipt.inputIdentity as { before: string; after: string };
+    expect(identity.before).toBe(identity.after);
+  });
+
+  it('refuses when packaged inputs change during the build and leaves the worktree dirty', () => {
+    const dirs = tempDirs();
+    scratch.push(dirs.root);
+    const repo = path.join(dirs.root, 'src-repo');
+    fs.mkdirSync(repo, { recursive: true });
+    const sha = initSourceRepo(repo);
+    fs.writeFileSync(path.join(repo, 'server', 'mailWorkerFunctions.ts'), 'export const marker = "STILL_DIRTY";\n');
+    expect(() =>
+      prepareMailWorkerPackage({
+        repoRoot: repo,
+        sourceSha: sha,
+        target: 'staging',
+        projectId: 'guardentra-staging',
+        outDir: dirs.outDir,
+        receipt: dirs.receipt,
+        skipSmoke: true,
+        testHooks: true,
+        runNpmBuild: (buildRoot: string) => {
+          fs.appendFileSync(path.join(buildRoot, 'package-lock.json'), '\n');
+          fs.mkdirSync(path.join(buildRoot, 'dist', 'mail-worker'), { recursive: true });
+          fs.writeFileSync(
+            path.join(buildRoot, 'dist', 'mail-worker', 'index.cjs'),
+            'exports.deliverMail=function(){};exports.recoverMail=function(){};require("firebase-admin/app");\n',
+          );
+        },
+      }),
+    ).toThrowError(/SOURCE_CHANGED/);
+    expect(fs.existsSync(dirs.outDir)).toBe(false);
+    expect(fs.readFileSync(path.join(repo, 'server', 'mailWorkerFunctions.ts'), 'utf8')).toContain('STILL_DIRTY');
+  });
+});
+
+describe('mail worker locked dependency closure', () => {
+  it('copies transitive integrity from the source lock and rejects drift', () => {
+    const source = sourceLockFixture();
+    const isolated = buildIsolatedLockfile(source, { 'firebase-admin': '1.2.3' }) as {
+      packages: Record<string, { integrity?: string }>;
+    };
+    expect(isolated.packages['node_modules/transitive-lib'].integrity).toBe('sha512-transitive');
+    expect(isolated.packages['node_modules/optional-lib'].integrity).toBe('sha512-optional');
+    expect(isolated.packages['node_modules/unrelated']).toBeUndefined();
+    isolated.packages['node_modules/transitive-lib'].integrity = 'sha512-drift';
+    expect(() => assertClosureBoundToSource(isolated, source)).toThrowError(/LOCK_DRIFT/);
+  });
+
+  it('fails closed when a required transitive package is absent', () => {
+    const source = sourceLockFixture();
+    delete (source.packages as Record<string, unknown>)['node_modules/transitive-lib'];
+    expect(() => buildIsolatedLockfile(source, { 'firebase-admin': '1.2.3' })).toThrowError(/LOCKFILE_MISS/);
   });
 });

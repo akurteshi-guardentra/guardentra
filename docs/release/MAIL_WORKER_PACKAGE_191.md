@@ -25,7 +25,7 @@ functions into the repository root `firebase.json`.
 
 ## How to prepare
 
-From a clean checkout of the reviewed SHA:
+From a checkout whose `HEAD` is the reviewed SHA. Dirty or untracked files are not packaged; the script reads `git archive` of that commit and does not reset the worktree:
 
 ```bash
 npm run build:mail-worker
@@ -46,19 +46,31 @@ staging descriptor and receipt — they are never invented.
 
 1. Refuses missing `--target` / `--project-id` and any target other than
    `staging` / project other than `guardentra-staging`.
-2. Requires the workspace `HEAD` to match `--source-sha`.
-3. Builds via `npm run build:mail-worker` → `dist/mail-worker/index.cjs`.
-4. Reads the bundle’s external `require(...)` imports and pins dependency
-   versions from the **same commit’s** root `package-lock.json` (Node 22).
+2. Requires checkout `HEAD` to match `--source-sha`, then packages an isolated
+   `git archive` of that commit. A dirty tracked worker, lockfile, or package
+   script is not the packaged input. Inputs are hashed before and after the
+   build; a change during preparation is refused. The original worktree is not
+   reset or cleaned.
+3. Builds via the committed `npm run build:mail-worker` script, using an
+   `esbuild` binary whose version matches that commit's lockfile.
+4. Reads the bundle's external `require(...)` imports and copies the full
+   locked dependency closure, including transitive `integrity` and `resolved`
+   fields, from that commit's `package-lock.json`. It does not run a fresh
+   `npm install` to re-resolve versions. The receipt records source-lock and
+   isolated-lock hashes plus Node and npm versions.
 5. Stages only the worker bundle (as `index.cjs` exporting `deliverMail` and
    `recoverMail`), isolated `package.json` / `package-lock.json`, and a
    staging-only deployment descriptor. Excludes `.env`, tokens, keys,
    Terraform, Git metadata, `node_modules`, and unrelated app source.
-6. Runs a clean-install + load smoke against a temporary copy (not left in the
-   upload context).
-7. Writes the receipt **outside** `--out-dir`.
+6. Refuses an output or receipt path that already exists, overlaps the
+   checkout, sits on a symlink, or is a protected root/home path. It does not
+   recursively delete those paths. Cleanup is limited to temporary directories
+   this invocation created.
+7. Writes the receipt **outside** `--out-dir`, and refuses to overwrite an
+   existing receipt.
 8. Keeps `MAIL_WORKER_ENABLED=false` in the descriptor. Packaging does not
-   invoke handlers or provider APIs.
+   invoke handlers or provider APIs. The real install/load proof is
+   `src/tests/mailWorkerPackage.real.test.ts`, separate from fixture unit tests.
 
 ## Composite index (record only — do not deploy from this task)
 
@@ -99,8 +111,12 @@ cutover is authorized.
 
 ## Tests
 
-- `src/tests/mailWorkerPackage.test.ts` — package/entrypoint, refusal, disabled
-  handler / no provider call, clean-install/load smoke (no real providers/GCP)
+- `src/tests/mailWorkerPackage.test.ts` — fixture/unit coverage: refusal,
+  path safety, exact-source binding, lock closure drift, stubbed smoke
+- `src/tests/mailWorkerPackage.real.test.ts` — Node 22 build of the real
+  entrypoint, `npm ci` from the copied lock, load of real disabled handlers
+  with provider/GCP network blocked. A skipped or stubbed install is not this
+  proof.
 - Existing `src/tests/mailWorker*.test.ts` — ownership, duplicates, retries,
   unknown outcomes (reuse; not replaced by packaging tests)
 
