@@ -776,6 +776,26 @@ describe('portal AI token binding', () => {
 });
 
 describe('org decisions', () => {
+  it('rejects a portal session on the organization decision route', async () => {
+    const res = mockRes();
+    await handleOrgDecision(
+      req({
+        token: 'portal-a',
+        body: {
+          assessmentId: 'asmA',
+          outcome: 'conditional',
+          decisionNotes: 'Needs a follow-up',
+          remediationOwner: 'Owner',
+          remediationDueAt: '2026-11-01',
+          residualRiskLevel: 'Medium',
+        },
+      }),
+      res as any,
+      deps(),
+    );
+    expect(res.statusCode).toBe(403);
+  });
+
   it('rejects missing outcomes', async () => {
     const res = mockRes();
     await handleOrgDecision(

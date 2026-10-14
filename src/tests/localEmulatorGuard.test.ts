@@ -7,14 +7,21 @@ describe('local emulator guard', () => {
     expect(assertLocalEmulatorAllowed({ dev: true, flag: 'true', projectId: 'demo-guardentra-local' })).toBe(false);
   });
 
-  it('allows a non-hosted dev project when opted in', () => {
+  it('allows only the local demo project when opted in', () => {
     expect(
       assertLocalEmulatorAllowed({ dev: true, flag: '1', projectId: 'demo-guardentra-local' }),
     ).toBe(true);
   });
 
-  it('refuses hosted projects, the legacy demo cloud project, and production builds', () => {
-    for (const projectId of ['guardentra-staging', 'guardentra-prod', 'guardentra-7f582', '']) {
+  it('refuses hosted projects, arbitrary project ids, and production builds', () => {
+    for (const projectId of [
+      'guardentra-staging',
+      'guardentra-prod',
+      'guardentra-7f582',
+      'guardentra-dev',
+      'my-real-project',
+      '',
+    ]) {
       expect(() => assertLocalEmulatorAllowed({ dev: true, flag: '1', projectId })).toThrow(/refused/);
     }
     expect(() =>

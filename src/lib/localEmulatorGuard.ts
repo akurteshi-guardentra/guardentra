@@ -1,14 +1,18 @@
-/** Hosted and legacy cloud projects must never attach to a local emulator. */
-const REFUSED_EMULATOR_PROJECTS = new Set([
-  'guardentra-staging',
-  'guardentra-prod',
-  'guardentra-7f582',
-]);
+/** Only this non-live project may attach to the local emulators. */
+export const LOCAL_EMULATOR_PROJECT_ID = 'demo-guardentra-local';
+
+export const LOCAL_EMULATOR_ENDPOINTS = {
+  authUrl: 'http://127.0.0.1:9099',
+  firestoreHost: '127.0.0.1',
+  firestorePort: 8080,
+  storageHost: '127.0.0.1',
+  storagePort: 9199,
+} as const;
 
 /**
  * Local synthetic emulator mode is opt-in for Vite dev only.
- * Returns false when the flag is off. Throws when the flag would point a
- * hosted or production-like project at localhost.
+ * Returns false when the flag is off. Throws for every project other than
+ * `demo-guardentra-local`, including empty and hosted ids.
  */
 export function assertLocalEmulatorAllowed(options: {
   dev: boolean;
@@ -20,7 +24,7 @@ export function assertLocalEmulatorAllowed(options: {
     throw new Error('VITE_USE_LOCAL_EMULATORS is refused outside Vite dev.');
   }
   const projectId = options.projectId.trim();
-  if (!projectId || REFUSED_EMULATOR_PROJECTS.has(projectId)) {
+  if (projectId !== LOCAL_EMULATOR_PROJECT_ID) {
     throw new Error(
       `VITE_USE_LOCAL_EMULATORS is refused for Firebase project "${projectId || '(empty)'}".`,
     );
