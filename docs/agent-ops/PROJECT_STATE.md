@@ -589,3 +589,5 @@ Issue #201 records that `materialAuditEventId()` emits `mat_` plus 64 hex charac
 The correction maps those journal ids at `emitAuditIntent()` only, version `mat-uuid-v1`: RFC 4122 UUID v5 of the full source id. Firestore journal ids stay unchanged. Existing UUID inputs stay UUID inputs and are not remapped. A conflicting tenant or source id is rejected instead of treated as a duplicate. Migrations, checksums, infrastructure, and live data are unchanged.
 
 This is a repository checkpoint on `fix/audit-material-event-id-201` from `release/rc-2026-10-08` at `bddba6628c2649588a1af96ecefb5cda1144262b`. It is not #74 acceptance, not a staging connection, and not deployed. The exact head SHA is the draft PR head.
+
+Review 5535158630 on that first head required two corrections, still inside the same draft: a pre-PR UUID outbox envelope retries without being rewritten, and the worker rejects a mismatched tenant or source before it acknowledges the row or writes a chain link. Migrations remain unchanged. Not deployed.

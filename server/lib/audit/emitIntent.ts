@@ -2,6 +2,7 @@ import { getAuditPool, isAuditSpineEnabled } from './pool.ts';
 import { redactAuditPayload } from './redact.ts';
 import {
   AuditEventIdentityError,
+  outboxRetryMatches,
   resolveAuditEventIdentity,
   type ResolvedAuditEventIdentity,
 } from './eventIdentity.ts';
@@ -59,29 +60,19 @@ function buildEnvelope(
 }
 
 function sameStoredIdentity(
-  row: { tenant_id?: string; payload?: StoredAuditEnvelope },
+  row: { tenant_id?: string; payload?: unknown },
   envelope: StoredAuditEnvelope,
 ): boolean {
-  const stored = row.payload;
-  if (!stored || row.tenant_id !== envelope.tenantId || stored.tenantId !== envelope.tenantId) {
-    return false;
-  }
-  if (stored.eventId !== envelope.eventId || stored.sourceEventId !== envelope.sourceEventId) {
-    return false;
-  }
-  if (stored.eventType !== envelope.eventType) return false;
-  if ((stored.objectType ?? null) !== (envelope.objectType ?? null)) return false;
-  if ((stored.objectId ?? null) !== (envelope.objectId ?? null)) return false;
-  if (!envelope.eventIdMapping) return stored.eventIdMapping == null;
-  const identity = stored.payload?.auditIdentity as
-    | { mappingVersion?: string; sourceEventId?: string; sqlEventId?: string }
-    | undefined;
-  return (
-    stored.eventIdMapping?.version === envelope.eventIdMapping.version &&
-    identity?.mappingVersion === envelope.eventIdMapping.version &&
-    identity?.sourceEventId === envelope.sourceEventId &&
-    identity?.sqlEventId === envelope.eventId
-  );
+  if (!row.tenant_id) return false;
+  return outboxRetryMatches(row.payload, row.tenant_id, {
+    tenantId: envelope.tenantId,
+    eventId: envelope.eventId,
+    sourceEventId: envelope.sourceEventId,
+    eventType: envelope.eventType,
+    objectType: envelope.objectType ?? null,
+    objectId: envelope.objectId ?? null,
+    eventIdMapping: envelope.eventIdMapping,
+  });
 }
 
 export async function emitAuditIntent(input: AuditEmitEnvelope): Promise<EmitResult> {

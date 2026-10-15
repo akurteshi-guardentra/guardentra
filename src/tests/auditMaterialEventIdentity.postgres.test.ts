@@ -426,6 +426,275 @@ describe('#201 material event identity on PostgreSQL 16', () => {
     }
   });
 
+  it('retries a pre-PR UUID outbox row without rewriting it', async () => {
+    const db = getAuditPool();
+    if (!db) throw new Error('Audit database unavailable');
+    const pendingId = 'ABCDEFAB-1111-4111-8111-111111111111';
+    const pending = {
+      eventId: pendingId,
+      tenantId: 'org-legacy-pending',
+      eventType: 'assessment.created',
+      actorId: null,
+      actorType: 'user',
+      objectType: 'assessment',
+      objectId: 'asm-old',
+      payload: { note: 'queued-before-mapping' },
+      schemaVersion: 1,
+      createdAt: '2026-10-01T00:00:00.000Z',
+    };
+    await db.query(
+      `INSERT INTO audit_outbox (event_id, tenant_id, payload, status)
+       VALUES ($1, $2, $3::jsonb, 'pending')`,
+      [pendingId.toLowerCase(), pending.tenantId, JSON.stringify(pending)],
+    );
+    const retry = await emitAuditIntent({
+      eventId: pending.eventId,
+      tenantId: pending.tenantId,
+      eventType: pending.eventType,
+      actorType: 'user',
+      objectType: pending.objectType,
+      objectId: pending.objectId,
+      payload: { note: 'queued-before-mapping' },
+    });
+    expect(retry).toEqual({
+      queued: false,
+      duplicate: true,
+      eventId: pendingId.toLowerCase(),
+      sourceEventId: pendingId.toLowerCase(),
+    });
+    expect((await counts(pending.tenantId)).events).toHaveLength(0);
+    expect(await processAuditOutboxBatch(20)).toBe(1);
+    const pendingRows = await counts(pending.tenantId);
+    expect(pendingRows.outbox).toHaveLength(1);
+    expect(pendingRows.events).toHaveLength(1);
+    expect(pendingRows.chain).toHaveLength(1);
+    expect(pendingRows.outbox[0].status).toBe('acked');
+    expect(pendingRows.outbox[0].payload.eventId).toBe(pendingId);
+    expect(pendingRows.outbox[0].payload.sourceEventId).toBeUndefined();
+    expect(pendingRows.events[0].event_id).toBe(pendingId.toLowerCase());
+    expect(pendingRows.events[0].payload).toEqual({ note: 'queued-before-mapping' });
+    expect(await verifyTenantChain(pending.tenantId)).toMatchObject({ ok: true, checked: 1 });
+
+    const ackedId = '22222222-2222-4222-8222-222222222222';
+    const acked = {
+      eventId: ackedId,
+      tenantId: 'org-legacy-acked',
+      eventType: 'vendor.created',
+      actorId: 'user-old',
+      actorType: 'user' as const,
+      objectType: 'vendor',
+      objectId: 'vendor-old',
+      payload: { note: 'pre-pr' },
+      schemaVersion: 1,
+      createdAt: '2026-10-01T00:00:00.000Z',
+    };
+    await db.query(
+      `INSERT INTO audit_outbox (event_id, tenant_id, payload, status)
+       VALUES ($1, $2, $3::jsonb, 'acked')`,
+      [ackedId.toLowerCase(), acked.tenantId, JSON.stringify(acked)],
+    );
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+      await persistOutboxPayload(client, { ...acked, eventId: ackedId.toLowerCase() });
+      await client.query('COMMIT');
+    } finally {
+      client.release();
+    }
+    const before = await db.query(
+      `SELECT e.event_type, e.payload AS event_payload, c.hash, c.event_id::text AS chain_event_id
+       FROM audit_events e
+       JOIN audit_hash_chain c ON c.event_id = e.event_id
+       WHERE e.tenant_id = $1`,
+      [acked.tenantId],
+    );
+    const ackedRetry = await emitAuditIntent({
+      eventId: acked.eventId,
+      tenantId: acked.tenantId,
+      eventType: acked.eventType,
+      actorId: 'user-old',
+      actorType: 'user',
+      objectType: acked.objectType,
+      objectId: acked.objectId,
+      payload: { note: 'pre-pr' },
+    });
+    expect(ackedRetry).toEqual({
+      queued: false,
+      duplicate: true,
+      eventId: ackedId.toLowerCase(),
+      sourceEventId: ackedId.toLowerCase(),
+    });
+    expect(await processAuditOutboxBatch(20)).toBe(0);
+    const after = await db.query(
+      `SELECT e.event_type, e.payload AS event_payload, c.hash, c.event_id::text AS chain_event_id
+       FROM audit_events e
+       JOIN audit_hash_chain c ON c.event_id = e.event_id
+       WHERE e.tenant_id = $1`,
+      [acked.tenantId],
+    );
+    expect(after.rows).toEqual(before.rows);
+    const ackedRows = await counts(acked.tenantId);
+    expect(ackedRows.outbox).toHaveLength(1);
+    expect(ackedRows.events).toHaveLength(1);
+    expect(ackedRows.chain).toHaveLength(1);
+    expect(ackedRows.outbox[0].payload.eventId).toBe(ackedId);
+    expect(ackedRows.outbox[0].payload.sourceEventId).toBeUndefined();
+    expect(await verifyTenantChain(acked.tenantId)).toMatchObject({ ok: true, checked: 1 });
+  });
+
+  it('fails closed on mismatched outbox tenant, source, and persisted origin', async () => {
+    const db = getAuditPool();
+    if (!db) throw new Error('Audit database unavailable');
+    const quarantine = async (tenantId: string) => {
+      await db.query(
+        `UPDATE audit_outbox
+         SET status = 'dead', next_attempt_at = now() + interval '365 days'
+         WHERE tenant_id = $1 AND status <> 'acked'`,
+        [tenantId],
+      );
+    };
+
+    const tenantMismatchId = '33333333-3333-4333-8333-333333333333';
+    await db.query(
+      `INSERT INTO audit_outbox (event_id, tenant_id, payload, status)
+       VALUES ($1, $2, $3::jsonb, 'pending')`,
+      [
+        tenantMismatchId.toLowerCase(),
+        'org-column-b',
+        JSON.stringify({
+          eventId: tenantMismatchId.toLowerCase(),
+          tenantId: 'org-payload-a',
+          eventType: 'vendor.created',
+          actorType: 'user',
+          objectType: 'vendor',
+          objectId: 'v-mismatch',
+          payload: { note: 'tenant-mismatch' },
+          schemaVersion: 1,
+          createdAt: '2026-10-01T00:00:00.000Z',
+        }),
+      ],
+    );
+    expect(await processAuditOutboxBatch(20)).toBe(0);
+    const tenantRow = await db.query(
+      `SELECT status, last_error FROM audit_outbox WHERE tenant_id = 'org-column-b'`,
+    );
+    expect(tenantRow.rows[0].status).not.toBe('acked');
+    expect(String(tenantRow.rows[0].last_error)).toContain('audit event identity conflict');
+    expect((await counts('org-column-b')).events).toHaveLength(0);
+    expect((await counts('org-payload-a')).events).toHaveLength(0);
+    await quarantine('org-column-b');
+
+    const matA = materialAuditEventId(['org-source-mismatch', 'vendor.created', 'vendor-a']);
+    const matB = materialAuditEventId(['org-source-mismatch', 'vendor.created', 'vendor-b']);
+    const idA = resolveAuditEventIdentity(matA);
+    const idB = resolveAuditEventIdentity(matB);
+    await db.query(
+      `INSERT INTO audit_outbox (event_id, tenant_id, payload, status)
+       VALUES ($1, $2, $3::jsonb, 'pending')`,
+      [
+        idA.sqlEventId,
+        'org-source-mismatch',
+        JSON.stringify({
+          eventId: idA.sqlEventId,
+          sourceEventId: matB,
+          eventIdMapping: idB.mapping,
+          tenantId: 'org-source-mismatch',
+          eventType: 'vendor.created',
+          actorId: null,
+          actorType: 'user',
+          objectType: 'vendor',
+          objectId: 'vendor-b',
+          payload: {
+            auditIdentity: {
+              mappingVersion: 'mat-uuid-v1',
+              sourceEventId: matB,
+              sqlEventId: idB.sqlEventId,
+            },
+          },
+          schemaVersion: 1,
+          createdAt: '2026-10-01T00:00:00.000Z',
+        }),
+      ],
+    );
+    expect(await processAuditOutboxBatch(20)).toBe(0);
+    const sourceRows = await counts('org-source-mismatch');
+    expect(sourceRows.events).toHaveLength(0);
+    expect(sourceRows.chain).toHaveLength(0);
+    expect(sourceRows.outbox[0].status).not.toBe('acked');
+    expect(sourceRows.outbox[0].payload.sourceEventId).toBe(matB);
+    await quarantine('org-source-mismatch');
+
+    const originId = '44444444-4444-4444-8444-444444444444';
+    await emitAuditIntent({
+      eventId: originId,
+      tenantId: 'org-origin',
+      eventType: 'vendor.created',
+      objectType: 'vendor',
+      objectId: 'vendor-origin',
+      payload: { note: 'origin' },
+    });
+    expect(await processAuditOutboxBatch(20)).toBe(1);
+    const before = await db.query(
+      `SELECT hash FROM audit_hash_chain WHERE tenant_id = 'org-origin'`,
+    );
+    await db.query(
+      `UPDATE audit_outbox
+       SET status = 'pending',
+           next_attempt_at = now(),
+           payload = jsonb_set(payload, '{eventType}', '"vendor.imported"')
+       WHERE tenant_id = 'org-origin'`,
+    );
+    expect(await processAuditOutboxBatch(20)).toBe(0);
+    const after = await db.query(
+      `SELECT hash FROM audit_hash_chain WHERE tenant_id = 'org-origin'`,
+    );
+    expect(after.rows).toEqual(before.rows);
+    const originRows = await counts('org-origin');
+    expect(originRows.events).toHaveLength(1);
+    expect(originRows.chain).toHaveLength(1);
+    expect(originRows.outbox[0].status).not.toBe('acked');
+    await quarantine('org-origin');
+
+    const partial = materialAuditEventId(['org-partial', 'vendor.created', 'vendor-partial']);
+    const partialId = resolveAuditEventIdentity(partial);
+    await db.query(
+      `INSERT INTO audit_outbox (event_id, tenant_id, payload, status)
+       VALUES ($1, $2, $3::jsonb, 'pending')`,
+      [
+        partialId.sqlEventId,
+        'org-partial',
+        JSON.stringify({
+          eventId: partialId.sqlEventId,
+          sourceEventId: partial,
+          tenantId: 'org-partial',
+          eventType: 'vendor.created',
+          objectType: 'vendor',
+          objectId: 'vendor-partial',
+          payload: { note: 'partial' },
+          schemaVersion: 1,
+          createdAt: '2026-10-01T00:00:00.000Z',
+        }),
+      ],
+    );
+    await expect(
+      emitAuditIntent({
+        eventId: partial,
+        tenantId: 'org-partial',
+        eventType: 'vendor.created',
+        objectType: 'vendor',
+        objectId: 'vendor-partial',
+        payload: { note: 'partial' },
+      }),
+    ).rejects.toThrow('audit event identity conflict');
+    expect(await processAuditOutboxBatch(20)).toBe(0);
+    const partialRows = await counts('org-partial');
+    expect(partialRows.events).toHaveLength(0);
+    expect(partialRows.chain).toHaveLength(0);
+    expect(partialRows.outbox[0].status).not.toBe('acked');
+    expect(partialRows.outbox[0].payload.sourceEventId).toBe(partial);
+    await quarantine('org-partial');
+  });
+
   it('does not open a pool when the spine is disabled', async () => {
     await closeAuditPool();
     process.env.AUDIT_SPINE_ENABLED = 'false';

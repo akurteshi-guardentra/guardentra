@@ -4,6 +4,8 @@ import {
   AUDIT_EVENT_DNS_NAMESPACE,
   MATERIAL_EVENT_ID_MAPPING_VERSION,
   MATERIAL_EVENT_ID_NAMESPACE,
+  assertOutboxProvenance,
+  outboxRetryMatches,
   resolveAuditEventIdentity,
   uuidV5,
 } from '../../server/lib/audit/eventIdentity';
@@ -76,6 +78,42 @@ describe('#201 material event identity mapping', () => {
     for (const eventId of malformed) {
       expect(() => resolveAuditEventIdentity(eventId)).toThrow('unsupported audit event id');
     }
+  });
+
+  it('accepts an unmapped pre-PR UUID envelope and rejects partial mapping metadata', () => {
+    const legacy = {
+      eventId: 'A0EEBC99-9C0B-4EF8-BB6D-6BB9BD380A11',
+      tenantId: 'org-1',
+      eventType: 'vendor.created',
+      objectType: 'vendor',
+      objectId: 'v1',
+      payload: { note: 'pre-pr' },
+    };
+    const incoming = {
+      tenantId: 'org-1',
+      eventId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+      sourceEventId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+      eventType: 'vendor.created',
+      objectType: 'vendor',
+      objectId: 'v1',
+      eventIdMapping: null,
+    };
+    expect(outboxRetryMatches(legacy, 'org-1', incoming)).toBe(true);
+    expect(outboxRetryMatches(legacy, 'org-1', { ...incoming, eventType: 'vendor.imported' })).toBe(false);
+    expect(
+      outboxRetryMatches(
+        { ...legacy, sourceEventId: LOCKED_MATERIAL_ID },
+        'org-1',
+        incoming,
+      ),
+    ).toBe(false);
+    expect(() =>
+      assertOutboxProvenance({
+        event_id: incoming.eventId,
+        tenant_id: 'org-other',
+        payload: { ...legacy, eventId: incoming.eventId },
+      }),
+    ).toThrow('audit event identity conflict');
   });
 
   it('does not open a pool while the spine is disabled', async () => {

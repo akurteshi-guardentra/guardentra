@@ -835,3 +835,11 @@ No Cloud SQL execution occurred. Fresh real fixture CI required after publicatio
 - Reconciliation: repository source only. Staging and production audit spines remain disabled. Historical private SQL and ops-secret checkpoints are unchanged.
 - Remaining: exact-head CI, including disposable PostgreSQL 16 material-id acceptance. #74 live inventory, connection, and enablement stay closed.
 - Rollback: revert this source PR. No live rows or schema changes to undo.
+
+## 2026-10-15 — #201 correction: legacy UUID retry and fail-closed provenance
+
+- Issue: #201 review 5535158630 on draft PR #202, head `58cc2ccbcaabc2c3933be4f39364953c7cddb4a5`.
+- Transition: mapping kept. Pre-PR native UUID outbox envelopes retry without a rewrite. The worker and persistence path reject mismatched tenant, source, or origin before ack or a new chain link.
+- Branch: `fix/audit-material-event-id-201`. Migrations 001–003 unchanged.
+- Deployment: **NOT DEPLOYED**. No replay, backfill, or audit activation.
+- Rollback: revert the correction commit on the draft PR.

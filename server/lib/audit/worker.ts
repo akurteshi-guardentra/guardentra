@@ -1,3 +1,4 @@
+import { assertOutboxProvenance, canonicalUuidText } from './eventIdentity.ts';
 import { getAuditPool, isAuditSpineEnabled } from './pool.ts';
 import { persistOutboxPayload } from './hashChain.ts';
 import { processMaterialAuditIntentBatch } from './materialIntent.ts';
@@ -70,14 +71,14 @@ export async function processAuditOutboxBatch(limit = 20): Promise<number> {
     const client = await db.connect();
     try {
       await client.query('BEGIN');
-      const envelope = row.payload as AuditEmitEnvelope & { eventId: string };
-      // Mapped once by emitAuditIntent. Do not derive another id here.
-      const columnEventId = String(row.event_id);
-      if (!envelope.eventId || envelope.eventId.toLowerCase() !== columnEventId.toLowerCase()) {
-        throw new Error('audit outbox event identity mismatch');
-      }
-      envelope.eventId = columnEventId;
-      await persistOutboxPayload(client, envelope);
+      const envelope = row.payload as AuditEmitEnvelope & { eventId?: string };
+      // Validate the claimed row in place. Do not derive a second id or rewrite
+      // the stored outbox payload. The canonical column UUID is used only for
+      // the event insert so verification reads the same value PostgreSQL stores.
+      assertOutboxProvenance(row);
+      const columnEventId = canonicalUuidText(row.event_id);
+      if (!columnEventId) throw new Error('audit event identity conflict');
+      await persistOutboxPayload(client, { ...envelope, eventId: columnEventId });
       await client.query(
         `UPDATE audit_outbox SET status = 'acked', updated_at = now(), last_error = NULL WHERE id = $1`,
         [row.id]
