@@ -13,10 +13,16 @@ export async function persistOutboxPayload(
   // event + hash-chain persistence.
   await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [envelope.tenantId]);
 
-  const existing = await client.query(`SELECT 1 FROM audit_events WHERE event_id = $1`, [
-    envelope.eventId,
-  ]);
-  if (existing.rowCount) return;
+  const existing = await client.query(
+    `SELECT tenant_id FROM audit_events WHERE event_id = $1`,
+    [envelope.eventId],
+  );
+  if (existing.rowCount) {
+    if (existing.rows[0]?.tenant_id !== envelope.tenantId) {
+      throw new Error('audit event identity conflict');
+    }
+    return;
+  }
 
   const last = await client.query(
     `SELECT hash, seq FROM audit_hash_chain

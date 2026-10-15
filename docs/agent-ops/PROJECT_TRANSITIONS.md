@@ -824,3 +824,14 @@ No Cloud SQL execution occurred. Fresh real fixture CI required after publicatio
 - Deployment: **NOT DEPLOYED**. This records repository state only; no rules release, application rollout, IAM, secrets, DNS or data mutation.
 - Remaining gate: required CI and exact scope review on the updated release candidate, plus explicit owner authorization for PR #182 merge and separate deployment.
 - Rollback: revert PR #184 on the release candidate before any rules deployment.
+
+## 2026-10-15 — #201 material event id / UUID compatibility (source only)
+
+- Issue: #201, parent #74. Owner comment 6194332694 authorized the code-only correction, tests, and a draft PR. No merge, deployment, live SQL, replay, or audit activation.
+- Transition: confirmed `mat_` versus PostgreSQL UUID mismatch → application mapping `mat-uuid-v1` at `emitAuditIntent()` only. Firestore journal ids remain `mat_` plus the full SHA-256 digest. SQL `event_id` stays UUID. Migrations 001–003 are unchanged.
+- Branch: `fix/audit-material-event-id-201`, based on `release/rc-2026-10-08` at `bddba6628c2649588a1af96ecefb5cda1144262b`.
+- Commit/PR: draft PR head. Not merged.
+- Deployment: **NOT DEPLOYED**. No cloud, IAM, secret, rules, or database mutation.
+- Reconciliation: repository source only. Staging and production audit spines remain disabled. Historical private SQL and ops-secret checkpoints are unchanged.
+- Remaining: exact-head CI, including disposable PostgreSQL 16 material-id acceptance. #74 live inventory, connection, and enablement stay closed.
+- Rollback: revert this source PR. No live rows or schema changes to undo.

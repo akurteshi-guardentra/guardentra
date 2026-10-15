@@ -71,7 +71,12 @@ export async function processAuditOutboxBatch(limit = 20): Promise<number> {
     try {
       await client.query('BEGIN');
       const envelope = row.payload as AuditEmitEnvelope & { eventId: string };
-      if (!envelope.eventId) envelope.eventId = row.event_id;
+      // Mapped once by emitAuditIntent. Do not derive another id here.
+      const columnEventId = String(row.event_id);
+      if (!envelope.eventId || envelope.eventId.toLowerCase() !== columnEventId.toLowerCase()) {
+        throw new Error('audit outbox event identity mismatch');
+      }
+      envelope.eventId = columnEventId;
       await persistOutboxPayload(client, envelope);
       await client.query(
         `UPDATE audit_outbox SET status = 'acked', updated_at = now(), last_error = NULL WHERE id = $1`,

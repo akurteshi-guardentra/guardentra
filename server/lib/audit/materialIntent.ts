@@ -149,10 +149,11 @@ type ClaimedMaterialIntent = {
  *
  * Safety properties:
  * - disabled audit spine leaves the Firestore intent pending;
- * - deterministic eventId makes Postgres insertion idempotent;
+ * - the journal document id and envelope.eventId stay the original mat_ id;
+ * - emitAuditIntent maps that id to a stable UUID at the SQL boundary;
  * - a crash after Postgres insert but before Firestore acknowledgement is safe:
- *   the stale lease is reclaimed and the same eventId is relayed again, where
- *   audit_outbox ON CONFLICT deduplicates it;
+ *   the stale lease is reclaimed and the same mat_ id is relayed again, where
+ *   the mapped audit_outbox event_id deduplicates it;
  * - repeated relay failures remain durable/observable and eventually become dead.
  */
 export async function processMaterialAuditIntentBatch(
