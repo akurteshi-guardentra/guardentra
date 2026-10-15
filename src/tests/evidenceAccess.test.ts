@@ -520,11 +520,7 @@ describe('#158 durable portal submit', () => {
           } as any;
           const commitRelated = await prepareRelatedWrites?.(tx, db, current, patch);
           commitRelated?.();
-          expect(vendorSet).toHaveBeenCalledWith(
-            vendorRef,
-            { assessmentStatus: 'Under Review' },
-            { merge: true },
-          );
+          expect(vendorSet).not.toHaveBeenCalled();
 
           return patch;
         }
@@ -549,6 +545,91 @@ describe('#158 durable portal submit', () => {
     expect(res.statusCode).toBe(200);
     expect((res.body as { deduplicated?: boolean }).deduplicated).toBe(true);
     expect(skip).toBe(true);
+  });
+
+  it('uses the retried snapshot instead of an earlier attempt when deciding the vendor write', async () => {
+    const vendorWrites: Array<Record<string, unknown>> = [];
+    const d = deps({
+      runAssessmentTransaction: vi.fn(
+        async (_id, updater, _auditFactory, skipProductWriteWhen, prepareRelatedWrites) => {
+          const open = {
+            organizationId: 'org1',
+            vendorId: 'vendor-1',
+            portalOpen: true,
+            status: 'In Progress',
+            sentAt: '2026-10-07T10:00:00.000Z',
+            questions: [
+              {
+                id: 'q1',
+                controlKey: 'q1',
+                category: 'Access Control',
+                question: 'MFA?',
+                type: 'yesno',
+                options: ['Yes', 'No'],
+                required: true,
+              },
+            ],
+          };
+          const completed = {
+            ...open,
+            portalOpen: false,
+            status: 'Completed',
+            decisionOutcome: 'conditional',
+            submittedSnapshot: {
+              submittedAt: '2026-10-07T12:00:00.000Z',
+              answers: { q1: 'Yes' },
+            },
+          };
+          const vendorRef = { id: 'vendor-1' } as any;
+          const db = {
+            collection: vi.fn(() => ({
+              doc: vi.fn(() => vendorRef),
+            })),
+          } as any;
+          let committed: Record<string, unknown> = {};
+          for (const current of [open, completed]) {
+            const patch = await updater(current);
+            const vendorSet = vi.fn((_ref, data) => {
+              vendorWrites.push(data);
+            });
+            const tx = {
+              get: vi.fn(async () => ({
+                exists: true,
+                data: () => ({ organizationId: 'org1', assessmentStatus: 'Completed' }),
+              })),
+              set: vendorSet,
+            } as any;
+            expect(skipProductWriteWhen?.(current, patch)).toBe(current === completed);
+            const commitRelated = await prepareRelatedWrites?.(tx, db, current, patch);
+            if (current === completed) {
+              commitRelated?.();
+              committed = patch;
+            }
+          }
+          return committed;
+        }
+      ),
+    });
+
+    const res = mockRes();
+    await handlePortalSubmit(
+      req({
+        token: 'portal-a',
+        body: {
+          assessmentId: 'asmA',
+          answers: { q1: 'Yes' },
+          comments: {},
+          evidenceByQuestion: {},
+          attestations: { accuracy: true, authority: true, attestedByName: 'Vendor User' },
+        },
+      }),
+      res as any,
+      d
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect((res.body as { deduplicated?: boolean }).deduplicated).toBe(true);
+    expect(vendorWrites).toEqual([]);
   });
 });
 
