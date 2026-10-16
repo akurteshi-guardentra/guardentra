@@ -72,6 +72,7 @@ export type AssessmentReviewPanelProps = {
   assessment: StoredAssessment;
   reviewAnalysis: { summary: string; rating: string; recommendation: string } | null;
   reviewAiError: string;
+  reviewManual?: boolean;
   reviewAiLoading: boolean;
   reviewFilter: 'exceptions' | 'all';
   onReviewFilterChange: (filter: 'exceptions' | 'all') => void;
@@ -105,6 +106,7 @@ export function AssessmentReviewPanel({
   assessment: reviewAssessment,
   reviewAnalysis,
   reviewAiError,
+  reviewManual = false,
   reviewAiLoading,
   reviewFilter,
   onReviewFilterChange,
@@ -385,14 +387,20 @@ export function AssessmentReviewPanel({
                 </CardHeader>
                 <CardContent>
                   {!reviewAnalysis ? (
-                    <div className="flex items-center gap-3 py-4 text-xs italic text-slate-500">
+                    <div className="flex items-center gap-3 py-4 text-xs text-slate-400">
                       {reviewAiLoading ? (
                         <>
                           <Loader2 className="h-4 w-4 animate-spin" />
                           Running AI analysis…
                         </>
+                      ) : reviewManual ? (
+                        <p data-testid="review-manual-mode">
+                          Manual review. Automated analysis is not available for this session. Answers and the decision below still work.
+                        </p>
                       ) : (
-                        reviewAiError || 'Analysis available after vendor responds.'
+                        <span className="italic text-slate-500">
+                          {reviewAiError || 'Analysis available after vendor responds.'}
+                        </span>
                       )}
                     </div>
                   ) : (

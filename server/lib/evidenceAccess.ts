@@ -95,6 +95,51 @@ export class HttpError extends Error {
   }
 }
 
+/** True when this assessment already has a recorded portal submission. */
+export function portalSubmissionAlreadyRecorded(
+  current: Record<string, unknown>,
+): boolean {
+  const submittedSnapshot =
+    current.submittedSnapshot && typeof current.submittedSnapshot === 'object'
+      ? current.submittedSnapshot
+      : null;
+  return Boolean(
+    submittedSnapshot &&
+      (current.status === 'Under Review' ||
+        current.status === 'Completed' ||
+        current.portalOpen === false),
+  );
+}
+
+/**
+ * A portal submission patch is applied only for a first submit in this attempt.
+ * An empty dedup patch must not be treated as a new submission.
+ */
+export function portalSubmissionPatchApplied(
+  patch: Record<string, unknown>,
+): boolean {
+  const snapshot = patch.submittedSnapshot;
+  return (
+    patch.status === 'Under Review' &&
+    patch.portalOpen === false &&
+    Boolean(snapshot && typeof snapshot === 'object')
+  );
+}
+
+/**
+ * Project Under Review onto the vendor only for the attempt that applies the
+ * first submission. Immediate duplicates, post-decision replays, and replays
+ * of an older submitted assessment return no product patch and must not
+ * rewrite the vendor. Uses this attempt's current snapshot and patch.
+ */
+export function portalSubmissionProjectsVendor(
+  current: Record<string, unknown>,
+  patch: Record<string, unknown>,
+): boolean {
+  if (portalSubmissionAlreadyRecorded(current)) return false;
+  return portalSubmissionPatchApplied(patch);
+}
+
 export function bearerToken(req: Request): string {
   const header = req.headers.authorization;
   if (!header?.startsWith('Bearer ')) return '';
@@ -226,6 +271,49 @@ export async function requireOrgAssessmentAccess(
   }
 }
 
+type RunAssessmentTransaction = EvidenceDeps['runAssessmentTransaction'];
+
+export async function executeAssessmentTransaction(
+  db: Firestore,
+  assessmentId: string,
+  updater: Parameters<RunAssessmentTransaction>[1],
+  auditIntentFactory?: Parameters<RunAssessmentTransaction>[2],
+  skipProductWriteWhen?: Parameters<RunAssessmentTransaction>[3],
+  prepareRelatedWrites?: Parameters<RunAssessmentTransaction>[4],
+  hooks?: {
+    afterAssessmentRead?: (attempt: number) => Promise<void>;
+  },
+): Promise<Record<string, unknown>> {
+  const ref = db.collection('assessments').doc(assessmentId);
+  let attempt = 0;
+  return db.runTransaction(async (tx) => {
+    attempt += 1;
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new HttpError(404, 'Assessment not found');
+    if (hooks?.afterAssessmentRead) await hooks.afterAssessmentRead(attempt);
+    const current = (snap.data() || {}) as Record<string, unknown>;
+    const patch = await updater(current);
+
+    const auditIntent = auditIntentFactory?.(current, patch) || null;
+    const preparedAudit = auditIntent
+      ? await prepareMaterialAuditIntent(tx, db, auditIntent)
+      : null;
+    const commitRelatedWrites = prepareRelatedWrites
+      ? await prepareRelatedWrites(tx, db, current, patch)
+      : undefined;
+    const skipProductWrite = Boolean(skipProductWriteWhen?.(current, patch));
+
+    if (!skipProductWrite) {
+      tx.update(ref, toFirestoreAssessmentUpdate(patch));
+    }
+    commitRelatedWrites?.();
+    if (preparedAudit) {
+      commitPreparedMaterialAuditIntent(tx, preparedAudit);
+    }
+    return patch;
+  });
+}
+
 export function liveEvidenceDeps(): EvidenceDeps {
   return {
     async verifyIdToken(token) {
@@ -300,34 +388,14 @@ export function liveEvidenceDeps(): EvidenceDeps {
       prepareRelatedWrites,
     ) {
       ensureAdmin();
-      const db = getAdminDb();
-      const ref = db.collection('assessments').doc(assessmentId);
-      return db.runTransaction(async (tx) => {
-        const snap = await tx.get(ref);
-        if (!snap.exists) throw new HttpError(404, 'Assessment not found');
-        const current = (snap.data() || {}) as Record<string, unknown>;
-        const patch = await updater(current);
-
-        const auditIntent = auditIntentFactory?.(current, patch) || null;
-        const preparedAudit = auditIntent
-          ? await prepareMaterialAuditIntent(tx, db, auditIntent)
-          : null;
-        const commitRelatedWrites = prepareRelatedWrites
-          ? await prepareRelatedWrites(tx, db, current, patch)
-          : undefined;
-        const skipProductWrite = Boolean(
-          skipProductWriteWhen?.(current, patch),
-        );
-
-        if (!skipProductWrite) {
-          tx.update(ref, toFirestoreAssessmentUpdate(patch));
-        }
-        commitRelatedWrites?.();
-        if (preparedAudit) {
-          commitPreparedMaterialAuditIntent(tx, preparedAudit);
-        }
-        return patch;
-      });
+      return executeAssessmentTransaction(
+        getAdminDb(),
+        assessmentId,
+        updater,
+        auditIntentFactory,
+        skipProductWriteWhen,
+        prepareRelatedWrites,
+      );
     },
   };
 }
@@ -464,27 +532,12 @@ export async function handlePortalSubmit(req: Request, res: Response, deps: Evid
       return;
     }
 
-    let deduplicated = false;
     const nowIso = new Date().toISOString();
 
     const patch = await deps.runAssessmentTransaction(
       assessmentId,
       async (current) => {
-        const submittedSnapshot =
-          current.submittedSnapshot && typeof current.submittedSnapshot === 'object'
-            ? (current.submittedSnapshot as Record<string, unknown>)
-            : null;
-        const alreadySubmitted = Boolean(
-          submittedSnapshot &&
-            (current.status === 'Under Review' ||
-              current.status === 'Completed' ||
-              current.portalOpen === false),
-        );
-
-        if (alreadySubmitted) {
-          deduplicated = true;
-          return {};
-        }
+        if (portalSubmissionAlreadyRecorded(current)) return {};
         if (current.portalOpen !== true) {
           throw new HttpError(403, 'Portal is closed');
         }
@@ -581,14 +634,8 @@ export async function handlePortalSubmit(req: Request, res: Response, deps: Evid
           },
         };
       },
-      (current) =>
-        Boolean(
-          current.submittedSnapshot &&
-            (current.status === 'Under Review' ||
-              current.status === 'Completed' ||
-              current.portalOpen === false),
-        ),
-      async (tx, db, current) => {
+      (current) => portalSubmissionAlreadyRecorded(current),
+      async (tx, db, current, patch) => {
         const tenantId = String(current.organizationId || '').trim();
         const vendorId = String(current.vendorId || '').trim();
         if (!tenantId || !vendorId) {
@@ -608,7 +655,9 @@ export async function handlePortalSubmit(req: Request, res: Response, deps: Evid
           throw new HttpError(403, 'Assessment vendor tenant binding is invalid');
         }
 
+        const projectVendor = portalSubmissionProjectsVendor(current, patch);
         return () => {
+          if (!projectVendor) return;
           tx.set(
             vendorRef,
             { assessmentStatus: 'Under Review' },
@@ -618,7 +667,11 @@ export async function handlePortalSubmit(req: Request, res: Response, deps: Evid
       },
     );
 
-    res.json({ ok: true, deduplicated, patch });
+    res.json({
+      ok: true,
+      deduplicated: !portalSubmissionPatchApplied(patch),
+      patch,
+    });
   } catch (err) {
     sendError(res, err, 'Could not submit assessment.');
   }

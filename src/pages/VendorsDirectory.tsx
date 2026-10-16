@@ -111,6 +111,13 @@ export function VendorsDirectory() {
     vendorCount: number;
     vendorCap: number;
   } | null>(null);
+  const [planMeterError, setPlanMeterError] = useState<string | null>(null);
+  const [planMeterOrgId, setPlanMeterOrgId] = useState<string | undefined>(orgId);
+  if (planMeterOrgId !== orgId) {
+    setPlanMeterOrgId(orgId);
+    setPlanMeter(null);
+    setPlanMeterError(null);
+  }
 
   const refreshLocal = (id: string) => {
     if (!shouldUseLocalPersistenceFallback()) {
@@ -129,21 +136,33 @@ export function VendorsDirectory() {
   useEffect(() => {
     if (!orgId) {
       setPlanMeter(null);
+      setPlanMeterError(null);
       return;
     }
     let cancelled = false;
-    void getDoc(doc(db, 'organizations', orgId)).then((snap) => {
-      if (cancelled) return;
-      const data = snap.data() || {};
-      const vendorCap =
-        typeof data.vendorCap === 'number' ? data.vendorCap : DEFAULT_VENDOR_CAP;
-      const vendorCount = typeof data.vendorCount === 'number' ? data.vendorCount : 0;
-      setPlanMeter({
-        planName: getPlan(data.planId).name,
-        vendorCount,
-        vendorCap,
+    setPlanMeter(null);
+    setPlanMeterError(null);
+    void getDoc(doc(db, 'organizations', orgId))
+      .then((snap) => {
+        if (cancelled) return;
+        const data = snap.data() || {};
+        const vendorCap =
+          typeof data.vendorCap === 'number' ? data.vendorCap : DEFAULT_VENDOR_CAP;
+        const vendorCount = typeof data.vendorCount === 'number' ? data.vendorCount : 0;
+        setPlanMeter({
+          planName: getPlan(data.planId).name,
+          vendorCount,
+          vendorCap,
+        });
+        setPlanMeterError(null);
+      })
+      .catch((err) => {
+        console.warn('VendorsDirectory: plan meter unavailable', err);
+        if (cancelled) return;
+        // Do not invent subscription limits from a failed read; server rules still enforce.
+        setPlanMeter(null);
+        setPlanMeterError('Plan usage unavailable — vendor limits could not be loaded.');
       });
-    });
     return () => {
       cancelled = true;
     };
@@ -667,6 +686,15 @@ export function VendorsDirectory() {
       )}
 
       <div className="space-y-4">
+        {planMeterError && (
+          <div
+            data-testid="plan-meter-unavailable"
+            className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100"
+            role="status"
+          >
+            {planMeterError}
+          </div>
+        )}
         {planMeter ? (
           <div
             className={

@@ -1,9 +1,10 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, setPersistence, browserLocalPersistence } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
-import { getStorage } from 'firebase/storage';
+import { getAuth, setPersistence, browserLocalPersistence, connectAuthEmulator } from 'firebase/auth';
+import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
+import { getStorage, connectStorageEmulator } from 'firebase/storage';
 import demoConfig from '../firebase-applet-config.json';
 import { resolveFirebaseClientConfig } from './lib/firebaseClientConfig';
+import { assertLocalEmulatorAllowed, LOCAL_EMULATOR_ENDPOINTS } from './lib/localEmulatorGuard';
 
 /**
  * Prefer a complete VITE_FIREBASE_* set per environment.
@@ -23,6 +24,19 @@ export const db = firebaseConfig.firestoreDatabaseId
   : getFirestore(app);
 export const auth = getAuth(app);
 export const storage = getStorage(app);
+
+if (
+  assertLocalEmulatorAllowed({
+    dev: Boolean(import.meta.env.DEV),
+    flag: import.meta.env.VITE_USE_LOCAL_EMULATORS,
+    projectId: firebaseConfig.projectId,
+  })
+) {
+  connectAuthEmulator(auth, LOCAL_EMULATOR_ENDPOINTS.authUrl, { disableWarnings: true });
+  connectFirestoreEmulator(db, LOCAL_EMULATOR_ENDPOINTS.firestoreHost, LOCAL_EMULATOR_ENDPOINTS.firestorePort);
+  connectStorageEmulator(storage, LOCAL_EMULATOR_ENDPOINTS.storageHost, LOCAL_EMULATOR_ENDPOINTS.storagePort);
+  console.info('GuardEntra local synthetic emulators attached. Not staging or production.');
+}
 
 // Explicitly set persistence to local to handle iframe storage restrictions
 setPersistence(auth, browserLocalPersistence).catch((err) => {
