@@ -139,7 +139,8 @@ type VerificationSender = {
 /**
  * Requests a verification email for the current Auth user.
  * A missing, anonymous, or already-verified user is an explicit result, not success.
- * Success is returned only when the same uid is still signed in after the request.
+ * Success is returned only when the same user object is still current after the request.
+ * A replacement session with the same uid is not that user.
  */
 export const resendVerificationEmail = async (
   deps?: VerificationSender,
@@ -160,7 +161,7 @@ export const resendVerificationEmail = async (
     throw error;
   }
   const current = getUser();
-  if (!current || current.uid !== uid) return { status: 'session-changed', uid };
+  if (current !== user) return { status: 'session-changed', uid };
   return { status: 'sent', uid };
 };
 

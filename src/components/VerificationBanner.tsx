@@ -32,25 +32,29 @@ function resultMessage(result: VerificationResendResult): string | null {
 
 /**
  * Unverified-email banner. Resend and recheck share one in-flight guard.
- * Completions from an older account, sign-out, or unmount are ignored.
+ * The guard is owned by the initiating Auth user object, so a replacement
+ * session with the same uid drops stale completions, dismissal, and cooldown.
+ * An older finally cannot clear a newer operation's guard.
  */
 export function VerificationBanner() {
   const { user, refreshVerification, verificationRefreshError } = useAuth();
-  const uid = user && !user.isAnonymous && user.email ? user.uid : null;
+  const session = user && !user.isAnonymous && user.email ? user : null;
   const [phase, setPhase] = React.useState<'idle' | 'sending' | 'cooldown'>('idle');
   const [notice, setNotice] = React.useState<string | null>(null);
   const [tone, setTone] = React.useState<'info' | 'error' | null>(null);
   const [dismissed, setDismissed] = React.useState(false);
-  const [boundUid, setBoundUid] = React.useState(uid);
+  const [boundSession, setBoundSession] = React.useState<typeof session>(session);
   const phaseRef = React.useRef(phase);
   const epoch = React.useRef(0);
   const busy = React.useRef(false);
   const mounted = React.useRef(true);
   const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sessionRef = React.useRef(session);
   phaseRef.current = phase;
+  sessionRef.current = session;
 
-  if (uid !== boundUid) {
-    setBoundUid(uid);
+  if (session !== boundSession) {
+    setBoundSession(session);
     setPhase('idle');
     setNotice(null);
     setTone(null);
@@ -86,12 +90,17 @@ export function VerificationBanner() {
     }, delay);
   };
 
-  const stillCurrent = (ticket: number) => mounted.current && ticket === epoch.current;
+  const stillCurrent = (ticket: number, initiating: typeof session) =>
+    mounted.current && ticket === epoch.current && sessionRef.current === initiating;
+
+  const ownsGuard = (ticket: number, initiating: typeof session) =>
+    ticket === epoch.current && sessionRef.current === initiating;
 
   const onResend = () => {
     if (busy.current || phaseRef.current === 'sending' || phaseRef.current === 'cooldown') return;
     busy.current = true;
     const ticket = epoch.current;
+    const initiating = sessionRef.current;
     phaseRef.current = 'sending';
     setPhase('sending');
     setNotice(null);
@@ -99,7 +108,7 @@ export function VerificationBanner() {
     void (async () => {
       try {
         const result = await resendVerificationEmail();
-        if (!stillCurrent(ticket)) return;
+        if (!stillCurrent(ticket, initiating)) return;
         if (result.status === 'sent') {
           phaseRef.current = 'cooldown';
           setPhase('cooldown');
@@ -121,14 +130,14 @@ export function VerificationBanner() {
         setNotice(message);
         armCooldown(ticket, VERIFICATION_RESEND_ERROR_COOLDOWN_MS);
       } catch (error) {
-        if (!stillCurrent(ticket)) return;
+        if (!stillCurrent(ticket, initiating)) return;
         phaseRef.current = 'cooldown';
         setPhase('cooldown');
         setTone('error');
         setNotice(verificationFailureMessage(error));
         armCooldown(ticket, VERIFICATION_RESEND_ERROR_COOLDOWN_MS);
       } finally {
-        if (ticket === epoch.current) busy.current = false;
+        if (ownsGuard(ticket, initiating)) busy.current = false;
       }
     })();
   };
@@ -137,10 +146,11 @@ export function VerificationBanner() {
     if (busy.current || phaseRef.current === 'sending') return;
     busy.current = true;
     const ticket = epoch.current;
+    const initiating = sessionRef.current;
     void (async () => {
       try {
         const result = await refreshVerification();
-        if (!stillCurrent(ticket)) return;
+        if (!stillCurrent(ticket, initiating)) return;
         if (!quiet && result === 'unverified') {
           setTone('info');
           setNotice(STILL_UNVERIFIED_NOTICE);
@@ -150,7 +160,7 @@ export function VerificationBanner() {
           setTone(null);
         }
       } finally {
-        if (ticket === epoch.current) busy.current = false;
+        if (ownsGuard(ticket, initiating)) busy.current = false;
       }
     })();
   };

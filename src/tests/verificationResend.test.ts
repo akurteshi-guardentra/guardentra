@@ -94,6 +94,22 @@ describe('resendVerificationEmail', () => {
     expect(current.send).toHaveBeenCalledTimes(1);
   });
 
+  it('does not report success when a different user instance has the same uid', async () => {
+    const original = { ...eligible };
+    const replacement = { ...eligible };
+    const current = box(original);
+    current.send.mockImplementation(async () => {
+      current.state.user = replacement;
+    });
+    await expect(resendVerificationEmail(current)).resolves.toEqual({
+      status: 'session-changed',
+      uid: 'user-a',
+    });
+    expect(replacement).not.toBe(original);
+    expect(current.send).toHaveBeenCalledTimes(1);
+    expect(current.send).toHaveBeenCalledWith(original);
+  });
+
   it('rethrows network and rate-limit failures without reporting success', async () => {
     const network = box(eligible);
     network.send.mockRejectedValue({ code: 'auth/network-request-failed', message: 'secret-token' });

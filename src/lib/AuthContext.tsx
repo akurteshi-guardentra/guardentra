@@ -210,6 +210,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   useEffect(() => {
+    // StrictMode replays setup → cleanup → setup and preserves this ref.
+    // Cleanup marks the previous lifetime disposed; setup must adopt the new one.
+    // refreshGeneration still rejects work that started before this setup.
+    disposedRef.current = false;
     let profileUnsubscribe: (() => void) | null = null;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     let retryId: ReturnType<typeof setTimeout> | null = null;

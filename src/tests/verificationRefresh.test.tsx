@@ -1,5 +1,6 @@
+import { StrictMode, useEffect, useRef } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../firebase';
 import { AuthProvider, useAuth, VERIFICATION_REFRESH_ERROR } from '../lib/AuthContext';
@@ -264,5 +265,157 @@ describe('AuthContext verification refresh', () => {
     });
     expect(probe.result).toBe('stale');
     expect(user.getIdToken).not.toHaveBeenCalled();
+  });
+
+  it('reloads a verified user after StrictMode replays the auth effect', async () => {
+    const user = makeUser('a1', 'user-a');
+    user.reload.mockImplementation(async () => {
+      user.emailVerified = true;
+    });
+    render(
+      <StrictMode>
+        <AuthProvider>
+          <RefreshProbe />
+        </AuthProvider>
+      </StrictMode>,
+    );
+    await signIn(user);
+    const revision = screen.getByTestId('revision').textContent;
+    await act(async () => {
+      probe.result = await probe.refresh();
+    });
+    expect(probe.result).toBe('verified');
+    expect(user.reload).toHaveBeenCalledTimes(1);
+    expect(user.getIdToken).toHaveBeenCalledWith(true);
+    expect(screen.getByTestId('tag')).toHaveTextContent('a1');
+    expect(screen.getByTestId('verified')).toHaveTextContent('true');
+    expect(screen.getByTestId('revision').textContent).not.toBe(revision);
+    expect(screen.getByTestId('error')).toHaveTextContent('');
+  });
+
+  it('reports unverified after StrictMode replays the auth effect', async () => {
+    const user = makeUser('a1', 'user-a');
+    render(
+      <StrictMode>
+        <AuthProvider>
+          <RefreshProbe />
+        </AuthProvider>
+      </StrictMode>,
+    );
+    await signIn(user);
+    await act(async () => {
+      probe.result = await probe.refresh();
+    });
+    expect(probe.result).toBe('unverified');
+    expect(user.getIdToken).toHaveBeenCalledWith(true);
+    expect(screen.getByTestId('verified')).toHaveTextContent('false');
+    expect(screen.getByTestId('tag')).toHaveTextContent('a1');
+  });
+
+  it('recovers from a failed refresh after StrictMode replays the auth effect', async () => {
+    const user = makeUser('a1', 'user-a');
+    user.reload.mockRejectedValueOnce(new Error('offline'));
+    render(
+      <StrictMode>
+        <AuthProvider>
+          <RefreshProbe />
+        </AuthProvider>
+      </StrictMode>,
+    );
+    await signIn(user);
+    await act(async () => {
+      probe.result = await probe.refresh();
+    });
+    expect(probe.result).toBe('unavailable');
+    expect(screen.getByTestId('error')).toHaveTextContent(VERIFICATION_REFRESH_ERROR);
+    expect(user.getIdToken).not.toHaveBeenCalled();
+
+    user.reload.mockImplementation(async () => {
+      user.emailVerified = true;
+    });
+    await act(async () => {
+      probe.result = await probe.refresh();
+    });
+    expect(probe.result).toBe('verified');
+    expect(user.getIdToken).toHaveBeenCalledWith(true);
+    expect(screen.getByTestId('error')).toHaveTextContent('');
+    expect(screen.getByTestId('verified')).toHaveTextContent('true');
+    expect(screen.getByTestId('tag')).toHaveTextContent('a1');
+  });
+
+  it('rejects a refresh started before StrictMode cleanup and accepts a later one', async () => {
+    const user = makeUser('a1', 'user-a');
+    let release: () => void = () => {};
+    user.reload.mockImplementation(() => new Promise<void>((resolve) => {
+      release = () => resolve();
+    }));
+    (auth as { currentUser: unknown }).currentUser = user;
+    const setups = { count: 0 };
+    vi.mocked(onAuthStateChanged).mockImplementation(((_auth, cb) => {
+      setups.count += 1;
+      harness.authCb = cb as (user: FakeUser | null) => void;
+      return vi.fn();
+    }) as typeof onAuthStateChanged);
+    const results: string[] = [];
+
+    function PendingRefresh() {
+      const started = useRef(false);
+      const { refreshVerification, verificationRevision, verificationRefreshError } = useAuth();
+      useEffect(() => {
+        if (started.current) return;
+        started.current = true;
+        void refreshVerification().then((result) => {
+          results.push(result);
+        });
+      }, [refreshVerification]);
+      return (
+        <div>
+          <div data-testid="revision">{verificationRevision}</div>
+          <div data-testid="error">{verificationRefreshError || ''}</div>
+          <button
+            type="button"
+            onClick={() => {
+              void refreshVerification().then((result) => {
+                results.push(result);
+              });
+            }}
+          >
+            Refresh
+          </button>
+        </div>
+      );
+    }
+
+    render(
+      <StrictMode>
+        <AuthProvider>
+          <PendingRefresh />
+        </AuthProvider>
+      </StrictMode>,
+    );
+    expect(setups.count).toBeGreaterThanOrEqual(2);
+    expect(user.reload).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      release();
+      await Promise.resolve();
+    });
+    expect(results).toEqual(['stale']);
+    expect(user.getIdToken).not.toHaveBeenCalled();
+    expect(screen.getByTestId('revision')).toHaveTextContent('0');
+    expect(screen.getByTestId('error')).toHaveTextContent('');
+
+    user.reload.mockImplementation(async () => {
+      user.emailVerified = true;
+    });
+    await signIn(user);
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(results).toEqual(['stale', 'verified']);
+    expect(user.getIdToken).toHaveBeenCalledWith(true);
+    expect(screen.getByTestId('revision').textContent).not.toBe('0');
+    expect(screen.getByTestId('error')).toHaveTextContent('');
   });
 });
