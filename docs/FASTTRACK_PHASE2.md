@@ -36,6 +36,18 @@ Security boundary: client never chooses region, never computes hashes, never dec
 
 Payloads are redacted (no secrets, tokens, full document bodies).
 
+## Material event identity (`mat-uuid-v1`)
+
+Firestore journal document ids stay `mat_` plus the full SHA-256 hex digest from `materialAuditEventId()`. Migrations `001`–`003` keep `event_id` as PostgreSQL `UUID` and are not rewritten. `emitAuditIntent()` is the only mapping boundary:
+
+- A `mat_` id becomes an RFC 4122 UUID v5 of the entire source id, using namespace `68217ea0-def2-5886-9e2f-d6f33c2e117c` (`audit.guardentra.com` under the DNS UUID namespace). The full `mat_` id is stored as `sourceEventId` and, inside the hashed event payload, `auditIdentity`. The mapping is not a truncation.
+- An existing UUID is lowercased to the form PostgreSQL returns and is stored without `auditIdentity`, so already persisted UUID hash history is not rewritten.
+- The same source id always maps to the same SQL id. A lost acknowledgement retries that id; `audit_outbox` deduplicates it. A different tenant, event type, object, or source id on that SQL id is an identity conflict, not a silent duplicate.
+- A pre-mapping UUID outbox envelope, with no `sourceEventId` or `eventIdMapping`, still retries as that same UUID. The stored envelope and any existing event/hash bytes stay as they were. Partial mapping metadata is a conflict.
+- The worker checks the claimed row's tenant and source provenance before persistence. An inconsistent row is not acknowledged and does not add an event or chain link.
+- Already queued Firestore journals keep their ids. No journal rename, replay, or live backfill is part of this mapping.
+- `AUDIT_SPINE_ENABLED=false` still returns before a database pool is opened. The worker does not map ids again.
+
 ## Local audit DB
 
 ```bash

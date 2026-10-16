@@ -13,7 +13,10 @@ export default defineConfig(({ mode }) => {
         globals: true,
         environment: 'jsdom',
         setupFiles: ['./src/tests/vitest.setup.ts'],
-        include: ['src/tests/**/*.test.{ts,tsx}'],
+        include:
+          process.env.AUDIT_PG_INTEGRATION === '1'
+            ? ['src/tests/**/*.test.{ts,tsx}']
+            : ['src/tests/**/*.test.{ts,tsx}', '!src/tests/**/*.postgres.test.ts'],
         testTimeout: 15000,
       },
       plugins: [tailwindcss()],

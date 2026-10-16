@@ -7,6 +7,9 @@ on:
       - 'migrations/audit/**'
       - 'scripts/audit-tests/**'
       - 'scripts/audit-managed-staging/**'
+      - 'server/lib/audit/**'
+      - 'src/tests/auditMaterialEventIdentity*.test.ts'
+      - 'vite.config.ts'
       - '.github/workflows/infra-ci.yml'
   push:
     branches: [main]
@@ -15,6 +18,9 @@ on:
       - 'migrations/audit/**'
       - 'scripts/audit-tests/**'
       - 'scripts/audit-managed-staging/**'
+      - 'server/lib/audit/**'
+      - 'src/tests/auditMaterialEventIdentity*.test.ts'
+      - 'vite.config.ts'
       - '.github/workflows/infra-ci.yml'
 
 # P0 #136: routine repository CI must remain cloud-neutral. Live Terraform
@@ -157,3 +163,37 @@ jobs:
       - name: Real PostgreSQL 16 restricted migration and negative privilege tests
         working-directory: scripts/audit-managed-staging
         run: npm run test:postgres
+
+  audit-material-event-identity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: guardentra_audit_material_ci
+          # Disposable job-local database only. No real passwords or cloud credentials.
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d guardentra_audit_material_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGDATABASE: guardentra_audit_material_ci
+      PGUSER: postgres
+      AUDIT_PG_INTEGRATION: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked application dependencies
+        run: npm ci
+      - name: Material event identity on disposable PostgreSQL 16
+        run: npm run test:audit-material-pg
