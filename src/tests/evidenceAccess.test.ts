@@ -674,17 +674,23 @@ describe('evidence download', () => {
   });
 
   it('allows portal self-download of untrusted files while the portal is open', async () => {
+    const d = deps();
     const res = mockRes();
     await handleEvidenceDownload(
       req({
         token: 'portal-a',
-        query: { assessmentId: 'asmA', storagePath: 'portal/asmA/a.pdf' },
+        query: {
+          assessmentId: 'asmA',
+          storagePath: 'portal/asmA/a.pdf',
+          generation: '9999',
+        },
       }),
       res as any,
-      deps(),
+      d,
       'portal'
     );
     expect(res.statusCode).toBe(200);
+    expect(d.signReadUrl).toHaveBeenCalledWith('portal/asmA/a.pdf', '1');
   });
 
   it('does not treat portal self-download as a reviewer bypass', async () => {
@@ -699,6 +705,24 @@ describe('evidence download', () => {
       'org'
     );
     expect(res.statusCode).toBe(403);
+  });
+
+  it('rejects a download when metadata has no generation', async () => {
+    const d = deps({
+      getStorageMetadata: vi.fn(async () => ({ contentType: 'application/pdf', size: 10 })),
+    });
+    const res = mockRes();
+    await handleEvidenceDownload(
+      req({
+        token: 'portal-a',
+        query: { assessmentId: 'asmA', storagePath: 'portal/asmA/a.pdf', generation: '1001' },
+      }),
+      res as any,
+      d,
+      'portal'
+    );
+    expect(res.statusCode).toBe(409);
+    expect(d.signReadUrl).not.toHaveBeenCalled();
   });
 
   it('rejects reviewer download unless the trust map is authoritative clean', async () => {
@@ -742,6 +766,7 @@ describe('evidence download', () => {
     );
     expect(res.statusCode).toBe(200);
     expect((res.body as { url?: string }).url).toBe('https://signed.example/tmp');
+    expect(d.signReadUrl).toHaveBeenCalledWith('portal/asmA/a.pdf', '1');
   });
 
   it('rejects reviewer download when the clean record generation is stale', async () => {
@@ -769,6 +794,7 @@ describe('evidence download', () => {
       'org'
     );
     expect(res.statusCode).toBe(403);
+    expect(d.signReadUrl).not.toHaveBeenCalled();
   });
 
   it('rejects reviewer download when the trust record path does not match', async () => {
@@ -826,13 +852,18 @@ describe('organization attachments', () => {
   });
 
   it('allows same-tenant attachment downloads', async () => {
+    const d = deps();
     const res = mockRes();
     await handleOrgAttachmentDownload(
-      req({ token: 'org', query: { orgId: 'org1', vendorId: 'v1', storagePath: attach } }),
+      req({
+        token: 'org',
+        query: { orgId: 'org1', vendorId: 'v1', storagePath: attach, generation: '9999' },
+      }),
       res as any,
-      deps()
+      d
     );
     expect(res.statusCode).toBe(200);
+    expect(d.signReadUrl).toHaveBeenCalledWith(attach, '1');
   });
 });
 
