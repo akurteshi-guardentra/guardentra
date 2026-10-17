@@ -1,14 +1,18 @@
 /**
  * Real scanner and evidence adapters against installed @google-cloud/storage.
- * Transport and IAM signing are stubbed. This is not a live Storage acceptance test.
+ * Transport and IAM signing are stubbed. HTTP, HTTPS, fetch, and socket factories
+ * fail before the original request or connection function. This is not a live
+ * Storage acceptance test.
  */
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import http from 'node:http';
 import https from 'node:https';
+import net from 'node:net';
+import tls from 'node:tls';
 import { generateKeyPairSync } from 'node:crypto';
 import { Readable } from 'node:stream';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { deleteApp } from 'firebase-admin/app';
 import { initializeApp, cert } from 'firebase-admin/app';
 import {
@@ -65,8 +69,13 @@ const canonicalRequests: string[] = [];
 const signerVersions: string[] = [];
 let signBlobCalls = 0;
 let externalHttp = 0;
+let probeMode = false;
+const unexpectedEscapes: string[] = [];
+const probeEscapes: string[] = [];
+const factoryHits: Record<string, number> = {};
+let envSnapshot: NodeJS.ProcessEnv | null = null;
 
-const original = {
+const real = {
   authorizeRequest: GoogleAuth.prototype.authorizeRequest,
   getProjectId: GoogleAuth.prototype.getProjectId,
   getCredentials: GoogleAuth.prototype.getCredentials,
@@ -74,11 +83,62 @@ const original = {
   signBlob: GoogleAuth.prototype.signBlob,
   makeRequest: utilMod.util.makeRequest,
   getCanonicalRequest: URLSigner.prototype.getCanonicalRequest,
+  getCanonicalQueryParams: URLSigner.prototype.getCanonicalQueryParams,
   getSignedUrlV2: URLSigner.prototype.getSignedUrlV2,
   getSignedUrlV4: URLSigner.prototype.getSignedUrlV4,
   httpRequest: http.request,
   httpsRequest: https.request,
+  httpGet: http.get,
+  httpsGet: https.get,
+  fetch: globalThis.fetch,
+  netConnect: net.connect,
+  netCreateConnection: net.createConnection,
+  tlsConnect: tls.connect,
+  httpAgentCreateConnection: http.Agent.prototype.createConnection,
+  httpsAgentCreateConnection: https.Agent.prototype.createConnection,
+  socketConnect: net.Socket.prototype.connect,
 };
+
+function sentinelFactory(kind: string): (...args: unknown[]) => never {
+  factoryHits[kind] = 0;
+  return function originalFactory() {
+    factoryHits[kind] += 1;
+    throw new Error(`ORIGINAL_${kind}_INVOKED`);
+  };
+}
+
+const blockedOriginals = {
+  'http.request': sentinelFactory('http.request'),
+  'https.request': sentinelFactory('https.request'),
+  'http.get': sentinelFactory('http.get'),
+  'https.get': sentinelFactory('https.get'),
+  fetch: sentinelFactory('fetch'),
+  'net.connect': sentinelFactory('net.connect'),
+  'net.createConnection': sentinelFactory('net.createConnection'),
+  'tls.connect': sentinelFactory('tls.connect'),
+  'http.Agent.createConnection': sentinelFactory('http.Agent.createConnection'),
+  'https.Agent.createConnection': sentinelFactory('https.Agent.createConnection'),
+  'net.Socket.connect': sentinelFactory('net.Socket.connect'),
+};
+
+function noteEscape(kind: string) {
+  if (probeMode) {
+    probeEscapes.push(kind);
+    return;
+  }
+  unexpectedEscapes.push(kind);
+  externalHttp += 1;
+}
+
+function denyBeforeIo(kind: keyof typeof blockedOriginals) {
+  const originalFn = blockedOriginals[kind];
+  return function denied(this: unknown, ..._args: unknown[]): never {
+    noteEscape(kind);
+    void originalFn;
+    void this;
+    throw new Error(`EXTERNAL_${kind}_DENIED`);
+  };
+}
 
 function crcOf(bytes: Uint8Array): string {
   const crc = new CRC32C();
@@ -121,13 +181,22 @@ function metadataOf(obj: Stored) {
   return body;
 }
 
-function blockRequest(originalRequest: typeof http.request): typeof http.request {
-  return function blocked(this: unknown, ...args: unknown[]) {
-    externalHttp += 1;
-    const req = originalRequest.apply(this, args as never);
-    process.nextTick(() => req.destroy(new Error('EXTERNAL_HTTP_DENIED')));
-    return req;
-  } as typeof http.request;
+function installNetworkGuards() {
+  http.request = denyBeforeIo('http.request') as typeof http.request;
+  https.request = denyBeforeIo('https.request') as typeof https.request;
+  http.get = denyBeforeIo('http.get') as typeof http.get;
+  https.get = denyBeforeIo('https.get') as typeof https.get;
+  globalThis.fetch = denyBeforeIo('fetch') as typeof fetch;
+  net.connect = denyBeforeIo('net.connect') as typeof net.connect;
+  net.createConnection = denyBeforeIo('net.createConnection') as typeof net.createConnection;
+  tls.connect = denyBeforeIo('tls.connect') as typeof tls.connect;
+  http.Agent.prototype.createConnection = denyBeforeIo(
+    'http.Agent.createConnection',
+  ) as typeof http.Agent.prototype.createConnection;
+  https.Agent.prototype.createConnection = denyBeforeIo(
+    'https.Agent.createConnection',
+  ) as typeof https.Agent.prototype.createConnection;
+  net.Socket.prototype.connect = denyBeforeIo('net.Socket.connect') as typeof net.Socket.prototype.connect;
 }
 
 function installStubs() {
@@ -147,17 +216,17 @@ function installStubs() {
     throw new Error('IAM signBlob was invoked');
   };
   URLSigner.prototype.getCanonicalRequest = function observedCanon(...args: unknown[]) {
-    const text = original.getCanonicalRequest.apply(this, args);
+    const text = real.getCanonicalRequest.apply(this, args);
     canonicalRequests.push(text);
     return text;
   };
   URLSigner.prototype.getSignedUrlV2 = function observedV2(...args: unknown[]) {
     signerVersions.push('v2');
-    return original.getSignedUrlV2.apply(this, args);
+    return real.getSignedUrlV2.apply(this, args);
   };
   URLSigner.prototype.getSignedUrlV4 = function observedV4(...args: unknown[]) {
     signerVersions.push('v4');
-    return original.getSignedUrlV4.apply(this, args);
+    return real.getSignedUrlV4.apply(this, args);
   };
   utilMod.util.makeRequest = function syntheticMakeRequest(
     reqOpts: { uri?: string; qs?: Record<string, unknown>; method?: string },
@@ -240,22 +309,90 @@ function installStubs() {
     );
     return undefined;
   };
-  http.request = blockRequest(original.httpRequest);
-  https.request = blockRequest(original.httpsRequest) as typeof https.request;
+  installNetworkGuards();
 }
 
 function restoreStubs() {
-  GoogleAuth.prototype.authorizeRequest = original.authorizeRequest;
-  GoogleAuth.prototype.getProjectId = original.getProjectId;
-  GoogleAuth.prototype.getCredentials = original.getCredentials;
-  GoogleAuth.prototype.sign = original.sign;
-  GoogleAuth.prototype.signBlob = original.signBlob;
-  utilMod.util.makeRequest = original.makeRequest;
-  URLSigner.prototype.getCanonicalRequest = original.getCanonicalRequest;
-  URLSigner.prototype.getSignedUrlV2 = original.getSignedUrlV2;
-  URLSigner.prototype.getSignedUrlV4 = original.getSignedUrlV4;
-  http.request = original.httpRequest;
-  https.request = original.httpsRequest;
+  GoogleAuth.prototype.authorizeRequest = real.authorizeRequest;
+  GoogleAuth.prototype.getProjectId = real.getProjectId;
+  GoogleAuth.prototype.getCredentials = real.getCredentials;
+  GoogleAuth.prototype.sign = real.sign;
+  GoogleAuth.prototype.signBlob = real.signBlob;
+  utilMod.util.makeRequest = real.makeRequest;
+  URLSigner.prototype.getCanonicalRequest = real.getCanonicalRequest;
+  URLSigner.prototype.getSignedUrlV2 = real.getSignedUrlV2;
+  URLSigner.prototype.getSignedUrlV4 = real.getSignedUrlV4;
+  http.request = real.httpRequest;
+  https.request = real.httpsRequest;
+  http.get = real.httpGet;
+  https.get = real.httpsGet;
+  globalThis.fetch = real.fetch;
+  net.connect = real.netConnect;
+  net.createConnection = real.netCreateConnection;
+  tls.connect = real.tlsConnect;
+  http.Agent.prototype.createConnection = real.httpAgentCreateConnection;
+  https.Agent.prototype.createConnection = real.httpsAgentCreateConnection;
+  net.Socket.prototype.connect = real.socketConnect;
+}
+
+function snapshotEnv() {
+  envSnapshot = { ...process.env };
+}
+
+function restoreEnv() {
+  if (!envSnapshot) return;
+  const snapshot = envSnapshot;
+  for (const key of Object.keys(process.env)) {
+    if (!Object.prototype.hasOwnProperty.call(snapshot, key)) delete process.env[key];
+  }
+  for (const [key, value] of Object.entries(snapshot)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+}
+
+function issuedQuery(href: string): Record<string, string> {
+  const query: Record<string, string> = {};
+  new URL(href).searchParams.forEach((value, key) => {
+    query[key] = value;
+  });
+  delete query['X-Goog-Signature'];
+  return query;
+}
+
+function canonicalParts(canonical: string) {
+  const lines = canonical.split('\n');
+  if (lines.length < 6 || lines[lines.length - 3] !== '') {
+    throw new Error('Unexpected V4 canonical request shape');
+  }
+  return {
+    method: lines[0],
+    path: lines[1],
+    query: lines[2],
+    headers: lines.slice(3, -3).map((line) => `${line}\n`).join(''),
+    signedHeaders: lines[lines.length - 2],
+    contentSha256: lines[lines.length - 1],
+  };
+}
+
+function rebuildCanonical(
+  href: string,
+  signedCanonical: string,
+  mutate: (query: Record<string, string>) => void,
+): string {
+  const parts = canonicalParts(signedCanonical);
+  const query = issuedQuery(href);
+  mutate(query);
+  const canonicalQuery = real.getCanonicalQueryParams.call({}, query) as string;
+  return real.getCanonicalRequest.call(
+    {},
+    parts.method,
+    parts.path,
+    canonicalQuery,
+    parts.headers,
+    parts.signedHeaders,
+    parts.contentSha256,
+  ) as string;
 }
 
 const scans: Array<{ text: string }> = [];
@@ -319,6 +456,7 @@ function mockRes() {
 }
 
 beforeAll(async () => {
+  snapshotEnv();
   process.env.NODE_ENV = 'test';
   delete process.env.APP_ENV;
   process.env.GOOGLE_CLOUD_PROJECT = PROJECT;
@@ -346,9 +484,27 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  restoreStubs();
-  const { getApps } = await import('firebase-admin/app');
-  await Promise.all(getApps().map((app) => deleteApp(app)));
+  try {
+    expect(http.request).not.toBe(real.httpRequest);
+    expect(globalThis.fetch).not.toBe(real.fetch);
+    const { getApps } = await import('firebase-admin/app');
+    await Promise.all(getApps().map((app) => deleteApp(app)));
+    expect(unexpectedEscapes).toEqual([]);
+  } finally {
+    restoreStubs();
+    restoreEnv();
+  }
+  expect(process.env.GOOGLE_CLOUD_PROJECT).toBe(envSnapshot?.GOOGLE_CLOUD_PROJECT);
+  expect(process.env.GCLOUD_PROJECT).toBe(envSnapshot?.GCLOUD_PROJECT);
+  expect(process.env.FIREBASE_STORAGE_BUCKET).toBe(envSnapshot?.FIREBASE_STORAGE_BUCKET);
+  expect(process.env.NODE_ENV).toBe(envSnapshot?.NODE_ENV);
+  expect(process.env.APP_ENV).toBe(envSnapshot?.APP_ENV);
+  expect(process.env.GOOGLE_APPLICATION_CREDENTIALS).toBe(envSnapshot?.GOOGLE_APPLICATION_CREDENTIALS);
+  expect(process.env.STORAGE_EMULATOR_HOST).toBe(envSnapshot?.STORAGE_EMULATOR_HOST);
+  expect(process.env.FIREBASE_STORAGE_EMULATOR_HOST).toBe(envSnapshot?.FIREBASE_STORAGE_EMULATOR_HOST);
+  expect(process.env.CLAMAV_HOST).toBe(envSnapshot?.CLAMAV_HOST);
+  expect(http.request).toBe(real.httpRequest);
+  expect(globalThis.fetch).toBe(real.fetch);
 });
 
 beforeEach(() => {
@@ -356,7 +512,80 @@ beforeEach(() => {
   writes.length = 0;
   canonicalRequests.length = 0;
   signerVersions.length = 0;
+  signBlobCalls = 0;
   externalHttp = 0;
+});
+
+afterEach(() => {
+  expect(unexpectedEscapes, unexpectedEscapes.join(',')).toEqual([]);
+});
+
+describe('offline network guard', () => {
+  it('does not call the original request or connection factory when a request escapes', () => {
+    probeEscapes.length = 0;
+    const hitsBefore = { ...factoryHits };
+    const unexpectedBefore = unexpectedEscapes.length;
+    let connectionFactoryCalls = 0;
+    const agent = new http.Agent();
+    agent.createConnection = function originalConnectionFactory() {
+      connectionFactoryCalls += 1;
+      throw new Error('ORIGINAL_CONNECTION_FACTORY');
+    } as typeof agent.createConnection;
+
+    probeMode = true;
+    try {
+      expect(() =>
+        http.request({
+          host: 'storage.googleapis.com',
+          protocol: 'http:',
+          path: '/synthetic-probe-73',
+          agent,
+        } as never),
+      ).toThrow(/EXTERNAL_http\.request_DENIED/);
+      expect(() =>
+        https.request({ host: 'storage.googleapis.com', protocol: 'https:', path: '/synthetic-probe-73' } as never),
+      ).toThrow(/EXTERNAL_https\.request_DENIED/);
+      expect(() => http.get('http://127.0.0.1:9/synthetic-probe-73')).toThrow(/EXTERNAL_http\.get_DENIED/);
+      expect(() => https.get('https://127.0.0.1:9/synthetic-probe-73')).toThrow(/EXTERNAL_https\.get_DENIED/);
+      expect(() => globalThis.fetch('https://127.0.0.1:9/synthetic-probe-73')).toThrow(/EXTERNAL_fetch_DENIED/);
+      expect(() => net.connect({ host: '127.0.0.1', port: 9 })).toThrow(/EXTERNAL_net\.connect_DENIED/);
+      expect(() => net.createConnection({ host: '127.0.0.1', port: 9 })).toThrow(
+        /EXTERNAL_net\.createConnection_DENIED/,
+      );
+      expect(() => tls.connect({ host: '127.0.0.1', port: 9 })).toThrow(/EXTERNAL_tls\.connect_DENIED/);
+      expect(() => new http.Agent().createConnection({ host: '127.0.0.1', port: 9 } as never)).toThrow(
+        /EXTERNAL_http\.Agent\.createConnection_DENIED/,
+      );
+      expect(() => new https.Agent().createConnection({ host: '127.0.0.1', port: 9 } as never)).toThrow(
+        /EXTERNAL_https\.Agent\.createConnection_DENIED/,
+      );
+      expect(() => new net.Socket().connect({ host: '127.0.0.1', port: 9 })).toThrow(
+        /EXTERNAL_net\.Socket\.connect_DENIED/,
+      );
+    } finally {
+      probeMode = false;
+    }
+
+    expect(connectionFactoryCalls).toBe(0);
+    for (const kind of Object.keys(hitsBefore)) {
+      expect(factoryHits[kind], kind).toBe(hitsBefore[kind]);
+    }
+    expect(unexpectedEscapes.length).toBe(unexpectedBefore);
+    expect(probeEscapes).toEqual([
+      'http.request',
+      'https.request',
+      'http.get',
+      'https.get',
+      'fetch',
+      'net.connect',
+      'net.createConnection',
+      'tls.connect',
+      'http.Agent.createConnection',
+      'https.Agent.createConnection',
+      'net.Socket.connect',
+    ]);
+    expect(externalHttp).toBe(0);
+  });
 });
 
 describe('authoritative generation string', () => {
@@ -753,5 +982,53 @@ describe('live V4 reviewer signing', () => {
     expect(allowed.statusCode).toBe(200);
     expect(canonicalRequests.some((row) => row.includes('generation=1001'))).toBe(true);
     expect(canonicalRequests.some((row) => row.includes('9999'))).toBe(false);
+  });
+
+  it('puts an above-safe-integer generation on the V4 canonical request unchanged', async () => {
+    const live = liveEvidenceDeps();
+    resetWorld(stored(UNSAFE_GENERATION, 'EXACT-UNSAFE-BYTES'));
+    const url = await live.signReadUrl(PATH_NAME, UNSAFE_GENERATION);
+    const rounded = Number(UNSAFE_GENERATION).toString();
+    expect(rounded).not.toBe(UNSAFE_GENERATION);
+    expect(signerVersions).toEqual(['v4']);
+    expect(canonicalRequests).toHaveLength(1);
+    expect(canonicalRequests[0]).toContain(`generation=${UNSAFE_GENERATION}`);
+    expect(canonicalRequests[0]).not.toContain(`generation=${rounded}`);
+    expect(url).toContain(`generation=${encodeURIComponent(UNSAFE_GENERATION)}`);
+    expect(url).not.toContain(`generation=${rounded}`);
+    expect(url).toContain(`X-Goog-Signature=${Buffer.from('NOT-A-CAPABILITY').toString('hex')}`);
+    expect(url).not.toContain('GoogleAccessId=');
+    expect(signBlobCalls).toBe(0);
+    expect(externalHttp).toBe(0);
+  });
+
+  it('a removed or changed generation does not match the signed canonical request', async () => {
+    const live = liveEvidenceDeps();
+    resetWorld(stored('1001', 'CANONICAL-BYTES'));
+    const url = await live.signReadUrl(PATH_NAME, '1001');
+    expect(signerVersions).toEqual(['v4']);
+    expect(canonicalRequests).toHaveLength(1);
+    const signed = canonicalRequests[0];
+    expect(signed).toContain('generation=1001');
+    expect(url).toContain(`X-Goog-Signature=${Buffer.from('NOT-A-CAPABILITY').toString('hex')}`);
+    expect(signBlobCalls).toBe(0);
+    expect(externalHttp).toBe(0);
+
+    const unchanged = rebuildCanonical(url, signed, () => undefined);
+    expect(unchanged).toBe(signed);
+
+    const changed = rebuildCanonical(url, signed, (query) => {
+      query.generation = '1002';
+    });
+    expect(changed).not.toBe(signed);
+    expect(changed).toContain('generation=1002');
+    expect(changed).not.toContain('generation=1001');
+
+    const removed = rebuildCanonical(url, signed, (query) => {
+      delete query.generation;
+    });
+    expect(removed).not.toBe(signed);
+    expect(removed).not.toContain('generation=');
+    expect(removed).not.toBe(changed);
   });
 });
