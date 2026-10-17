@@ -11,6 +11,7 @@ on:
       - 'src/tests/auditMaterialEventIdentity*.test.ts'
       - 'vite.config.ts'
       - '.github/workflows/infra-ci.yml'
+      - 'package-lock.json'
   push:
     branches: [main]
     paths:

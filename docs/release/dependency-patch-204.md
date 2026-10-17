@@ -44,6 +44,6 @@ These results identify the installed versions. They do not demonstrate a reachab
 - `fast-uri` 3.1.4 remains through hoisted `ajv` 8.20.0 (`^3.0.1`). Its high audit range is `3.0.0 - 3.1.7`.
 - The other high and moderate findings, including developer and build tooling, are unchanged and are not declared harmless.
 
-## Coverage gap
+## Disposable PostgreSQL coverage
 
-`.github/workflows/infra-ci.yml` runs only when infrastructure, audit SQL, `vite.config.ts`, or `src/tests/auditMaterialEventIdentity*` paths change. This patch does not touch those paths, so disposable PostgreSQL CI does not run for this lock. An older PostgreSQL run does not prove this lockfile. The workflow was not edited.
+`on.pull_request.paths` in `.github/workflows/infra-ci.yml` includes `package-lock.json`. Push filters, permissions, jobs, commands, and services are unchanged. A pull request that changes this lockfile therefore runs the existing disposable PostgreSQL jobs in that workflow. The run identity, checkout commit, and PostgreSQL results for the head that introduced this path line are in the pull request receipt. An older PostgreSQL run is not evidence for this lock. Ordinary Vitest still skips `portalSubmitReplay.firestore.test.ts` when `FIRESTORE_EMULATOR_HOST` is unset.
