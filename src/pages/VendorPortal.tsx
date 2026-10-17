@@ -17,8 +17,8 @@ import {
   Clock,
   Download,
 } from 'lucide-react';
-import { db } from '../firebase';
-import { getPortalAuth, getPortalAuthHeaders } from '../lib/vendor/portalAuth';
+import { getPortalAuth, getPortalAuthHeaders, getPortalDb } from '../lib/vendor/portalAuth';
+import { classifyPortalSessionFailure, type PortalSessionFailure } from '../lib/vendor/portalSessionError';
 import { Button } from '../components/ui/button';
 import { cn } from '../lib/utils';
 import type { AnswerValue } from '../lib/vendor/types';
@@ -32,10 +32,9 @@ import {
 } from '../lib/vendor/questionBank';
 import { uploadPortalEvidence, requestPortalEvidenceValidate, fetchPortalEvidenceDownloadUrl, type UploadedEvidence } from '../lib/vendor/evidenceUpload';
 import { evidenceStateLabel, trustedEvidenceFileNames, type EvidenceState } from '../lib/vendor/evidenceTrust';
-import { syncVendorAfterAssessmentProgress, syncVendorAfterAssessmentSubmit } from '../lib/vendor/syncVendorAssessment';
+import { syncVendorAfterAssessmentProgress } from '../lib/vendor/syncVendorAssessment';
 import {
   buildPortalAutosavePatch,
-  buildPortalSubmitPatch,
   isReceiptMode,
 } from '../lib/vendor/assessmentLifecycle';
 import {
@@ -82,6 +81,7 @@ export function VendorPortal() {
   const [assessment, setAssessment] = useState<any>(null);
   const [questions, setQuestions] = useState<PortalQuestion[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [portalAccess, setPortalAccess] = useState<PortalSessionFailure | 'ready'>('ready');
   const [activeCategory, setActiveCategory] = useState<string>(QUESTION_CATEGORIES[0]);
   const [questionIndex, setQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<AnswersMap>({});
@@ -125,51 +125,67 @@ export function VendorPortal() {
      * The sequencing is load-bearing: the rules check that claim, so a read issued
      * before sign-in resolves is denied rather than merely unauthenticated.
      */
-    const startPortalSession = async () => {
-      const res = await fetch('/api/portal/session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ assessmentId }),
-      });
-      if (!res.ok) {
-        throw new Error(`Portal session request failed (${res.status})`);
+    const startPortalSession = async (): Promise<boolean> => {
+      let res: Response;
+      try {
+        res = await fetch('/api/portal/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ assessmentId }),
+        });
+      } catch (err) {
+        console.error('Portal session request did not reach the server', err);
+        setPortalAccess('unreachable');
+        return false;
       }
-      const body = (await res.json()) as {
+      if (!res.ok) {
+        setPortalAccess(classifyPortalSessionFailure(res.status));
+        return false;
+      }
+      const body = (await res.json().catch(() => null)) as {
         token?: string;
         branding?: {
           requesterOrgName?: string;
           requesterLogoUrl?: string | null;
           submitted?: boolean;
         };
-      };
-      if (!body.token) throw new Error('Portal session response contained no token');
+      } | null;
+      if (!body?.token) {
+        setPortalAccess('unreachable');
+        return false;
+      }
       if (body.branding?.requesterOrgName) {
         setBranding({
           requesterOrgName: body.branding.requesterOrgName,
           requesterLogoUrl: body.branding.requesterLogoUrl || null,
         });
       }
-      await signInWithCustomToken(getPortalAuth(), body.token);
-      return body.branding;
+      try {
+        await signInWithCustomToken(getPortalAuth(), body.token);
+      } catch (err) {
+        console.error('Portal sign-in failed', err);
+        setPortalAccess('unreachable');
+        return false;
+      }
+      setPortalAccess('ready');
+      return true;
     };
 
     const fetchAssessment = async () => {
       if (!assessmentId) {
+        setPortalAccess('unavailable');
+        setIsLoading(false);
+        return;
+      }
+      const startedSession = await startPortalSession();
+      if (!startedSession) {
         setIsLoading(false);
         return;
       }
       try {
-        await startPortalSession();
-      } catch (err) {
-        // Closed, unknown, or rate-limited link — leave `assessment` null so the
-        // existing "Portal link invalid" screen renders. No new UI state needed.
-        console.error('Failed to start portal session', err);
-        setIsLoading(false);
-        return;
-      }
-      try {
-        const snap = await getDoc(doc(db, 'assessments', assessmentId));
+        const snap = await getDoc(doc(getPortalDb(), 'assessments', assessmentId));
         if (!snap.exists()) {
+          setPortalAccess('unavailable');
           setIsLoading(false);
           return;
         }
@@ -266,8 +282,9 @@ export function VendorPortal() {
           answers: effective,
           comments: nextComments,
           evidenceByQuestion: nextEvidence,
+          currentStatus: assessment?.status,
         });
-        await updateDoc(doc(db, 'assessments', assessmentId), {
+        await updateDoc(doc(getPortalDb(), 'assessments', assessmentId), {
           ...patch,
           answers: nextAnswers,
           answerProposals: props,
@@ -527,31 +544,23 @@ export function VendorPortal() {
         attestedAt: new Date().toISOString(),
         attestedByName: attestedByName.trim(),
       };
-      const patch = buildPortalSubmitPatch({
-        answers: effective,
-        comments,
-        evidenceByQuestion: evidence,
-        attestations: attestationPayload,
-        answerProposals: proposals,
+      const response = await fetch('/api/portal/submit', {
+        method: 'POST',
+        headers: await getPortalAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          assessmentId,
+          answers: effective,
+          comments,
+          evidenceByQuestion: evidence,
+          attestations: attestationPayload,
+          answerProposals: proposals,
+        }),
       });
-      await updateDoc(doc(db, 'assessments', assessmentId), patch);
-      if (assessment?.organizationId && assessment?.vendorId) {
-        void syncVendorAfterAssessmentSubmit(assessment.organizationId, assessment.vendorId, false);
-        void emitAuditBestEffort(
-          {
-            tenantId: assessment.organizationId,
-            eventType: 'assessment.submitted',
-            objectType: 'assessment',
-            objectId: assessmentId,
-            payload: {
-              vendorId: assessment.vendorId,
-              questionCount: questions.length,
-              attestedByName: attestedByName.trim(),
-            },
-          },
-          { getAuthHeaders: getPortalAuthHeaders }
-        );
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error || 'Submission failed.');
       }
+
       setIsSuccess(true);
     } catch (err) {
       console.error(err);
@@ -634,8 +643,7 @@ export function VendorPortal() {
                 </p>
                 <p className="mt-4 font-mono text-xs text-slate-400">Ref: {assessmentId}</p>
                 <p className="mt-6 text-sm text-slate-400">
-                  You can close this window. This link stays available as a receipt — there is no
-                  vendor dashboard to return to.
+                  You can close this window or return to GuardEntra. This link stays available as a receipt.
                 </p>
                 <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
                   <Button
@@ -655,6 +663,12 @@ export function VendorPortal() {
                     Close window
                   </Button>
                 </div>
+                <a
+                  href="/assessments"
+                  className="mt-4 inline-block text-sm text-primary underline-offset-4 hover:underline"
+                >
+                  Return to GuardEntra
+                </a>
                 <p className="mt-4 text-xs text-slate-500">
                   If review needs more detail, {branding.requesterOrgName} will email you a new
                   link.
@@ -665,10 +679,13 @@ export function VendorPortal() {
                 <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-rose-500/10">
                   <AlertTriangle className="h-7 w-7 text-rose-400" />
                 </div>
-                <h1 className="text-2xl font-semibold text-white">Portal link invalid</h1>
+                <h1 className="text-2xl font-semibold text-white" data-testid={portalAccess === 'unreachable' ? 'portal-service-unreachable' : 'portal-link-unavailable'}>
+                  {portalAccess === 'unreachable' ? 'Portal service unreachable' : 'Assessment link unavailable'}
+                </h1>
                 <p className="mt-2 text-sm text-slate-400">
-                  This assessment could not be found or the link has expired. Ask the requesting
-                  organization for a new invite.
+                  {portalAccess === 'unreachable'
+                    ? 'The portal service could not be reached. This does not say whether the link is valid.'
+                    : 'This assessment link is not available.'}
                 </p>
               </>
             )}
@@ -824,7 +841,7 @@ export function VendorPortal() {
             />
           </div>
           <div className="flex items-center gap-4">
-            <div className="hidden w-40 sm:block">
+            <div className="hidden w-40 shrink-0 sm:block">
               <div className="mb-1 flex justify-between text-[10px] font-bold uppercase tracking-widest text-slate-500">
                 <span>Progress</span>
                 <span>{progress}%</span>
@@ -835,7 +852,7 @@ export function VendorPortal() {
             </div>
             <span
               className={cn(
-                'text-xs tabular-nums',
+                'flex h-10 w-36 shrink-0 items-center justify-end text-right text-xs tabular-nums sm:w-52',
                 saveState === 'error' ? 'text-rose-400' : 'text-slate-500'
               )}
               aria-live="polite"

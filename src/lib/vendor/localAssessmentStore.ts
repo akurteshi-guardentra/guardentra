@@ -84,6 +84,7 @@ export function createLocalAssessment(
   }
 ): StoredAssessment {
   const dueAt = input.dueAt || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+  const status = input.status || 'Not Started';
   const assessment: StoredAssessment = {
     id: `local_asm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     vendorId: input.vendorId,
@@ -93,7 +94,7 @@ export function createLocalAssessment(
     frameworkPackIds: input.frameworkPackIds,
     questionBankVersion: input.questionBankVersion,
     frameworkName: input.frameworkName,
-    status: input.status || 'Sent',
+    status,
     dueAt,
     dueDate: dueAt.slice(0, 10),
     progressPct: 0,
@@ -103,7 +104,7 @@ export function createLocalAssessment(
     questions: input.questions,
     portalOpen: true,
     createdAt: new Date().toISOString(),
-    sentAt: new Date().toISOString(),
+    ...(status === 'Sent' ? { sentAt: new Date().toISOString() } : {}),
     ...(input.requesterOrgName ? { requesterOrgName: input.requesterOrgName } : {}),
     ...(input.requesterLogoUrl ? { requesterLogoUrl: input.requesterLogoUrl } : {}),
   };

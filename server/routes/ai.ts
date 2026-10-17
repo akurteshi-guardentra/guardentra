@@ -263,7 +263,7 @@ router.post('/generate', async (req, res) => {
   }
   try {
     if (!hasAIApi) {
-      return res.status(503).json({ error: 'AI not configured' });
+      return res.status(503).json({ error: 'AI not configured', code: 'manual_review' });
     }
     const config: Record<string, unknown> = {};
     if (responseMimeType) config.responseMimeType = responseMimeType;

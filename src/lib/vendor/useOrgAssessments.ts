@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { addDoc, collection, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { authHeaders } from '../authHeaders';
 import {
   HOSTED_ASSESSMENT_LOAD_FAILED,
   isFirestoreUnavailableError,
@@ -33,12 +34,45 @@ export async function promoteLocalAssessments(
   const localOnly = listLocalAssessments(orgId).filter((a) => a.id.startsWith('local_asm_'));
   for (const assessment of localOnly) {
     try {
-      const { id, ...rest } = assessment;
+      const { id } = assessment;
       const vendorId =
-        rest.vendorId && resolvedMap.has(rest.vendorId)
-          ? resolvedMap.get(rest.vendorId)!
-          : rest.vendorId;
-      await addDoc(collection(db, 'assessments'), { ...rest, vendorId });
+        assessment.vendorId && resolvedMap.has(assessment.vendorId)
+          ? resolvedMap.get(assessment.vendorId)!
+          : assessment.vendorId;
+      const progress = Number(assessment.progressPct ?? assessment.progress ?? 0);
+      const hasAnswers = Object.keys(assessment.answers || {}).length > 0;
+      if (
+        assessment.status !== 'Not Started' ||
+        progress > 0 ||
+        hasAnswers ||
+        !vendorId ||
+        !assessment.dueAt ||
+        !assessment.frameworks?.length
+      ) {
+        console.warn(
+          'useOrgAssessments: local assessment has material state; leaving it local rather than bypassing server authority',
+          id,
+        );
+        continue;
+      }
+
+      const response = await fetch('/api/org/assessment-create', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          requestId: `local-promote-${id}`,
+          vendorId,
+          frameworks: assessment.frameworks,
+          dueAt: assessment.dueAt,
+        }),
+      });
+      const body = (await response.json().catch(() => ({}))) as {
+        assessmentId?: string;
+        error?: string;
+      };
+      if (!response.ok || !body.assessmentId) {
+        throw new Error(body.error || 'server-authoritative assessment promotion failed');
+      }
       removeLocalAssessment(orgId, id);
     } catch (err) {
       console.warn('useOrgAssessments: could not promote local-only assessment, will retry next reconnect', err);

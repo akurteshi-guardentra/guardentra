@@ -5,6 +5,7 @@ import {
   handleEvidenceDownload,
   handleOrgAttachmentDownload,
   handleOrgDecision,
+  handlePortalSubmit,
   handlePortalValidate,
   HttpError,
   applyFirestoreAssessmentUpdate,
@@ -248,6 +249,390 @@ describe('POST evidence-validate authorization', () => {
   });
 });
 
+describe('#158 durable portal submit', () => {
+  it('rejects organization tokens at the portal submit endpoint', async () => {
+    const res = mockRes();
+    await handlePortalSubmit(
+      req({
+        token: 'org',
+        body: {
+          assessmentId: 'asmA',
+          answers: {},
+          comments: {},
+          evidenceByQuestion: {},
+          attestations: { accuracy: true, authority: true, attestedByName: 'Vendor User' },
+        },
+      }),
+      res as any,
+      deps()
+    );
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('requires both attestations and an attested name before any transaction', async () => {
+    const d = deps();
+    const res = mockRes();
+    await handlePortalSubmit(
+      req({
+        token: 'portal-a',
+        body: {
+          assessmentId: 'asmA',
+          answers: {},
+          comments: {},
+          evidenceByQuestion: {},
+          attestations: { accuracy: true, authority: false, attestedByName: '' },
+        },
+      }),
+      res as any,
+      d
+    );
+    expect(res.statusCode).toBe(400);
+    expect(d.runAssessmentTransaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects submission when required questions are unanswered', async () => {
+    const d = deps({
+      runAssessmentTransaction: vi.fn(async (_id, updater) =>
+        updater({
+          organizationId: 'org1',
+          vendorId: 'vendor-1',
+          portalOpen: true,
+          status: 'In Progress',
+          questions: [
+            {
+              id: 'q1',
+              controlKey: 'q1',
+              category: 'Access Control',
+              question: 'MFA?',
+              type: 'yesno',
+              options: ['Yes', 'No'],
+              required: true,
+            },
+          ],
+          sentAt: '2026-10-07T10:00:00.000Z',
+        })
+      ),
+    });
+    const res = mockRes();
+    await handlePortalSubmit(
+      req({
+        token: 'portal-a',
+        body: {
+          assessmentId: 'asmA',
+          answers: {},
+          comments: {},
+          evidenceByQuestion: {},
+          attestations: { accuracy: true, authority: true, attestedByName: 'Vendor User' },
+        },
+      }),
+      res as any,
+      d
+    );
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('commits submission with a deterministic assessment.submitted audit intent', async () => {
+    const intents: Array<Record<string, any>> = [];
+    const d = deps({
+      runAssessmentTransaction: vi.fn(
+        async (_id, updater, auditFactory, skipProductWriteWhen, prepareRelatedWrites) => {
+          const current = {
+            organizationId: 'org1',
+            vendorId: 'vendor-1',
+            portalOpen: true,
+            status: 'In Progress',
+            sentAt: '2026-10-07T10:00:00.000Z',
+            questions: [
+              {
+                id: 'q1',
+                controlKey: 'q1',
+                category: 'Access Control',
+                question: 'MFA?',
+                type: 'yesno',
+                options: ['Yes', 'No'],
+                required: true,
+              },
+            ],
+          };
+          const patch = await updater(current);
+          expect(skipProductWriteWhen?.(current, patch)).toBe(false);
+          const first = auditFactory?.(current, patch);
+          const second = auditFactory?.(current, patch);
+          expect(first?.eventId).toBe(second?.eventId);
+          if (first) intents.push(first as Record<string, any>);
+
+          const vendorSet = vi.fn();
+          const vendorRef = { id: 'vendor-1' } as any;
+          const tx = {
+            get: vi.fn(async () => ({
+              exists: true,
+              data: () => ({ organizationId: 'org1' }),
+            })),
+            set: vendorSet,
+          } as any;
+          const db = {
+            collection: vi.fn(() => ({
+              doc: vi.fn(() => vendorRef),
+            })),
+          } as any;
+          const commitRelated = await prepareRelatedWrites?.(tx, db, current, patch);
+          commitRelated?.();
+          expect(tx.get).toHaveBeenCalledWith(vendorRef);
+          expect(vendorSet).toHaveBeenCalledWith(
+            vendorRef,
+            { assessmentStatus: 'Under Review' },
+            { merge: true },
+          );
+
+          return patch;
+        }
+      ),
+    });
+    const res = mockRes();
+    await handlePortalSubmit(
+      req({
+        token: 'portal-a',
+        body: {
+          assessmentId: 'asmA',
+          answers: { q1: 'Yes' },
+          comments: {},
+          evidenceByQuestion: {},
+          attestations: { accuracy: true, authority: true, attestedByName: 'Vendor User' },
+          answerProposals: {},
+        },
+      }),
+      res as any,
+      d
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect((res.body as { deduplicated?: boolean }).deduplicated).toBe(false);
+    expect(intents).toHaveLength(1);
+    expect(intents[0]).toMatchObject({
+      tenantId: 'org1',
+      eventType: 'assessment.submitted',
+      actorId: 'portal_asmA',
+      actorType: 'portal',
+      objectType: 'assessment',
+      objectId: 'asmA',
+    });
+    expect(String(intents[0].eventId)).toMatch(/^mat_[a-f0-9]{64}$/);
+  });
+
+  it('fails closed if the assessment vendor tenant binding is invalid', async () => {
+    const d = deps({
+      runAssessmentTransaction: vi.fn(
+        async (_id, updater, _auditFactory, _skipProductWriteWhen, prepareRelatedWrites) => {
+          const current = {
+            organizationId: 'org1',
+            vendorId: 'vendor-1',
+            portalOpen: true,
+            status: 'In Progress',
+            sentAt: '2026-10-07T10:00:00.000Z',
+            questions: [
+              {
+                id: 'q1',
+                controlKey: 'q1',
+                category: 'Access Control',
+                question: 'MFA?',
+                type: 'yesno',
+                options: ['Yes', 'No'],
+                required: true,
+              },
+            ],
+          };
+          const patch = await updater(current);
+          const vendorRef = { id: 'vendor-1' } as any;
+          const tx = {
+            get: vi.fn(async () => ({
+              exists: true,
+              data: () => ({ organizationId: 'org2' }),
+            })),
+            set: vi.fn(),
+          } as any;
+          const db = {
+            collection: vi.fn(() => ({
+              doc: vi.fn(() => vendorRef),
+            })),
+          } as any;
+          await prepareRelatedWrites?.(tx, db, current, patch);
+          return patch;
+        }
+      ),
+    });
+
+    const res = mockRes();
+    await handlePortalSubmit(
+      req({
+        token: 'portal-a',
+        body: {
+          assessmentId: 'asmA',
+          answers: { q1: 'Yes' },
+          comments: {},
+          evidenceByQuestion: {},
+          attestations: { accuracy: true, authority: true, attestedByName: 'Vendor User' },
+          answerProposals: {},
+        },
+      }),
+      res as any,
+      d
+    );
+
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('treats a retry of an already-submitted assessment as a product no-op', async () => {
+    let skip = false;
+    const d = deps({
+      runAssessmentTransaction: vi.fn(
+        async (_id, updater, auditFactory, skipProductWriteWhen, prepareRelatedWrites) => {
+          const current = {
+            organizationId: 'org1',
+            vendorId: 'vendor-1',
+            portalOpen: false,
+            status: 'Under Review',
+            sentAt: '2026-10-07T10:00:00.000Z',
+            completedAt: '2026-10-07T12:00:00.000Z',
+            submittedSnapshot: {
+              submittedAt: '2026-10-07T12:00:00.000Z',
+              answers: { q1: 'Yes' },
+            },
+            questions: [],
+          };
+          const patch = await updater(current);
+          skip = Boolean(skipProductWriteWhen?.(current, patch));
+          const audit = auditFactory?.(current, patch);
+          expect(audit?.createdAt).toBe('2026-10-07T12:00:00.000Z');
+
+          const vendorSet = vi.fn();
+          const vendorRef = { id: 'vendor-1' } as any;
+          const tx = {
+            get: vi.fn(async () => ({
+              exists: true,
+              data: () => ({ organizationId: 'org1' }),
+            })),
+            set: vendorSet,
+          } as any;
+          const db = {
+            collection: vi.fn(() => ({
+              doc: vi.fn(() => vendorRef),
+            })),
+          } as any;
+          const commitRelated = await prepareRelatedWrites?.(tx, db, current, patch);
+          commitRelated?.();
+          expect(vendorSet).not.toHaveBeenCalled();
+
+          return patch;
+        }
+      ),
+    });
+    const res = mockRes();
+    await handlePortalSubmit(
+      req({
+        token: 'portal-a',
+        body: {
+          assessmentId: 'asmA',
+          answers: { q1: 'Yes' },
+          comments: {},
+          evidenceByQuestion: {},
+          attestations: { accuracy: true, authority: true, attestedByName: 'Vendor User' },
+        },
+      }),
+      res as any,
+      d
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect((res.body as { deduplicated?: boolean }).deduplicated).toBe(true);
+    expect(skip).toBe(true);
+  });
+
+  it('uses the retried snapshot instead of an earlier attempt when deciding the vendor write', async () => {
+    const vendorWrites: Array<Record<string, unknown>> = [];
+    const d = deps({
+      runAssessmentTransaction: vi.fn(
+        async (_id, updater, _auditFactory, skipProductWriteWhen, prepareRelatedWrites) => {
+          const open = {
+            organizationId: 'org1',
+            vendorId: 'vendor-1',
+            portalOpen: true,
+            status: 'In Progress',
+            sentAt: '2026-10-07T10:00:00.000Z',
+            questions: [
+              {
+                id: 'q1',
+                controlKey: 'q1',
+                category: 'Access Control',
+                question: 'MFA?',
+                type: 'yesno',
+                options: ['Yes', 'No'],
+                required: true,
+              },
+            ],
+          };
+          const completed = {
+            ...open,
+            portalOpen: false,
+            status: 'Completed',
+            decisionOutcome: 'conditional',
+            submittedSnapshot: {
+              submittedAt: '2026-10-07T12:00:00.000Z',
+              answers: { q1: 'Yes' },
+            },
+          };
+          const vendorRef = { id: 'vendor-1' } as any;
+          const db = {
+            collection: vi.fn(() => ({
+              doc: vi.fn(() => vendorRef),
+            })),
+          } as any;
+          let committed: Record<string, unknown> = {};
+          for (const current of [open, completed]) {
+            const patch = await updater(current);
+            const vendorSet = vi.fn((_ref, data) => {
+              vendorWrites.push(data);
+            });
+            const tx = {
+              get: vi.fn(async () => ({
+                exists: true,
+                data: () => ({ organizationId: 'org1', assessmentStatus: 'Completed' }),
+              })),
+              set: vendorSet,
+            } as any;
+            expect(skipProductWriteWhen?.(current, patch)).toBe(current === completed);
+            const commitRelated = await prepareRelatedWrites?.(tx, db, current, patch);
+            if (current === completed) {
+              commitRelated?.();
+              committed = patch;
+            }
+          }
+          return committed;
+        }
+      ),
+    });
+
+    const res = mockRes();
+    await handlePortalSubmit(
+      req({
+        token: 'portal-a',
+        body: {
+          assessmentId: 'asmA',
+          answers: { q1: 'Yes' },
+          comments: {},
+          evidenceByQuestion: {},
+          attestations: { accuracy: true, authority: true, attestedByName: 'Vendor User' },
+        },
+      }),
+      res as any,
+      d
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect((res.body as { deduplicated?: boolean }).deduplicated).toBe(true);
+    expect(vendorWrites).toEqual([]);
+  });
+});
+
 describe('evidence download', () => {
   it('rejects unauthorized org downloads', async () => {
     const res = mockRes();
@@ -289,17 +674,23 @@ describe('evidence download', () => {
   });
 
   it('allows portal self-download of untrusted files while the portal is open', async () => {
+    const d = deps();
     const res = mockRes();
     await handleEvidenceDownload(
       req({
         token: 'portal-a',
-        query: { assessmentId: 'asmA', storagePath: 'portal/asmA/a.pdf' },
+        query: {
+          assessmentId: 'asmA',
+          storagePath: 'portal/asmA/a.pdf',
+          generation: '9999',
+        },
       }),
       res as any,
-      deps(),
+      d,
       'portal'
     );
     expect(res.statusCode).toBe(200);
+    expect(d.signReadUrl).toHaveBeenCalledWith('portal/asmA/a.pdf', '1');
   });
 
   it('does not treat portal self-download as a reviewer bypass', async () => {
@@ -314,6 +705,24 @@ describe('evidence download', () => {
       'org'
     );
     expect(res.statusCode).toBe(403);
+  });
+
+  it('rejects a download when metadata has no generation', async () => {
+    const d = deps({
+      getStorageMetadata: vi.fn(async () => ({ contentType: 'application/pdf', size: 10 })),
+    });
+    const res = mockRes();
+    await handleEvidenceDownload(
+      req({
+        token: 'portal-a',
+        query: { assessmentId: 'asmA', storagePath: 'portal/asmA/a.pdf', generation: '1001' },
+      }),
+      res as any,
+      d,
+      'portal'
+    );
+    expect(res.statusCode).toBe(409);
+    expect(d.signReadUrl).not.toHaveBeenCalled();
   });
 
   it('rejects reviewer download unless the trust map is authoritative clean', async () => {
@@ -357,6 +766,7 @@ describe('evidence download', () => {
     );
     expect(res.statusCode).toBe(200);
     expect((res.body as { url?: string }).url).toBe('https://signed.example/tmp');
+    expect(d.signReadUrl).toHaveBeenCalledWith('portal/asmA/a.pdf', '1');
   });
 
   it('rejects reviewer download when the clean record generation is stale', async () => {
@@ -384,6 +794,7 @@ describe('evidence download', () => {
       'org'
     );
     expect(res.statusCode).toBe(403);
+    expect(d.signReadUrl).not.toHaveBeenCalled();
   });
 
   it('rejects reviewer download when the trust record path does not match', async () => {
@@ -441,13 +852,18 @@ describe('organization attachments', () => {
   });
 
   it('allows same-tenant attachment downloads', async () => {
+    const d = deps();
     const res = mockRes();
     await handleOrgAttachmentDownload(
-      req({ token: 'org', query: { orgId: 'org1', vendorId: 'v1', storagePath: attach } }),
+      req({
+        token: 'org',
+        query: { orgId: 'org1', vendorId: 'v1', storagePath: attach, generation: '9999' },
+      }),
       res as any,
-      deps()
+      d
     );
     expect(res.statusCode).toBe(200);
+    expect(d.signReadUrl).toHaveBeenCalledWith(attach, '1');
   });
 });
 
@@ -472,6 +888,26 @@ describe('portal AI token binding', () => {
 });
 
 describe('org decisions', () => {
+  it('rejects a portal session on the organization decision route', async () => {
+    const res = mockRes();
+    await handleOrgDecision(
+      req({
+        token: 'portal-a',
+        body: {
+          assessmentId: 'asmA',
+          outcome: 'conditional',
+          decisionNotes: 'Needs a follow-up',
+          remediationOwner: 'Owner',
+          remediationDueAt: '2026-11-01',
+          residualRiskLevel: 'Medium',
+        },
+      }),
+      res as any,
+      deps(),
+    );
+    expect(res.statusCode).toBe(403);
+  });
+
   it('rejects missing outcomes', async () => {
     const res = mockRes();
     await handleOrgDecision(
@@ -574,6 +1010,49 @@ describe('org decisions', () => {
     });
     return { store, d };
   }
+
+  it('couples the decision transaction to a deterministic durable audit intent', async () => {
+    const intents: Array<Record<string, any>> = [];
+    const d = deps({
+      runAssessmentTransaction: vi.fn(async (_id, updater, auditFactory) => {
+        const current = {
+          organizationId: 'org1',
+          questions: [],
+          answers: {},
+          submittedSnapshot: { submittedAt: '2026-10-07T12:00:00.000Z' },
+        };
+        const patch = await updater(current);
+        const first = auditFactory?.(current, patch);
+        const second = auditFactory?.(current, patch);
+        expect(first?.eventId).toBe(second?.eventId);
+        if (first) intents.push(first as Record<string, any>);
+        return patch;
+      }),
+    });
+
+    const res = mockRes();
+    await handleOrgDecision(
+      req({ token: 'org', body: { assessmentId: 'asmA', outcome: 'approved' } }),
+      res as any,
+      d
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(intents).toHaveLength(1);
+    expect(intents[0]).toMatchObject({
+      tenantId: 'org1',
+      eventType: 'decision.finalized',
+      actorId: 'user-1',
+      objectType: 'assessment',
+      objectId: 'asmA',
+    });
+    expect(String(intents[0].eventId)).toMatch(/^mat_[a-f0-9]{64}$/);
+    expect(intents[0].payload).toMatchObject({
+      outcome: 'approved',
+      residualRiskLevel: 'Medium',
+      remediationRequired: false,
+    });
+  });
 
   it('accepts remediate without treating decidedAt as a terminal lock', async () => {
     const { store, d } = transactionalStore();

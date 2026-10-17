@@ -76,6 +76,7 @@ export function OrgBrandingCard() {
         name: trimmedName,
         industry,
         logoUrl: trimmedLogo || null,
+        autoCreated: false,
       });
       setMessage('Organization profile saved.');
     } catch (err: any) {

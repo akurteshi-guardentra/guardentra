@@ -15,10 +15,13 @@ import orgEvidenceRoutes from "./server/routes/orgEvidence.ts";
 import auditRoutes from "./server/routes/audit.ts";
 import scannerRoutes from "./server/routes/scanner.ts";
 import { assertEvidenceScannerRuntimeConfig } from "./server/lib/malwareScanner/types.ts";
+import { assertAdminRuntimeConfig } from "./server/lib/adminConfig.ts";
 import { requireFirebaseAuth } from "./server/middleware/requireFirebaseAuth.ts";
 import { startAuditWorker } from "./server/lib/audit/worker.ts";
-import { closeAuditPool } from "./server/lib/audit/pool.ts";
+import { assertAuditRuntimeConfig, closeAuditPool } from "./server/lib/audit/pool.ts";
 import { startAssessmentReminderWorker } from "./server/lib/reminders/worker.ts";
+import { buildReleaseIdentity } from "./server/lib/releaseIdentity.ts";
+import { resolveListenHost } from "./server/lib/listenHost.ts";
 
 /** Cloud Run / Firebase App Hosting: always prefer process.env.PORT, fallback 8080. */
 export function resolvePort(): number {
@@ -27,6 +30,8 @@ export function resolvePort(): number {
 
 export async function createApp() {
   assertEvidenceScannerRuntimeConfig(process.env);
+  assertAdminRuntimeConfig(process.env);
+  assertAuditRuntimeConfig(process.env);
   const app = express();
   const appEnv = process.env.APP_ENV || process.env.NODE_ENV || "development";
 
@@ -44,7 +49,11 @@ export async function createApp() {
 
   // API routes FIRST
   app.get("/api/health", (_req, res) => {
-    res.json({ status: "ok", message: "Guardentra API is online." });
+    res.json({
+      status: "ok",
+      message: "Guardentra API is online.",
+      release: buildReleaseIdentity(process.env),
+    });
   });
 
   app.use("/api/ai", requireFirebaseAuth, aiRoutes);
@@ -107,11 +116,12 @@ export async function startServer(): Promise<Server> {
 
   console.log(`[BOOT] process.env.PORT: ${process.env.PORT}`);
   console.log(`[BOOT] Resolved PORT to listen: ${PORT}`);
-  console.log(`[BOOT] Binding host: 0.0.0.0`);
+  const host = resolveListenHost();
+  console.log(`[BOOT] Binding host: ${host}`);
 
   return await new Promise<Server>((resolve, reject) => {
-    const server = app.listen(PORT, "0.0.0.0", () => {
-      console.log(`Server running on http://0.0.0.0:${PORT}`);
+    const server = app.listen(PORT, host, () => {
+      console.log(`Server running on http://${host}:${PORT}`);
       startAuditWorker();
       startAssessmentReminderWorker();
       resolve(server);

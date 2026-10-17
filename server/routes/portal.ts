@@ -5,6 +5,7 @@ import { createRateLimiter } from '../middleware/rateLimit.ts';
 import { getAdminDb } from '../lib/adminDb.ts';
 import {
   handleEvidenceDownload,
+  handlePortalSubmit,
   handlePortalValidate,
   liveEvidenceDeps,
 } from '../lib/evidenceAccess.ts';
@@ -115,6 +116,10 @@ router.post('/session', portalSessionLimiter, async (req, res) => {
 });
 
 const evidenceLimiter = createRateLimiter({ windowMs: 60_000, max: 30 });
+
+router.post('/submit', evidenceLimiter, (req, res) =>
+  handlePortalSubmit(req, res, evidenceDeps)
+);
 
 router.post('/evidence-validate', evidenceLimiter, (req, res) =>
   handlePortalValidate(req, res, evidenceDeps)
