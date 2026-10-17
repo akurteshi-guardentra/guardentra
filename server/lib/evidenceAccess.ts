@@ -42,6 +42,7 @@ import {
   prepareMaterialAuditIntent,
 } from './audit/materialIntent.ts';
 import type { AuditEmitEnvelope } from './audit/types.ts';
+import { authoritativeGeneration, fileAtGeneration } from './storageGeneration.ts';
 
 const DECISION_OUTCOMES: readonly DecisionOutcome[] = [
   'approved',
@@ -66,7 +67,7 @@ export type EvidenceDeps = {
     storagePath: string,
     record: EvidenceTrustRecord
   ) => Promise<EvidenceTrustRecord>;
-  signReadUrl: (storagePath: string) => Promise<string>;
+  signReadUrl: (storagePath: string, generation: string) => Promise<string>;
   runAssessmentTransaction: (
     assessmentId: string,
     updater: (current: Record<string, unknown>) => Record<string, unknown> | Promise<Record<string, unknown>>,
@@ -370,12 +371,18 @@ export function liveEvidenceDeps(): EvidenceDeps {
       });
       return applied;
     },
-    async signReadUrl(storagePath) {
+    async signReadUrl(storagePath, generation) {
+      const bound = authoritativeGeneration(generation);
+      if (!bound) {
+        throw new HttpError(409, 'Storage object generation is unavailable.');
+      }
       const { getStorage } = await import('firebase-admin/storage');
       ensureAdmin();
       const bucket = getConfiguredStorageBucket(getStorage());
-      const [url] = await bucket.file(storagePath).getSignedUrl({
+      const file = fileAtGeneration(bucket, storagePath, bound);
+      const [url] = await file.getSignedUrl({
         action: 'read',
+        version: 'v4',
         expires: Date.now() + 5 * 60 * 1000,
       });
       return url;
@@ -677,6 +684,18 @@ export async function handlePortalSubmit(req: Request, res: Response, deps: Evid
   }
 }
 
+function authorizedDownloadGeneration(
+  res: Response,
+  meta: StorageObjectMeta,
+): string | null {
+  const generation = authoritativeGeneration(meta.generation);
+  if (!generation) {
+    res.status(409).json({ error: 'Storage object generation is unavailable.' });
+    return null;
+  }
+  return generation;
+}
+
 export async function handleEvidenceDownload(
   req: Request,
   res: Response,
@@ -713,6 +732,9 @@ export async function handleEvidenceDownload(
       return;
     }
 
+    const generation = authorizedDownloadGeneration(res, meta);
+    if (!generation) return;
+
     if (kind === 'org') {
       const trust = lookupTrustRecord(
         storagePath,
@@ -722,7 +744,7 @@ export async function handleEvidenceDownload(
         !reviewerTrustMatchesObject({
           trust,
           storagePath,
-          generation: meta.generation,
+          generation,
         })
       ) {
         res.status(403).json({
@@ -732,7 +754,7 @@ export async function handleEvidenceDownload(
       }
     }
 
-    const url = await deps.signReadUrl(storagePath);
+    const url = await deps.signReadUrl(storagePath, generation);
     res.json({ url, expiresInSec: 300, storagePath, kind });
   } catch (err) {
     sendError(res, err, 'Could not authorize download.');
@@ -763,7 +785,9 @@ export async function handleOrgAttachmentDownload(req: Request, res: Response, d
       res.status(404).json({ error: 'Storage object not found.' });
       return;
     }
-    const url = await deps.signReadUrl(storagePath);
+    const generation = authorizedDownloadGeneration(res, meta);
+    if (!generation) return;
+    const url = await deps.signReadUrl(storagePath, generation);
     res.json({ url, expiresInSec: 300, storagePath });
   } catch (err) {
     sendError(res, err, 'Could not authorize download.');
