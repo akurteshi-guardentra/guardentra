@@ -476,7 +476,7 @@ service cloud.firestore {
 
     function orgDeniesClientDecisionWrites() {
       return !request.resource.data.diff(resource.data).affectedKeys()
-        .hasAny(['decisionOutcome', 'decisionNotes', 'decidedAt', 'decidedBy']);
+        .hasAny(['decisionOutcome', 'decisionNotes', 'decidedAt', 'decidedBy', 'decidedByName']);
     }
 
     // Initial send and final submit are server-authoritative material transitions.
@@ -526,7 +526,7 @@ service cloud.firestore {
     function orgPreservesFinalDecision() {
       return !('decidedAt' in resource.data)
         || !request.resource.data.diff(resource.data).affectedKeys()
-          .hasAny(['decisionOutcome', 'decisionNotes', 'decidedAt', 'decidedBy']);
+          .hasAny(['decisionOutcome', 'decisionNotes', 'decidedAt', 'decidedBy', 'decidedByName']);
     }
 
     // Portal writes require portalOpen=true (P0-1 closes portal on submit). Under Review

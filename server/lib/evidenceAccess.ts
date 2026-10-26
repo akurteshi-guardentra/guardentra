@@ -894,6 +894,7 @@ export async function handleOrgDecision(req: Request, res: Response, deps: Evide
       return buildOrgDecisionPatch({
         outcome,
         decidedBy: decoded.uid,
+        decidedByName: decoded.name || decoded.email || undefined,
         decisionNotes,
         remediationOwner,
         remediationDueAt: remediationDueAt || undefined,

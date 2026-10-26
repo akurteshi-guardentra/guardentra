@@ -40,6 +40,7 @@ import {
 import {
   buildOrgDecisionPatch,
   canSignOffAssessment,
+  decidedByDisplay,
   decisionClosesPortal,
   decisionRequiresNotes,
   decisionRequiresRemediationPlan,
@@ -687,6 +688,10 @@ export function Assessments() {
         >
           <AssessmentReviewPanel
             assessment={reviewAssessment}
+            decidedByLabel={decidedByDisplay(reviewAssessment, {
+              uid: user?.uid,
+              label: profile?.displayName || profile?.email,
+            })}
             reviewAnalysis={reviewAnalysis}
             reviewAiError={reviewAiError}
             reviewManual={reviewManual}
@@ -732,7 +737,10 @@ export function Assessments() {
                     ? {
                         outcome: recorded,
                         decisionNotes: reviewAssessment.decisionNotes || undefined,
-                        decidedBy: reviewAssessment.decidedBy || undefined,
+                        decidedBy: decidedByDisplay(reviewAssessment, {
+                          uid: user?.uid,
+                          label: profile?.displayName || profile?.email,
+                        }),
                         decidedAt: reviewAssessment.decidedAt || undefined,
                         remediationOwner: reviewAssessment.remediationOwner || undefined,
                         remediationDueAt: reviewAssessment.remediationDueAt || undefined,

@@ -101,6 +101,8 @@ export type AssessmentReviewPanelProps = {
   onArchiveEmpty: () => void;
   onDecide: (outcome: DecisionOutcome) => void;
   onDownloadDecisionPacket?: () => void;
+  /** Display name for who recorded the decision; falls back to the stored value. */
+  decidedByLabel?: string;
 };
 
 export function AssessmentReviewPanel({
@@ -135,6 +137,7 @@ export function AssessmentReviewPanel({
   onArchiveEmpty,
   onDecide,
   onDownloadDecisionPacket,
+  decidedByLabel,
 }: AssessmentReviewPanelProps) {
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
@@ -449,6 +452,7 @@ export function AssessmentReviewPanel({
                   assessment={reviewAssessment}
                   onDecide={onDecide}
                   onDownloadDecisionPacket={onDownloadDecisionPacket}
+                  decidedByLabel={decidedByLabel}
                 />
               )}
             </div>
@@ -475,16 +479,18 @@ function formatDecisionDate(iso?: string | null): string {
 function RecordedDecision({
   assessment,
   onDownloadDecisionPacket,
+  decidedByLabel,
 }: {
   assessment: StoredAssessment;
   onDownloadDecisionPacket?: () => void;
+  decidedByLabel?: string;
 }) {
   const outcome = OUTCOME_LABELS[String(assessment.decisionOutcome)] ?? {
     label: String(assessment.decisionOutcome),
     className: 'text-slate-200',
   };
   const rows: [string, string][] = [
-    ['Decided by', assessment.decidedBy || '—'],
+    ['Decided by', decidedByLabel || assessment.decidedByName || assessment.decidedBy || '—'],
     ['Decided at', formatDecisionDate(assessment.decidedAt)],
     ['Residual risk', assessment.residualRiskLevel || '—'],
   ];
@@ -540,6 +546,7 @@ function AssessmentDecisionBar({
   assessment,
   onDecide,
   onDownloadDecisionPacket,
+  decidedByLabel,
 }: {
   decisionOutcome: DecisionOutcome;
   onDecisionOutcomeChange: (outcome: DecisionOutcome) => void;
@@ -555,10 +562,15 @@ function AssessmentDecisionBar({
   assessment: StoredAssessment;
   onDecide: (outcome: DecisionOutcome) => void;
   onDownloadDecisionPacket?: () => void;
+  decidedByLabel?: string;
 }) {
   if (hasTerminalOrgDecision(assessment)) {
     return (
-      <RecordedDecision assessment={assessment} onDownloadDecisionPacket={onDownloadDecisionPacket} />
+      <RecordedDecision
+        assessment={assessment}
+        onDownloadDecisionPacket={onDownloadDecisionPacket}
+        decidedByLabel={decidedByLabel}
+      />
     );
   }
   return (
