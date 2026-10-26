@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { AssessmentReviewPanel } from '../components/assessments/AssessmentReviewPanel';
 import type { StoredAssessment } from '../lib/vendor/localAssessmentStore';
 
-function renderPanel(assessment: Partial<StoredAssessment>) {
+function renderPanel(assessment: Partial<StoredAssessment>, extra: { decidedByLabel?: string } = {}) {
   const onDecide = vi.fn();
   render(
     <AssessmentReviewPanel
@@ -19,6 +19,7 @@ function renderPanel(assessment: Partial<StoredAssessment>) {
         ...assessment,
       } as unknown as StoredAssessment}
       reviewAnalysis={null}
+      decidedByLabel={extra.decidedByLabel}
       reviewAiError=""
       reviewAiLoading={false}
       reviewFilter="exceptions"
@@ -73,6 +74,21 @@ describe('AssessmentReviewPanel decision area', () => {
     expect(screen.getByText('Rejected')).toBeTruthy();
     expect(screen.getByText('owner@example.com')).toBeTruthy();
     expect(screen.getByText('Missing SOC 2 Type II')).toBeTruthy();
+  });
+
+  it('shows the decider label instead of a raw user id', () => {
+    renderPanel(
+      {
+        status: 'Completed',
+        decisionOutcome: 'rejected',
+        decidedBy: 'ivEm7pV6nxNXm6hh6JWMd4rtB6M2',
+        decidedAt: '2026-10-26T20:49:00.000Z',
+        residualRiskLevel: 'Medium',
+      } as Partial<StoredAssessment>,
+      { decidedByLabel: 'Dana Reviewer' },
+    );
+    expect(screen.getByText('Dana Reviewer')).toBeTruthy();
+    expect(screen.queryByText('ivEm7pV6nxNXm6hh6JWMd4rtB6M2')).toBeNull();
   });
 
   it('keeps the terminal open for remediate, which is not a final decision', () => {

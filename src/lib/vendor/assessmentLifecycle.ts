@@ -280,6 +280,8 @@ export type OrgDecisionPatch = {
   decisionNotes?: string | null;
   decidedAt: string;
   decidedBy: string;
+  /** Human-readable decider (name or email) for display; decidedBy stays the stable id. */
+  decidedByName?: string;
   remediationOwner?: string | null;
   remediationDueAt?: string | null;
   residualRiskLevel: RiskLevel;
@@ -315,6 +317,7 @@ export function normalizeRemediationDueAt(raw: string | undefined | null): strin
 export function buildOrgDecisionPatch(input: {
   outcome: DecisionOutcome;
   decidedBy: string;
+  decidedByName?: string;
   decisionNotes?: string;
   remediationOwner?: string;
   remediationDueAt?: string;
@@ -354,6 +357,9 @@ export function buildOrgDecisionPatch(input: {
         portalOpen: true,
       };
 
+  const decidedByName = input.decidedByName?.trim();
+  if (decidedByName) patch.decidedByName = decidedByName;
+
   if (notes) patch.decisionNotes = notes;
   else if (closes) patch.decisionNotes = null;
 
@@ -369,4 +375,24 @@ export function buildOrgDecisionPatch(input: {
 
 export function decisionRequiresNotes(outcome: DecisionOutcome): boolean {
   return decisionRequiresRemediationPlan(outcome);
+}
+
+/**
+ * Who recorded the decision, for display. Prefers the stored name; older decisions only
+ * carry the decider's uid, which is resolved when it is the signed-in user.
+ */
+export function decidedByDisplay(
+  assessment: { decidedBy?: string | null; decidedByName?: string | null },
+  currentUser?: { uid?: string | null; label?: string | null } | null,
+): string | undefined {
+  if (assessment.decidedByName) return assessment.decidedByName;
+  if (
+    assessment.decidedBy &&
+    currentUser?.uid &&
+    currentUser.label &&
+    assessment.decidedBy === currentUser.uid
+  ) {
+    return currentUser.label;
+  }
+  return assessment.decidedBy || undefined;
 }

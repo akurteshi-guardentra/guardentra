@@ -1314,7 +1314,8 @@ describe('org decisions', () => {
     assertNoUndefinedValues(patch!);
     expect(patch!.decisionOutcome).toBe('rejected');
     expect(patch!.decidedAt).toBeTruthy();
-    expect(patch!.decidedBy).toBeTruthy();
+    expect(patch!.decidedBy).toBe('user-1');
+    expect(patch!.decidedByName).toBe('a@org.example');
   });
 
   it('maps null decisionNotes to a Firestore delete without leaking undefined or a sentinel in the API patch', () => {

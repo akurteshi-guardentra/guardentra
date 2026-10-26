@@ -30,6 +30,7 @@ import {
   buildPortalAutosavePatch,
   buildPortalSubmitPatch,
   canSignOffAssessment,
+  decidedByDisplay,
   decisionRequiresNotes,
   decisionRequiresRemediationPlan,
   hasTerminalOrgDecision,
@@ -508,5 +509,33 @@ describe('#121 remediation accountability', () => {
     expect(merged.remediationOwner).toBeNull();
     expect(merged.remediationDueAt).toBeNull();
     expect(merged.residualRiskLevel).toBe('Low');
+  });
+});
+
+describe('decider display name', () => {
+  it('stores a trimmed decidedByName and omits it when blank', () => {
+    const named = buildOrgDecisionPatch({
+      outcome: 'rejected',
+      decidedBy: 'u1',
+      decidedByName: '  Dana Reviewer ',
+      residualRiskLevel: 'Medium',
+    });
+    expect(named.decidedBy).toBe('u1');
+    expect(named.decidedByName).toBe('Dana Reviewer');
+
+    const blank = buildOrgDecisionPatch({
+      outcome: 'rejected',
+      decidedBy: 'u1',
+      decidedByName: '   ',
+      residualRiskLevel: 'Medium',
+    });
+    expect('decidedByName' in blank).toBe(false);
+  });
+
+  it('prefers the stored name, then the signed-in user, then the raw id', () => {
+    expect(decidedByDisplay({ decidedBy: 'u1', decidedByName: 'Dana' }, { uid: 'u1', label: 'Me' })).toBe('Dana');
+    expect(decidedByDisplay({ decidedBy: 'u1' }, { uid: 'u1', label: 'Me' })).toBe('Me');
+    expect(decidedByDisplay({ decidedBy: 'u2' }, { uid: 'u1', label: 'Me' })).toBe('u2');
+    expect(decidedByDisplay({}, { uid: 'u1', label: 'Me' })).toBeUndefined();
   });
 });

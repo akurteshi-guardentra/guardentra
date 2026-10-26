@@ -182,6 +182,7 @@ describe('useOrgAssessments — promotion and merge', () => {
               organizationId: ORG,
               decisionOutcome: 'conditional',
               decidedBy: 'owner@example.com',
+              decidedByName: 'Owner Name',
               decidedAt: '2026-10-26T20:00:00.000Z',
               residualRiskLevel: 'High',
               remediationOwner: 'Vendor CISO',
@@ -194,6 +195,7 @@ describe('useOrgAssessments — promotion and merge', () => {
     });
 
     const row = result.current.assessments[0];
+    expect(row.decidedByName).toBe('Owner Name');
     expect(row.residualRiskLevel).toBe('High');
     expect(row.remediationOwner).toBe('Vendor CISO');
     expect(row.remediationDueAt).toBe('2026-11-30T23:59:59.999Z');
