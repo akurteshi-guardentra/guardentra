@@ -15,7 +15,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertFails, assertSucceeds, initializeTestEnvironment } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '../..');
@@ -173,7 +173,7 @@ async function main() {
           role: 'member',
         });
       });
-      const joinerDb = testEnv.authenticatedContext('joiner-2', { email: 'j2@example.com' }).firestore();
+      const joinerDb = testEnv.authenticatedContext('joiner-2', { email: 'j2@example.com', email_verified: true }).firestore();
       // Step 1 — the batch, profile only (invite update omitted; covered elsewhere).
       const batch = writeBatch(joinerDb);
       batch.set(doc(joinerDb, 'users/joiner-2'), {
@@ -807,7 +807,7 @@ async function main() {
     .authenticatedContext('founder-1', { email: 'founder@example.com' })
     .firestore();
   const invitedDb = testEnv
-    .authenticatedContext('invited-61', { email: 'invited61@example.com' })
+    .authenticatedContext('invited-61', { email: 'invited61@example.com', email_verified: true })
     .firestore();
 
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
@@ -1078,6 +1078,81 @@ async function main() {
     batch.set(doc(fs, 'organizations/mismatch-org-b'), { name: 'B' });
     await assertFails(batch.commit());
   });
+
+  console.log('\nInvite email verification + billing-field integrity:');
+
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'org_invites/inv-unverified'), {
+      email: 'victim-invitee@example.com',
+      status: 'pending',
+      organizationId: ORG,
+      role: 'admin',
+    });
+  });
+  const squatterDb = testEnv
+    .authenticatedContext('squatter-1', { email: 'victim-invitee@example.com', email_verified: false })
+    .firestore();
+  const verifiedInviteeDb = testEnv
+    .authenticatedContext('invitee-ok', { email: 'victim-invitee@example.com', email_verified: true })
+    .firestore();
+
+  // orgBootstrap.ts queries pending invites by email immediately after signup, before
+  // the user can verify. That lookup must keep working or every password signup breaks.
+  await check('UNVERIFIED new signup CAN run the pending-invite lookup query', () =>
+    assertSucceeds(getDocs(query(
+      collection(testEnv.authenticatedContext('fresh-unverified', { email: 'nobody-invited@example.com', email_verified: false }).firestore(), 'org_invites'),
+      where('email', '==', 'nobody-invited@example.com'),
+      where('status', '==', 'pending'),
+    ))),
+  );
+  await check('UNVERIFIED account with an invitee email CANNOT join via the invite', () =>
+    assertFails(
+      setDoc(doc(squatterDb, 'users/squatter-1'), {
+        organizationId: ORG,
+        role: 'admin',
+        inviteId: 'inv-unverified',
+      }),
+    ),
+  );
+  await check('VERIFIED invitee CAN read their invite', () =>
+    assertSucceeds(getDoc(doc(verifiedInviteeDb, 'org_invites/inv-unverified'))),
+  );
+
+  await check('org admin CANNOT raise their own vendorCap', () =>
+    assertFails(updateDoc(doc(db, 'organizations', ORG), { vendorCap: 10000 })),
+  );
+  await check('org admin CANNOT set their own planId', () =>
+    assertFails(updateDoc(doc(db, 'organizations', ORG), { planId: 'gov' })),
+  );
+  await check('org admin CAN still update a settings field', () =>
+    assertSucceeds(updateDoc(doc(db, 'organizations', ORG), { industry: 'Fintech' })),
+  );
+
+  // Founder bootstrap must be an atomic batch (org + admin profile), so both cases use
+  // the real shape; the paid-plan case would otherwise fail for the wrong reason.
+  const founderBatch = (uid, orgId, org) => {
+    const fs = testEnv.authenticatedContext(uid, { email: `${uid}@example.com` }).firestore();
+    const batch = writeBatch(fs);
+    batch.set(doc(fs, `organizations/${orgId}`), org);
+    batch.set(doc(fs, `users/${uid}`), { organizationId: orgId, role: 'admin', email: `${uid}@example.com` });
+    return batch.commit();
+  };
+  await check('founder CANNOT bootstrap an org on a paid plan', () =>
+    assertFails(founderBatch('greedy-founder', 'greedy-org', {
+      name: 'Greedy', planId: 'growth', vendorCap: 150, seatCap: 10, seatCount: 1, vendorCount: 0,
+    })),
+  );
+  await check('founder CANNOT bootstrap an org with Stripe ids', () =>
+    assertFails(founderBatch('stripe-founder', 'stripe-org', {
+      name: 'Stripe', seatCount: 1, vendorCount: 0, stripeSubscriptionId: 'sub_forged',
+    })),
+  );
+  await check('founder CAN bootstrap a Starter org with Starter caps', () =>
+    assertSucceeds(founderBatch('fine-founder', 'fine-org', {
+      name: 'Fine', planId: 'starter', vendorCap: 25, seatCap: 3,
+      seatCount: 1, vendorCount: 0, subscriptionStatus: 'none',
+    })),
+  );
 
   await testEnv.cleanup();
   console.log(`\nResult: ${passed} passed, ${failed} failed`);

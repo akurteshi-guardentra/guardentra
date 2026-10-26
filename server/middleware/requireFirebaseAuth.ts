@@ -14,9 +14,17 @@ export function ensureAdmin() {
   }
 }
 
-function isProductionLike() {
-  const env = (process.env.APP_ENV || process.env.NODE_ENV || '').toLowerCase();
-  return env === 'production' || env === 'prod' || env === 'staging';
+/**
+ * Fail closed: only an explicit local/dev/test environment may skip token checks.
+ * Previously only 'production' | 'prod' | 'staging' enforced auth, so any other value
+ * (a typo, 'prod-eu', an unset APP_ENV with NODE_ENV unset) silently disabled auth on
+ * /api/ai, /api/notify and /api/audit.
+ */
+const AUTH_OPTIONAL_ENVS = new Set(['development', 'dev', 'local', 'test', 'demo']);
+export function isProductionLike(env: NodeJS.ProcessEnv = process.env) {
+  // No default: an unset environment is treated as production-like, not as local dev.
+  const v = String(env.APP_ENV || env.NODE_ENV || '').trim().toLowerCase();
+  return !AUTH_OPTIONAL_ENVS.has(v);
 }
 
 /**

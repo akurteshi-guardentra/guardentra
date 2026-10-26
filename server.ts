@@ -40,6 +40,12 @@ export async function createApp() {
   console.log(`[BOOT] NODE_ENV: ${process.env.NODE_ENV}`);
   console.log(`[BOOT] GEMINI_API_KEY set: ${Boolean(process.env.GEMINI_API_KEY)}`);
 
+  // Behind Google Front End / App Hosting the socket peer is the proxy, so without this
+  // req.ip is the same for every visitor and the IP-keyed portal limiters
+  // (20 sessions/min) become one global bucket shared by all vendors.
+  // Hop count is environment-specific — verify req.ip in staging before relying on it.
+  app.set("trust proxy", Number(process.env.TRUST_PROXY_HOPS || 1));
+
   app.use(cors());
 
   // Stripe webhook requires raw body for signature verification
