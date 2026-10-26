@@ -401,12 +401,12 @@ service cloud.firestore {
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
-    // Vendor invite audit trail (src/pages/VendorsDirectory.tsx "Invite Vendor" quick
-    // action) — write-once record of who was invited and by whom; not user-editable
-    // after creation.
+    // Vendor invite record for the "Invite Vendor" quick action. Written only by the
+    // server in the same transaction as the welcome mail queue entry and its durable
+    // vendor.invite_queued audit intent (#167); clients can read but never create it.
     match /vendor_invites/{inviteId} {
       allow read: if isDocOrgMember();
-      allow create: if isCreatingForOwnOrg();
+      allow create: if false;
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
