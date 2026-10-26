@@ -454,7 +454,11 @@ export function Assessments() {
       setReviewAssessment(null);
     } catch (e) {
       console.error('Decision failed:', e);
-      setToast({ tone: 'err', text: 'Decision failed — try again.' });
+      const reason = e instanceof Error && e.message ? e.message : '';
+      setToast({
+        tone: 'err',
+        text: reason ? `Decision not recorded: ${reason}` : 'Decision failed — try again.',
+      });
     } finally {
       setApproving(false);
     }

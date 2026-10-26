@@ -28,6 +28,7 @@ import {
 } from '../../lib/vendor/emptyAssessmentRecovery';
 import type { FrameworkPackDefaults } from '../../lib/vendor/orgFrameworkPacks';
 import type { StoredAssessment } from '../../lib/vendor/localAssessmentStore';
+import { hasTerminalOrgDecision } from '../../lib/vendor/assessmentLifecycle';
 import type { RiskLevel } from '../../lib/vendor/types';
 
 function frameworkLabel(a: StoredAssessment): string {
@@ -458,6 +459,72 @@ export function AssessmentReviewPanel({
   );
 }
 
+const OUTCOME_LABELS: Record<string, { label: string; className: string }> = {
+  approved: { label: 'Approved', className: 'text-emerald-400' },
+  conditional: { label: 'Conditionally approved', className: 'text-amber-400' },
+  rejected: { label: 'Rejected', className: 'text-rose-400' },
+};
+
+function formatDecisionDate(iso?: string | null): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
+}
+
+/** Read-only view once a terminal decision exists; the server refuses a second decision (409). */
+function RecordedDecision({
+  assessment,
+  onDownloadDecisionPacket,
+}: {
+  assessment: StoredAssessment;
+  onDownloadDecisionPacket?: () => void;
+}) {
+  const outcome = OUTCOME_LABELS[String(assessment.decisionOutcome)] ?? {
+    label: String(assessment.decisionOutcome),
+    className: 'text-slate-200',
+  };
+  const rows: [string, string][] = [
+    ['Decided by', assessment.decidedBy || '—'],
+    ['Decided at', formatDecisionDate(assessment.decidedAt)],
+    ['Residual risk', assessment.residualRiskLevel || '—'],
+  ];
+  if (assessment.remediationOwner) rows.push(['Remediation owner', assessment.remediationOwner]);
+  if (assessment.remediationDueAt) rows.push(['Remediation due', assessment.remediationDueAt.slice(0, 10)]);
+
+  return (
+    <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-6">
+      <h4 className="mb-4 text-xs font-bold uppercase tracking-widest text-white">Decision recorded</h4>
+      <p className={cn('mb-3 text-sm font-bold', outcome.className)}>{outcome.label}</p>
+      <dl className="mb-3 space-y-1 text-xs">
+        {rows.map(([label, value]) => (
+          <div key={label} className="flex justify-between gap-3">
+            <dt className="text-slate-500">{label}</dt>
+            <dd className="text-right text-slate-200">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      {assessment.decisionNotes && (
+        <p className="mb-3 whitespace-pre-wrap rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-xs text-slate-300">
+          {assessment.decisionNotes}
+        </p>
+      )}
+      <p className="mb-3 text-[10px] text-slate-500">
+        This decision is final. Send a new assessment to re-review this vendor.
+      </p>
+      {onDownloadDecisionPacket && (
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full border-white/10 text-slate-200"
+          onClick={onDownloadDecisionPacket}
+        >
+          Download decision PDF
+        </Button>
+      )}
+    </div>
+  );
+}
+
 function AssessmentDecisionBar({
   decisionOutcome,
   onDecisionOutcomeChange,
@@ -489,6 +556,11 @@ function AssessmentDecisionBar({
   onDecide: (outcome: DecisionOutcome) => void;
   onDownloadDecisionPacket?: () => void;
 }) {
+  if (hasTerminalOrgDecision(assessment)) {
+    return (
+      <RecordedDecision assessment={assessment} onDownloadDecisionPacket={onDownloadDecisionPacket} />
+    );
+  }
   return (
     <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-6">
       <h4 className="mb-4 text-xs font-bold uppercase tracking-widest text-white">
