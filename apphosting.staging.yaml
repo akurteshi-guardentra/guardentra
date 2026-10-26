@@ -151,3 +151,13 @@ env:
     value: evidence-scan-task@guardentra-staging.iam.gserviceaccount.com
     availability:
       - RUNTIME
+
+  # Audit spine (#74), staging only. Cloud SQL guardentra-staging-audit is bootstrapped
+  # (restricted audit_migrator/audit_runtime roles; migrations 001-003 recorded in
+  # schema_migrations). AUDIT_DATABASE_URL (latest version) is the audit_runtime login
+  # over the private IP with sslmode=no-verify: encrypted, Cloud SQL internal CA not pinned.
+  # Rollback: set this back to "false"; journal intents stay pending and replay later.
+  - variable: AUDIT_SPINE_ENABLED
+    value: "true"
+    availability:
+      - RUNTIME
