@@ -169,6 +169,35 @@ describe('useOrgAssessments — promotion and merge', () => {
     expect(result.current.assessments[0].answers).toEqual({ q_1: 'Yes', q_2: ['ISO 27001'] });
     expect(result.current.assessments[0].comments).toEqual({ q_1: 'via SSO' });
   });
+
+  it('keeps recorded decision fields off the cloud document', async () => {
+    const { result } = renderHook(() => useOrgAssessments(ORG));
+    await act(async () => {
+      onNext?.(
+        snapshot([
+          {
+            id: 'a1',
+            data: {
+              vendorName: 'Acme',
+              organizationId: ORG,
+              decisionOutcome: 'conditional',
+              decidedBy: 'owner@example.com',
+              decidedAt: '2026-10-26T20:00:00.000Z',
+              residualRiskLevel: 'High',
+              remediationOwner: 'Vendor CISO',
+              remediationDueAt: '2026-11-30T23:59:59.999Z',
+            },
+          },
+        ]),
+      );
+      await flush();
+    });
+
+    const row = result.current.assessments[0];
+    expect(row.residualRiskLevel).toBe('High');
+    expect(row.remediationOwner).toBe('Vendor CISO');
+    expect(row.remediationDueAt).toBe('2026-11-30T23:59:59.999Z');
+  });
 });
 
 describe('useOrgAssessments — hosted fail-closed', () => {
