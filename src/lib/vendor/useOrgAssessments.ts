@@ -120,6 +120,9 @@ function normalizeCloudDoc(id: string, data: Record<string, unknown>): StoredAss
     decisionNotes: data.decisionNotes as string | undefined,
     decidedAt: data.decidedAt as string | undefined,
     decidedBy: data.decidedBy as string | undefined,
+    residualRiskLevel: data.residualRiskLevel as StoredAssessment['residualRiskLevel'],
+    remediationOwner: data.remediationOwner as string | null | undefined,
+    remediationDueAt: data.remediationDueAt as string | null | undefined,
   };
 }
 

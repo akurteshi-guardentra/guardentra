@@ -43,6 +43,7 @@ import {
   decisionClosesPortal,
   decisionRequiresNotes,
   decisionRequiresRemediationPlan,
+  hasTerminalOrgDecision,
   normalizeRemediationDueAt,
   nextReviewAtForDecision,
 } from '../lib/vendor/assessmentLifecycle';
@@ -454,7 +455,11 @@ export function Assessments() {
       setReviewAssessment(null);
     } catch (e) {
       console.error('Decision failed:', e);
-      setToast({ tone: 'err', text: 'Decision failed — try again.' });
+      const reason = e instanceof Error && e.message ? e.message : '';
+      setToast({
+        tone: 'err',
+        text: reason ? `Decision not recorded: ${reason}` : 'Decision failed — try again.',
+      });
     } finally {
       setApproving(false);
     }
@@ -714,24 +719,44 @@ export function Assessments() {
             onDownloadDecisionPacket={() => {
               if (!reviewAssessment) return;
               try {
+                // A recorded terminal decision is the source of truth; the form state only
+                // describes a decision that has not been submitted yet.
+                const recorded = hasTerminalOrgDecision(reviewAssessment)
+                  ? (reviewAssessment.decisionOutcome as DecisionOutcome)
+                  : null;
                 openDecisionPacketForPrint({
                   vendorName: reviewAssessment.vendorName || 'Vendor',
                   assessmentId: reviewAssessment.id,
                   frameworksLabel: frameworkLabel(reviewAssessment),
-                  outcome: decisionOutcome,
-                  decisionNotes: decisionNotes.trim() || undefined,
-                  decidedBy: profile?.email || profile?.displayName || undefined,
-                  decidedAt: new Date().toISOString(),
-                  remediationOwner:
-                    decisionRequiresRemediationPlan(decisionOutcome) && remediationOwner.trim()
-                      ? remediationOwner.trim()
-                      : undefined,
-                  remediationDueAt:
-                    decisionRequiresRemediationPlan(decisionOutcome)
-                      ? normalizeRemediationDueAt(remediationDueDate) || undefined
-                      : undefined,
-                  residualRiskLevel,
-                  nextReviewAt: nextReviewAtForDecision(decisionOutcome),
+                  ...(recorded
+                    ? {
+                        outcome: recorded,
+                        decisionNotes: reviewAssessment.decisionNotes || undefined,
+                        decidedBy: reviewAssessment.decidedBy || undefined,
+                        decidedAt: reviewAssessment.decidedAt || undefined,
+                        remediationOwner: reviewAssessment.remediationOwner || undefined,
+                        remediationDueAt: reviewAssessment.remediationDueAt || undefined,
+                        residualRiskLevel: reviewAssessment.residualRiskLevel || residualRiskLevel,
+                        nextReviewAt: nextReviewAtForDecision(
+                          recorded,
+                          reviewAssessment.decidedAt ? new Date(reviewAssessment.decidedAt) : undefined
+                        ),
+                      }
+                    : {
+                        outcome: decisionOutcome,
+                        decisionNotes: decisionNotes.trim() || undefined,
+                        decidedBy: profile?.email || profile?.displayName || undefined,
+                        decidedAt: new Date().toISOString(),
+                        remediationOwner:
+                          decisionRequiresRemediationPlan(decisionOutcome) && remediationOwner.trim()
+                            ? remediationOwner.trim()
+                            : undefined,
+                        remediationDueAt: decisionRequiresRemediationPlan(decisionOutcome)
+                          ? normalizeRemediationDueAt(remediationDueDate) || undefined
+                          : undefined,
+                        residualRiskLevel,
+                        nextReviewAt: nextReviewAtForDecision(decisionOutcome),
+                      }),
                   exceptions: reviewExceptions.map((e) => ({
                     question: e.question,
                     reason: e.reason,
