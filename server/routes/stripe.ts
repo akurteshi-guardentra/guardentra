@@ -4,7 +4,7 @@ import { getApp, getApps } from 'firebase-admin/app';
 import { getFirestore, FieldValue, type Firestore } from 'firebase-admin/firestore';
 import fs from 'fs';
 import path from 'path';
-import { ensureAdmin, requireFirebaseAuth } from '../middleware/requireFirebaseAuth';
+import { ensureAdmin, isProductionLike, requireFirebaseAuth } from '../middleware/requireFirebaseAuth';
 import {
   requireMatchingStripeSubscription,
   requireStripeMapping,
@@ -86,6 +86,13 @@ function billingEventType(type: string): GuardEntraStripeBillingEventType | null
   return null;
 }
 
+/** Canonical app origin for Stripe redirects; null when unset outside local dev. */
+export function appBaseUrl(env: NodeJS.ProcessEnv = process.env): string | null {
+  const configured = String(env.PUBLIC_APP_URL || '').trim();
+  if (configured) return configured.replace(/\/+$/, '');
+  return isProductionLike(env) ? null : 'http://localhost:8080';
+}
+
 async function resolveOrgIdForUser(db: Firestore, userId: string): Promise<string | null> {
   const userSnap = await db.collection('users').doc(userId).get();
   if (!userSnap.exists) return null;
@@ -121,6 +128,12 @@ router.post('/create-checkout-session', requireFirebaseAuth, async (req, res) =>
       return res.status(503).json({ error: 'Billing is not configured yet. Contact support.' });
     }
 
+    const baseUrl = appBaseUrl();
+    if (!baseUrl) {
+      console.error('[stripe] PUBLIC_APP_URL is not set — refusing to build checkout redirects.');
+      return res.status(503).json({ error: 'Billing is not configured yet. Contact support.' });
+    }
+
     const planId = resolvePlanIdFromPriceId(priceId, buildServerStripePriceMap()) || 'starter';
     let organizationId: string | null = null;
     if (getApps().length > 0) {
@@ -139,8 +152,9 @@ router.post('/create-checkout-session', requireFirebaseAuth, async (req, res) =>
         },
       ],
       mode: 'subscription',
-      success_url: `${req.headers.origin}/?success=true&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${req.headers.origin}/pricing?canceled=true`,
+      // Never build redirect URLs from the request's Origin header (open redirect).
+      success_url: `${baseUrl}/?success=true&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${baseUrl}/pricing?canceled=true`,
       customer_email: email,
       client_reference_id: userId,
       allow_promotion_codes: true,
