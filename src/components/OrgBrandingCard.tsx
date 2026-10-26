@@ -33,28 +33,48 @@ export function OrgBrandingCard() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const [loadError, setLoadError] = useState('');
+  const [retryToken, setRetryToken] = useState(0);
 
   useEffect(() => {
     if (!orgId) {
       setLoading(false);
+      setLoadError('');
+      setName('');
+      setIndustry('');
+      setLogoUrl('');
+      setMessage('');
       return;
     }
     let cancelled = false;
-    void getDoc(doc(db, 'organizations', orgId)).then((snap) => {
-      if (cancelled) return;
-      const data = snap.data() || {};
-      setName(typeof data.name === 'string' ? data.name : '');
-      setIndustry(typeof data.industry === 'string' ? data.industry : '');
-      setLogoUrl(typeof data.logoUrl === 'string' ? data.logoUrl : '');
-      setLoading(false);
-    });
+    setLoading(true);
+    setLoadError('');
+    setMessage('');
+    void getDoc(doc(db, 'organizations', orgId))
+      .then((snap) => {
+        if (cancelled) return;
+        const data = snap.data() || {};
+        setName(typeof data.name === 'string' ? data.name : '');
+        setIndustry(typeof data.industry === 'string' ? data.industry : '');
+        setLogoUrl(typeof data.logoUrl === 'string' ? data.logoUrl : '');
+        setLoadError('');
+        setLoading(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setName('');
+        setIndustry('');
+        setLogoUrl('');
+        setLoadError('Could not load organization profile.');
+        setLoading(false);
+      });
     return () => {
       cancelled = true;
     };
-  }, [orgId]);
+  }, [orgId, retryToken]);
 
   const save = async () => {
-    if (!orgId || !isAdmin) return;
+    if (!orgId || !isAdmin || loading || loadError) return;
     const trimmedName = name.trim();
     if (!trimmedName) {
       setMessage('Organization name is required.');
@@ -101,6 +121,15 @@ export function OrgBrandingCard() {
       <CardContent className="space-y-4 p-6">
         {loading ? (
           <p className="text-sm text-slate-500">Loading…</p>
+        ) : loadError ? (
+          <div role="alert" data-testid="org-profile-load-error" className="space-y-3">
+            <p className="text-sm text-rose-200">{loadError}</p>
+            <Button type="button" variant="outline" onClick={() => setRetryToken((n) => n + 1)}>
+              Retry
+            </Button>
+          </div>
+        ) : !orgId ? (
+          <p className="text-sm text-slate-400">No organization is bound to this profile.</p>
         ) : (
           <>
             <div className="flex items-center gap-4">
