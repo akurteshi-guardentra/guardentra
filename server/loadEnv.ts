@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { isIsolatedLocalStartup } from '../scripts/local-demo-startup-policy.mjs';
 
 /**
  * Side-effect module: loads env files. Must be the FIRST import in server.ts.
@@ -20,6 +21,13 @@ import dotenv from 'dotenv';
  * first file to define a key wins. That matches Vite's precedence, and leaves real
  * environment variables — what App Hosting and Cloud Run inject — highest of all,
  * since they are set before either file is read.
+ *
+ * The local demo launcher sets GUARDENTRA_LOCAL_DEMO and a private state directory.
+ * In that process these files are not read, so a checkout `.env` cannot put cloud
+ * credentials back into the environment before routes initialize. Hosted startup
+ * leaves the flag unset and keeps the file load below.
  */
-dotenv.config({ path: '.env.local' });
-dotenv.config();
+if (!isIsolatedLocalStartup(process.env)) {
+  dotenv.config({ path: '.env.local' });
+  dotenv.config();
+}

@@ -60,7 +60,7 @@ export function buildCreateAssessmentFields(input: {
   frameworkPackIds?: string[];
   questionBankVersion: string;
   frameworkName?: string;
-  status: 'Sent';
+  status: 'Not Started';
   dueAt: string;
   dueDate: string;
   progressPct: 0;
@@ -70,7 +70,6 @@ export function buildCreateAssessmentFields(input: {
   questions: PortalQuestion[];
   portalOpen: true;
   createdAt: string;
-  sentAt: string;
   triageTier?: string;
   reviewCadence?: string;
   reminderScheduleId?: string;
@@ -89,7 +88,7 @@ export function buildCreateAssessmentFields(input: {
     frameworkPackIds: input.frameworkPackIds,
     questionBankVersion: QUESTION_BANK_VERSION,
     frameworkName: input.frameworkName,
-    status: 'Sent',
+    status: 'Not Started',
     dueAt: input.dueAt,
     dueDate: input.dueAt.slice(0, 10),
     progressPct: 0,
@@ -99,7 +98,6 @@ export function buildCreateAssessmentFields(input: {
     questions: input.questions,
     portalOpen: true,
     createdAt: now,
-    sentAt: now,
     versionLocked: true,
     ...(input.triageTier ? { triageTier: input.triageTier } : {}),
     ...(input.reviewCadence ? { reviewCadence: input.reviewCadence } : {}),
@@ -120,6 +118,7 @@ export function buildPortalAutosavePatch(input: {
   answers: Record<string, string | string[] | undefined>;
   comments: PortalCommentsMap;
   evidenceByQuestion: PortalEvidenceMap;
+  currentStatus?: string;
   nowIso?: string;
 }): {
   answers: PortalAnswersMap;
@@ -128,7 +127,6 @@ export function buildPortalAutosavePatch(input: {
   progressPct: number;
   progress: number;
   status: 'Sent' | 'In Progress';
-  questions: PortalQuestion[];
   updatedAt: string;
 } {
   const answers = compactAnswers(input.answers);
@@ -139,8 +137,7 @@ export function buildPortalAutosavePatch(input: {
     evidenceByQuestion: input.evidenceByQuestion,
     progressPct: pct,
     progress: pct,
-    status: pct > 0 ? 'In Progress' : 'Sent',
-    questions: input.questions,
+    status: input.currentStatus === 'In Progress' || pct > 0 ? 'In Progress' : 'Sent',
     updatedAt: input.nowIso || new Date().toISOString(),
   };
 }
@@ -283,6 +280,8 @@ export type OrgDecisionPatch = {
   decisionNotes?: string | null;
   decidedAt: string;
   decidedBy: string;
+  /** Human-readable decider (name or email) for display; decidedBy stays the stable id. */
+  decidedByName?: string;
   remediationOwner?: string | null;
   remediationDueAt?: string | null;
   residualRiskLevel: RiskLevel;
@@ -318,6 +317,7 @@ export function normalizeRemediationDueAt(raw: string | undefined | null): strin
 export function buildOrgDecisionPatch(input: {
   outcome: DecisionOutcome;
   decidedBy: string;
+  decidedByName?: string;
   decisionNotes?: string;
   remediationOwner?: string;
   remediationDueAt?: string;
@@ -357,6 +357,9 @@ export function buildOrgDecisionPatch(input: {
         portalOpen: true,
       };
 
+  const decidedByName = input.decidedByName?.trim();
+  if (decidedByName) patch.decidedByName = decidedByName;
+
   if (notes) patch.decisionNotes = notes;
   else if (closes) patch.decisionNotes = null;
 
@@ -372,4 +375,24 @@ export function buildOrgDecisionPatch(input: {
 
 export function decisionRequiresNotes(outcome: DecisionOutcome): boolean {
   return decisionRequiresRemediationPlan(outcome);
+}
+
+/**
+ * Who recorded the decision, for display. Prefers the stored name; older decisions only
+ * carry the decider's uid, which is resolved when it is the signed-in user.
+ */
+export function decidedByDisplay(
+  assessment: { decidedBy?: string | null; decidedByName?: string | null },
+  currentUser?: { uid?: string | null; label?: string | null } | null,
+): string | undefined {
+  if (assessment.decidedByName) return assessment.decidedByName;
+  if (
+    assessment.decidedBy &&
+    currentUser?.uid &&
+    currentUser.label &&
+    assessment.decidedBy === currentUser.uid
+  ) {
+    return currentUser.label;
+  }
+  return assessment.decidedBy || undefined;
 }

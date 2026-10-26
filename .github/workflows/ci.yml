@@ -18,6 +18,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Portal smoke syntax (no live execution)
+        run: node --check src/tests/portal.smoke.mjs
+
       - name: Type check
         run: npm run lint
 
@@ -26,6 +29,82 @@ jobs:
 
       - name: Vitest
         run: npm run test:vitest
+
+      - name: Build application and mail worker
+        run: |
+          npm run build
+          npm run build:mail-worker
+
+      - name: Set up Java 21 for Firebase emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Firestore rules
+        run: npm run test:firestore-rules
+
+      - name: Mail worker Firestore transactions
+        run: npm run test:mail-worker-firestore
+
+      - name: Portal submission replay transactions (six required)
+        shell: bash
+        env:
+          GCLOUD_PROJECT: demo-guardentra-local
+          GOOGLE_CLOUD_PROJECT: demo-guardentra-local
+          APP_ENV: test
+          AUDIT_SPINE_ENABLED: "false"
+          AUDIT_WORKER_ENABLED: "false"
+          MAIL_WORKER_ENABLED: "false"
+          EVIDENCE_SCANNER_ENABLED: "false"
+        run: |
+          set -euo pipefail
+          report_dir="$(mktemp -d "${RUNNER_TEMP:?}/portal-replay.XXXXXX")"
+          cat > "$report_dir/run.cjs" <<'NODE'
+          const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const { pathToFileURL } = require('node:url');
+          const { spawnSync } = require('node:child_process');
+          const file = 'src/tests/portalSubmitReplay.firestore.test.ts';
+          const host = /^(127\.0\.0\.1|localhost):(\d{1,5})$/.exec(process.env.FIRESTORE_EMULATOR_HOST || '');
+          assert.ok(host && Number(host[2]) > 0 && Number(host[2]) <= 65535, 'Local emulator required; refusing a skipped run');
+          assert.equal(process.env.GCLOUD_PROJECT, 'demo-guardentra-local', 'Demo project required');
+          assert.equal(process.env.GOOGLE_CLOUD_PROJECT, 'demo-guardentra-local', 'Demo project required');
+          for (const key of ['GOOGLE_APPLICATION_CREDENTIALS', 'GOOGLE_OAUTH_ACCESS_TOKEN', 'FIREBASE_TOKEN']) {
+            assert.ok(!process.env[key], 'Cloud credentials are not allowed in this step');
+          }
+          for (const name of ['.env', '.env.local', '.env.test', '.env.test.local']) {
+            assert.ok(!fs.existsSync(name), 'Checkout env file must not be loaded for this test');
+          }
+          const report = path.join(__dirname, 'results.json');
+          assert.ok(!fs.existsSync(report), 'Fresh results required');
+          const guard = pathToFileURL(path.resolve('scripts/local-demo-block-egress.mjs')).href;
+          // Existing process-level TCP/fetch guard, not an OS network sandbox.
+          const env = { ...process.env, NODE_OPTIONS: `--import=${guard}` };
+          const child = spawnSync(process.execPath, [
+            path.resolve('node_modules/vitest/vitest.mjs'), 'run', file,
+            '--reporter=default', '--reporter=json', `--outputFile=${report}`,
+          ], { env, stdio: 'inherit' });
+          assert.ok(!child.error && !child.signal, 'Vitest must finish normally');
+          assert.equal(child.status, 0, 'Vitest must pass');
+          const result = JSON.parse(fs.readFileSync(report, 'utf8'));
+          assert.equal(result.success, true, 'Reporter must record success');
+          assert.equal(result.numTotalTests, 6, 'Exactly six replay cases must run');
+          assert.equal(result.numPassedTests, 6, 'All six replay cases must pass');
+          assert.equal(result.numFailedTests, 0);
+          assert.equal(result.numPendingTests, 0, 'Skipped cases do not pass this gate');
+          assert.equal(result.numTodoTests, 0);
+          assert.equal(result.testResults?.length, 1, 'Only the designated file may count');
+          const suite = result.testResults[0];
+          assert.equal(path.resolve(suite.name), path.resolve(file), 'Expected replay file required');
+          assert.equal(suite.status, 'passed');
+          assert.equal(suite.assertionResults?.length, 6);
+          assert.ok(suite.assertionResults.every(test => test.status === 'passed'));
+          console.log('PORTAL_REPLAY_CI_GATE_PASS: six executed, six passed, zero skipped');
+          NODE
+          ./node_modules/.bin/firebase emulators:exec --only firestore \
+            --project demo-guardentra-local "node \"$report_dir/run.cjs\""
 
   # #88 correction cycle 3: prove the GuardEntra PowerShell dispatcher suite
   # on Windows PowerShell (PS 5.1 path), including the empty `gh pr list`
@@ -38,3 +117,16 @@ jobs:
       - name: GuardEntra dispatcher PowerShell suite
         shell: powershell
         run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/guardentra/tests/Run-Tests.ps1
+
+      - name: Parse read-only audit state inventory collector on Windows PowerShell
+        shell: powershell
+        run: |
+          $geTokens = $null
+          $geErrors = $null
+          $geScript = Join-Path $env:GITHUB_WORKSPACE 'scripts/guardentra/Get-AuditStateInventory74.ps1'
+          [System.Management.Automation.Language.Parser]::ParseFile($geScript, [ref]$geTokens, [ref]$geErrors) | Out-Null
+          if ($geErrors.Count -gt 0) { throw ($geErrors | Out-String) }
+
+      - name: Audit inventory command and failure regression tests
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/guardentra/tests/AuditStateInventory74.Tests.ps1

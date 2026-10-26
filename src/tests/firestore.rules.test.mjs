@@ -15,7 +15,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertFails, assertSucceeds, initializeTestEnvironment } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '../..');
@@ -133,8 +133,8 @@ async function main() {
     assertFails(updateDoc(doc(memberDb, 'organizations', ORG), { name: 'Hijacked Co' })),
   );
 
-  await check('non-admin member CAN increment vendorCount alone', () =>
-    assertSucceeds(updateDoc(doc(memberDb, 'organizations', ORG), { vendorCount: 6 })),
+  await check('non-admin member CANNOT mutate vendorCount — hosted vendor create is server-authoritative', () =>
+    assertFails(updateDoc(doc(memberDb, 'organizations', ORG), { vendorCount: 6 })),
   );
 
   await check('non-admin member CAN increment seatCount alone', () =>
@@ -173,7 +173,7 @@ async function main() {
           role: 'member',
         });
       });
-      const joinerDb = testEnv.authenticatedContext('joiner-2', { email: 'j2@example.com' }).firestore();
+      const joinerDb = testEnv.authenticatedContext('joiner-2', { email: 'j2@example.com', email_verified: true }).firestore();
       // Step 1 — the batch, profile only (invite update omitted; covered elsewhere).
       const batch = writeBatch(joinerDb);
       batch.set(doc(joinerDb, 'users/joiner-2'), {
@@ -212,6 +212,82 @@ async function main() {
     assertFails(setDoc(doc(db, 'risks/r4'), { organizationId: 'someone-else', title: 'X' })),
   );
 
+  console.log('\nP0 durable material-transition authority (#163):');
+
+  await check('org member CANNOT directly create a hosted vendor', () =>
+    assertFails(
+      setDoc(doc(db, 'vendors/direct-client-vendor'), {
+        organizationId: ORG,
+        name: 'Direct Client Vendor',
+        category: 'SaaS',
+        criticality: 'Medium',
+      }),
+    ),
+  );
+
+  await check('org member CANNOT directly create a hosted assessment', () =>
+    assertFails(
+      setDoc(doc(db, 'assessments/direct-client-assessment'), {
+        organizationId: ORG,
+        vendorId: 'v1',
+        status: 'Not Started',
+        portalOpen: true,
+      }),
+    ),
+  );
+
+  await check('org member CANNOT directly write FastTrack triage', () =>
+    assertFails(
+      setDoc(doc(db, 'vendor_triage/direct-triage'), {
+        organizationId: ORG,
+        vendorId: 'direct-triage',
+        tier: 'Lite',
+        completedAt: '2026-10-08T00:00:00.000Z',
+      }),
+    ),
+  );
+
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'vendor_triage/server-triage'), {
+      organizationId: ORG,
+      vendorId: 'server-triage',
+      tier: 'Standard',
+      completedAt: '2026-10-08T00:00:00.000Z',
+    });
+  });
+
+  await check('same-tenant member CAN read server-authored FastTrack triage', () =>
+    assertSucceeds(getDoc(doc(db, 'vendor_triage/server-triage'))),
+  );
+
+  await check('same-tenant member CANNOT update server-authored FastTrack triage', () =>
+    assertFails(
+      updateDoc(doc(db, 'vendor_triage/server-triage'), {
+        tier: 'Enhanced',
+      }),
+    ),
+  );
+
+  await check('browser client CANNOT create a durable material-audit journal row', () =>
+    assertFails(
+      setDoc(doc(db, 'audit_material_intents/forged-event'), {
+        eventId: 'forged-event',
+        state: 'relayed',
+        organizationId: ORG,
+      }),
+    ),
+  );
+
+  await check('browser client CANNOT read a durable material-audit journal row', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'audit_material_intents/server-event'), {
+        eventId: 'server-event',
+        state: 'pending',
+      });
+    });
+    await assertFails(getDoc(doc(db, 'audit_material_intents/server-event')));
+  });
+
   console.log('\nP0-1 portal assessment lock (issue #10):');
 
   const ASSESS = 'asm-portal-p0';
@@ -222,6 +298,12 @@ async function main() {
     .firestore();
 
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'vendors/v1'), {
+      organizationId: ORG,
+      name: 'Portal Co',
+      category: 'SaaS',
+      criticality: 'Medium',
+    });
     await setDoc(doc(ctx.firestore(), `assessments/${ASSESS}`), {
       organizationId: ORG,
       vendorId: 'v1',
@@ -249,8 +331,35 @@ async function main() {
     ),
   );
 
-  await check('portal session CAN submit (Under Review + portalOpen=false + snapshot)', () =>
-    assertSucceeds(
+  await check('portal session CANNOT rewrite the immutable question snapshot', () =>
+    assertFails(
+      updateDoc(doc(portalDb, 'assessments', ASSESS), {
+        questions: [{ id: 'forged', question: 'Replace server snapshot?' }],
+        updatedAt: '2026-08-05T12:10:00.000Z',
+      }),
+    ),
+  );
+
+  await check('org browser CANNOT mint sentAt directly', () =>
+    assertFails(
+      updateDoc(doc(db, 'assessments', ASSESS), {
+        status: 'Sent',
+        sentAt: '2026-08-05T12:15:00.000Z',
+      }),
+    ),
+  );
+
+  await check('org browser CANNOT fake Under Review without server submit', () =>
+    assertFails(
+      updateDoc(doc(db, 'assessments', ASSESS), {
+        status: 'Under Review',
+        portalOpen: false,
+      }),
+    ),
+  );
+
+  await check('portal session CANNOT directly submit — final submit is server-authoritative', () =>
+    assertFails(
       updateDoc(doc(portalDb, 'assessments', ASSESS), {
         answers: { q1: 'Yes', q2: 'No' },
         comments: {},
@@ -270,6 +379,28 @@ async function main() {
       }),
     ),
   );
+
+  // Simulate the Admin SDK server route, which bypasses client rules and commits
+  // assessment + vendor + durable audit intent atomically.
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), `assessments/${ASSESS}`), {
+      answers: { q1: 'Yes', q2: 'No' },
+      comments: {},
+      evidenceByQuestion: {},
+      progressPct: 100,
+      progress: 100,
+      status: 'Under Review',
+      completedAt: '2026-08-05T13:00:00.000Z',
+      portalOpen: false,
+      versionLocked: true,
+      submittedSnapshot: {
+        answers: { q1: 'Yes', q2: 'No' },
+        comments: {},
+        evidenceByQuestion: {},
+        submittedAt: '2026-08-05T13:00:00.000Z',
+      },
+    });
+  });
 
   await check('portal session CAN read submitted assessment (receipt)', () =>
     assertSucceeds(getDoc(doc(portalDb, 'assessments', ASSESS))),
@@ -378,11 +509,15 @@ async function main() {
     .authenticatedContext('portal-vendor-b', { portalAssessmentId: ASSESS_B })
     .firestore();
 
-  await check('scoped session CAN submit its own open assessment once', () =>
-    assertSucceeds(updateDoc(doc(portalB, 'assessments', ASSESS_B), submitShape)),
+  await check('scoped session CANNOT directly submit its own open assessment', () =>
+    assertFails(updateDoc(doc(portalB, 'assessments', ASSESS_B), submitShape)),
   );
 
-  await check('scoped session CANNOT submit a second time after portal closed', () =>
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), `assessments/${ASSESS_B}`), submitShape);
+  });
+
+  await check('scoped session CANNOT submit a second time after server closes portal', () =>
     assertFails(
       updateDoc(doc(portalB, 'assessments', ASSESS_B), {
         ...submitShape,
@@ -646,18 +781,17 @@ async function main() {
     return batch;
   }
 
-  await check('Org A admin sample-seed writeBatch spanning sample collections SUCCEEDS', () =>
-    assertSucceeds(sampleSeedBatch(ORG_A).commit()),
+  await check('client sample-seed batch containing a vendor create is rejected', () =>
+    assertFails(sampleSeedBatch(ORG_A).commit()),
   );
 
-  await check('deterministic retry of the same Org A sample-seed batch SUCCEEDS (no rule deny)', () =>
-    assertSucceeds(sampleSeedBatch(ORG_A).commit()),
-  );
-
-  await check('retry leaves a single deterministic sample risk doc (no duplicate random ids)', async () => {
-    const snap = await getDoc(doc(seedDb, `risks/${ORG_A}__sample_v1__risks__r1`));
-    if (!snap.exists()) throw new Error('expected deterministic sample risk missing after retry');
-    if (snap.data()?.sampleSeedVersion !== 'v1') throw new Error('sampleSeedVersion missing');
+  await check('rejected sample batch is atomic — no partial sample risk is written', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const snap = await getDoc(
+        doc(ctx.firestore(), `risks/${ORG_A}__sample_v1__risks__r1`),
+      );
+      if (snap.exists()) throw new Error('rejected sample batch partially committed');
+    });
   });
 
   await check('Org A admin CANNOT write Org B sample data in a cross-tenant batch', () =>
@@ -673,7 +807,7 @@ async function main() {
     .authenticatedContext('founder-1', { email: 'founder@example.com' })
     .firestore();
   const invitedDb = testEnv
-    .authenticatedContext('invited-61', { email: 'invited61@example.com' })
+    .authenticatedContext('invited-61', { email: 'invited61@example.com', email_verified: true })
     .firestore();
 
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
@@ -915,6 +1049,109 @@ async function main() {
         createdAt: '2026-09-18T00:00:00.000Z',
       }),
     ),
+  );
+
+
+  console.log('\nIssue #61 continuation: atomic founder enrollment:');
+
+  await check('fresh user CANNOT reserve a nonexistent tenant with an orphan admin profile', () =>
+    assertFails(setDoc(doc(attackerDb, 'users/attacker-fresh'), {
+      organizationId: 'orphan-tenant-61', role: 'admin',
+    })),
+  );
+  await check('fresh user CANNOT create an orphan organization', () =>
+    assertFails(setDoc(doc(testEnv.authenticatedContext('orphan-founder-61').firestore(),
+      'organizations/orphan-org-61'), { name: 'Orphan' })),
+  );
+  await check('founder batch CANNOT create multiple organizations', async () => {
+    const fs = testEnv.authenticatedContext('multi-founder-61').firestore();
+    const batch = writeBatch(fs);
+    batch.set(doc(fs, 'users/multi-founder-61'), { organizationId: 'multi-org-a', role: 'admin' });
+    batch.set(doc(fs, 'organizations/multi-org-a'), { name: 'A' });
+    batch.set(doc(fs, 'organizations/multi-org-b'), { name: 'B' });
+    await assertFails(batch.commit());
+  });
+  await check('founder batch CANNOT claim a different organization from the one created', async () => {
+    const fs = testEnv.authenticatedContext('mismatch-founder-61').firestore();
+    const batch = writeBatch(fs);
+    batch.set(doc(fs, 'users/mismatch-founder-61'), { organizationId: 'mismatch-org-a', role: 'admin' });
+    batch.set(doc(fs, 'organizations/mismatch-org-b'), { name: 'B' });
+    await assertFails(batch.commit());
+  });
+
+  console.log('\nInvite email verification + billing-field integrity:');
+
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'org_invites/inv-unverified'), {
+      email: 'victim-invitee@example.com',
+      status: 'pending',
+      organizationId: ORG,
+      role: 'admin',
+    });
+  });
+  const squatterDb = testEnv
+    .authenticatedContext('squatter-1', { email: 'victim-invitee@example.com', email_verified: false })
+    .firestore();
+  const verifiedInviteeDb = testEnv
+    .authenticatedContext('invitee-ok', { email: 'victim-invitee@example.com', email_verified: true })
+    .firestore();
+
+  // orgBootstrap.ts queries pending invites by email immediately after signup, before
+  // the user can verify. That lookup must keep working or every password signup breaks.
+  await check('UNVERIFIED new signup CAN run the pending-invite lookup query', () =>
+    assertSucceeds(getDocs(query(
+      collection(testEnv.authenticatedContext('fresh-unverified', { email: 'nobody-invited@example.com', email_verified: false }).firestore(), 'org_invites'),
+      where('email', '==', 'nobody-invited@example.com'),
+      where('status', '==', 'pending'),
+    ))),
+  );
+  await check('UNVERIFIED account with an invitee email CANNOT join via the invite', () =>
+    assertFails(
+      setDoc(doc(squatterDb, 'users/squatter-1'), {
+        organizationId: ORG,
+        role: 'admin',
+        inviteId: 'inv-unverified',
+      }),
+    ),
+  );
+  await check('VERIFIED invitee CAN read their invite', () =>
+    assertSucceeds(getDoc(doc(verifiedInviteeDb, 'org_invites/inv-unverified'))),
+  );
+
+  await check('org admin CANNOT raise their own vendorCap', () =>
+    assertFails(updateDoc(doc(db, 'organizations', ORG), { vendorCap: 10000 })),
+  );
+  await check('org admin CANNOT set their own planId', () =>
+    assertFails(updateDoc(doc(db, 'organizations', ORG), { planId: 'gov' })),
+  );
+  await check('org admin CAN still update a settings field', () =>
+    assertSucceeds(updateDoc(doc(db, 'organizations', ORG), { industry: 'Fintech' })),
+  );
+
+  // Founder bootstrap must be an atomic batch (org + admin profile), so both cases use
+  // the real shape; the paid-plan case would otherwise fail for the wrong reason.
+  const founderBatch = (uid, orgId, org) => {
+    const fs = testEnv.authenticatedContext(uid, { email: `${uid}@example.com` }).firestore();
+    const batch = writeBatch(fs);
+    batch.set(doc(fs, `organizations/${orgId}`), org);
+    batch.set(doc(fs, `users/${uid}`), { organizationId: orgId, role: 'admin', email: `${uid}@example.com` });
+    return batch.commit();
+  };
+  await check('founder CANNOT bootstrap an org on a paid plan', () =>
+    assertFails(founderBatch('greedy-founder', 'greedy-org', {
+      name: 'Greedy', planId: 'growth', vendorCap: 150, seatCap: 10, seatCount: 1, vendorCount: 0,
+    })),
+  );
+  await check('founder CANNOT bootstrap an org with Stripe ids', () =>
+    assertFails(founderBatch('stripe-founder', 'stripe-org', {
+      name: 'Stripe', seatCount: 1, vendorCount: 0, stripeSubscriptionId: 'sub_forged',
+    })),
+  );
+  await check('founder CAN bootstrap a Starter org with Starter caps', () =>
+    assertSucceeds(founderBatch('fine-founder', 'fine-org', {
+      name: 'Fine', planId: 'starter', vendorCap: 25, seatCap: 3,
+      seatCount: 1, vendorCount: 0, subscriptionStatus: 'none',
+    })),
   );
 
   await testEnv.cleanup();

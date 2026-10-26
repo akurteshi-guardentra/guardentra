@@ -11,6 +11,15 @@ function pollMs(): number {
   return Math.max(60_000, parseInt(process.env.ASSESSMENT_REMINDER_POLL_MS || '300000', 10) || 300_000);
 }
 
+export function assessmentReminderQueueId(assessmentId: string, kind: string): string {
+  return `assessment-reminder_${assessmentId}_${kind}`;
+}
+
+export function isAlreadyExistsError(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null)?.code;
+  return code === 6 || code === 'already-exists';
+}
+
 export async function processAssessmentReminders(): Promise<number> {
   if (!enabled()) return 0;
   try {
@@ -49,19 +58,39 @@ export async function processAssessmentReminders(): Promise<number> {
         kind = `after_${daysAfter}`;
       }
       if (!kind || data.lastReminderKind === kind) continue;
-      await db.collection('mail').add({
-        to: [data.inviteEmail],
-        message: {
-          subject: `Reminder: security assessment for ${data.vendorName || 'your organization'}`,
-          text: `This is a Guardentra reminder (${kind.replace(/_/g, ' ')}) for the open security assessment. Please complete it before or as soon as possible after the due date.`,
-        },
-        createdAt: new Date().toISOString(),
-      });
+      const queueRef = db
+        .collection('mail')
+        .doc(assessmentReminderQueueId(docSnap.id, kind));
+      let created = false;
+      try {
+        await queueRef.create({
+          to: [data.inviteEmail],
+          message: {
+            subject: `Reminder: security assessment for ${data.vendorName || 'your organization'}`,
+            text: `This is a Guardentra reminder (${kind.replace(/_/g, ' ')}) for the open security assessment. Please complete it before or as soon as possible after the due date.`,
+          },
+          createdAt: new Date().toISOString(),
+          source: 'guardentra.reminder',
+          notification: {
+            intentType: 'assessment_reminder',
+            assessmentId: docSnap.id,
+            organizationId: data.organizationId || null,
+            reminderKind: kind,
+          },
+        });
+        created = true;
+      } catch (err) {
+        if (!isAlreadyExistsError(err)) throw err;
+      }
+
+      // Marker repair is intentionally after the durable queue create. If this write
+      // fails, the next cycle reuses the same deterministic queue id, observes the
+      // existing mail intent, and retries only the marker instead of sending twice.
       await docSnap.ref.set(
         { lastReminderKind: kind, lastReminderAt: new Date().toISOString() },
         { merge: true }
       );
-      queued += 1;
+      if (created) queued += 1;
     }
     if (queued) console.log(`[reminder-worker] queued ${queued} reminder(s)`);
     return queued;

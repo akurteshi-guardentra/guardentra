@@ -8,7 +8,6 @@ import {
   addDoc,
   doc,
   getDoc,
-  runTransaction,
 } from 'firebase/firestore';
 import {
   Building2,
@@ -56,33 +55,8 @@ import {
   shouldUseLocalPersistenceFallback,
 } from '../lib/vendor/localVendorStore';
 import { useOrgAssessments } from '../lib/vendor/useOrgAssessments';
+import { authHeaders } from '../lib/authHeaders';
 import { DEFAULT_VENDOR_CAP, getPlan } from '../lib/plans';
-
-function vendorPayload(
-  orgId: string,
-  input: {
-    name: string;
-    category: string;
-    criticality: RiskLevel;
-    primaryContactName?: string;
-    primaryContactEmail?: string;
-    ownerName?: string;
-  }
-) {
-  return {
-    name: input.name.trim(),
-    category: input.category,
-    criticality: input.criticality,
-    status: 'Active' as const,
-    riskScore: 0,
-    organizationId: orgId,
-    createdAt: new Date().toISOString(),
-    primaryContactName: input.primaryContactName?.trim() || undefined,
-    primaryContactEmail: input.primaryContactEmail?.trim() || undefined,
-    ownerName: input.ownerName || 'Unassigned',
-    assessmentStatus: 'Not Started' as const,
-  };
-}
 
 export function VendorsDirectory() {
   const { user, profile } = useAuth();
@@ -137,6 +111,13 @@ export function VendorsDirectory() {
     vendorCount: number;
     vendorCap: number;
   } | null>(null);
+  const [planMeterError, setPlanMeterError] = useState<string | null>(null);
+  const [planMeterOrgId, setPlanMeterOrgId] = useState<string | undefined>(orgId);
+  if (planMeterOrgId !== orgId) {
+    setPlanMeterOrgId(orgId);
+    setPlanMeter(null);
+    setPlanMeterError(null);
+  }
 
   const refreshLocal = (id: string) => {
     if (!shouldUseLocalPersistenceFallback()) {
@@ -155,21 +136,33 @@ export function VendorsDirectory() {
   useEffect(() => {
     if (!orgId) {
       setPlanMeter(null);
+      setPlanMeterError(null);
       return;
     }
     let cancelled = false;
-    void getDoc(doc(db, 'organizations', orgId)).then((snap) => {
-      if (cancelled) return;
-      const data = snap.data() || {};
-      const vendorCap =
-        typeof data.vendorCap === 'number' ? data.vendorCap : DEFAULT_VENDOR_CAP;
-      const vendorCount = typeof data.vendorCount === 'number' ? data.vendorCount : 0;
-      setPlanMeter({
-        planName: getPlan(data.planId).name,
-        vendorCount,
-        vendorCap,
+    setPlanMeter(null);
+    setPlanMeterError(null);
+    void getDoc(doc(db, 'organizations', orgId))
+      .then((snap) => {
+        if (cancelled) return;
+        const data = snap.data() || {};
+        const vendorCap =
+          typeof data.vendorCap === 'number' ? data.vendorCap : DEFAULT_VENDOR_CAP;
+        const vendorCount = typeof data.vendorCount === 'number' ? data.vendorCount : 0;
+        setPlanMeter({
+          planName: getPlan(data.planId).name,
+          vendorCount,
+          vendorCap,
+        });
+        setPlanMeterError(null);
+      })
+      .catch((err) => {
+        console.warn('VendorsDirectory: plan meter unavailable', err);
+        if (cancelled) return;
+        // Do not invent subscription limits from a failed read; server rules still enforce.
+        setPlanMeter(null);
+        setPlanMeterError('Plan usage unavailable — vendor limits could not be loaded.');
       });
-    });
     return () => {
       cancelled = true;
     };
@@ -328,7 +321,6 @@ export function VendorsDirectory() {
   }): Promise<string | null> => {
     if (!orgId) throw new Error('No organization on your profile — cannot save vendors.');
     const ownerName = profile?.displayName || profile?.email || 'Unassigned';
-    const payload = vendorPayload(orgId, { ...input, ownerName });
     const eventType = input.source === 'import' ? 'vendor.imported' : 'vendor.created';
 
     const saveLocal = () => {
@@ -358,48 +350,26 @@ export function VendorsDirectory() {
     }
 
     try {
-      const writeTimeout = new Promise<never>((_, reject) => {
-        window.setTimeout(() => {
-          const err = new Error('Cloud write timed out');
-          (err as { code?: string }).code = 'unavailable';
-          reject(err);
-        }, 4000);
+      const response = await fetch('/api/org/vendor-create', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          name: input.name,
+          category: input.category,
+          criticality: input.criticality,
+          primaryContactName: input.primaryContactName,
+          primaryContactEmail: input.primaryContactEmail,
+          source: input.source || 'create',
+        }),
       });
-      // Transaction so the vendor create and the org's vendorCount stay in lockstep —
-      // Firestore rules enforce the actual cap (organizations.vendorCount < vendorCap,
-      // Starter default 25) using this same counter. This is soft enforcement: it stops
-      // normal over-cap growth through the app, but doesn't prevent a client bypassing
-      // the increment via direct Firestore access — see firestore.rules' orgField()
-      // comment and docs/KNOWN_ISSUES.md.
-      let createdId = '';
-      const write = runTransaction(db, async (tx) => {
-        const orgRef = doc(db, 'organizations', orgId);
-        const orgSnap = await tx.get(orgRef);
-        const orgData = orgSnap.data() || {};
-        const count = typeof orgData.vendorCount === 'number' ? orgData.vendorCount : 0;
-        const cap =
-          typeof orgData.vendorCap === 'number' ? orgData.vendorCap : DEFAULT_VENDOR_CAP;
-        if (count >= cap) {
-          const planName = getPlan(orgData.planId).name;
-          throw new Error(
-            `Vendor limit reached (${cap} on ${planName}). Upgrade your plan to add more vendors.`
-          );
-        }
-        const vendorRef = doc(collection(db, 'vendors'));
-        createdId = vendorRef.id;
-        tx.set(vendorRef, payload);
-        tx.set(orgRef, { vendorCount: count + 1 }, { merge: true });
-      });
-      await Promise.race([write, writeTimeout]);
-      void emitAuditBestEffort({
-        tenantId: orgId,
-        eventType,
-        actorId: user?.uid || null,
-        objectType: 'vendor',
-        objectId: createdId,
-        payload: { name: input.name, category: input.category, criticality: input.criticality },
-      });
-      return createdId;
+      const body = (await response.json().catch(() => ({}))) as {
+        vendorId?: string;
+        error?: string;
+      };
+      if (!response.ok || !body.vendorId) {
+        throw new Error(body.error || 'Could not create vendor.');
+      }
+      return body.vendorId;
     } catch (ex) {
       if (mayFallbackVendorCreateToLocal(ex)) {
         setDataError(
@@ -716,6 +686,15 @@ export function VendorsDirectory() {
       )}
 
       <div className="space-y-4">
+        {planMeterError && (
+          <div
+            data-testid="plan-meter-unavailable"
+            className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100"
+            role="status"
+          >
+            {planMeterError}
+          </div>
+        )}
         {planMeter ? (
           <div
             className={
