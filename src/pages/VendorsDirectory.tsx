@@ -5,7 +5,6 @@ import {
   onSnapshot,
   query,
   where,
-  addDoc,
   doc,
   getDoc,
 } from 'firebase/firestore';
@@ -423,9 +422,10 @@ export function VendorsDirectory() {
     }
   };
 
-  /** Distinct from "Add One Vendor": creates the vendor, records a vendor_invites
-   * audit entry (previously declared in COLLECTIONS but never written anywhere),
-   * and emails the vendor a welcome notice — all in one step. */
+  /** Distinct from "Add One Vendor": creates the vendor, then asks the server to
+   * queue the welcome email. The server commits the queue entry, the
+   * vendor_invites record and the vendor.invite_queued audit intent in one
+   * transaction (#167); the browser writes none of them. */
   const handleInviteVendor = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
@@ -465,34 +465,6 @@ export function VendorsDirectory() {
       } catch (mailEx: any) {
         emailQueueError = mailEx?.message || 'Could not queue email';
         console.warn('Invite vendor: email queue failed', mailEx);
-      }
-
-      if (orgId) {
-        try {
-          await addDoc(collection(db, 'vendor_invites'), {
-            organizationId: orgId,
-            vendorName: input.name,
-            vendorEmail: input.primaryContactEmail,
-            invitedByEmail: profile?.email || null,
-            status: emailQueued ? 'email_queued' : 'vendor_created_email_failed',
-            emailError: emailQueued ? null : emailQueueError,
-            createdAt: new Date().toISOString(),
-          });
-        } catch (invEx) {
-          console.warn('Could not record vendor_invites audit entry', invEx);
-        }
-        void emitAuditBestEffort({
-          tenantId: orgId,
-          eventType: 'vendor.invite_queued',
-          actorId: user?.uid || null,
-          objectType: 'vendor',
-          objectId: vendorId,
-          payload: {
-            vendorName: input.name,
-            emailQueued,
-            toDomain: input.primaryContactEmail.split('@')[1] || null,
-          },
-        });
       }
 
       setShowInvite(false);
