@@ -3,7 +3,12 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main, dev]
+    # Release candidates get CI on every push, including merge commits whose
+    # combined tree no pull request ever tested (#126: 93e2f01 reached staging untested).
+    branches: [main, dev, 'release/**']
+
+permissions:
+  contents: read
 
 jobs:
   verify:
@@ -130,3 +135,61 @@ jobs:
       - name: Audit inventory command and failure regression tests
         shell: powershell
         run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/guardentra/tests/AuditStateInventory74.Tests.ps1
+
+  # Staging gate (#126). Staging App Hosting deploys whatever lands on its live
+  # branch. Pointing that backend at deploy/staging (owner console step) instead of
+  # the RC branch means only commits that passed verify + dispatcher here, on the
+  # exact pushed SHA, can reach staging. Failing, cancelled or missing CI never runs
+  # this job, so it never moves the branch.
+  promote-staging:
+    needs: [verify, dispatcher]
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/release/rc-2026-10-08' &&
+      needs.verify.result == 'success' &&
+      needs.dispatcher.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      checks: read
+    concurrency:
+      group: promote-staging
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Refuse a stale or superseded RC commit
+        run: |
+          set -euo pipefail
+          head="$(git ls-remote origin refs/heads/release/rc-2026-10-08 | cut -f1)"
+          if [ "$head" != "$GITHUB_SHA" ]; then
+            echo "RC head is $head, not $GITHUB_SHA; a newer push will promote itself." >&2
+            exit 1
+          fi
+
+      - name: Refuse when any other check on this commit failed or is still running
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 40); do
+            runs="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/check-runs?per_page=100" \
+              --jq '[.check_runs[] | select(.app.slug == "github-actions") | select(.name != "promote-staging")]')"
+            bad="$(jq -r '[.[] | select(.status == "completed" and (.conclusion | IN("success","skipped","neutral") | not))] | map(.name + "=" + .conclusion) | join(", ")' <<<"$runs")"
+            if [ -n "$bad" ]; then echo "Not promoting: $bad" >&2; exit 1; fi
+            pending="$(jq -r '[.[] | select(.status != "completed")] | length' <<<"$runs")"
+            if [ "$pending" = "0" ]; then exit 0; fi
+            echo "Waiting for $pending other check(s)..."; sleep 30
+          done
+          echo "Other checks did not finish in time; not promoting." >&2
+          exit 1
+
+      - name: Fast-forward deploy/staging to this commit
+        run: |
+          set -euo pipefail
+          # Plain push, never forced: GitHub rejects anything but a fast-forward (or the first create),
+          # so deploy/staging can only move forward along RC history.
+          git push origin "${GITHUB_SHA}:refs/heads/deploy/staging"
+          echo "deploy/staging -> ${GITHUB_SHA}" >> "$GITHUB_STEP_SUMMARY"
