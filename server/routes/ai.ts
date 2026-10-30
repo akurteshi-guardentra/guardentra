@@ -1,22 +1,46 @@
-import { Router, type Response } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { GoogleGenAI, Type } from '@google/genai';
 import { createRateLimiter } from '../middleware/rateLimit';
 
 const router = Router();
 
-// Cap AI spend per organization (header X-Org-Id or body.organizationId), not only per user.
-// Falls back to uid/IP when org is unknown so unauthenticated probes are still bounded.
+/**
+ * Canned responses exist for local demos only. In staging/production a canned
+ * "finding", "risk" or "proposed answer" is indistinguishable from real analysis once
+ * it is saved (e.g. evidence_reviews), which is an integrity defect for an audit
+ * product. So: outside local/dev/test we fail closed with 503; locally we still return
+ * the canned payload but mark it isMock so the UI can label it.
+ */
+const LOCAL_ENVS = new Set(['development', 'dev', 'local', 'test', 'demo']);
+export function isLocalAiEnv(env: NodeJS.ProcessEnv = process.env): boolean {
+  const v = String(env.APP_ENV || env.NODE_ENV || '').trim().toLowerCase();
+  return LOCAL_ENVS.has(v);
+}
+export function sendMock(res: Response, payload: Record<string, unknown>) {
+  if (!isLocalAiEnv()) {
+    return res.status(503).json({
+      error: 'AI analysis is temporarily unavailable. No result was generated.',
+      code: 'AI_UNAVAILABLE',
+    });
+  }
+  return res.json({ ...payload, isMock: true });
+}
+
+// Cap AI spend per verified identity. The key used to come from the client-supplied
+// X-Org-Id header / body.organizationId, so a caller could rotate that value and get
+// a fresh bucket on every request (unbounded Gemini spend). Only the verified Firebase
+// uid (set by requireFirebaseAuth) is trusted here; IP is the unauthenticated fallback.
+// A true per-org cap needs the org resolved server-side from users/{uid}.
+export function aiRateLimitKey(req: Request): string {
+  const uid = (req as Request & { user?: { uid?: string } }).user?.uid;
+  return uid ? `uid:${uid}` : '';
+}
 router.use(
   createRateLimiter({
     windowMs: 60_000,
     max: 30,
-    errorMessage: 'Too many AI requests for this organization, please slow down.',
-    keyFn: (req) => {
-      const headerOrg = String(req.header('x-org-id') || '').trim();
-      const bodyOrg = String((req.body && (req.body as { organizationId?: string }).organizationId) || '').trim();
-      const org = headerOrg || bodyOrg;
-      return org ? `org:${org}` : '';
-    },
+    errorMessage: 'Too many AI requests, please slow down.',
+    keyFn: aiRateLimitKey,
   })
 );
 
@@ -80,7 +104,7 @@ router.post('/analyze', async (req, res) => {
     if (!hasAIApi) {
       // Return mock data if no API key is present
       if (type === 'risk_detection') {
-        return res.json({
+        return sendMock(res, {
           risks: [
             { title: "Unencrypted RDS Instance", category: "Security", severity: "Critical" },
             { title: "Stale IAM Users with Admin Access", category: "Access Control", severity: "High" },
@@ -90,12 +114,12 @@ router.post('/analyze', async (req, res) => {
       }
 
       if (type === 'risk_mitigation') {
-        return res.json({
+        return sendMock(res, {
           mitigation: "Mock Mitigation Plan:\n1. Immediately restrict access to the affected resource.\n2. Enable encryption at rest using AWS KMS.\n3. Rotate all associated credentials.\n4. Update IAM policies to enforce least privilege.\n5. Monitor CloudTrail logs for unauthorized access."
         });
       }
       
-      res.json({
+      return sendMock(res, {
         analysis: "Mock AI analysis: Based on the provided context, review the vendor questionnaire answers and follow your internal change-control process. This is not an auditor opinion or a compliance determination.",
         confidence: 0.89,
         actionable_steps: [
@@ -162,7 +186,7 @@ router.post('/analyze', async (req, res) => {
   } catch (error) {
     console.warn("AI Analysis Error (falling back to mock):", error);
     if (type === 'risk_detection') {
-      return res.json({
+      return sendMock(res, {
         risks: [
           { title: "Unencrypted RDS Instance", category: "Security", severity: "Critical" },
           { title: "Stale IAM Users with Admin Access", category: "Access Control", severity: "High" },
@@ -171,11 +195,11 @@ router.post('/analyze', async (req, res) => {
       });
     }
     if (type === 'risk_mitigation') {
-      return res.json({
+      return sendMock(res, {
         mitigation: "Mock Mitigation Plan:\n1. Immediately restrict access to the affected resource.\n2. Enable encryption at rest using AWS KMS.\n3. Rotate all associated credentials.\n4. Update IAM policies to enforce least privilege.\n5. Monitor CloudTrail logs for unauthorized access."
       });
     }
-    return res.json({
+    return sendMock(res, {
       analysis: "Mock AI analysis: Based on the provided context, review the vendor questionnaire answers and follow your internal change-control process. This is not an auditor opinion or a compliance determination.",
       confidence: 0.89,
       actionable_steps: [
@@ -263,7 +287,7 @@ router.post('/generate', async (req, res) => {
   }
   try {
     if (!hasAIApi) {
-      return res.status(503).json({ error: 'AI not configured' });
+      return res.status(503).json({ error: 'AI not configured', code: 'manual_review' });
     }
     const config: Record<string, unknown> = {};
     if (responseMimeType) config.responseMimeType = responseMimeType;
@@ -456,7 +480,7 @@ router.post('/gov-assessment', async (req, res) => {
 
   try {
     if (!hasAIApi) {
-      return res.json(mockResponse);
+      return sendMock(res, mockResponse);
     }
 
     const prompt = `You are Guardentra AI, an elite federal third-party risk intelligence engine.
@@ -518,11 +542,11 @@ router.post('/gov-assessment', async (req, res) => {
       return res.json(parsed);
     } catch (e) {
       console.error("Gemini parse failed, falling back to mock", e);
-      return res.json(mockResponse);
+      return sendMock(res, mockResponse);
     }
   } catch (error) {
     console.warn("Gov Assessment Error (falling back to mock):", error);
-    return res.json(mockResponse);
+    return sendMock(res, mockResponse);
   }
 });
 
@@ -568,7 +592,7 @@ router.post('/grant-report', async (req, res) => {
 
   try {
     if (!hasAIApi) {
-      return res.json(activeMock);
+      return sendMock(res, activeMock);
     }
 
     const prompt = `You are Guardentra AI, an elite federal grant strategist.
@@ -621,11 +645,11 @@ router.post('/grant-report', async (req, res) => {
       return res.json(parsed);
     } catch (e) {
       console.error("Gemini report generation failed, falling back to mock", e);
-      return res.json(activeMock);
+      return sendMock(res, activeMock);
     }
   } catch (error) {
     console.warn("Grant Report Error (falling back to mock):", error);
-    return res.json(activeMock);
+    return sendMock(res, activeMock);
   }
 });
 
@@ -653,7 +677,7 @@ router.post('/trust-explain', async (req, res) => {
 
   try {
     if (!hasAIApi) {
-      return res.json(mockResponse);
+      return sendMock(res, mockResponse);
     }
 
     const prompt = `You are Guardentra AI, an elite security compliance and trust operations analyst.
@@ -711,11 +735,11 @@ router.post('/trust-explain', async (req, res) => {
       return res.json(parsedRes);
     } catch (e) {
       console.error("Gemini parse failed for trust-explain, falling back to mock", e);
-      return res.json(mockResponse);
+      return sendMock(res, mockResponse);
     }
   } catch (err) {
     console.warn("Trust Explain Error (falling back to mock):", err);
-    return res.json(mockResponse);
+    return sendMock(res, mockResponse);
   }
 });
 
@@ -825,7 +849,7 @@ router.post('/evidence-review', async (req, res) => {
 
   try {
     if (!hasAIApi) {
-      return res.json(mockResponse);
+      return sendMock(res, mockResponse);
     }
 
     const prompt = `You are Guardentra AI, an elite GRC (Governance, Risk, and Compliance) auditing engine.
@@ -923,12 +947,12 @@ router.post('/evidence-review', async (req, res) => {
       return res.json(parsed);
     } catch (e) {
       console.error("Gemini evidence review failed, falling back to mock:", e);
-      return res.json(mockResponse);
+      return sendMock(res, mockResponse);
     }
 
   } catch (error) {
     console.warn("Evidence Review Error (falling back to mock):", error);
-    return res.json(mockResponse);
+    return sendMock(res, mockResponse);
   }
 });
 
@@ -954,7 +978,7 @@ router.post('/remediation-plan', async (req, res) => {
 
   try {
     if (!hasAIApi) {
-      return res.json(mockResponse);
+      return sendMock(res, mockResponse);
     }
 
     const prompt = `You are Guardentra AI, an elite security compliance and trust officer.
@@ -1019,11 +1043,11 @@ router.post('/remediation-plan', async (req, res) => {
       return res.json(parsed);
     } catch (e) {
       console.error("Gemini remediation-plan parse failed, falling back to mock", e);
-      return res.json(mockResponse);
+      return sendMock(res, mockResponse);
     }
   } catch (err) {
     console.warn("Remediation Plan Generation Error (falling back to mock):", err);
-    return res.json(mockResponse);
+    return sendMock(res, mockResponse);
   }
 });
 
@@ -1088,7 +1112,7 @@ router.post('/analyze-emails', async (req, res) => {
 
   try {
     if (!hasAIApi || !emails || !Array.isArray(emails) || emails.length === 0) {
-      return res.json(mockResponse);
+      return sendMock(res, mockResponse);
     }
 
     const emailContext = emails.map((m, idx) => `
@@ -1172,12 +1196,12 @@ router.post('/analyze-emails', async (req, res) => {
       return res.json(parsed);
     } catch (e) {
       console.error("Gemini email audit parse failed:", e);
-      return res.json(mockResponse);
+      return sendMock(res, mockResponse);
     }
 
   } catch (err) {
     console.warn("Gmail Audit API Error (falling back to mock):", err);
-    return res.json(mockResponse);
+    return sendMock(res, mockResponse);
   }
 });
 
@@ -1246,7 +1270,7 @@ router.post('/propose-answers', async (req, res) => {
 
   try {
     if (!hasAIApi || !qList.length) {
-      return res.json({ proposals: mockProposals });
+      return sendMock(res, { proposals: mockProposals });
     }
 
     const prompt = `You are Guardentra assisting a vendor completing a security questionnaire for ${vendorName || 'a customer'}.
@@ -1270,10 +1294,10 @@ proposedAnswer must be one of each question's options. citation must mention a f
     } catch {
       /* fall through */
     }
-    return res.json({ proposals: mockProposals });
+    return sendMock(res, { proposals: mockProposals });
   } catch (err) {
     console.warn('[ai] propose-answers fallback', err);
-    return res.json({ proposals: mockProposals });
+    return sendMock(res, { proposals: mockProposals });
   }
 });
 

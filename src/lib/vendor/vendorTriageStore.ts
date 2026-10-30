@@ -21,7 +21,18 @@ export type VendorTriageRecord = {
   completedBy?: string | null;
 };
 
+function localTriageKey(organizationId: string, vendorId: string): string {
+  return `guardentra:vendor-triage:${organizationId}:${vendorId}`;
+}
+
 export async function saveVendorTriage(record: VendorTriageRecord): Promise<void> {
+  if (record.vendorId.startsWith('local_')) {
+    localStorage.setItem(
+      localTriageKey(record.organizationId, record.vendorId),
+      JSON.stringify(record),
+    );
+    return;
+  }
   await setDoc(
     doc(db, 'vendor_triage', record.vendorId),
     {
@@ -37,6 +48,18 @@ export async function loadVendorTriage(
   organizationId: string
 ): Promise<VendorTriageRecord | null> {
   if (!vendorId || !organizationId) return null;
+  if (vendorId.startsWith('local_')) {
+    const raw = localStorage.getItem(localTriageKey(organizationId, vendorId));
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw) as VendorTriageRecord;
+      return parsed.organizationId === organizationId && parsed.vendorId === vendorId
+        ? parsed
+        : null;
+    } catch {
+      return null;
+    }
+  }
   const snap = await getDoc(doc(db, 'vendor_triage', vendorId));
   if (!snap.exists()) return null;
   const data = snap.data() as VendorTriageRecord;

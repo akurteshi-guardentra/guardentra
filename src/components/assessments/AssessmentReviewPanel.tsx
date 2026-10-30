@@ -28,6 +28,7 @@ import {
 } from '../../lib/vendor/emptyAssessmentRecovery';
 import type { FrameworkPackDefaults } from '../../lib/vendor/orgFrameworkPacks';
 import type { StoredAssessment } from '../../lib/vendor/localAssessmentStore';
+import { hasTerminalOrgDecision } from '../../lib/vendor/assessmentLifecycle';
 import type { RiskLevel } from '../../lib/vendor/types';
 
 function frameworkLabel(a: StoredAssessment): string {
@@ -72,6 +73,7 @@ export type AssessmentReviewPanelProps = {
   assessment: StoredAssessment;
   reviewAnalysis: { summary: string; rating: string; recommendation: string } | null;
   reviewAiError: string;
+  reviewManual?: boolean;
   reviewAiLoading: boolean;
   reviewFilter: 'exceptions' | 'all';
   onReviewFilterChange: (filter: 'exceptions' | 'all') => void;
@@ -94,17 +96,20 @@ export type AssessmentReviewPanelProps = {
   orgPackDefaults: FrameworkPackDefaults;
   isLocal: boolean;
   onClose: () => void;
-  onCopyPortalLink: () => void;
+  onOpenPortalLink: () => void;
   onRecoverEmpty: () => void;
   onArchiveEmpty: () => void;
   onDecide: (outcome: DecisionOutcome) => void;
   onDownloadDecisionPacket?: () => void;
+  /** Display name for who recorded the decision; falls back to the stored value. */
+  decidedByLabel?: string;
 };
 
 export function AssessmentReviewPanel({
   assessment: reviewAssessment,
   reviewAnalysis,
   reviewAiError,
+  reviewManual = false,
   reviewAiLoading,
   reviewFilter,
   onReviewFilterChange,
@@ -127,11 +132,12 @@ export function AssessmentReviewPanel({
   orgPackDefaults,
   isLocal,
   onClose,
-  onCopyPortalLink,
+  onOpenPortalLink,
   onRecoverEmpty,
   onArchiveEmpty,
   onDecide,
   onDownloadDecisionPacket,
+  decidedByLabel,
 }: AssessmentReviewPanelProps) {
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
@@ -285,10 +291,10 @@ export function AssessmentReviewPanel({
                       size="sm"
                       variant="outline"
                       className="border-amber-500/40 text-amber-100"
-                      onClick={onCopyPortalLink}
+                      onClick={onOpenPortalLink}
                     >
                       <ExternalLink className="mr-2 h-3.5 w-3.5" />
-                      Copy portal link
+                      Open portal in new tab
                     </Button>
                   )}
                 </div>
@@ -385,14 +391,20 @@ export function AssessmentReviewPanel({
                 </CardHeader>
                 <CardContent>
                   {!reviewAnalysis ? (
-                    <div className="flex items-center gap-3 py-4 text-xs italic text-slate-500">
+                    <div className="flex items-center gap-3 py-4 text-xs text-slate-400">
                       {reviewAiLoading ? (
                         <>
                           <Loader2 className="h-4 w-4 animate-spin" />
                           Running AI analysis…
                         </>
+                      ) : reviewManual ? (
+                        <p data-testid="review-manual-mode">
+                          Manual review. Automated analysis is not available for this session. Answers and the decision below still work.
+                        </p>
                       ) : (
-                        reviewAiError || 'Analysis available after vendor responds.'
+                        <span className="italic text-slate-500">
+                          {reviewAiError || 'Analysis available after vendor responds.'}
+                        </span>
                       )}
                     </div>
                   ) : (
@@ -440,12 +452,81 @@ export function AssessmentReviewPanel({
                   assessment={reviewAssessment}
                   onDecide={onDecide}
                   onDownloadDecisionPacket={onDownloadDecisionPacket}
+                  decidedByLabel={decidedByLabel}
                 />
               )}
             </div>
           </div>
         </div>
       </motion.div>
+    </div>
+  );
+}
+
+const OUTCOME_LABELS: Record<string, { label: string; className: string }> = {
+  approved: { label: 'Approved', className: 'text-emerald-400' },
+  conditional: { label: 'Conditionally approved', className: 'text-amber-400' },
+  rejected: { label: 'Rejected', className: 'text-rose-400' },
+};
+
+function formatDecisionDate(iso?: string | null): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
+}
+
+/** Read-only view once a terminal decision exists; the server refuses a second decision (409). */
+function RecordedDecision({
+  assessment,
+  onDownloadDecisionPacket,
+  decidedByLabel,
+}: {
+  assessment: StoredAssessment;
+  onDownloadDecisionPacket?: () => void;
+  decidedByLabel?: string;
+}) {
+  const outcome = OUTCOME_LABELS[String(assessment.decisionOutcome)] ?? {
+    label: String(assessment.decisionOutcome),
+    className: 'text-slate-200',
+  };
+  const rows: [string, string][] = [
+    ['Decided by', decidedByLabel || assessment.decidedByName || assessment.decidedBy || '—'],
+    ['Decided at', formatDecisionDate(assessment.decidedAt)],
+    ['Residual risk', assessment.residualRiskLevel || '—'],
+  ];
+  if (assessment.remediationOwner) rows.push(['Remediation owner', assessment.remediationOwner]);
+  if (assessment.remediationDueAt) rows.push(['Remediation due', assessment.remediationDueAt.slice(0, 10)]);
+
+  return (
+    <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-6">
+      <h4 className="mb-4 text-xs font-bold uppercase tracking-widest text-white">Decision recorded</h4>
+      <p className={cn('mb-3 text-sm font-bold', outcome.className)}>{outcome.label}</p>
+      <dl className="mb-3 space-y-1 text-xs">
+        {rows.map(([label, value]) => (
+          <div key={label} className="flex justify-between gap-3">
+            <dt className="text-slate-500">{label}</dt>
+            <dd className="text-right text-slate-200">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      {assessment.decisionNotes && (
+        <p className="mb-3 whitespace-pre-wrap rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-xs text-slate-300">
+          {assessment.decisionNotes}
+        </p>
+      )}
+      <p className="mb-3 text-[10px] text-slate-500">
+        This decision is final. Send a new assessment to re-review this vendor.
+      </p>
+      {onDownloadDecisionPacket && (
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full border-white/10 text-slate-200"
+          onClick={onDownloadDecisionPacket}
+        >
+          Download decision PDF
+        </Button>
+      )}
     </div>
   );
 }
@@ -465,6 +546,7 @@ function AssessmentDecisionBar({
   assessment,
   onDecide,
   onDownloadDecisionPacket,
+  decidedByLabel,
 }: {
   decisionOutcome: DecisionOutcome;
   onDecisionOutcomeChange: (outcome: DecisionOutcome) => void;
@@ -480,7 +562,17 @@ function AssessmentDecisionBar({
   assessment: StoredAssessment;
   onDecide: (outcome: DecisionOutcome) => void;
   onDownloadDecisionPacket?: () => void;
+  decidedByLabel?: string;
 }) {
+  if (hasTerminalOrgDecision(assessment)) {
+    return (
+      <RecordedDecision
+        assessment={assessment}
+        onDownloadDecisionPacket={onDownloadDecisionPacket}
+        decidedByLabel={decidedByLabel}
+      />
+    );
+  }
   return (
     <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-6">
       <h4 className="mb-4 text-xs font-bold uppercase tracking-widest text-white">

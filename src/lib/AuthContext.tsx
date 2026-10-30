@@ -26,6 +26,17 @@ export interface UserProfile {
   stripeCustomerId?: string;
 }
 
+export type VerificationRefreshResult =
+  | 'verified'
+  | 'unverified'
+  | 'no-user'
+  | 'anonymous'
+  | 'unavailable'
+  | 'stale';
+
+export const VERIFICATION_REFRESH_ERROR =
+  'Could not refresh verification status. Try again.';
+
 interface AuthContextType {
   user: User | null;
   profile: UserProfile | null;
@@ -34,6 +45,15 @@ interface AuthContextType {
   profileError: string | null;
   /** Re-attach the cloud users/{uid} listener after a recoverable hosted profile error. */
   retryProfileLoad: () => void;
+  /**
+   * Reload the current Firebase User and force a token refresh.
+   * Does not copy the user into a plain object or set emailVerified locally.
+   */
+  refreshVerification: () => Promise<VerificationRefreshResult>;
+  /** Recoverable message when the latest refresh for this session failed. */
+  verificationRefreshError: string | null;
+  /** Bumps after a refresh so listeners re-read the same User instance. */
+  verificationRevision: number;
   /**
    * Call only after users/{uid}.onboarded=true has been durably persisted.
    * Optimistically marks the in-memory profile onboarded and records a
@@ -49,6 +69,9 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   profileError: null,
   retryProfileLoad: () => {},
+  refreshVerification: async () => 'no-user',
+  verificationRefreshError: null,
+  verificationRevision: 0,
   acknowledgeDurableOnboarding: () => {},
 });
 
@@ -130,7 +153,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [verificationRefreshError, setVerificationRefreshError] = useState<string | null>(null);
+  const [verificationRevision, setVerificationRevision] = useState(0);
   const retryProfileLoadRef = useRef<(() => void) | null>(null);
+  const refreshGeneration = useRef(0);
+  const disposedRef = useRef(false);
+
+  const refreshVerification = useCallback(async (): Promise<VerificationRefreshResult> => {
+    const generation = ++refreshGeneration.current;
+    const current = auth.currentUser;
+    if (!current) return 'no-user';
+    if (current.isAnonymous || !current.email) return 'anonymous';
+    try {
+      await current.reload();
+      if (
+        disposedRef.current ||
+        generation !== refreshGeneration.current ||
+        auth.currentUser !== current
+      ) {
+        return 'stale';
+      }
+      await current.getIdToken(true);
+    } catch {
+      if (
+        disposedRef.current ||
+        generation !== refreshGeneration.current ||
+        auth.currentUser !== current
+      ) {
+        return 'stale';
+      }
+      setVerificationRefreshError(VERIFICATION_REFRESH_ERROR);
+      return 'unavailable';
+    }
+    if (
+      disposedRef.current ||
+      generation !== refreshGeneration.current ||
+      auth.currentUser !== current
+    ) {
+      return 'stale';
+    }
+    setVerificationRefreshError(null);
+    setVerificationRevision((revision) => revision + 1);
+    return current.emailVerified ? 'verified' : 'unverified';
+  }, []);
 
   const acknowledgeDurableOnboarding = useCallback(() => {
     const uid = auth.currentUser?.uid;
@@ -145,6 +210,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   useEffect(() => {
+    // StrictMode replays setup → cleanup → setup and preserves this ref.
+    // Cleanup marks the previous lifetime disposed; setup must adopt the new one.
+    // refreshGeneration still rejects work that started before this setup.
+    disposedRef.current = false;
     let profileUnsubscribe: (() => void) | null = null;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     let retryId: ReturnType<typeof setTimeout> | null = null;
@@ -319,6 +388,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       attempt = 0;
       sawCloudProfile = false;
 
+      refreshGeneration.current += 1;
+      setVerificationRefreshError(null);
       const nextUid = currentUser?.uid ?? null;
       if (previousUid && previousUid !== nextUid) {
         clearOnboardingAck(previousUid);
@@ -360,6 +431,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return () => {
       disposed = true;
+      disposedRef.current = true;
+      refreshGeneration.current += 1;
       unsubscribe();
       detachProfileListener();
       clearProfileTimeout();
@@ -371,7 +444,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return (
     <AuthContext.Provider
-      value={{ user, profile, loading, profileError, retryProfileLoad, acknowledgeDurableOnboarding }}
+      value={{
+        user,
+        profile,
+        loading,
+        profileError,
+        retryProfileLoad,
+        refreshVerification,
+        verificationRefreshError,
+        verificationRevision,
+        acknowledgeDurableOnboarding,
+      }}
     >
       {children}
     </AuthContext.Provider>

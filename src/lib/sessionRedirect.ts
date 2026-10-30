@@ -14,7 +14,11 @@ export function hasPersistedFirebaseSession(): boolean {
   return false;
 }
 
-/** Resolves dashboard/onboarding path for an already-signed-in user, or null. */
+/**
+ * Resolves post-sign-in destination for an already-authenticated user.
+ * Issue #67: bootstrapped tenants (organizationId bound) go to Dashboard.
+ * Incomplete optional setup never redirects back to the old wizard.
+ */
 export async function resolveSignedInRedirect(): Promise<string | null> {
   const [{ auth, db }, { onAuthStateChanged }, { doc, getDoc }, { clearLocallyOnboarded, setLocallyOnboarded }] =
     await Promise.all([
@@ -23,6 +27,7 @@ export async function resolveSignedInRedirect(): Promise<string | null> {
       import('firebase/firestore'),
       import('./onboardingFlag'),
     ]);
+  const { isProfileBootstrapped } = await import('./bootstrapGate');
 
   const user = await new Promise<(typeof auth)['currentUser']>((resolve) => {
     let unsub: () => void = () => {};
@@ -34,24 +39,26 @@ export async function resolveSignedInRedirect(): Promise<string | null> {
 
   if (!user) return null;
 
-  // Cloud profile is authoritative. Do not short-circuit on the local cache —
-  // a stale local flag must not skip a genuinely incomplete cloud profile.
+  // Cloud profile is authoritative. organizationId proves #61 bootstrap completed.
   try {
     const snap = await getDoc(doc(db, 'users', user.uid));
     if (snap.exists()) {
-      const onboarded = !!snap.data()?.onboarded;
-      if (onboarded) {
-        setLocallyOnboarded(user.uid);
+      const data = snap.data() || {};
+      if (isProfileBootstrapped(data as { organizationId?: string })) {
+        // Keep local cache in sync for legacy helpers; not a routing authority.
+        if (data.onboarded) setLocallyOnboarded(user.uid);
+        else clearLocallyOnboarded(user.uid);
         return '/dashboard';
       }
       clearLocallyOnboarded(user.uid);
-      return '/onboarding';
+      // Profile exists but lacks organizationId — Auth/Login will surface recovery.
+      return null;
     }
   } catch {
     // Profile read failed — stay on Landing; Login/Auth will resolve the gate.
     return null;
   }
 
-  // No user doc yet — first-run path.
-  return '/onboarding';
+  // No user doc yet — AuthContext will run bootstrap; send to dashboard shell.
+  return '/dashboard';
 }

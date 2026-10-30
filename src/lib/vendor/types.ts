@@ -99,6 +99,7 @@ export interface VendorAssessment {
   decisionNotes?: string | null;
   decidedAt?: string;
   decidedBy?: string;
+  decidedByName?: string;
   /** Structured accountability for conditional/remediate decisions. */
   remediationOwner?: string | null;
   remediationDueAt?: string | null;
