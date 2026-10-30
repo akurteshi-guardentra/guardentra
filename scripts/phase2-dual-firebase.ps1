@@ -3,17 +3,22 @@
 # Usage: powershell -File scripts/phase2-dual-firebase.ps1
 
 Write-Host @"
-Dual Firebase (EU/US) - GATED (re-verified 2026-08-11)
+Dual Firebase (EU/US) - GATED historical planning helper
 
-Visible GCP project today: guardentra-7f582 only.
-.firebaserc aliases eu/us/dev/staging/prod are placeholders until Org Owner creates them.
+Named release environments now exist separately:
+- staging: guardentra-staging
+- production: guardentra-prod
+- guardentra-7f582 is demo/legacy only and must not be treated as release authority.
 
-1. Org Owner must create projects (CLI create blocked for admin@guardentra.com):
+The eu/us residency projects remain a separate Phase 2 capability and must be inventoried
+before any creation/configuration work. This helper prints planning guidance only.
+
+1. Under a separately scoped Owner packet, reconcile/create only the intended residency projects:
    - guardentra-eu
    - guardentra-us
-   Even with organizationAdmin + billing.admin, project create is denied / projects missing.
-   Use console or grant Project Creator; do NOT retry firebase projects:create until then.
-   Aliases already in .firebaserc: eu / us.
+   Do not infer current existence or IAM from this historical helper.
+   Use the #116 read-only cloud inventory first.
+   Aliases already exist in .firebaserc: eu / us.
 
 2. Enable Auth (Email + Anonymous), Firestore, Storage on both.
 

@@ -131,27 +131,24 @@ $gcloud = "$env:LOCALAPPDATA\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd"
 # Expect: percent 100 on build-2026-08-10-001; auditspine present with no percent / 0
 ```
 
-When a dedicated staging App Hosting backend exists:
+### Current #74 rule — historical operator steps superseded
 
-1. Firebase console → App Hosting → **staging** backend → env → `AUDIT_SPINE_ENABLED=true`.
-2. After CLI reauth (optional confirm):  
-   `npx firebase-tools apphosting:secrets:grantaccess AUDIT_DATABASE_URL --project=guardentra-7f582`
-3. Redeploy staging / wait for rollout.
-4. HTTP DoD with `AUTH_BEARER` as above.
+The historical proof below does **not** define current staging enablement. A named
+`guardentra-staging` backend already exists, so do not replay the old
+single-backend `guardentra-7f582` secret-grant, reauth, rollout, or project-selection
+commands from this record.
 
-**Do not** set `AUDIT_SPINE_ENABLED=true` on production / 100% traffic until staging DoD is evidenced.
+Current execution must start from the #116 read-only cloud inventory and a fresh #74
+exact-SHA staging packet. That packet must name the actual staging backend/runtime
+identity, current Cloud SQL/VPC state, secret references, rollback baseline, and
+post-change readback. Production remains a separate authorization.
 
-### 6) Firebase CLI reauth (when blocked)
+### 6) Historical Firebase CLI reauth note
 
-```powershell
-npx firebase-tools login --reauth
-# or: npm run firebase:reauth
-npx firebase-tools projects:list
-npx firebase-tools apphosting:backends:list --project=guardentra-7f582
-npx firebase-tools apphosting:secrets:grantaccess AUDIT_DATABASE_URL --project=guardentra-7f582
-```
-
-Needs an interactive browser — agents cannot complete this headless. See also [`PHASE2_AUTH_NO_BROWSER.md`](./PHASE2_AUTH_NO_BROWSER.md).
+Interactive reauthentication was once required for the legacy proof. For current work,
+authenticate only through the approved Owner-local packet, keep the target project
+explicit, and return to #116/#74 for the environment-bound command set. Do not derive a
+current command by substituting project names into this historical document.
 
 ### 7) Verify Cloud SQL attach (both regions)
 
