@@ -149,16 +149,32 @@ jobs:
       needs.verify.result == 'success' &&
       needs.dispatcher.result == 'success'
     runs-on: ubuntu-latest
+    # The push credential is a deploy key stored only in this environment, whose
+    # deployment-branch policy allows release/rc-2026-10-08 alone. A workflow edited on
+    # any other branch cannot read it, and the deploy/staging ruleset lets only deploy
+    # keys update that branch, so GITHUB_TOKEN cannot move it either (#126).
+    environment: staging-promotion
     permissions:
-      contents: write
+      contents: read
       checks: read
     concurrency:
       group: promote-staging
       cancel-in-progress: false
     steps:
+      - name: Refuse without the environment-scoped deploy key
+        env:
+          DEPLOY_KEY_SET: ${{ secrets.STAGING_PROMOTE_DEPLOY_KEY != '' }}
+        run: |
+          if [ "$DEPLOY_KEY_SET" != "true" ]; then
+            echo "STAGING_PROMOTE_DEPLOY_KEY is not set in the staging-promotion environment; not promoting." >&2
+            exit 1
+          fi
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ssh-key: ${{ secrets.STAGING_PROMOTE_DEPLOY_KEY }}
+          persist-credentials: true
 
       - name: Refuse a stale or superseded RC commit
         run: |

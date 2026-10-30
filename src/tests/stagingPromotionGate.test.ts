@@ -14,11 +14,18 @@ describe('#126 staging promotion gate', () => {
     expect(infra).toContain("branches: [main, 'release/**']");
   });
 
-  it('keeps the default token read-only outside the promotion job', () => {
+  it('never grants the workflow token write access, even in the promotion job', () => {
     expect(ci).toMatch(/\npermissions:\n\s+contents: read\n/);
-    const writeGrants = ci.match(/contents:\s*write/g) ?? [];
-    expect(writeGrants).toHaveLength(1);
-    expect(promoteJob).toContain('contents: write');
+    expect(ci).not.toMatch(/contents:\s*write/);
+    expect(promoteJob).toContain('contents: read');
+  });
+
+  it('pushes with a deploy key that only the RC-scoped environment can read', () => {
+    expect(promoteJob).toContain('environment: staging-promotion');
+    expect(promoteJob).toContain('ssh-key: ${{ secrets.STAGING_PROMOTE_DEPLOY_KEY }}');
+    expect(promoteJob).toContain('STAGING_PROMOTE_DEPLOY_KEY is not set');
+    const keyRefs = ci.match(/secrets\.STAGING_PROMOTE_DEPLOY_KEY/g) ?? [];
+    expect(keyRefs.length).toBe(promoteJob.match(/secrets\.STAGING_PROMOTE_DEPLOY_KEY/g)?.length);
   });
 
   it('promotes only after verify and dispatcher both succeed on a push to the RC branch', () => {
