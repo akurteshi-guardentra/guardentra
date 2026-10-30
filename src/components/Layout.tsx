@@ -8,7 +8,6 @@ import {
   X,
   Sparkles,
   LogOut,
-  Globe,
   CreditCard,
   BookOpen,
   ClipboardCheck,
@@ -20,8 +19,8 @@ import {
 import { cn } from '@/src/lib/utils';
 import { Button } from './ui/button';
 import { useAuth } from '../lib/AuthContext';
-import { logOut, resendVerificationEmail } from '../lib/firebase-utils';
-import { useTranslation } from 'react-i18next';
+import { logOut } from '../lib/firebase-utils';
+import { VerificationBanner } from './VerificationBanner';
 import { UserGuide } from './UserGuide';
 import { BackButton } from './BackButton';
 import { AICopilotPanel } from './AICopilotPanel';
@@ -33,6 +32,12 @@ type NavItem = {
   icon: React.ComponentType<{ className?: string }>;
   flag: FeatureKey;
 };
+
+function initialsOf(name: string): string {
+  const parts = name.split(/[\s@._-]+/).filter(Boolean);
+  const letters = parts.length > 1 ? parts[0][0] + parts[1][0] : (parts[0] || '?').slice(0, 2);
+  return letters.toUpperCase();
+}
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
@@ -52,20 +57,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [isUserGuideOpen, setIsUserGuideOpen] = React.useState(false);
   const [isCopilotOpen, setIsCopilotOpen] = React.useState(false);
   const { user, profile } = useAuth();
-  const { i18n } = useTranslation();
-  const [verificationDismissed, setVerificationDismissed] = React.useState(false);
-  const [verificationResent, setVerificationResent] = React.useState(false);
-  const showVerificationBanner =
-    !!user && !user.isAnonymous && !user.emailVerified && !verificationDismissed;
-
-  const handleResendVerification = async () => {
-    try {
-      await resendVerificationEmail();
-      setVerificationResent(true);
-    } catch {
-      /* resendVerificationEmail already logs the error */
-    }
-  };
 
   React.useEffect(() => {
     const hasSeenGuide = localStorage.getItem('guardentra_guide_seen');
@@ -108,11 +99,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
       items: group.items.filter((item) => isFeatureEnabled(item.flag)),
     }))
     .filter((group) => group.items.length > 0);
-
-  const toggleLanguage = () => {
-    const newLang = i18n.language.startsWith('en') ? 'de' : 'en';
-    i18n.changeLanguage(newLang);
-  };
 
   return (
     <div className="flex min-h-screen bg-transparent">
@@ -227,15 +213,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
               >
                 <HelpCircle className="h-5 w-5" />
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={toggleLanguage}
-                className="flex items-center gap-2 text-slate-400 hover:text-white"
-              >
-                <Globe className="h-4 w-4" />
-                <span className="text-xs font-bold uppercase">{i18n.language.substring(0, 2)}</span>
-              </Button>
               <div className="flex items-center gap-x-3">
                 <div className="mr-2 hidden flex-col items-end sm:flex">
                   <span className="text-sm font-medium text-white">
@@ -246,12 +223,21 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   </span>
                 </div>
                 <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-primary to-blue-500 p-[1px]">
-                  <img
-                    className="h-full w-full rounded-full object-cover"
-                    src={user?.photoURL || 'https://picsum.photos/seed/cyber/32/32'}
-                    alt="User"
-                    referrerPolicy="no-referrer"
-                  />
+                  {user?.photoURL ? (
+                    <img
+                      className="h-full w-full rounded-full object-cover"
+                      src={user.photoURL}
+                      alt="User"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <span
+                      className="flex h-full w-full items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white"
+                      aria-label="User"
+                    >
+                      {initialsOf(profile?.displayName || user?.displayName || user?.email || '')}
+                    </span>
+                  )}
                 </div>
                 <button
                   onClick={() => void logOut('/')}
@@ -266,34 +252,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </header>
 
         <main className="flex-1 overflow-y-auto p-3 sm:p-6 lg:p-8">
-          {showVerificationBanner && (
-            <div className="mx-auto max-w-7xl mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
-              <span>
-                {verificationResent
-                  ? 'Verification email sent — check your inbox.'
-                  : 'Please verify your email address to secure your account.'}
-              </span>
-              <div className="flex items-center gap-3">
-                {!verificationResent && (
-                  <button
-                    type="button"
-                    onClick={handleResendVerification}
-                    className="font-medium underline underline-offset-2 hover:text-amber-200"
-                  >
-                    Resend email
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setVerificationDismissed(true)}
-                  className="text-amber-400/70 hover:text-amber-300"
-                  aria-label="Dismiss"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          )}
+          <VerificationBanner />
           {showBackButton && <BackButton className="mb-2 sm:mb-4" />}
           <div className="mx-auto max-w-7xl">{children}</div>
         </main>

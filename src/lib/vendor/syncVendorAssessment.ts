@@ -8,7 +8,8 @@ import {
 
 /**
  * Sync vendor chip fields after creating a security assessment.
- * New assessments are Sent (awaiting vendor) — not In Progress until answers arrive.
+ * Creation alone is not delivery proof, so the vendor stays Not Started until the
+ * authoritative invite queue accepts the assessment notification.
  */
 export async function syncVendorAfterAssessmentCreate(
   orgId: string,
@@ -16,12 +17,12 @@ export async function syncVendorAfterAssessmentCreate(
   preferLocal: boolean
 ): Promise<void> {
   const patch = {
-    assessmentStatus: 'Sent' as const,
+    assessmentStatus: 'Not Started' as const,
     lastAssessmentAt: new Date().toISOString(),
   };
 
   if (preferLocal || vendorId.startsWith('local_')) {
-    markLocalVendorAssessmentSent(orgId, vendorId);
+    patchLocalVendor(orgId, vendorId, patch);
     return;
   }
 
@@ -36,7 +37,33 @@ export async function syncVendorAfterAssessmentCreate(
     await Promise.race([updateDoc(doc(db, 'vendors', vendorId), patch), writeTimeout]);
   } catch (err) {
     if (isFirestoreUnavailableError(err)) {
-      markLocalVendorAssessmentSent(orgId, vendorId);
+      patchLocalVendor(orgId, vendorId, patch);
+    }
+  }
+}
+
+/** Queue acceptance is the boundary that makes the vendor chip truthfully Sent. */
+export async function syncVendorAfterAssessmentSent(
+  orgId: string,
+  vendorId: string,
+  preferLocal: boolean
+): Promise<void> {
+  if (preferLocal || vendorId.startsWith('local_')) {
+    markLocalVendorAssessmentSent(orgId, vendorId);
+    return;
+  }
+
+  const patch = {
+    assessmentStatus: 'Sent' as const,
+    lastAssessmentAt: new Date().toISOString(),
+  };
+  try {
+    await updateDoc(doc(db, 'vendors', vendorId), patch);
+  } catch (err) {
+    if (isFirestoreUnavailableError(err)) {
+      patchLocalVendor(orgId, vendorId, patch);
+    } else {
+      throw err;
     }
   }
 }
