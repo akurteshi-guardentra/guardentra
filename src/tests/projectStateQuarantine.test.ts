@@ -11,7 +11,7 @@ describe('#140 stale PROJECT_STATE dispatch quarantine', () => {
     expect(state).toContain('read protected `main` from the live GitHub branch API');
     expect(state).toContain('#116');
     expect(state).toContain('P0 #126');
-    expect(state).toContain('do not reuse that SHA without rereading GitHub');
+    expect(state).toContain('Do not reuse either SHA without rereading GitHub.');
   });
 
   it('does not present the September repository tip or closed #53 as current dispatch truth', () => {

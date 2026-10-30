@@ -42,6 +42,13 @@ vi.mock('firebase/firestore', () => ({
   }),
 }));
 
+vi.mock('../lib/authHeaders', () => ({
+  authHeaders: vi.fn(async (headers: Record<string, string>) => headers),
+}));
+
+const fetchMock = vi.fn();
+vi.stubGlobal('fetch', fetchMock);
+
 vi.mock('../firebase', () => ({ db: {}, auth: {}, storage: {} }));
 
 import { useOrgAssessments } from '../lib/vendor/useOrgAssessments';
@@ -65,6 +72,11 @@ beforeEach(() => {
   listenCount = 0;
   addDocShouldFail = false;
   addedDocs.length = 0;
+  fetchMock.mockReset();
+  fetchMock.mockResolvedValue({
+    ok: true,
+    json: vi.fn(async () => ({ assessmentId: 'cloud_1' })),
+  } as unknown as Response);
 });
 
 afterEach(() => {
@@ -97,9 +109,9 @@ describe('useOrgAssessments — promotion and merge', () => {
     });
 
     expect(result.current.mode).toBe('firestore');
-    expect(addedDocs).toHaveLength(1);
-    // The local_ id must not be written into the document body.
-    expect(addedDocs[0]).not.toHaveProperty('id');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toBe('/api/org/assessment-create');
+    expect(addedDocs).toHaveLength(0);
     expect(listLocalAssessments(ORG)).toHaveLength(0);
     // The merge must not leave the local copy alongside the cloud one.
     expect(result.current.assessments).toHaveLength(1);
@@ -112,6 +124,7 @@ describe('useOrgAssessments — promotion and merge', () => {
     // cloud snapshot.
     makeLocal('Stuck Vendor');
     addDocShouldFail = true;
+    fetchMock.mockRejectedValueOnce(new Error('permission-denied'));
 
     const { result } = renderHook(() => useOrgAssessments(ORG));
     await act(async () => {
@@ -155,6 +168,37 @@ describe('useOrgAssessments — promotion and merge', () => {
     // reviewer always saw "No response provided."
     expect(result.current.assessments[0].answers).toEqual({ q_1: 'Yes', q_2: ['ISO 27001'] });
     expect(result.current.assessments[0].comments).toEqual({ q_1: 'via SSO' });
+  });
+
+  it('keeps recorded decision fields off the cloud document', async () => {
+    const { result } = renderHook(() => useOrgAssessments(ORG));
+    await act(async () => {
+      onNext?.(
+        snapshot([
+          {
+            id: 'a1',
+            data: {
+              vendorName: 'Acme',
+              organizationId: ORG,
+              decisionOutcome: 'conditional',
+              decidedBy: 'owner@example.com',
+              decidedByName: 'Owner Name',
+              decidedAt: '2026-10-26T20:00:00.000Z',
+              residualRiskLevel: 'High',
+              remediationOwner: 'Vendor CISO',
+              remediationDueAt: '2026-11-30T23:59:59.999Z',
+            },
+          },
+        ]),
+      );
+      await flush();
+    });
+
+    const row = result.current.assessments[0];
+    expect(row.decidedByName).toBe('Owner Name');
+    expect(row.residualRiskLevel).toBe('High');
+    expect(row.remediationOwner).toBe('Vendor CISO');
+    expect(row.remediationDueAt).toBe('2026-11-30T23:59:59.999Z');
   });
 });
 

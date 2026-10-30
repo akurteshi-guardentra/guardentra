@@ -11,6 +11,15 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Invite authority is "the token's email matches the invite". That only proves
+    // mailbox ownership when Firebase has verified it — an email/password signup can
+    // claim any unregistered address unverified. Without this, anyone who knows a
+    // pending invitee's address could sign up as them and join that tenant.
+    function hasVerifiedEmail(email) {
+      return request.auth.token.email == email
+        && request.auth.token.email_verified == true;
+    }
+
 
     function isOrgMember(orgId) {
       return isAuthenticated() &&
@@ -46,14 +55,15 @@ service cloud.firestore {
       return role == 'admin' || role == 'member';
     }
 
-    // Founder path: brand-new tenant only. Same-batch org+profile create cannot
-    // see the sibling org write, so "org does not exist yet" is the authority
-    // signal. An existing tenant id can never be claimed this way.
+    // Founder authority requires a new organization in this atomic write.
+    // getAfter sees sibling writes; exists checks the pre-write state.
+    // The organization create rule reciprocally binds the founder's profile.
     function isNewOrgFounderCreate() {
       return request.resource.data.role == 'admin'
         && request.resource.data.organizationId is string
         && request.resource.data.organizationId.size() > 0
-        && !exists(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId));
+        && !exists(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId))
+        && getAfter(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)).data is map;
     }
 
     function pendingInviteData() {
@@ -67,7 +77,7 @@ service cloud.firestore {
         && request.resource.data.inviteId is string
         && exists(/databases/$(database)/documents/org_invites/$(request.resource.data.inviteId))
         && pendingInviteData().status == 'pending'
-        && pendingInviteData().email == request.auth.token.email
+        && hasVerifiedEmail(pendingInviteData().email)
         && pendingInviteData().organizationId == request.resource.data.organizationId
         && exists(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId))
         && request.resource.data.role == (
@@ -219,14 +229,12 @@ service cloud.firestore {
         && request.resource.data.organizationId == resource.data.organizationId;
     }
 
-    // Only seatCount (orgBootstrap.ts, incremented in the same batch as a joining
-    // member's own profile) and vendorCount (VendorsDirectory.tsx's cap-check
-    // transaction) are legitimately written by a non-admin member. Everything else —
-    // name, industry, onboarded, setupAt — is a settings field only Onboarding.tsx's
-    // isOrgCreator branch writes, and that branch already only runs for admins.
+    // Only seatCount remains a legitimate non-admin organization write.
+    // Hosted vendor creation is now server-authoritative and updates vendorCount
+    // through the Admin SDK, so browser clients must not mutate that meter.
     function onlyMemberWritableOrgFieldsChanged() {
       return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['seatCount', 'vendorCount']);
+        .hasOnly(['seatCount']);
     }
 
     // P2B: dataRegion ('eu'|'us') is immutable after first set.
@@ -235,12 +243,34 @@ service cloud.firestore {
         || request.resource.data.dataRegion == resource.data.dataRegion;
     }
 
+    // Billing fields are written only by the Stripe webhook (Admin SDK, bypasses rules).
+    // A client — including an org admin — must never be able to raise its own plan/caps.
+    function billingKeys() {
+      return ['planId', 'vendorCap', 'seatCap', 'subscriptionStatus',
+              'stripeCustomerId', 'stripeSubscriptionId'];
+    }
+    function billingFieldsUnchanged() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(billingKeys());
+    }
+    // Founder bootstrap may only create a Starter org with Starter caps (src/lib/plans.ts).
+    function isStarterOrgCreate() {
+      let d = request.resource.data;
+      return d.get('planId', 'starter') == 'starter'
+        && d.get('vendorCap', 25) == 25
+        && d.get('seatCap', 3) == 3
+        && d.get('subscriptionStatus', 'none') == 'none'
+        && !d.keys().hasAny(['stripeCustomerId', 'stripeSubscriptionId']);
+    }
+
     // Organizations Collection
     match /organizations/{orgId} {
       allow read: if isAuthenticated() && isOrgMember(orgId);
-      // Only a user with no profile yet may create an org (founder bootstrap).
+      // Only a new user's atomic founder bootstrap may create its one org.
       allow create: if isAuthenticated()
-        && !exists(/databases/$(database)/documents/users/$(request.auth.uid));
+        && !exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId == orgId
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+        && isStarterOrgCreate();
       // Deeper token/role review (task #27) found this allowed ANY member to write
       // ANY field, including name/industry — so Onboarding.tsx's isOrgCreator check
       // (KI#8: stop an invited member from overwriting the shared org's settings) was
@@ -251,6 +281,7 @@ service cloud.firestore {
       // working. So: admins may change anything; everyone else is limited to exactly
       // the two counters. dataRegion is always immutable once set (admins included).
       allow update: if isAuthenticated() && isOrgMember(orgId) && orgDataRegionPreserved() &&
+        billingFieldsUnchanged() &&
         (isAdmin() || onlyMemberWritableOrgFieldsChanged());
     }
 
@@ -261,6 +292,9 @@ service cloud.firestore {
     // invite itself (request.auth.token.email is a Firebase-set claim, not
     // client-controlled, so this can't be used to read someone else's invite).
     match /org_invites/{inviteId} {
+      // Read stays on plain email match: orgBootstrap.ts runs this lookup right after
+      // signup, before the user can verify, and a denied query would block every
+      // email/password signup. Verification is enforced where it matters: join + accept.
       allow read: if isAuthenticated() &&
         (resource.data.email == request.auth.token.email || isDocOrgMember());
       // Seat cap (docs/ARCHITECTURE_FOUNDATION.md §4: Starter 3, Growth 10). Enforced at
@@ -282,7 +316,7 @@ service cloud.firestore {
         && orgField(request.resource.data.organizationId, 'seatCount', 1) <
         orgField(request.resource.data.organizationId, 'seatCap', 3);
       allow update: if isAuthenticated() && (
-        (resource.data.email == request.auth.token.email &&
+        (hasVerifiedEmail(resource.data.email) &&
          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptedByUid', 'acceptedAt']) &&
          request.resource.data.organizationId == resource.data.organizationId &&
          request.resource.data.role == resource.data.role &&
@@ -360,32 +394,27 @@ service cloud.firestore {
 
     match /vendors/{vendorId} {
       allow read: if isDocOrgMember();
-      allow create: if isCreatingForOwnOrg() && vendorFieldsValid() &&
-        orgField(request.resource.data.organizationId, 'vendorCount', 0) <
-        orgField(request.resource.data.organizationId, 'vendorCap', 25);
+      // Material vendor creation is server-authoritative so its vendorCount update
+      // and durable audit intent cannot be bypassed by an SDK/REST client.
+      allow create: if false;
       allow update: if isDocOrgMember() && orgIdUnchanged() && vendorFieldsValid();
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
-    // Vendor invite audit trail (src/pages/VendorsDirectory.tsx "Invite Vendor" quick
-    // action) — write-once record of who was invited and by whom; not user-editable
-    // after creation.
+    // Vendor invite record for the "Invite Vendor" quick action. Written only by the
+    // server in the same transaction as the welcome mail queue entry and its durable
+    // vendor.invite_queued audit intent (#167); clients can read but never create it.
     match /vendor_invites/{inviteId} {
       allow read: if isDocOrgMember();
-      allow create: if isCreatingForOwnOrg();
+      allow create: if false;
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
-    // FastTrack triage persistence (answers + Lite/Standard/Enhanced recommendation).
-    // Doc id = vendorId; org members may create/update their org's triage docs.
+    // FastTrack triage is a material transition. Hosted writes are server/Admin-only
+    // so the triage record, vendor review date, and durable audit intent stay atomic.
     match /vendor_triage/{vendorId} {
       allow read: if isDocOrgMember();
-      allow create: if isCreatingForOwnOrg() && childVendorBoundIfPresent();
-      allow update: if isDocOrgMember()
-        && orgIdUnchanged()
-        && parentVendorUnchanged()
-        && childVendorBoundIfPresent();
-      allow delete: if isDocOrgMember() && isAdmin();
+      allow create, update, delete: if false;
     }
 
     // Vendor Assessments Collections (handle both names)
@@ -427,7 +456,17 @@ service cloud.firestore {
     // clients must not write evidenceTrustByStoragePath.
     function onlyPortalAssessmentFieldsChanged() {
       return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['answers', 'comments', 'evidenceByQuestion', 'progressPct', 'progress', 'status', 'questions', 'updatedAt', 'completedAt', 'attestations', 'answerProposals', 'confirmedAnswerIds']);
+        .hasOnly(['answers', 'comments', 'evidenceByQuestion', 'progressPct', 'progress', 'status', 'updatedAt', 'attestations', 'answerProposals', 'confirmedAnswerIds']);
+    }
+
+    function portalAutosaveStateValid() {
+      return (
+        resource.data.status == 'Sent'
+        && (request.resource.data.status == 'Sent' || request.resource.data.status == 'In Progress')
+      ) || (
+        resource.data.status == 'In Progress'
+        && request.resource.data.status == 'In Progress'
+      );
     }
 
     function orgPreservesEvidenceTrust() {
@@ -437,21 +476,36 @@ service cloud.firestore {
 
     function orgDeniesClientDecisionWrites() {
       return !request.resource.data.diff(resource.data).affectedKeys()
-        .hasAny(['decisionOutcome', 'decisionNotes', 'decidedAt', 'decidedBy']);
+        .hasAny(['decisionOutcome', 'decisionNotes', 'decidedAt', 'decidedBy', 'decidedByName']);
     }
 
-    function portalSubmitTransition() {
-      return resource.data.portalOpen == true
-        && resource.data.status != 'Under Review'
-        && resource.data.status != 'Completed'
-        && request.resource.data.status == 'Under Review'
-        && request.resource.data.portalOpen == false
-        && request.resource.data.keys().hasAny(['submittedSnapshot']);
+    // Initial send and final submit are server-authoritative material transitions.
+    // Browser clients may not mint the durable truth fields that prove those events.
+    function orgDeniesClientMaterialTransitionWrites() {
+      return !request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(['sentAt', 'submittedSnapshot']);
     }
 
-    function portalSubmitFieldsChanged() {
-      return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['answers', 'comments', 'evidenceByQuestion', 'progressPct', 'progress', 'status', 'completedAt', 'attestations', 'answerProposals', 'portalOpen', 'submittedSnapshot', 'versionLocked']);
+    function orgCannotMintSentStatus() {
+      return request.resource.data.status != 'Sent'
+        || resource.data.status == 'Sent';
+    }
+
+    // Org browser clients may keep lifecycle state unchanged, or explicitly reopen
+    // a closed submission for correction. Under Review / Completed / Sent are all
+    // server-authoritative transitions.
+    function orgLifecycleTransitionAllowed() {
+      let lifecycleChanged = request.resource.data.status != resource.data.status
+        || request.resource.data.portalOpen != resource.data.portalOpen;
+      return !lifecycleChanged || (
+        request.resource.data.status == 'In Progress'
+        && request.resource.data.portalOpen == true
+        && request.resource.data.keys().hasAll([
+          'correctionReopenedAt',
+          'correctionReopenedBy',
+          'correctionReason'
+        ])
+      );
     }
 
     // After send, org members cannot silently rewrite the questionnaire snapshot
@@ -472,7 +526,7 @@ service cloud.firestore {
     function orgPreservesFinalDecision() {
       return !('decidedAt' in resource.data)
         || !request.resource.data.diff(resource.data).affectedKeys()
-          .hasAny(['decisionOutcome', 'decisionNotes', 'decidedAt', 'decidedBy']);
+          .hasAny(['decisionOutcome', 'decisionNotes', 'decidedAt', 'decidedBy', 'decidedByName']);
     }
 
     // Portal writes require portalOpen=true (P0-1 closes portal on submit). Under Review
@@ -490,10 +544,23 @@ service cloud.firestore {
 
     match /assessments/{assessmentId} {
       allow read: if isDocOrgMember() || (isPortalSessionFor(assessmentId) && isPortalReadableAssessment());
-      allow create: if isCreatingForOwnOrg() && childVendorBoundIfPresent();
-      allow update: if (isDocOrgMember() && orgIdUnchanged() && parentVendorUnchanged() && childVendorBoundIfPresent() && orgPreservesSentSnapshot() && orgPreservesFinalDecision() && orgPreservesEvidenceTrust() && orgDeniesClientDecisionWrites()) ||
-        (isPortalSessionFor(assessmentId) && portalSubmitTransition() && portalSubmitFieldsChanged()) ||
-        (portalMayWriteAssessment(assessmentId) && onlyPortalAssessmentFieldsChanged());
+      // Material assessment creation is server-authoritative so assessment.created
+      // cannot be bypassed by a direct browser write.
+      allow create: if false;
+      allow update: if (isDocOrgMember()
+          && orgIdUnchanged()
+          && parentVendorUnchanged()
+          && childVendorBoundIfPresent()
+          && orgPreservesSentSnapshot()
+          && orgPreservesFinalDecision()
+          && orgPreservesEvidenceTrust()
+          && orgDeniesClientDecisionWrites()
+          && orgDeniesClientMaterialTransitionWrites()
+          && orgCannotMintSentStatus()
+          && orgLifecycleTransitionAllowed()) ||
+        (portalMayWriteAssessment(assessmentId)
+          && onlyPortalAssessmentFieldsChanged()
+          && portalAutosaveStateValid());
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
@@ -587,6 +654,12 @@ service cloud.firestore {
     // System Collection (for connectivity tests)
     match /system/{docId} {
       allow read: if isAuthenticated();
+    }
+
+    // Durable material-audit journal is server/Admin-only. Client access would
+    // allow deletion, forgery, or acknowledgement tampering of required audit intent.
+    match /audit_material_intents/{eventId} {
+      allow read, write: if false;
     }
 
     // Mail queue (Firebase "Trigger Email from Firestore" extension shape). Only

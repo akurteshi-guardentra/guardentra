@@ -40,9 +40,11 @@ import {
 import {
   buildOrgDecisionPatch,
   canSignOffAssessment,
+  decidedByDisplay,
   decisionClosesPortal,
   decisionRequiresNotes,
   decisionRequiresRemediationPlan,
+  hasTerminalOrgDecision,
   normalizeRemediationDueAt,
   nextReviewAtForDecision,
 } from '../lib/vendor/assessmentLifecycle';
@@ -111,6 +113,7 @@ export function Assessments() {
     recommendation: string;
   } | null>(null);
   const [reviewAiError, setReviewAiError] = useState('');
+  const [reviewManual, setReviewManual] = useState(false);
   const [reviewAiLoading, setReviewAiLoading] = useState(false);
   const [approving, setApproving] = useState(false);
   const [reviewFilter, setReviewFilter] = useState<'exceptions' | 'all'>('exceptions');
@@ -141,7 +144,7 @@ export function Assessments() {
   const isLocalAssessment = (a: StoredAssessment) =>
     a.id.startsWith('local_asm_') || mode === 'local';
 
-  const copyPortalLink = async (a: StoredAssessment) => {
+  const openPortalLink = (a: StoredAssessment) => {
     if (isLocalAssessment(a)) {
       setToast({
         tone: 'warn',
@@ -149,13 +152,8 @@ export function Assessments() {
       });
       return;
     }
-    const url = `${window.location.origin}/portal/${a.id}`;
-    try {
-      await navigator.clipboard.writeText(url);
-      setToast({ tone: 'ok', text: `Portal link copied: ${url}` });
-    } catch {
-      setToast({ tone: 'err', text: 'Could not copy link — copy it manually from the address bar after opening.' });
-    }
+    const url = `${window.location.origin}/portal/${encodeURIComponent(a.id)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   const handleSendReminder = async (assessment: StoredAssessment) => {
@@ -187,7 +185,10 @@ export function Assessments() {
     } catch (e) {
       console.warn('Send reminder failed', e);
       setReminderState((prev) => ({ ...prev, [assessment.id]: 'error' }));
-      setToast({ tone: 'err', text: 'Reminder failed — check email delivery (Trigger Email extension) or try again.' });
+      setToast({
+        tone: 'err',
+        text: 'Reminder could not be queued. Confirm you are signed in with org access, then try again. Queue acceptance is not inbox delivery.',
+      });
     }
   };
 
@@ -198,7 +199,7 @@ export function Assessments() {
   useEffect(() => {
     if (!createdId || createdId.startsWith('local_')) return;
     const url = `${window.location.origin}/portal/${createdId}`;
-    setToast({ tone: 'ok', text: `Assessment created. Portal link ready — copy from the row actions: ${url}` });
+    setToast({ tone: 'ok', text: `Assessment created. Portal link ready — open it from the row actions: ${url}` });
     // Drop ?created= so refresh doesn't re-toast
     const next = new URLSearchParams(params);
     next.delete('created');
@@ -252,6 +253,7 @@ export function Assessments() {
     setReviewAssessment(assessment);
     setReviewAnalysis(null);
     setReviewAiError('');
+    setReviewManual(false);
     setReviewFilter('exceptions');
     setDecisionNotes('');
     setDecisionOutcome('approved');
@@ -301,6 +303,13 @@ export function Assessments() {
         ),
         body: JSON.stringify({ prompt, responseMimeType: 'application/json' }),
       });
+      if (response.status === 503) {
+        const unavailable = (await response.json().catch(() => ({}))) as { code?: string };
+        if (unavailable.code === 'manual_review') {
+          setReviewManual(true);
+          return;
+        }
+      }
       if (!response.ok) throw new Error('AI generation failed');
       const { text } = await response.json();
       setReviewAnalysis(JSON.parse(text || '{}'));
@@ -421,25 +430,6 @@ export function Assessments() {
         evidenceByQuestion: reviewAssessment.evidenceByQuestion as any,
         evidenceTrustByStoragePath: reviewAssessment.evidenceTrustByStoragePath,
       });
-      void emitAuditBestEffort({
-        tenantId: orgId,
-        eventType: 'decision.finalized',
-        actorId: user?.uid || null,
-        objectType: 'assessment',
-        objectId: reviewAssessment.id,
-        payload: {
-          outcome,
-          vendorId: reviewAssessment.vendorId,
-          closesPortal: closes,
-          nextReviewAt: closes ? nextReviewAt : null,
-          exceptionCount: exceptions.length,
-          hasNotes: Boolean(decisionNotes.trim()),
-          residualRiskLevel,
-          remediationRequired: requiresPlan,
-          remediationOwnerPresent: requiresPlan ? Boolean(remediationOwner.trim()) : false,
-          remediationDueAt: requiresPlan ? normalizedRemediationDueAt : null,
-        },
-      });
       if (exceptions.length) {
         void emitAuditBestEffort({
           tenantId: orgId,
@@ -466,7 +456,11 @@ export function Assessments() {
       setReviewAssessment(null);
     } catch (e) {
       console.error('Decision failed:', e);
-      setToast({ tone: 'err', text: 'Decision failed — try again.' });
+      const reason = e instanceof Error && e.message ? e.message : '';
+      setToast({
+        tone: 'err',
+        text: reason ? `Decision not recorded: ${reason}` : 'Decision failed — try again.',
+      });
     } finally {
       setApproving(false);
     }
@@ -645,7 +639,7 @@ export function Assessments() {
             assessmentsCount={assessments.length}
             reminderState={reminderState}
             isLocalAssessment={isLocalAssessment}
-            onCopyPortalLink={copyPortalLink}
+            onOpenPortalLink={openPortalLink}
             onSendReminder={handleSendReminder}
             onReview={handleReviewAssessment}
             onCreateNew={() => navigate('/assessments/triage')}
@@ -694,8 +688,13 @@ export function Assessments() {
         >
           <AssessmentReviewPanel
             assessment={reviewAssessment}
+            decidedByLabel={decidedByDisplay(reviewAssessment, {
+              uid: user?.uid,
+              label: profile?.displayName || profile?.email,
+            })}
             reviewAnalysis={reviewAnalysis}
             reviewAiError={reviewAiError}
+            reviewManual={reviewManual}
             reviewAiLoading={reviewAiLoading}
             reviewFilter={reviewFilter}
             onReviewFilterChange={setReviewFilter}
@@ -718,31 +717,54 @@ export function Assessments() {
             orgPackDefaults={orgPackDefaults}
             isLocal={isLocalAssessment(reviewAssessment)}
             onClose={() => setIsReviewing(false)}
-            onCopyPortalLink={() => void copyPortalLink(reviewAssessment)}
+            onOpenPortalLink={() => void openPortalLink(reviewAssessment)}
             onRecoverEmpty={() => void handleRecoverEmptyAssessment()}
             onArchiveEmpty={() => void handleArchiveEmptyAssessment()}
             onDecide={(outcome) => void handleDecideAssessment(outcome)}
             onDownloadDecisionPacket={() => {
               if (!reviewAssessment) return;
               try {
+                // A recorded terminal decision is the source of truth; the form state only
+                // describes a decision that has not been submitted yet.
+                const recorded = hasTerminalOrgDecision(reviewAssessment)
+                  ? (reviewAssessment.decisionOutcome as DecisionOutcome)
+                  : null;
                 openDecisionPacketForPrint({
                   vendorName: reviewAssessment.vendorName || 'Vendor',
                   assessmentId: reviewAssessment.id,
                   frameworksLabel: frameworkLabel(reviewAssessment),
-                  outcome: decisionOutcome,
-                  decisionNotes: decisionNotes.trim() || undefined,
-                  decidedBy: profile?.email || profile?.displayName || undefined,
-                  decidedAt: new Date().toISOString(),
-                  remediationOwner:
-                    decisionRequiresRemediationPlan(decisionOutcome) && remediationOwner.trim()
-                      ? remediationOwner.trim()
-                      : undefined,
-                  remediationDueAt:
-                    decisionRequiresRemediationPlan(decisionOutcome)
-                      ? normalizeRemediationDueAt(remediationDueDate) || undefined
-                      : undefined,
-                  residualRiskLevel,
-                  nextReviewAt: nextReviewAtForDecision(decisionOutcome),
+                  ...(recorded
+                    ? {
+                        outcome: recorded,
+                        decisionNotes: reviewAssessment.decisionNotes || undefined,
+                        decidedBy: decidedByDisplay(reviewAssessment, {
+                          uid: user?.uid,
+                          label: profile?.displayName || profile?.email,
+                        }),
+                        decidedAt: reviewAssessment.decidedAt || undefined,
+                        remediationOwner: reviewAssessment.remediationOwner || undefined,
+                        remediationDueAt: reviewAssessment.remediationDueAt || undefined,
+                        residualRiskLevel: reviewAssessment.residualRiskLevel || residualRiskLevel,
+                        nextReviewAt: nextReviewAtForDecision(
+                          recorded,
+                          reviewAssessment.decidedAt ? new Date(reviewAssessment.decidedAt) : undefined
+                        ),
+                      }
+                    : {
+                        outcome: decisionOutcome,
+                        decisionNotes: decisionNotes.trim() || undefined,
+                        decidedBy: profile?.email || profile?.displayName || undefined,
+                        decidedAt: new Date().toISOString(),
+                        remediationOwner:
+                          decisionRequiresRemediationPlan(decisionOutcome) && remediationOwner.trim()
+                            ? remediationOwner.trim()
+                            : undefined,
+                        remediationDueAt: decisionRequiresRemediationPlan(decisionOutcome)
+                          ? normalizeRemediationDueAt(remediationDueDate) || undefined
+                          : undefined,
+                        residualRiskLevel,
+                        nextReviewAt: nextReviewAtForDecision(decisionOutcome),
+                      }),
                   exceptions: reviewExceptions.map((e) => ({
                     question: e.question,
                     reason: e.reason,
