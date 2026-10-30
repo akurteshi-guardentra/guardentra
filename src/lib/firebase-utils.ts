@@ -107,14 +107,62 @@ export const logOut = async (redirectTo: string = '/') => {
   }
 };
 
-export const resendVerificationEmail = async () => {
-  if (!auth.currentUser) return;
+export type VerificationRecipient = {
+  uid?: string;
+  isAnonymous?: boolean;
+  email?: string | null;
+  emailVerified?: boolean;
+};
+
+export type VerificationResendResult =
+  | { status: 'sent'; uid: string }
+  | { status: 'no-user' }
+  | { status: 'anonymous' }
+  | { status: 'already-verified'; uid: string }
+  | { status: 'session-changed'; uid: string };
+
+/** No send unless the current Auth user has an email and is not yet verified. */
+export function classifyVerificationRecipient(
+  user: VerificationRecipient | null | undefined,
+): 'no-user' | 'anonymous' | 'already-verified' | 'eligible' {
+  if (!user?.uid) return 'no-user';
+  if (user.isAnonymous || !user.email) return 'anonymous';
+  if (user.emailVerified) return 'already-verified';
+  return 'eligible';
+}
+
+type VerificationSender = {
+  getUser: () => VerificationRecipient | null | undefined;
+  send: (user: VerificationRecipient) => Promise<void>;
+};
+
+/**
+ * Requests a verification email for the current Auth user.
+ * A missing, anonymous, or already-verified user is an explicit result, not success.
+ * Success is returned only when the same user object is still current after the request.
+ * A replacement session with the same uid is not that user.
+ */
+export const resendVerificationEmail = async (
+  deps?: VerificationSender,
+): Promise<VerificationResendResult> => {
+  const getUser = deps?.getUser ?? (() => auth.currentUser);
+  const send = deps?.send ?? ((user: VerificationRecipient) => sendEmailVerification(user as never));
+  const user = getUser();
+  const decision = classifyVerificationRecipient(user);
+  if (!user || decision === 'no-user') return { status: 'no-user' };
+  if (decision === 'anonymous') return { status: 'anonymous' };
+  if (decision === 'already-verified') return { status: 'already-verified', uid: user.uid as string };
+  const uid = user.uid as string;
   try {
-    await sendEmailVerification(auth.currentUser);
+    await send(user);
   } catch (error) {
-    console.error("Error resending verification email", error);
+    const code = typeof error === 'object' && error && 'code' in error ? String((error as { code?: unknown }).code) : 'unknown';
+    console.error('Error resending verification email', code);
     throw error;
   }
+  const current = getUser();
+  if (current !== user) return { status: 'session-changed', uid };
+  return { status: 'sent', uid };
 };
 
 export const resetPassword = async (email: string) => {

@@ -9,6 +9,7 @@ import {
   FileText,
   Mail,
   AlertTriangle,
+  ClipboardCheck,
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -78,6 +79,28 @@ function rowStatus(a: StoredAssessment): string {
   );
 }
 
+const DECISION_LABELS: Record<string, { label: string; className: string }> = {
+  approved: { label: 'Approved', className: 'text-emerald-400' },
+  conditional: { label: 'Conditional', className: 'text-amber-400' },
+  remediate: { label: 'Remediate', className: 'text-orange-400' },
+  rejected: { label: 'Rejected', className: 'text-rose-400' },
+};
+
+function decisionLabel(a: StoredAssessment): { label: string; className: string } | null {
+  const outcome = typeof a.decisionOutcome === 'string' ? a.decisionOutcome : '';
+  return DECISION_LABELS[outcome] ?? null;
+}
+
+/** Row clicks open the review unless the click landed on a link or control inside the row. */
+function isInteractiveTarget(target: EventTarget | null, row: HTMLElement): boolean {
+  let el = target instanceof Element ? target : null;
+  while (el && el !== row) {
+    if (el.matches('a, button, input, select, textarea, [role="button"]')) return true;
+    el = el.parentElement;
+  }
+  return false;
+}
+
 function AssessmentEmptyState({
   hasAnyAssessments,
   onCreateNew,
@@ -114,7 +137,7 @@ export type AssessmentTrackerTableProps = {
   assessmentsCount: number;
   reminderState: Record<string, 'sending' | 'sent' | 'error'>;
   isLocalAssessment: (a: StoredAssessment) => boolean;
-  onCopyPortalLink: (a: StoredAssessment) => void;
+  onOpenPortalLink: (a: StoredAssessment) => void;
   onSendReminder: (a: StoredAssessment) => void;
   onReview: (a: StoredAssessment) => void;
   onCreateNew: () => void;
@@ -132,7 +155,7 @@ export function AssessmentTrackerTable({
   assessmentsCount,
   reminderState,
   isLocalAssessment,
-  onCopyPortalLink,
+  onOpenPortalLink,
   onSendReminder,
   onReview,
   onCreateNew,
@@ -211,7 +234,14 @@ export function AssessmentTrackerTable({
               />
             ) : (
               filtered.map((a) => (
-                <tr key={a.id} className="group transition-colors hover:bg-white/[0.03]">
+                <tr
+                  key={a.id}
+                  className="group cursor-pointer transition-colors hover:bg-white/[0.03]"
+                  onClick={(e) => {
+                    if (isInteractiveTarget(e.target, e.currentTarget)) return;
+                    void onReview(a);
+                  }}
+                >
                   <td className="px-4 py-3">
                     <div className="flex min-w-0 items-center gap-3">
                       <div className="shrink-0 rounded-lg border border-white/10 bg-white/5 p-2">
@@ -264,6 +294,16 @@ export function AssessmentTrackerTable({
                     >
                       {rowStatus(a)}
                     </span>
+                    {decisionLabel(a) && (
+                      <p
+                        className={cn(
+                          'mt-1 text-[10px] font-semibold uppercase tracking-wide',
+                          decisionLabel(a)!.className
+                        )}
+                      >
+                        {decisionLabel(a)!.label}
+                      </p>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
@@ -293,11 +333,11 @@ export function AssessmentTrackerTable({
                             : 'text-slate-400 hover:text-primary'
                         )}
                         disabled={isLocalAssessment(a)}
-                        onClick={() => void onCopyPortalLink(a)}
+                        onClick={() => void onOpenPortalLink(a)}
                         title={
                           isLocalAssessment(a)
                             ? 'Portal link available after cloud sync'
-                            : 'Copy Vendor Portal Link'
+                            : 'Open Vendor Portal in new tab'
                         }
                       >
                         <ExternalLink className="h-4 w-4" />
@@ -338,11 +378,12 @@ export function AssessmentTrackerTable({
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-8 w-8 p-0 text-slate-400 transition-colors hover:text-white"
+                        className="ml-1 h-8 gap-1.5 px-2.5 text-xs text-slate-300 transition-colors hover:text-white"
                         onClick={() => void onReview(a)}
-                        title="Review Assessment"
+                        title="Review assessment and record a decision"
                       >
-                        <Search className="h-4 w-4" />
+                        <ClipboardCheck className="h-4 w-4" />
+                        Review
                       </Button>
                     </div>
                   </td>

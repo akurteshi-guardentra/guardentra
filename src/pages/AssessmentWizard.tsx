@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { addDoc, collection, doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { Check, ChevronDown, ChevronRight, Eye, Search, Sparkles } from 'lucide-react';
 import { db } from '../firebase';
 import { useAuth } from '../lib/AuthContext';
+import { authHeaders } from '../lib/authHeaders';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { PageShell } from '../components/spine/PageShell';
@@ -31,7 +32,9 @@ import {
   mayCreateLocalAssessment,
   mayFallbackAssessmentCreateToLocal,
 } from '../lib/vendor/localVendorStore';
-import { syncVendorAfterAssessmentCreate } from '../lib/vendor/syncVendorAssessment';
+import {
+  syncVendorAfterAssessmentCreate,
+} from '../lib/vendor/syncVendorAssessment';
 import { buildCreateAssessmentFields } from '../lib/vendor/assessmentLifecycle';
 import { sendNotificationIntent } from '../lib/notifications';
 import { isTriageTier, parseFrameworksParam } from '../lib/vendor/fastTrackTriage';
@@ -61,6 +64,7 @@ export function AssessmentWizard() {
   const [sendBanner, setSendBanner] = useState<{ tone: 'ok' | 'warn'; text: string } | null>(null);
   const [requesterOrgName, setRequesterOrgName] = useState('');
   const [requesterLogoUrl, setRequesterLogoUrl] = useState('');
+  const [createRequestId] = useState(() => crypto.randomUUID());
 
   useEffect(() => {
     if (!orgId) return;
@@ -333,46 +337,42 @@ export function AssessmentWizard() {
         requesterLogoUrl: requesterLogoUrl || null,
       });
 
-      const ref = await Promise.race([
-        addDoc(collection(db, 'assessments'), fields),
+      const createResponse = await Promise.race([
+        fetch('/api/org/assessment-create', {
+          method: 'POST',
+          headers: await authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({
+            requestId: createRequestId,
+            vendorId,
+            frameworks,
+            dueAt: fields.dueAt,
+            triageTier: activeTier,
+            reviewCadence,
+            reminderScheduleId: schedule.id,
+            reminderSchedule: {
+              daysBeforeDue: schedule.daysBeforeDue,
+              onDue: schedule.onDue,
+              daysAfterDue: schedule.daysAfterDue,
+              label: schedule.label,
+            },
+          }),
+        }),
         writeTimeout,
       ]);
-
-      await syncVendorAfterAssessmentCreate(orgId, vendorId, false);
-
-      void emitAuditBestEffort({
-        tenantId: orgId,
-        eventType: 'assessment.created',
-        actorId: user?.uid || null,
-        objectType: 'assessment',
-        objectId: ref.id,
-        payload: {
-          vendorId,
-          frameworks,
-          triageTier: activeTier,
-          questionCount: fields.questionCount,
-        },
-      });
-      void emitAuditBestEffort({
-        tenantId: orgId,
-        eventType: 'assessment.sent',
-        actorId: user?.uid || null,
-        objectType: 'assessment',
-        objectId: ref.id,
-        payload: {
-          vendorId,
-          dueAt: fields.dueAt,
-          reminderScheduleId: schedule.id,
-          inviteEmail: Boolean(selected.primaryContactEmail),
-        },
-      });
+      if (!createResponse.ok) {
+        const body = (await createResponse.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error || 'Cloud assessment create failed');
+      }
+      const created = (await createResponse.json()) as { assessmentId?: string };
+      const assessmentId = String(created.assessmentId || '').trim();
+      if (!assessmentId) throw new Error('Cloud assessment create returned no assessment id');
 
       const to = (selected.primaryContactEmail || '').trim();
       if (to) {
         try {
           await sendNotificationIntent({
             intentType: 'assessment_invite',
-            objectId: ref.id,
+            objectId: assessmentId,
           });
           setSendBanner({
             tone: 'ok',
@@ -381,13 +381,18 @@ export function AssessmentWizard() {
         } catch (mailEx: unknown) {
           setSendBanner({
             tone: 'warn',
-            text: `Assessment created; authorized invite could not be queued${mailEx instanceof Error ? ` (${mailEx.message})` : ''}.`,
+            text: `Assessment created but not marked Sent; authorized invite could not be queued${mailEx instanceof Error ? ` (${mailEx.message})` : ''}.`,
           });
         }
+      } else {
+        setSendBanner({
+          tone: 'warn',
+          text: 'Assessment created as Not Started. Add a primary contact email before sending an invite.',
+        });
       }
 
       navigate(
-        `/assessments?vendorId=${encodeURIComponent(vendorId)}&created=${encodeURIComponent(ref.id)}`
+        `/assessments?vendorId=${encodeURIComponent(vendorId)}&created=${encodeURIComponent(assessmentId)}`
       );
     } catch (ex: unknown) {
       if (mayFallbackAssessmentCreateToLocal(ex)) {
