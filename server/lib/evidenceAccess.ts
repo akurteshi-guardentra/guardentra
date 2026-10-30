@@ -735,6 +735,19 @@ export async function handleEvidenceDownload(
     const generation = authorizedDownloadGeneration(res, meta);
     if (!generation) return;
 
+    if (kind === 'portal') {
+      // A vendor may re-open their own pending/validated upload, but never get a
+      // signed URL back for bytes the scanner quarantined at this generation.
+      const trust = lookupTrustRecord(
+        storagePath,
+        assessment.evidenceTrustByStoragePath as EvidenceTrustMap
+      );
+      if (trust?.state === 'quarantined' && trust.generation === generation) {
+        res.status(403).json({ error: 'This file was quarantined by the malware scanner.' });
+        return;
+      }
+    }
+
     if (kind === 'org') {
       const trust = lookupTrustRecord(
         storagePath,
