@@ -34,6 +34,7 @@ vi.mock('../firebase', () => ({ db: {} }));
 
 import {
   bootstrapUserProfile,
+  InviteLookupUnavailableError,
   resolveBootstrapJoinRole,
 } from '../lib/orgBootstrap';
 
@@ -66,6 +67,31 @@ describe('bootstrapUserProfile tenant authority', () => {
     batchCommit.mockReset();
     batchCommit.mockResolvedValue(undefined);
     updateDocMock.mockResolvedValue(undefined);
+  });
+
+  it('fails closed when pending-invite authority is unavailable and commits nothing', async () => {
+    getDocsMock.mockRejectedValue(Object.assign(new Error('temporarily unavailable'), { code: 'unavailable' }));
+
+    await expect(
+      bootstrapUserProfile('uid-unknown', {
+        email: 'invited@example.com',
+        displayName: 'Invited User',
+      }),
+    ).rejects.toMatchObject({
+      name: 'InviteLookupUnavailableError',
+      code: 'invite-lookup-unavailable',
+    });
+
+    expect(batchSet).not.toHaveBeenCalled();
+    expect(batchUpdate).not.toHaveBeenCalled();
+    expect(batchCommit).not.toHaveBeenCalled();
+    expect(updateDocMock).not.toHaveBeenCalled();
+  });
+
+  it('exports a retryable typed invite-authority error', () => {
+    const error = new InviteLookupUnavailableError();
+    expect(error).toBeInstanceOf(Error);
+    expect(error.code).toBe('invite-lookup-unavailable');
   });
 
   it('founder path creates a new org and never uses a caller-supplied organizationId or role', async () => {

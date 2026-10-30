@@ -22,6 +22,7 @@ vi.mock('firebase/auth', () => ({
   signInWithPopup: vi.fn(),
   signInAnonymously: vi.fn(() => Promise.resolve({ user: { uid: 'anon' } })),
   signOut: vi.fn(),
+  sendEmailVerification: vi.fn(async () => undefined),
   GoogleAuthProvider: vi.fn(),
   setPersistence: vi.fn(() => Promise.resolve()),
   browserLocalPersistence: 'browserLocalPersistence',

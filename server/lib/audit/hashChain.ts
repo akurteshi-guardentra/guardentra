@@ -1,5 +1,6 @@
 import type pg from 'pg';
 import { canonicalize } from './canonicalize.ts';
+import { persistedEventOriginMatches } from './eventIdentity.ts';
 import { GENESIS_HASH, sha256Hex, type AuditEmitEnvelope } from './types.ts';
 
 export async function persistOutboxPayload(
@@ -13,10 +14,17 @@ export async function persistOutboxPayload(
   // event + hash-chain persistence.
   await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [envelope.tenantId]);
 
-  const existing = await client.query(`SELECT 1 FROM audit_events WHERE event_id = $1`, [
-    envelope.eventId,
-  ]);
-  if (existing.rowCount) return;
+  const existing = await client.query(
+    `SELECT tenant_id, event_type, object_type, object_id, payload
+     FROM audit_events WHERE event_id = $1`,
+    [envelope.eventId],
+  );
+  if (existing.rowCount) {
+    if (!persistedEventOriginMatches(existing.rows[0], envelope)) {
+      throw new Error('audit event identity conflict');
+    }
+    return;
+  }
 
   const last = await client.query(
     `SELECT hash, seq FROM audit_hash_chain

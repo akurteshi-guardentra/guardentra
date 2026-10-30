@@ -1,17 +1,28 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, limit, query, where, getDocs } from 'firebase/firestore';
-import { Building2, ClipboardList, Loader2, Plus, Settings2, Sparkles } from 'lucide-react';
+import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/firestore';
+import { Building2, ClipboardList, FileCheck, Loader2, Plus } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/src/components/ui/card';
 import { Button } from '@/src/components/ui/button';
+import { SetupChecklist } from '../components/SetupChecklist';
 import { db } from '../firebase';
 import { useAuth } from '../lib/AuthContext';
+import {
+  deriveSetupChecklist,
+  isSetupChecklistComplete,
+  type OrgSetupSnapshot,
+} from '../lib/setupProgress';
+import { parseReadinessScore, readinessMetricCaption } from '../lib/dashboardStats';
 
 type DashStats = {
   vendorCount: number;
   pendingAssessments: number;
   completedAssessments: number;
+  assessmentCount: number;
   readinessScore: number | null;
+  readinessSample: boolean;
+  pendingTeammateInviteCount: number;
+  org: OrgSetupSnapshot | null;
 };
 
 export function Dashboard() {
@@ -21,46 +32,83 @@ export function Dashboard() {
     vendorCount: 0,
     pendingAssessments: 0,
     completedAssessments: 0,
+    assessmentCount: 0,
     readinessScore: null,
+    readinessSample: false,
+    pendingTeammateInviteCount: 0,
+    org: null,
   });
   const [loadingStats, setLoadingStats] = useState(true);
+  const [statsError, setStatsError] = useState<string | null>(null);
+  const [retryToken, setRetryToken] = useState(0);
 
   useEffect(() => {
     if (loading) return;
     if (!profile?.organizationId) {
       setLoadingStats(false);
+      setStatsError(null);
       return;
     }
 
     const orgId = profile.organizationId;
     let cancelled = false;
+    setLoadingStats(true);
+    setStatsError(null);
 
     (async () => {
       try {
-        const [vendorsSnap, assessSnap, auditSnap] = await Promise.all([
+        const [vendorsSnap, assessSnap, auditSnap, invitesSnap, orgSnap] = await Promise.all([
           getDocs(query(collection(db, 'vendors'), where('organizationId', '==', orgId), limit(500))),
           getDocs(query(collection(db, 'assessments'), where('organizationId', '==', orgId), limit(500))),
           getDocs(query(collection(db, 'audit_readiness'), where('organizationId', '==', orgId), limit(5))),
+          getDocs(
+            query(
+              collection(db, 'org_invites'),
+              where('organizationId', '==', orgId),
+              where('status', '==', 'pending'),
+              limit(50),
+            ),
+          ),
+          getDoc(doc(db, 'organizations', orgId)),
         ]);
 
         const pending = assessSnap.docs.filter((d) => d.data().status !== 'Completed').length;
         const completed = assessSnap.docs.filter((d) => d.data().status === 'Completed').length;
         let readiness: number | null = null;
+        let readinessSample = false;
         if (!auditSnap.empty) {
-          const row = auditSnap.docs[0].data() as { readinessScore?: number; score?: number };
-          readiness = Number(row.readinessScore ?? row.score ?? 0) || null;
+          const auditRow = auditSnap.docs[0].data() as {
+            readinessScore?: unknown;
+            score?: unknown;
+            syntheticLabel?: unknown;
+          };
+          readiness = parseReadinessScore(auditRow);
+          readinessSample = readinessMetricCaption(auditRow.syntheticLabel).startsWith('Sample');
         }
+
+        const orgData = orgSnap.exists() ? (orgSnap.data() as OrgSetupSnapshot) : null;
 
         if (!cancelled) {
           setStats({
             vendorCount: vendorsSnap.size,
             pendingAssessments: pending,
             completedAssessments: completed,
+            assessmentCount: assessSnap.size,
             readinessScore: readiness,
+            readinessSample,
+            pendingTeammateInviteCount: invitesSnap.size,
+            org: orgData,
           });
+          setStatsError(null);
         }
       } catch (err) {
         console.error('Dashboard: failed to load spine stats', err);
+        if (!cancelled) {
+          // Do not present initial zeros as authoritative when the read failed.
+          setStatsError(
+            'Dashboard data could not be loaded. Counts below may be unavailable — retry or check your connection.',
+          );
+        }
       } finally {
         if (!cancelled) setLoadingStats(false);
       }
@@ -69,9 +117,23 @@ export function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [loading, profile?.organizationId]);
+  }, [loading, profile?.organizationId, retryToken]);
 
-  if (loading || loadingStats) {
+  const checklist = useMemo(
+    () =>
+      deriveSetupChecklist({
+        org: stats.org,
+        vendorCount: stats.vendorCount,
+        assessmentCount: stats.assessmentCount,
+        pendingTeammateInviteCount: stats.pendingTeammateInviteCount,
+        role: profile?.role,
+      }),
+    [stats, profile?.role],
+  );
+
+  const checklistComplete = isSetupChecklistComplete(checklist);
+
+  if (loading) {
     return (
       <div className="flex items-center justify-center py-24 text-slate-400">
         <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading…
@@ -80,7 +142,14 @@ export function Dashboard() {
   }
 
   const firstName = profile?.displayName?.split(' ')[0] || 'there';
-  const showQuickStart = stats.vendorCount === 0;
+  const countUnavailable = Boolean(statsError) || loadingStats;
+  const vendorDisplay = countUnavailable ? '—' : String(stats.vendorCount);
+  const pendingDisplay = countUnavailable ? '—' : String(stats.pendingAssessments);
+  const completedLabel = countUnavailable
+    ? 'Completed count unavailable'
+    : `${stats.completedAssessments} completed`;
+  const readinessDisplay =
+    countUnavailable || stats.readinessScore == null ? '—' : `${stats.readinessScore}%`;
 
   return (
     <div className="mx-auto max-w-6xl space-y-8 animate-in fade-in duration-500">
@@ -100,7 +169,7 @@ export function Dashboard() {
             className="border-white/10 bg-white/5 text-white hover:bg-white/10"
           >
             <Building2 className="mr-2 h-4 w-4" />
-            {showQuickStart ? 'Add first vendor' : 'Vendors'}
+            Vendors
           </Button>
           <Button
             onClick={() => navigate('/assessments/new')}
@@ -112,6 +181,26 @@ export function Dashboard() {
         </div>
       </div>
 
+      {statsError && (
+        <div
+          data-testid="dashboard-stats-error"
+          className="flex flex-col gap-3 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100 md:flex-row md:items-center md:justify-between"
+          role="alert"
+        >
+          <p>{statsError}</p>
+          <Button
+            type="button"
+            variant="outline"
+            className="border-rose-400/40 bg-transparent text-rose-50 hover:bg-rose-500/20"
+            onClick={() => setRetryToken((n) => n + 1)}
+          >
+            Retry
+          </Button>
+        </div>
+      )}
+
+      <SetupChecklist items={checklist} hidden={checklistComplete || countUnavailable} />
+
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <Card
           className="cursor-pointer border-white/10 bg-slate-900/50 transition-colors hover:border-primary/40"
@@ -121,9 +210,13 @@ export function Dashboard() {
             <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
               Vendors
             </CardDescription>
-            <CardTitle className="font-mono text-3xl text-white">{stats.vendorCount}</CardTitle>
+            <CardTitle className="font-mono text-3xl text-white" data-testid="dashboard-vendor-count">
+              {vendorDisplay}
+            </CardTitle>
           </CardHeader>
-          <CardContent className="text-xs text-slate-500">Registered third parties</CardContent>
+          <CardContent className="text-xs text-slate-500">
+            {countUnavailable ? 'Count unavailable' : 'Registered third parties'}
+          </CardContent>
         </Card>
         <Card
           className="cursor-pointer border-white/10 bg-slate-900/50 transition-colors hover:border-primary/40"
@@ -133,11 +226,11 @@ export function Dashboard() {
             <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
               Pending assessments
             </CardDescription>
-            <CardTitle className="font-mono text-3xl text-white">{stats.pendingAssessments}</CardTitle>
+            <CardTitle className="font-mono text-3xl text-white" data-testid="dashboard-pending-count">
+              {pendingDisplay}
+            </CardTitle>
           </CardHeader>
-          <CardContent className="text-xs text-slate-500">
-            {stats.completedAssessments} completed
-          </CardContent>
+          <CardContent className="text-xs text-slate-500">{completedLabel}</CardContent>
         </Card>
         <Card
           className="cursor-pointer border-white/10 bg-slate-900/50 transition-colors hover:border-primary/40"
@@ -147,57 +240,15 @@ export function Dashboard() {
             <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
               Audit Lab
             </CardDescription>
-            <CardTitle className="font-mono text-3xl text-white">
-              {stats.readinessScore != null ? `${stats.readinessScore}%` : '—'}
+            <CardTitle className="font-mono text-3xl text-white" data-testid="dashboard-readiness">
+              {readinessDisplay}
             </CardTitle>
           </CardHeader>
-          <CardContent className="text-xs text-slate-500">Latest readiness score</CardContent>
-        </Card>
-      </div>
-
-      {showQuickStart && (
-        <Card className="border-primary/20 bg-primary/5">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-white">
-              <Sparkles className="h-5 w-5 text-primary" />
-              Quick start
-            </CardTitle>
-            <CardDescription>
-              Your GuardEntra workspace is ready. Add your first vendor to begin your third-party risk
-              workflow. Organization profile and assessment-pack defaults can be completed at any time.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <button
-              type="button"
-              onClick={() => navigate('/vendors')}
-              className="rounded-xl border border-white/10 bg-black/20 p-4 text-left transition hover:border-primary/40"
-            >
-              <Building2 className="mb-2 h-5 w-5 text-emerald-400" />
-              <p className="text-sm font-semibold text-white">1. Add your first vendor</p>
-              <p className="mt-1 text-xs text-slate-500">Start with a real third party — no demo records are created.</p>
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate('/assessments/new')}
-              className="rounded-xl border border-white/10 bg-black/20 p-4 text-left transition hover:border-primary/40"
-            >
-              <ClipboardList className="mb-2 h-5 w-5 text-indigo-400" />
-              <p className="text-sm font-semibold text-white">2. Create your first assessment</p>
-              <p className="mt-1 text-xs text-slate-500">Choose GuardEntra assessment packs when you create it.</p>
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate('/settings')}
-              className="rounded-xl border border-white/10 bg-black/20 p-4 text-left transition hover:border-primary/40"
-            >
-              <Settings2 className="mb-2 h-5 w-5 text-amber-400" />
-              <p className="text-sm font-semibold text-white">3. Complete organization profile</p>
-              <p className="mt-1 text-xs text-slate-500">Add industry, branding, and optional pack defaults later.</p>
-            </button>
+          <CardContent className="text-xs text-slate-500" data-testid={stats.readinessSample ? 'dashboard-readiness-sample' : undefined}>
+            {readinessMetricCaption(stats.readinessSample ? 'sample' : '')}
           </CardContent>
         </Card>
-      )}
+      </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Card className="border-white/10 bg-slate-900/40">
@@ -211,6 +262,7 @@ export function Dashboard() {
               className="border-white/10"
               onClick={() => navigate('/assessments')}
             >
+              <ClipboardList className="mr-2 h-4 w-4" />
               Open assessments →
             </Button>
           </CardContent>
@@ -226,6 +278,7 @@ export function Dashboard() {
               className="border-white/10"
               onClick={() => navigate('/audit-readiness')}
             >
+              <FileCheck className="mr-2 h-4 w-4" />
               Open Audit Lab →
             </Button>
           </CardContent>

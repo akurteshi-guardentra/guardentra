@@ -22,6 +22,15 @@ interface NewProfileFields {
 
 export type BootstrapJoinRole = 'admin' | 'member';
 
+export class InviteLookupUnavailableError extends Error {
+  readonly code = 'invite-lookup-unavailable';
+
+  constructor() {
+    super('Unable to verify pending organization invite. Retry profile setup.');
+    this.name = 'InviteLookupUnavailableError';
+  }
+}
+
 /**
  * Invite role is server/invite-authoritative. Unknown or privileged-looking
  * client-supplied values collapse to member — only an invite that already
@@ -55,10 +64,10 @@ export async function bootstrapUserProfile(uid: string, fields: NewProfileFields
 
   let pendingInvite: { id: string; organizationId: string; role?: string } | null = null;
   if (email) {
-    // Invite lookup must never block account creation. Rules require the query
-    // email to equal request.auth.token.email exactly — casing mismatches or
-    // transient permission errors used to reject the entire bootstrap and leave
-    // first-run users on a local-only profile (blank/skipped onboarding).
+    // Tenant assignment must be authoritative. An empty successful query means
+    // founder bootstrap is allowed; a failed query is UNKNOWN and must not be
+    // treated as "no invite", otherwise an invited user could be placed into a
+    // brand-new admin organization during a transient Firestore/rules failure.
     try {
       const invitesQuery = query(
         collection(db, 'org_invites'),
@@ -73,8 +82,12 @@ export async function bootstrapUserProfile(uid: string, fields: NewProfileFields
         pendingInvite = { id: inviteDoc.id, organizationId: data.organizationId, role: data.role };
       }
     } catch (inviteErr) {
-      console.warn('orgBootstrap: pending-invite lookup failed; creating a new org instead', inviteErr);
-      pendingInvite = null;
+      const code =
+        inviteErr && typeof inviteErr === 'object' && 'code' in inviteErr
+          ? String((inviteErr as { code?: unknown }).code || 'unknown')
+          : 'unknown';
+      console.error(`orgBootstrap: pending-invite lookup unavailable (${code}); refusing founder fallback`);
+      throw new InviteLookupUnavailableError();
     }
   }
 
