@@ -9,6 +9,7 @@ import {
   handlePortalValidate,
   HttpError,
   applyFirestoreAssessmentUpdate,
+  encodeTrustMapKey,
   isFirestoreDeleteSentinel,
   requirePortalAssessment,
   toFirestoreAssessmentUpdate,
@@ -685,6 +686,60 @@ describe('evidence download', () => {
           generation: '9999',
         },
       }),
+      res as any,
+      d,
+      'portal'
+    );
+    expect(res.statusCode).toBe(200);
+    expect(d.signReadUrl).toHaveBeenCalledWith('portal/asmA/a.pdf', '1');
+  });
+
+  it('refuses portal self-download of a file quarantined at the live generation', async () => {
+    const d = deps({
+      getAssessment: vi.fn(async () => ({
+        organizationId: 'org1',
+        portalOpen: true,
+        status: 'In Progress',
+        evidenceTrustByStoragePath: {
+          [encodeTrustMapKey('portal/asmA/a.pdf')]: {
+            state: 'quarantined',
+            storagePath: 'portal/asmA/a.pdf',
+            generation: '1',
+            updatedAt: '2026-10-30T18:03:47.863Z',
+          },
+        },
+      })),
+    });
+    const res = mockRes();
+    await handleEvidenceDownload(
+      req({ token: 'portal-a', query: { assessmentId: 'asmA', storagePath: 'portal/asmA/a.pdf' } }),
+      res as any,
+      d,
+      'portal'
+    );
+    expect(res.statusCode).toBe(403);
+    expect(d.signReadUrl).not.toHaveBeenCalled();
+  });
+
+  it('allows portal self-download when the quarantine was for an older generation', async () => {
+    const d = deps({
+      getAssessment: vi.fn(async () => ({
+        organizationId: 'org1',
+        portalOpen: true,
+        status: 'In Progress',
+        evidenceTrustByStoragePath: {
+          [encodeTrustMapKey('portal/asmA/a.pdf')]: {
+            state: 'quarantined',
+            storagePath: 'portal/asmA/a.pdf',
+            generation: '0',
+            updatedAt: '2026-10-30T18:03:47.863Z',
+          },
+        },
+      })),
+    });
+    const res = mockRes();
+    await handleEvidenceDownload(
+      req({ token: 'portal-a', query: { assessmentId: 'asmA', storagePath: 'portal/asmA/a.pdf' } }),
       res as any,
       d,
       'portal'
