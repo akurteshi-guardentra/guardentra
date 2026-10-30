@@ -15,7 +15,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertFails, assertSucceeds, initializeTestEnvironment } from '@firebase/rules-unit-testing';
-import { collection, doc, getDoc, getDocs, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDoc, getDocs, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '../..');
@@ -1152,6 +1152,53 @@ async function main() {
       name: 'Fine', planId: 'starter', vendorCap: 25, seatCap: 3,
       seatCount: 1, vendorCount: 0, subscriptionStatus: 'none',
     })),
+  );
+
+  // #167/#209: vendor_invites is written only by the server (Admin SDK) in the same
+  // transaction as the welcome mail queue entry and its vendor.invite_queued audit intent.
+  const INVITE = 'vinv-209';
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), `vendor_invites/${INVITE}`), {
+      organizationId: ORG, vendorId: 'v-209', email: 'vendor@example.com', invitedBy: 'member-1',
+    });
+  });
+  await check('org admin CANNOT create a vendor_invites record from the browser', () =>
+    assertFails(setDoc(doc(db, 'vendor_invites/forged-admin'), {
+      organizationId: ORG, vendorId: 'v-209', email: 'vendor@example.com', invitedBy: 'member-1',
+    })),
+  );
+  await check('org member CANNOT create a vendor_invites record from the browser', () =>
+    assertFails(setDoc(doc(memberDb, 'vendor_invites/forged-member'), {
+      organizationId: ORG, vendorId: 'v-209', email: 'vendor@example.com', invitedBy: 'member-2',
+    })),
+  );
+  await check('cross-tenant user CANNOT create a vendor_invites record for another org', () =>
+    assertFails(setDoc(doc(outsiderDb, 'vendor_invites/forged-outsider'), {
+      organizationId: ORG, vendorId: 'v-209', email: 'vendor@example.com', invitedBy: 'outsider-1',
+    })),
+  );
+  await check('same-tenant member CAN read a server-written vendor_invites record', () =>
+    assertSucceeds(getDoc(doc(memberDb, `vendor_invites/${INVITE}`))),
+  );
+  await check('cross-tenant user CANNOT read another org vendor_invites record', () =>
+    assertFails(getDoc(doc(outsiderDb, `vendor_invites/${INVITE}`))),
+  );
+  await check('org member CANNOT update a vendor_invites record', () =>
+    assertFails(updateDoc(doc(memberDb, `vendor_invites/${INVITE}`), { email: 'attacker@example.com' })),
+  );
+  await check('org member (non-admin) CANNOT delete a vendor_invites record', () =>
+    assertFails(deleteDoc(doc(memberDb, `vendor_invites/${INVITE}`))),
+  );
+  await check('cross-tenant admin CANNOT delete another org vendor_invites record', () =>
+    assertFails(deleteDoc(doc(outsiderDb, `vendor_invites/${INVITE}`))),
+  );
+  await check('org admin CAN delete a vendor_invites record', () =>
+    assertSucceeds(deleteDoc(doc(db, `vendor_invites/${INVITE}`))),
+  );
+
+  // #216: decidedByName is a server-written decision field like decidedBy.
+  await check('org member CANNOT write decidedByName on an assessment via the browser', () =>
+    assertFails(updateDoc(doc(db, 'assessments', ASSESS_T), { decidedByName: 'Forged Reviewer' })),
   );
 
   await testEnv.cleanup();

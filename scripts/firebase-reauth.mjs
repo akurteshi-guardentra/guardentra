@@ -16,15 +16,15 @@ const isInteractive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
 console.log(`
 Firebase CLI reauth
 -------------------
-Expected account: admin@guardentra.com
-App Hosting project: guardentra-7f582 (backend: guardentra)
+Use the approved Owner account for the environment-specific packet.
 
 After a successful reauth:
   npx firebase-tools projects:list
-  npx firebase-tools apphosting:rollouts:list --backend guardentra --project guardentra-7f582
 
-Deploy check that does NOT need CLI (preferred after every main push):
-  npm run verify:live
+Do not rely on the Firebase default project alias for release work.
+Use an explicit --project from the current issue-bound staging/production packet.
+Issue #126 tracks the legacy App Hosting main-branch connection; do not use this helper
+to infer or change that connection.
 `);
 
 if (!isInteractive) {
