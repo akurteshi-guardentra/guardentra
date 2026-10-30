@@ -4,7 +4,6 @@
 import "./server/loadEnv.ts";
 import express from "express";
 import path from "path";
-import cors from "cors";
 import type { Server } from "http";
 
 import aiRoutes from "./server/routes/ai.ts";
@@ -22,6 +21,7 @@ import { assertAuditRuntimeConfig, closeAuditPool } from "./server/lib/audit/poo
 import { startAssessmentReminderWorker } from "./server/lib/reminders/worker.ts";
 import { buildReleaseIdentity } from "./server/lib/releaseIdentity.ts";
 import { resolveListenHost } from "./server/lib/listenHost.ts";
+import { apiNotFound, applyEdgeSecurity } from "./server/middleware/edgeSecurity.ts";
 
 /** Cloud Run / Firebase App Hosting: always prefer process.env.PORT, fallback 8080. */
 export function resolvePort(): number {
@@ -46,7 +46,8 @@ export async function createApp() {
   // Hop count is environment-specific — verify req.ip in staging before relying on it.
   app.set("trust proxy", Number(process.env.TRUST_PROXY_HOPS || 1));
 
-  app.use(cors());
+  // Security headers, /api CORS allowlist and security.txt (#219). Must precede all routes.
+  applyEdgeSecurity(app);
 
   // Stripe webhook requires raw body for signature verification
   app.use("/api/stripe/webhook", express.raw({ type: "application/json" }));
@@ -74,6 +75,8 @@ export async function createApp() {
   // Internal malware scanner (shared secret). Not behind Firebase Auth —
   // Eventarc/PubSub and post-validate enqueue use EVIDENCE_SCANNER_SECRET.
   app.use("/api/internal", scannerRoutes);
+  // Unknown /api paths must not fall through to the SPA shell (HTML 200).
+  app.use("/api", apiNotFound);
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
