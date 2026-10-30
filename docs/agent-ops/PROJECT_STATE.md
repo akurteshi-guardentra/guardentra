@@ -1,5 +1,25 @@
 # GuardEntra Project State
 
+> ## ⚠ STALE DISPATCH QUARANTINE — Issue #140
+>
+> This file is a **historical snapshot**, not current scheduling or release authority.
+> It was last comprehensively reconciled on 2026-09-15 and contains repository/live rows
+> that have not all been reverified against the current control plane.
+>
+> Before any dispatch, merge, deploy, cloud, or P0 decision:
+> 1. read protected `main` from the live GitHub branch API;
+> 2. read the current bound issue/PR checkpoints and exact-head CI;
+> 3. use #116 for live cloud inventory instead of inferring runtime resources from this file;
+> 4. preserve `MERGED != STAGING_LIVE_VERIFIED != PRODUCTION_LIVE_VERIFIED`;
+> 5. treat P0 #126 legacy App Hosting automatic-rollout integrity as unresolved until live readback proves otherwise.
+>
+> When #140 was reworked onto the release candidate (2026-10-30), `main` was
+> `7a3ab1f` and `release/rc-2026-10-08` was `93e2f01`; the two had diverged.
+> **Do not reuse either SHA without rereading GitHub.** Dated checkpoint sections below
+> record evidence at their own date only.
+>
+> `PROJECT_TRANSITIONS.md` remains append-only historical evidence and is not quarantined.
+
 ## 2026-10-08 — Issue #74 preparation checkpoint (not deployed)
 
 2026-10-09 addendum: both workflows on the documentation head
@@ -120,7 +140,7 @@ This narrow addendum does not refresh the historical snapshot below.
 - NOT DEPLOYED. No merge, staging/prod rollout, secret operation or production change.
 
 
-Current verified snapshot: 2026-09-15
+Historical verified snapshot captured: 2026-09-15
 Repository: `akurteshi-guardentra/guardentra`
 Owner and merge/deployment authority: `@akurteshi-guardentra`
 
@@ -155,9 +175,9 @@ This checkpoint supplements the historical snapshot above; it does not refresh a
 
 | Item | Verified state |
 |---|---|
-| Default branch/current commit | `main` at `a322f96146976a98a2b2ee800fdac7cce1af0380` (merge of PR #52; repository tip) |
+| Historical snapshot branch/commit | `main` was `a322f96146976a98a2b2ee800fdac7cce1af0380` at this snapshot (merge of PR #52); **not current authority** |
 | Latest merged product/governance work | Prior: PR #24/#35/#38/#39/#40/#43/#44/#45/#46/#47. **PR #50 MERGED** (`de6ae269814b53250daf9a4ffb955d8788a02b17`) — coherent Firebase client / env-specific App Hosting config fix in repository history. **PR #52 MERGED** (authoritative evidence malware scanner + durable Cloud Tasks delivery) — feature tip `39fde456312586b1fff36a9cd68c13656ca6fa39`; merge commit `a322f96146976a98a2b2ee800fdac7cce1af0380`; post-merge CI run **#170** / `34902620059` **SUCCESS**. |
-| Active governance work | Issue #33 remains the governance umbrella. Issue #53 / Action #9A: agentic management baseline + post-P0 ledger reconciliation (docs). Production application release SHA remains separate from repository tip (see production section). |
+| Historical governance row | Issue #33 was the governance umbrella. Issue #53 / Action #9A was later **CLOSED / completed**; do not schedule it from this snapshot. Production application release SHA remains separate from repository history. |
 | P0 Firebase client environment isolation | **PR #50 MERGED** at `de6ae269814b53250daf9a4ffb955d8788a02b17`. Repository fix present. Staging App Hosting yaml includes persisted Admin/project and coherent `VITE_FIREBASE_*` config; that baseline was subsequently included in the **#8H-D** staging release of tip `39fde45…`. Dedicated post-PR-50 onboarding regression E2E: **UNVERIFIED**. |
 | P0 authoritative evidence scanner | **CLOSED** as a workstream. Code **MERGED** into `main`. **Staging: LIVE VERIFIED** (`cloud_tasks`). **Production: NOT DEPLOYED** (no scanner production deployment authorized). |
 | P0-2 investigation | Issue #11 closed: Option B trust states. Scanner workstream completed via PR #52 (environment-specific deployment status below). |
@@ -291,9 +311,9 @@ Ledger updates in this PR remain documentation of verified state. They do **not*
 
 **Removed stale blockers:** permanent production project absent; public-domain cutover pending; global “no malware scanner exists” (replaced by environment-specific staging LIVE / production NOT DEPLOYED).
 
-## Next authorized actions
+## Historical next actions at snapshot time — DO NOT DISPATCH
 
-1. Complete Issue #53 / Action #9A docs PR when owner authorizes commit/PR/merge (**docs only**; no deploy).
+1. Issue #53 / Action #9A was later closed/completed; do not dispatch it from this list.
 2. Separate owner command required for any **production** scanner infrastructure, App Hosting scanner enablement, or production deploy.
 3. Production domain cutover is complete. Do not modify production DNS, custom-domain resources, or legacy rollback resources without separate owner authorization.
 4. Do not merge PR #36. Do not delete `fix/p0-2-evidence-before-scan`. Do not reopen PR #39.
