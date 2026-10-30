@@ -78,8 +78,9 @@ describe('#204 in-range dependency patch', () => {
   });
 
   it('preserves the Firestore client gRPC branch that cannot accept 1.14.x', () => {
-    expect(entry('node_modules/firebase').version).toBe('12.16.0');
-    expect(entry('node_modules/@firebase/firestore').version).toBe('4.16.0');
+    // #220 moved the client SDK forward in range (12.16.0 -> 12.19.0); the gRPC pin is unchanged.
+    expect(entry('node_modules/firebase').version).toBe('12.19.0');
+    expect(entry('node_modules/@firebase/firestore').version).toBe('4.17.2');
     expect(entry('node_modules/@firebase/firestore').dependencies?.['@grpc/grpc-js']).toBe('~1.9.0');
     expect(entry('node_modules/@grpc/grpc-js').version).toBe('1.9.16');
     expect(resolvedVersions('@grpc/grpc-js')).toEqual(['1.14.5', '1.14.5', '1.14.5', '1.9.16']);
