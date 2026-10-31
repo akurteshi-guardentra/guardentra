@@ -28,6 +28,16 @@ env:
     availability:
       - RUNTIME
 
+  # Canonical public origin (env-fixes E1). Used for invitation/reminder links
+  # (server/routes/notify.ts), the /api CORS allowlist and security.txt
+  # (server/middleware/edgeSecurity.ts), and Stripe redirects. Production refuses
+  # to guess when this is unset. guardentra.com is what prod serves today;
+  # www.guardentra.com 301s to it. Owner confirms the origin before promotion.
+  - variable: PUBLIC_APP_URL
+    value: https://guardentra.com
+    availability:
+      - RUNTIME
+
   - variable: VITE_FIREBASE_API_KEY
     secret: VITE_FIREBASE_API_KEY
     availability:
