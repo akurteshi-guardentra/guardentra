@@ -40,7 +40,9 @@ Still works:
 
 ## Verification status
 - Both files compile in the Firestore emulator.
-- Runtime emulator tests of the compatibility and deny cases are **still outstanding** before any deploy.
+- `option-a.compat.test.mjs`: 14/14 pass in the emulator (2026-10-31). It covers founder signup in both deployed client shapes (29171a6 prod, 7b914ee legacy), invite join with `inviteId` (legacy client), the seat and vendor counters, branding, and vendor create. It also covers the fixed gaps: billing update, non-starter org create, unbound org create, uninvited profile create, unverified invite, and role escalation. Last, it pins the accepted break: 29171a6 invite join without `inviteId` is denied.
+- The legacy app (7b914ee) already sends `inviteId`, so invites keep working there. Only the prod app (29171a6) loses invite join, and prod has no orgs today.
+- Owner decision 2026-10-31: the legacy data is real; deploy Option A to the `(default)` database of both projects; invite-join break accepted. The legacy named `ai-studio` database is not decided yet.
 
 ## Rollback
 Re-release the recorded ruleset ID for the project: prod `2e9c308d-9889-4b16-8d55-63b4c77e5ce4`, legacy `c12a5117-1675-4775-b25b-ca463b36e7dc`.
