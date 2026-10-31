@@ -15,17 +15,11 @@ Branch mapping (see `.cursorrules`): `dev` → sandbox, `test` → staging, `mai
 
 ## Firebase CLI aliases
 
-[`.firebaserc`](../.firebaserc) defines aliases. Today only **demo** (`guardentra-7f582`) exists.
+[`.firebaserc`](../.firebaserc) defines aliases. It deliberately has **no `default`**: a bare `firebase deploy` must fail with "No currently active project" instead of hitting a real project. (Until 2026-10-31 the default was `guardentra-7f582`, the legacy project with real data.) `demo` still points at `guardentra-7f582`.
 
-```bash
-# After creating projects in Firebase Console:
-firebase use demo      # current default
-firebase use dev
-firebase use staging
-firebase use prod
-```
+Always name the target on the command line, for example `--project=guardentra-staging`. Do not run `firebase use <alias>` to set a sticky active project: it is stored per machine and per folder, outside the repo, and overrides this file. Clear one with `firebase use --clear`.
 
-Replace placeholder IDs in `.firebaserc` once projects exist (`guardentra-dev`, `guardentra-staging`, `guardentra-prod`).
+`guardentra-dev`, `guardentra-eu` and `guardentra-us` are placeholders until those projects exist.
 
 ## Client config
 

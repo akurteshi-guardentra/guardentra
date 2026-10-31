@@ -24,8 +24,11 @@ describe('#146 Firebase deploy guidance', () => {
     expect(text).toMatch(/never rely on the Firebase CLI default project/i);
   });
 
-  it('keeps the legacy default alias unchanged in this repository-only slice', () => {
-    const firebaserc = read('.firebaserc');
-    expect(firebaserc).toContain('"default": "guardentra-7f582"');
+  it('has no CLI default project, so every deploy must name its target', () => {
+    // env-fixes R1: the default used to be guardentra-7f582 (legacy), so a bare
+    // `firebase deploy` hit real legacy data.
+    const firebaserc = JSON.parse(read('.firebaserc'));
+    expect(firebaserc.projects).not.toHaveProperty('default');
+    expect(JSON.stringify(firebaserc)).not.toMatch(/"default"/);
   });
 });
