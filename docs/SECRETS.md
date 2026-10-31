@@ -114,7 +114,7 @@ Staging = Stripe **test** mode; production (`guardentra-prod` / `main`) = **live
 
 ## App identity (users)
 
-- **Customer and staff app identity:** Firebase Authentication (email/password, Google; anonymous only for Vendor Portal evidence). See `docs/ARCHITECTURE_FOUNDATION.md` § Auth.
+- **Customer and staff app identity:** Firebase Authentication (email/password, Google). The Vendor Portal uses server-minted scoped custom tokens, not anonymous Auth. See `docs/ARCHITECTURE_FOUNDATION.md` § Auth.
 - **Server routes:** verify Firebase ID tokens (`Authorization: Bearer …`); do not invent a parallel password store for API access.
 - **Enterprise later:** SAML/OIDC (Firebase Identity Platform / SSO) — not a substitute for API key vaulting.
 - **Billing identity:** Stripe Customer IDs on user/org docs; never store card PANs or Dashboard passwords in Firestore.
