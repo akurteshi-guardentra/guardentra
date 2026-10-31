@@ -1,3 +1,15 @@
+import { readFileSync } from 'fs';
+
+/** Read the git SHA written by the build step (dist/.commit-sha), if present. */
+function readCommitShaFile(): string | null {
+  try {
+    const sha = readFileSync('./dist/.commit-sha', 'utf8').trim();
+    return sha || null;
+  } catch {
+    return null;
+  }
+}
+
 export interface GuardEntraReleaseIdentity {
   environment: string;
   projectId: string | null;
@@ -26,6 +38,6 @@ export function buildReleaseIdentity(
       null,
     service: safeValue(env.K_SERVICE),
     revision: safeValue(env.K_REVISION),
-    sourceSha: safeValue(env.GUARDENTRA_SOURCE_SHA),
+    sourceSha: safeValue(env.GUARDENTRA_SOURCE_SHA) || readCommitShaFile(),
   };
 }
