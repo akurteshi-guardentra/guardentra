@@ -11,7 +11,13 @@ import { PageShell } from '../components/spine/PageShell';
 import { cn } from '../lib/utils';
 import { FRAMEWORK_CATALOG } from '../lib/vendor/constants';
 import type { FrameworkId } from '../lib/vendor/types';
-import { displayRiskScore, effectiveRiskLevel, hasRealRiskScore, riskBandClasses } from '../lib/vendor/risk';
+import {
+  displayRiskScore,
+  effectiveRiskLevel,
+  hasAssessedRiskLevel,
+  hasRealRiskScore,
+  riskBandClasses,
+} from '../lib/vendor/risk';
 import { validateAssessmentWizard } from '../lib/vendor/validators';
 import { SAFE_NO_QUESTIONS } from '../lib/vendor/safePackWording';
 import {
@@ -558,7 +564,7 @@ export function AssessmentWizard() {
                           <span className="opacity-80">·</span>
                         </>
                       )}
-                      {hasRealRiskScore(selected) ? effectiveRiskLevel(selected) : 'Not assessed'}
+                      {hasAssessedRiskLevel(selected) ? effectiveRiskLevel(selected) : 'Not assessed'}
                     </span>
                   </div>
                 </div>

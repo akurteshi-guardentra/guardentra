@@ -1475,7 +1475,7 @@ describe('decision vendor projection (#124 findings 7–8)', () => {
     return { d, writes };
   }
 
-  it('writes riskScore, nextReviewAt and updatedAt to the vendor on remediate', async () => {
+  it('writes residual risk level, nextReviewAt and updatedAt (no invented riskScore) on remediate', async () => {
     const { d, writes } = vendorTx({ organizationId: 'org1', riskScore: 0 });
     const res = mockRes();
     await handleOrgDecision(
@@ -1496,7 +1496,8 @@ describe('decision vendor projection (#124 findings 7–8)', () => {
     expect(writes).toHaveLength(1);
     expect(writes[0].path).toBe('vendors/vendor-1');
     expect(writes[0].opts).toEqual({ merge: true });
-    expect(writes[0].data).toMatchObject({ riskScore: 78, residualRiskLevel: 'High' });
+    expect(writes[0].data).toMatchObject({ residualRiskLevel: 'High' });
+    expect(writes[0].data).not.toHaveProperty('riskScore');
     expect(String(writes[0].data.nextReviewAt)).toContain('2026-11-30');
     expect(writes[0].data.updatedAt).toBeTruthy();
     expect(writes[0].data.assessmentStatus).toBeUndefined();
@@ -1511,7 +1512,8 @@ describe('decision vendor projection (#124 findings 7–8)', () => {
       d,
     );
     expect(res.statusCode).toBe(200);
-    expect(writes[0].data).toMatchObject({ riskScore: 35, assessmentStatus: 'Completed' });
+    expect(writes[0].data).toMatchObject({ residualRiskLevel: 'Low', assessmentStatus: 'Completed' });
+    expect(writes[0].data).not.toHaveProperty('riskScore');
     const updated = Date.parse(String(writes[0].data.updatedAt));
     const next = Date.parse(String(writes[0].data.nextReviewAt));
     expect(next - updated).toBeGreaterThan(360 * 24 * 3600 * 1000);

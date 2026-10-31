@@ -541,13 +541,13 @@ describe('decider display name', () => {
 });
 
 describe('buildVendorDecisionProjection (#124 findings 7–8)', () => {
-  it('maps residual risk to the band score and schedules the next review', async () => {
+  it('stores the residual risk level without a numeric score and schedules the next review', async () => {
     const { buildVendorDecisionProjection } = await import('../lib/vendor/assessmentLifecycle');
     const decidedAt = '2026-10-31T10:00:00.000Z';
     expect(
       buildVendorDecisionProjection({ outcome: 'conditional', residualRiskLevel: 'Medium', decidedAt }),
     ).toMatchObject({
-      riskScore: 55,
+      residualRiskLevel: 'Medium',
       assessmentStatus: 'Completed',
       lastAssessmentAt: decidedAt,
       updatedAt: decidedAt,
@@ -559,8 +559,22 @@ describe('buildVendorDecisionProjection (#124 findings 7–8)', () => {
       decidedAt,
       remediationDueAt: '2026-11-30',
     });
-    expect(rem.riskScore).toBe(92);
+    expect(rem.residualRiskLevel).toBe('Critical');
+    expect(rem).not.toHaveProperty('riskScore');
     expect(rem.assessmentStatus).toBeUndefined();
     expect(rem.nextReviewAt.slice(0, 10)).toBe('2026-11-30');
+  });
+});
+
+describe('residual risk label (owner decision 2026-10-31: no invented score)', () => {
+  it('shows the reviewer-recorded level without a numeric score', async () => {
+    const { effectiveRiskLevel, hasAssessedRiskLevel, hasRealRiskScore } = await import(
+      '../lib/vendor/risk'
+    );
+    const v = { criticality: 'Low' as const, riskScore: 0, residualRiskLevel: 'High' as const };
+    expect(effectiveRiskLevel(v)).toBe('High');
+    expect(hasAssessedRiskLevel(v)).toBe(true);
+    expect(hasRealRiskScore(v)).toBe(false);
+    expect(hasAssessedRiskLevel({ riskScore: 0 })).toBe(false);
   });
 });
