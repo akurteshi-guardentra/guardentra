@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   increment,
   limit,
@@ -58,7 +59,73 @@ export function resolveBootstrapJoinRole(inviteRole: unknown): BootstrapJoinRole
  * Issue #61: organizationId and role are never taken from caller input.
  * Join writes inviteId so Firestore rules can re-verify the pending invite.
  */
-export async function bootstrapUserProfile(uid: string, fields: NewProfileFields): Promise<void> {
+const inflightBootstraps = new Map<string, Promise<void>>();
+let pendingSignupProfile: { email: string; displayName: string } | null = null;
+
+function normalizeEmail(email: string | null | undefined): string {
+  return (email || '').trim().toLowerCase();
+}
+
+/**
+ * Sign-up race (#124 finding, 2026-10-31): createUserWithEmailAndPassword fires
+ * onAuthStateChanged before signUpWithEmail has set the display name, so
+ * AuthContext's auto-init and signUpWithEmail both bootstrapped the same uid.
+ * The first batch won with the placeholder name ("New User's Organization");
+ * the second was correctly denied by the rules (the profile already existed),
+ * which surfaced as a permission-denied sign-up error.
+ *
+ * Call this before createUserWithEmailAndPassword so whichever caller runs the
+ * bootstrap uses the name the person actually typed.
+ */
+export function rememberSignupProfile(email: string, displayName: string): void {
+  const normalized = normalizeEmail(email);
+  const name = displayName.trim();
+  pendingSignupProfile = normalized && name ? { email: normalized, displayName: name } : null;
+}
+
+export function clearSignupProfile(): void {
+  pendingSignupProfile = null;
+}
+
+function resolveProfileFields(fields: NewProfileFields): NewProfileFields {
+  const pending = pendingSignupProfile;
+  if (pending && pending.email === normalizeEmail(fields.email)) {
+    return { email: fields.email, displayName: pending.displayName };
+  }
+  return fields;
+}
+
+function isPermissionDenied(err: unknown): boolean {
+  return Boolean(
+    err && typeof err === 'object' && 'code' in err && (err as { code?: unknown }).code === 'permission-denied',
+  );
+}
+
+/** Test-only: reset module state between cases. */
+export function __resetBootstrapStateForTests(): void {
+  inflightBootstraps.clear();
+  pendingSignupProfile = null;
+}
+
+/**
+ * Single-flight per uid: concurrent callers (AuthContext auto-init, the sign-up
+ * form, Google sign-in) share one bootstrap instead of racing two founder batches.
+ * If a commit is denied only because the profile was created meanwhile (another
+ * tab or an earlier attempt), the existing profile is accepted as success. The
+ * rules still decide: nothing here widens what a client may write.
+ */
+export function bootstrapUserProfile(uid: string, fields: NewProfileFields): Promise<void> {
+  const existing = inflightBootstraps.get(uid);
+  if (existing) return existing;
+  const run = runBootstrapUserProfile(uid, fields).finally(() => {
+    inflightBootstraps.delete(uid);
+  });
+  inflightBootstraps.set(uid, run);
+  return run;
+}
+
+async function runBootstrapUserProfile(uid: string, rawFields: NewProfileFields): Promise<void> {
+  const fields = resolveProfileFields(rawFields);
   const userRef = doc(db, 'users', uid);
   const email = (fields.email || '').trim().toLowerCase();
 
@@ -138,7 +205,26 @@ export async function bootstrapUserProfile(uid: string, fields: NewProfileFields
     });
   }
 
-  await batch.commit();
+  try {
+    await batch.commit();
+  } catch (commitErr) {
+    if (isPermissionDenied(commitErr)) {
+      // A profile created by a concurrent bootstrap is the expected outcome, not a failure.
+      let alreadyBootstrapped = false;
+      try {
+        const snap = await getDoc(userRef);
+        alreadyBootstrapped = snap.exists();
+      } catch {
+        alreadyBootstrapped = false;
+      }
+      if (alreadyBootstrapped) {
+        clearSignupProfile();
+        return;
+      }
+    }
+    throw commitErr;
+  }
+  clearSignupProfile();
 
   // Seat accounting happens AFTER the batch, not inside it, and its failure must never
   // block the join.

@@ -17,6 +17,7 @@ vi.mock('firebase/firestore', () => ({
     const last = resolved.split('/').pop() || resolved;
     return { path: resolved, id: last, collection: col };
   }),
+  getDoc: vi.fn(async () => ({ exists: () => false })),
   getDocs: (...args: unknown[]) => getDocsMock(...args),
   increment: (n: number) => incrementMock(n),
   limit: vi.fn((n: number) => n),
@@ -33,6 +34,7 @@ vi.mock('firebase/firestore', () => ({
 vi.mock('../firebase', () => ({ db: {} }));
 
 import {
+  __resetBootstrapStateForTests,
   bootstrapUserProfile,
   InviteLookupUnavailableError,
   resolveBootstrapJoinRole,
@@ -60,6 +62,7 @@ describe('resolveBootstrapJoinRole', () => {
 
 describe('bootstrapUserProfile tenant authority', () => {
   beforeEach(() => {
+    __resetBootstrapStateForTests();
     getDocsMock.mockReset();
     updateDocMock.mockReset();
     batchSet.mockReset();

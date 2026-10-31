@@ -1154,6 +1154,74 @@ async function main() {
     })),
   );
 
+  // #124 sign-up finding (2026-10-31): the exact orgBootstrap.ts founder payload, run
+  // through the real sign-up sequence (unverified email/password token, invite lookup,
+  // then the atomic batch). A second founder batch for the same uid, which is what
+  // the AuthContext/signUpWithEmail race produced, must stay denied.
+  console.log('\n#124 first-workspace sign-up (exact client payload):');
+  const signupUid = 'signup-124';
+  const signupEmail = 'signup-124@example.com';
+  const signupDb = testEnv
+    .authenticatedContext(signupUid, { email: signupEmail, email_verified: false })
+    .firestore();
+  const starterOrg = (name) => ({
+    name,
+    createdAt: new Date().toISOString(),
+    autoCreated: true,
+    dataRegion: 'us',
+    planId: 'starter',
+    vendorCount: 0,
+    vendorCap: 25,
+    seatCount: 1,
+    seatCap: 3,
+    subscriptionStatus: 'none',
+  });
+  const founderProfile = (orgId, displayName) => ({
+    email: signupEmail,
+    displayName,
+    role: 'admin',
+    organizationId: orgId,
+    onboarded: true,
+    createdAt: new Date().toISOString(),
+  });
+  const signupBatch = (orgId, displayName) => {
+    const batch = writeBatch(signupDb);
+    batch.set(doc(signupDb, `organizations/${orgId}`), starterOrg(`${displayName}'s Organization`));
+    batch.set(doc(signupDb, `users/${signupUid}`), founderProfile(orgId, displayName));
+    return batch.commit();
+  };
+  await check('new sign-up CAN run the pending-invite lookup exactly as orgBootstrap does', () =>
+    assertSucceeds(getDocs(query(
+      collection(signupDb, 'org_invites'),
+      where('email', '==', signupEmail),
+      where('status', '==', 'pending'),
+    ))),
+  );
+  await check('new unverified sign-up CAN create its first workspace with the exact client payload', () =>
+    assertSucceeds(signupBatch('signup-org-124-a', 'Dana Smith')),
+  );
+  await check('founder CAN read the new org and own profile right after sign-up', async () => {
+    await assertSucceeds(getDoc(doc(signupDb, 'organizations/signup-org-124-a')));
+    await assertSucceeds(getDoc(doc(signupDb, `users/${signupUid}`)));
+  });
+  await check('a second concurrent founder batch for the same uid is DENIED (no duplicate org)', () =>
+    assertFails(signupBatch('signup-org-124-b', 'New User')),
+  );
+  await check('the denied race left no second organization behind', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const snap = await getDoc(doc(ctx.firestore(), 'organizations/signup-org-124-b'));
+      if (snap.exists()) throw new Error('duplicate org was created');
+      const profile = await getDoc(doc(ctx.firestore(), `users/${signupUid}`));
+      if (profile.data()?.organizationId !== 'signup-org-124-a') throw new Error('profile moved tenant');
+    });
+  });
+  await check('founder CANNOT move their profile to another tenant after sign-up', () =>
+    assertFails(updateDoc(doc(signupDb, `users/${signupUid}`), { organizationId: ORG })),
+  );
+  await check('new founder CANNOT read another tenant\'s organization', () =>
+    assertFails(getDoc(doc(signupDb, `organizations/${ORG}`))),
+  );
+
   // #167/#209: vendor_invites is written only by the server (Admin SDK) in the same
   // transaction as the welcome mail queue entry and its vendor.invite_queued audit intent.
   const INVITE = 'vinv-209';
