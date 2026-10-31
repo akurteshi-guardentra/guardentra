@@ -27,7 +27,7 @@ Every script checks live state first and stops if it is not what was verified, a
 ## 2. PUBLIC_APP_URL (E1)
 
 - On the RC, `server/routes/notify.ts` builds invitation and reminder links from it, and refuses to guess in production when it is unset. `server/middleware/edgeSecurity.ts` uses it for the `/api` CORS allowlist and the security.txt `Canonical:` line. `server/routes/stripe.ts` refuses to build checkout redirects without it.
-- Value: `https://guardentra.com`, which is what prod serves today (www 301s to it). **The owner confirms the canonical origin before promotion.**
+- Value: `https://guardentra.com`, which is what prod serves today (www 301s to it). **Owner-approved 2026-10-31 as the canonical production origin, with no trailing slash.** That approval covers the configuration value only; it does not approve deploying or running anything.
 - Same-origin requests from the hosted.app URL don't need CORS. If prod is ever used cross-origin from another origin, add it to `CORS_ALLOWED_ORIGINS`; that's not needed today.
 - Prod 29171a6 doesn't read this variable, so the value only matters once the RC is promoted.
 
