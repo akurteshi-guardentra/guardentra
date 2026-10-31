@@ -1,4 +1,5 @@
 import { getAdminDb } from '../adminDb.ts';
+import { buildMailQueueDocument, MAIL_COLLECTION } from '../mailQueue.ts';
 
 let timer: ReturnType<typeof setInterval> | null = null;
 
@@ -59,18 +60,19 @@ export async function processAssessmentReminders(): Promise<number> {
       }
       if (!kind || data.lastReminderKind === kind) continue;
       const queueRef = db
-        .collection('mail')
+        .collection(MAIL_COLLECTION)
         .doc(assessmentReminderQueueId(docSnap.id, kind));
       let created = false;
       try {
+        // Same builder (and therefore the same `source`) as /api/notify/mail: the
+        // self-managed worker only delivers `guardentra.notify` documents, so a
+        // separate reminder source would be rejected as INVALID_QUEUE (#191).
         await queueRef.create({
-          to: [data.inviteEmail],
-          message: {
+          ...buildMailQueueDocument({
+            to: data.inviteEmail,
             subject: `Reminder: security assessment for ${data.vendorName || 'your organization'}`,
             text: `This is a Guardentra reminder (${kind.replace(/_/g, ' ')}) for the open security assessment. Please complete it before or as soon as possible after the due date.`,
-          },
-          createdAt: new Date().toISOString(),
-          source: 'guardentra.reminder',
+          }),
           notification: {
             intentType: 'assessment_reminder',
             assessmentId: docSnap.id,
