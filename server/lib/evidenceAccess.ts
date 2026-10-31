@@ -667,7 +667,7 @@ export async function handlePortalSubmit(req: Request, res: Response, deps: Evid
           if (!projectVendor) return;
           tx.set(
             vendorRef,
-            { assessmentStatus: 'Under Review' },
+            { assessmentStatus: 'Under Review', updatedAt: nowIso },
             { merge: true },
           );
         };
@@ -839,9 +839,8 @@ export async function handleOrgDecision(req: Request, res: Response, deps: Evide
     const { approvalBlockedByUntrustedEvidence } = await import(
       '../../src/lib/vendor/evidenceTrust.ts'
     );
-    const { buildOrgDecisionPatch, hasTerminalOrgDecision } = await import(
-      '../../src/lib/vendor/assessmentLifecycle.ts'
-    );
+    const { buildOrgDecisionPatch, buildVendorDecisionProjection, hasTerminalOrgDecision } =
+      await import('../../src/lib/vendor/assessmentLifecycle.ts');
 
     const patch = await deps.runAssessmentTransaction(
       assessmentId,
@@ -955,6 +954,27 @@ export async function handleOrgDecision(req: Request, res: Response, deps: Evide
             remediationDueAt: remediationDueAt || null,
             hasNotes: Boolean(decisionNotes.trim()),
           },
+        };
+      },
+      undefined,
+      async (tx, db, current, decisionPatch) => {
+        // Vendor projection (#124 findings 7–8) commits atomically with the decision.
+        // A missing or foreign vendor never blocks the decision; it is simply not projected.
+        const tenantId = String(current.organizationId || '').trim();
+        const vendorId = String(current.vendorId || '').trim();
+        if (!tenantId || !vendorId) return;
+        const vendorRef = db.collection('vendors').doc(vendorId);
+        const vendorSnap = await tx.get(vendorRef);
+        if (!vendorSnap.exists) return;
+        if (String(vendorSnap.data()?.organizationId || '') !== tenantId) return;
+        const projection = buildVendorDecisionProjection({
+          outcome,
+          residualRiskLevel,
+          decidedAt: String(decisionPatch.decidedAt || new Date().toISOString()),
+          remediationDueAt: remediationDueAt || null,
+        });
+        return () => {
+          tx.set(vendorRef, projection, { merge: true });
         };
       },
     );

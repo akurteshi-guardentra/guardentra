@@ -815,7 +815,7 @@ export function AssessmentWizard() {
                 ))}
               </select>
               <p className="mt-1 text-xs text-slate-500">
-                Automatic reminders need Trigger Email + SMTP (see docs/ENVIRONMENTS.md). Manual reminders still work from the tracker.
+                Automatic reminders are sent by email when email delivery is enabled for your workspace. You can always send a reminder manually from the tracker.
               </p>
             </label>
           </div>

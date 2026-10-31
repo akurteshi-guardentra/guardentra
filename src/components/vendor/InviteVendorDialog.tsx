@@ -27,8 +27,8 @@ export function InviteVendorDialog({
         <div>
           <h3 className="text-lg font-semibold text-white">Invite Vendor</h3>
           <p className="mt-1 text-xs text-slate-500">
-            Adds the vendor to your register and queues a welcome email. Delivery requires the
-            Firebase Trigger Email extension with SMTP (or SendGrid) configured.
+            Adds the vendor to your register and queues a welcome email to their primary
+            contact.
           </p>
         </div>
         {inviteError && <p className="text-sm text-rose-400">{inviteError}</p>}

@@ -255,7 +255,7 @@ ${decisionSection}
 <h2>Exceptions summary (${input.exceptions.length})</h2>
 <table><thead><tr><th>Question</th><th>Reason</th><th>Answer</th></tr></thead>
 <tbody>${rows || '<tr><td colspan="3">No exceptions flagged.</td></tr>'}</tbody></table>
-<p class="meta" style="margin-top:28px">This packet is an org-side FastTrack artifact. Audit hash-chain verification is available in Settings when AUDIT_SPINE_ENABLED is on.</p>
+<p class="meta" style="margin-top:28px">This packet is an org-side FastTrack artifact. Where enabled for your workspace, audit hash-chain verification is available in Settings.</p>
 </body></html>`;
 }
 

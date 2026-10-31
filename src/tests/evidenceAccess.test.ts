@@ -381,7 +381,7 @@ describe('#158 durable portal submit', () => {
           expect(tx.get).toHaveBeenCalledWith(vendorRef);
           expect(vendorSet).toHaveBeenCalledWith(
             vendorRef,
-            { assessmentStatus: 'Under Review' },
+            { assessmentStatus: 'Under Review', updatedAt: expect.any(String) },
             { merge: true },
           );
 
@@ -1440,5 +1440,94 @@ describe('empty assessment archive', () => {
       deps()
     );
     expect(res.statusCode).toBe(403);
+  });
+});
+
+describe('decision vendor projection (#124 findings 7–8)', () => {
+  function vendorTx(vendor: Record<string, unknown> | null) {
+    const writes: Array<{ path: string; data: Record<string, unknown>; opts: unknown }> = [];
+    const db = {
+      collection: (name: string) => ({
+        doc: (id: string) => ({ path: `${name}/${id}` }),
+      }),
+    };
+    const tx = {
+      get: vi.fn(async () => ({ exists: vendor !== null, data: () => vendor || undefined })),
+      set: vi.fn((ref: { path: string }, data: Record<string, unknown>, opts: unknown) => {
+        writes.push({ path: ref.path, data, opts });
+      }),
+    };
+    const d = deps({
+      runAssessmentTransaction: vi.fn(async (_id, updater, _audit, _skip, related) => {
+        const current = {
+          organizationId: 'org1',
+          vendorId: 'vendor-1',
+          questions: [],
+          answers: {},
+          submittedSnapshot: { submittedAt: '2026-10-30T12:00:00.000Z' },
+        };
+        const patch = await updater(current);
+        const commit = await related?.(tx as any, db as any, current, patch);
+        commit?.();
+        return patch;
+      }),
+    });
+    return { d, writes };
+  }
+
+  it('writes riskScore, nextReviewAt and updatedAt to the vendor on remediate', async () => {
+    const { d, writes } = vendorTx({ organizationId: 'org1', riskScore: 0 });
+    const res = mockRes();
+    await handleOrgDecision(
+      req({
+        token: 'org',
+        body: {
+          assessmentId: 'asmA',
+          outcome: 'remediate',
+          decisionNotes: 'fix SSO',
+          residualRiskLevel: 'High',
+          remediationDueAt: '2026-11-30',
+        },
+      }),
+      res as any,
+      d,
+    );
+    expect(res.statusCode).toBe(200);
+    expect(writes).toHaveLength(1);
+    expect(writes[0].path).toBe('vendors/vendor-1');
+    expect(writes[0].opts).toEqual({ merge: true });
+    expect(writes[0].data).toMatchObject({ riskScore: 78, residualRiskLevel: 'High' });
+    expect(String(writes[0].data.nextReviewAt)).toContain('2026-11-30');
+    expect(writes[0].data.updatedAt).toBeTruthy();
+    expect(writes[0].data.assessmentStatus).toBeUndefined();
+  });
+
+  it('marks the vendor Completed with a 12-month review on approve', async () => {
+    const { d, writes } = vendorTx({ organizationId: 'org1' });
+    const res = mockRes();
+    await handleOrgDecision(
+      req({ token: 'org', body: { assessmentId: 'asmA', outcome: 'approved', residualRiskLevel: 'Low' } }),
+      res as any,
+      d,
+    );
+    expect(res.statusCode).toBe(200);
+    expect(writes[0].data).toMatchObject({ riskScore: 35, assessmentStatus: 'Completed' });
+    const updated = Date.parse(String(writes[0].data.updatedAt));
+    const next = Date.parse(String(writes[0].data.nextReviewAt));
+    expect(next - updated).toBeGreaterThan(360 * 24 * 3600 * 1000);
+  });
+
+  it('never projects onto a vendor from another tenant or a missing vendor', async () => {
+    for (const vendor of [{ organizationId: 'org2' }, null]) {
+      const { d, writes } = vendorTx(vendor);
+      const res = mockRes();
+      await handleOrgDecision(
+        req({ token: 'org', body: { assessmentId: 'asmA', outcome: 'approved' } }),
+        res as any,
+        d,
+      );
+      expect(res.statusCode).toBe(200);
+      expect(writes).toHaveLength(0);
+    }
   });
 });

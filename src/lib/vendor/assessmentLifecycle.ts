@@ -293,6 +293,49 @@ export function nextReviewAtForDecision(
   return next.toISOString();
 }
 
+/** Band score stored on the vendor for a reviewer-recorded residual risk (matches displayRiskScore). */
+export const RESIDUAL_RISK_SCORE: Record<RiskLevel, number> = {
+  Critical: 92,
+  High: 78,
+  Medium: 55,
+  Low: 35,
+};
+
+export type VendorDecisionProjection = {
+  riskScore: number;
+  residualRiskLevel: RiskLevel;
+  nextReviewAt: string;
+  lastAssessmentAt: string;
+  updatedAt: string;
+  assessmentStatus?: 'Completed';
+};
+
+/**
+ * Vendor record fields written with every recorded decision (#124 journey findings 7–8):
+ * riskScore stayed 0, nextReviewAt stayed null and updatedAt never moved after a decision.
+ * Terminal outcomes schedule the next periodic review; remediate schedules follow-up at the
+ * remediation due date and leaves the vendor Under Review.
+ */
+export function buildVendorDecisionProjection(input: {
+  outcome: DecisionOutcome;
+  residualRiskLevel: RiskLevel;
+  decidedAt: string;
+  remediationDueAt?: string | null;
+}): VendorDecisionProjection {
+  const closes = decisionClosesPortal(input.outcome);
+  const decidedAtDate = new Date(input.decidedAt);
+  const followUp = closes ? null : normalizeRemediationDueAt(input.remediationDueAt);
+  const projection: VendorDecisionProjection = {
+    riskScore: RESIDUAL_RISK_SCORE[input.residualRiskLevel],
+    residualRiskLevel: input.residualRiskLevel,
+    nextReviewAt: followUp || nextReviewAtForDecision(input.outcome, decidedAtDate),
+    lastAssessmentAt: input.decidedAt,
+    updatedAt: input.decidedAt,
+  };
+  if (closes) projection.assessmentStatus = 'Completed';
+  return projection;
+}
+
 export type OrgDecisionPatch = {
   decisionOutcome: DecisionOutcome;
   decisionNotes?: string | null;

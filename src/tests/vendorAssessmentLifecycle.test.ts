@@ -539,3 +539,28 @@ describe('decider display name', () => {
     expect(decidedByDisplay({}, { uid: 'u1', label: 'Me' })).toBeUndefined();
   });
 });
+
+describe('buildVendorDecisionProjection (#124 findings 7–8)', () => {
+  it('maps residual risk to the band score and schedules the next review', async () => {
+    const { buildVendorDecisionProjection } = await import('../lib/vendor/assessmentLifecycle');
+    const decidedAt = '2026-10-31T10:00:00.000Z';
+    expect(
+      buildVendorDecisionProjection({ outcome: 'conditional', residualRiskLevel: 'Medium', decidedAt }),
+    ).toMatchObject({
+      riskScore: 55,
+      assessmentStatus: 'Completed',
+      lastAssessmentAt: decidedAt,
+      updatedAt: decidedAt,
+      nextReviewAt: '2027-05-01T10:00:00.000Z', // existing setMonth(+6) rollover
+    });
+    const rem = buildVendorDecisionProjection({
+      outcome: 'remediate',
+      residualRiskLevel: 'Critical',
+      decidedAt,
+      remediationDueAt: '2026-11-30',
+    });
+    expect(rem.riskScore).toBe(92);
+    expect(rem.assessmentStatus).toBeUndefined();
+    expect(rem.nextReviewAt.slice(0, 10)).toBe('2026-11-30');
+  });
+});
