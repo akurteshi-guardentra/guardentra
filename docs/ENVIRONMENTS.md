@@ -1,5 +1,11 @@
 # Guardentra environments (local-first)
 
+> **As-built 2026-10-31:** the branch mapping and email provider described below are the
+> original plan. For what is actually wired today (staging builds from
+> `release/rc-2026-10-08`; prod and legacy track `main` with automatic rollouts off;
+> staging email via the Trigger Email extension on Gmail SMTP; SendGrid deferred), see
+> [`docs/CURRENT_ARCHITECTURE.md`](./CURRENT_ARCHITECTURE.md).
+
 Do **not** share one Firebase project across demo, staging, and production. Firestore, Auth, and Storage are project-scoped.
 
 ## Stages
@@ -8,14 +14,15 @@ Do **not** share one Firebase project across demo, staging, and production. Fire
 |-------|-----|------------------|------|
 | **local / demo** | `npm run dev` (PORT `8080`) | `guardentra-7f582` (demo only) | Daily development |
 | **dev** | Local or App Hosting `dev` | `guardentra-dev` (create when ready) | Shared sandbox |
-| **staging** | Cloud Run / App Hosting `test` | `guardentra-staging` | QA / demos |
-| **prod** | Cloud Run / App Hosting `main` → guardentra.com | `guardentra-prod` | Paying customers |
+| **staging** | App Hosting, builds `release/rc-2026-10-08` (auto rollout on) | `guardentra-staging` | QA / demos |
+| **prod** | App Hosting `main` → guardentra.com (auto rollout **off**; owner-started rollouts only) | `guardentra-prod` | Paying customers |
+| **legacy** | App Hosting `main` (auto rollout **off**); serves no public domain | `guardentra-7f582` | Legacy only |
 
-Branch mapping (see `.cursorrules`): `dev` → sandbox, `test` → staging, `main` → production.
+Branch mapping today: `release/rc-2026-10-08` → staging (an RC merge deploys staging); `main` → production and legacy, but only through a manual rollout. The original `dev` → sandbox, `test` → staging plan is not wired. Branch name is never deployment truth; read the live rollout (#126).
 
 ## Firebase CLI aliases
 
-[`.firebaserc`](../.firebaserc) defines aliases. Today only **demo** (`guardentra-7f582`) exists.
+[`.firebaserc`](../.firebaserc) defines aliases. The `guardentra-staging` and `guardentra-prod` projects exist; `guardentra-dev` has not been created.
 
 ```bash
 # After creating projects in Firebase Console:
@@ -92,7 +99,7 @@ health, the SPA index, and the `/portal/{id}` deep-link fallback all serve from
 a token.
 
 **One backend per environment**, each pointed at its own Firebase project and branch
-(`dev` → sandbox, `test` → staging, `main` → production):
+(today: `release/rc-2026-10-08` → staging; `main` → prod and legacy with automatic rollouts off):
 
 ```bash
 firebase apphosting:backends:create --project guardentra-7f582
@@ -107,7 +114,7 @@ firebase apphosting:secrets:set STRIPE_SECRET_KEY     --project guardentra-7f582
 firebase apphosting:secrets:set STRIPE_WEBHOOK_SECRET --project guardentra-7f582
 ```
 
-After that, pushing to the connected branch builds and deploys automatically.
+After that, pushing to the connected branch builds and deploys automatically **only where automatic rollouts are on** (staging today). Prod and legacy need a manual rollout.
 
 ### Verifying a live App Hosting rollout
 
@@ -196,13 +203,13 @@ App code path (already implemented):
 
 What code cannot do: deliver the message. That requires the extension + SMTP/SendGrid.
 
-**Staging (Issue #72) — SendGrid path:** follow the full no-code install, secret-name list, acceptance, and failure procedure in [`docs/STAGING_EMAIL_DELIVERY.md`](./STAGING_EMAIL_DELIVERY.md). Do **not** configure production until separately Owner-authorized.
+**Staging (Issue #72):** live today on the Trigger Email extension with **Gmail SMTP** (sending as `admin@guardentra.com`). SendGrid is deferred until incorporation (see [`CURRENT_ARCHITECTURE.md`](./CURRENT_ARCHITECTURE.md) §4). For the original SendGrid procedure, follow the full no-code install, secret-name list, acceptance, and failure procedure in [`docs/STAGING_EMAIL_DELIVERY.md`](./STAGING_EMAIL_DELIVERY.md). Do **not** configure production until separately Owner-authorized.
 
 **Install (each Firebase project that sends mail; staging first):**
 
 1. Firebase Console → **Extensions** → search **Trigger Email from Firestore** (`firebase/firestore-send-email`).
 2. Collection: `mail` (must match `MAIL_COLLECTION` in `server/lib/mailQueue.ts`).
-3. Configure **SendGrid SMTP** (staging target) or another SMTP. Prefer From: `support@guardentra.com` on a verified domain.
+3. Configure SMTP (staging uses Gmail SMTP today; SendGrid later). Prefer From: `support@guardentra.com` on a verified domain.
 4. Deploy/enable the extension; wait until status is **Active**. Record the installed extension version before relying on status/retry fields.
 5. Keep SMTP password / API key in extension config (or Secret Manager name `SENDGRID_API_KEY` if Owner stores it there). Never commit values.
 

@@ -4,7 +4,12 @@
 create secrets, or configure SendGrid on `guardentra-prod` until a separate Owner
 command authorizes production.
 
-**Architecture:**
+> **As-built 2026-10-31:** staging delivery is LIVE on the Trigger Email extension with
+> **Gmail SMTP** (sending as `admin@guardentra.com`), not SendGrid. SendGrid is deferred
+> until GuardEntra is incorporated. The SendGrid steps below are kept for that later
+> switch. See [`CURRENT_ARCHITECTURE.md`](./CURRENT_ARCHITECTURE.md) §4.
+
+**Architecture (as planned; provider is Gmail SMTP today):**
 
 ```text
 GuardEntra UI (Invite Vendor)

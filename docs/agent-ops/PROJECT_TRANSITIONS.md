@@ -843,3 +843,11 @@ No Cloud SQL execution occurred. Fresh real fixture CI required after publicatio
 - Branch: `fix/audit-material-event-id-201`. Migrations 001–003 unchanged.
 - Deployment: **NOT DEPLOYED**. No replay, backfill, or audit activation.
 - Rollback: revert the correction commit on the draft PR.
+
+## 2026-10-31 — Docs reconciled with the as-built architecture (docs only)
+
+- Source: ChatGPT architecture review item "P1 docs reconciliation"; owner asked for work to continue without a redesign.
+- Transition: stale documentation claims → `docs/CURRENT_ARCHITECTURE.md` records the as-built vendor portal auth (server-minted `portalAssessmentId` custom tokens; no anonymous Auth in builds from `29171a6` on; legacy `guardentra-7f582` still has Anonymous enabled), the localStorage fallback (off on staging/prod since #62; still on in prod build `29171a6` and on legacy/local), the branch mapping (staging ← `release/rc-2026-10-08` with auto rollout; prod and legacy ← `main` with auto rollout off), and the email path (staging Trigger Email extension on Gmail SMTP; SendGrid deferred; mail worker merged, not deployed). `ENVIRONMENTS.md`, `ARCHITECTURE_FOUNDATION.md`, `STAGING_EMAIL_DELIVERY.md`, `SECRETS.md` and `VENDOR_TEST_CHARTER.md` now point to it.
+- Base: `release/rc-2026-10-08` at `caf27094`.
+- Deployment: **NOT DEPLOYED**. No code, rules, configuration, IAM, secret, or cloud change.
+- Rollback: revert the docs PR.

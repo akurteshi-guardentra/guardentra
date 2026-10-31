@@ -22,7 +22,7 @@
 - Very long vendor name / unicode characters
 - Portal evidence upload size >25MB rejected
 - Org isolation: user A must not see user B vendors (rules)
-- Portal works while org user is logged out (scoped custom token via `/api/portal/token`, not anonymous Auth)
+- Portal works while org user is logged out (scoped custom token via `/api/portal/session`, not anonymous Auth)
 - Empty legacy assessment (`questions: []`): Review → Rebuild from packs or Archive with reason
 
 ## Firebase console checklist for uploads

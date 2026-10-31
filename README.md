@@ -2,7 +2,14 @@
 <img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
 </div>
 
-# Run and deploy your AI Studio app
+# GuardEntra
+
+Vendor risk (TPRM) web app: React/Vite client + Express server on Firebase App Hosting.
+For how environments, the vendor portal, local fallback and email work today, start with
+[`docs/CURRENT_ARCHITECTURE.md`](docs/CURRENT_ARCHITECTURE.md), then
+[`docs/ENVIRONMENTS.md`](docs/ENVIRONMENTS.md) and [`AGENTS.md`](AGENTS.md).
+
+## Run and deploy your AI Studio app
 
 This contains everything you need to run your app locally.
 
