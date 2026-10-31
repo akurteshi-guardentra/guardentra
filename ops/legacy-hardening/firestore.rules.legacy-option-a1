@@ -1,0 +1,637 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // ===============================================================
+    // EMERGENCY AUTHZ PATCH (P0, 2026-10-30) on top of 85f718d.
+    // Back-ports only the tenant-binding (#163/#61), invite-verification and
+    // billing (#211) protections. Everything else is the Aug 15 text, so the
+    // Aug 27 production client keeps working. Known, accepted-on-approval
+    // trade-off: the old client's invite join omits inviteId, so invite joins
+    // are denied until the app is upgraded.
+    // ===============================================================
+    function hasVerifiedEmail(email) {
+      return request.auth.token.email == email
+        && request.auth.token.email_verified == true;
+    }
+
+    function isAllowedBootstrapRole(role) {
+      return role == 'admin' || role == 'member';
+    }
+
+    // Founder authority requires a new organization in this atomic write.
+    function isNewOrgFounderCreate() {
+      return request.resource.data.role == 'admin'
+        && request.resource.data.organizationId is string
+        && request.resource.data.organizationId.size() > 0
+        && !exists(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId))
+        && getAfter(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)).data is map;
+    }
+
+    function pendingInviteData() {
+      return get(/databases/$(database)/documents/org_invites/$(request.resource.data.inviteId)).data;
+    }
+
+    // Join path: organizationId + role come from a pending invite addressed to
+    // this user's verified token email.
+    function pendingInviteAllowsJoin() {
+      return request.resource.data.keys().hasAll(['inviteId'])
+        && request.resource.data.inviteId is string
+        && exists(/databases/$(database)/documents/org_invites/$(request.resource.data.inviteId))
+        && pendingInviteData().status == 'pending'
+        && hasVerifiedEmail(pendingInviteData().email)
+        && pendingInviteData().organizationId == request.resource.data.organizationId
+        && exists(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId))
+        && request.resource.data.role == (
+          ('role' in pendingInviteData() && pendingInviteData().role == 'admin')
+            ? 'admin'
+            : 'member'
+        );
+    }
+
+    function isValidUserCreate(userId) {
+      return isAuthenticated()
+        && request.auth.uid == userId
+        && request.resource.data.organizationId is string
+        && request.resource.data.role is string
+        && isAllowedBootstrapRole(request.resource.data.role)
+        && (isNewOrgFounderCreate() || pendingInviteAllowsJoin());
+    }
+
+    // Billing fields are written only by the Stripe webhook (Admin SDK bypasses rules).
+    function billingKeys() {
+      return ['planId', 'vendorCap', 'seatCap', 'subscriptionStatus',
+              'stripeCustomerId', 'stripeSubscriptionId'];
+    }
+    function billingFieldsUnchanged() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(billingKeys());
+    }
+    // Founder bootstrap may only create a Starter org with Starter caps.
+    function isStarterOrgCreate() {
+      let d = request.resource.data;
+      return d.get('planId', 'starter') == 'starter'
+        && d.get('vendorCap', 25) == 25
+        && d.get('seatCap', 3) == 3
+        && d.get('subscriptionStatus', 'none') == 'none'
+        && !d.keys().hasAny(['stripeCustomerId', 'stripeSubscriptionId']);
+    }
+
+
+    function isOrgMember(orgId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId == orgId;
+    }
+
+    function isDocOrgMember() {
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId == resource.data.organizationId;
+    }
+
+    function isCreatingForOwnOrg() {
+      return isAuthenticated() &&
+        request.resource.data.organizationId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId;
+    }
+
+    // ===============================================================
+    // LEGACY-ONLY "Option A.1" (guardentra-7f582 (default) only, 2026-10-31).
+    // Option A plus three cross-tenant write fixes back-ported from the RC rules:
+    //   W11 assessment_responses / evidence create bound to the caller's own org
+    //   W9  organizationId immutable on every member update
+    //   W10 child vendorId / assessmentId bound to the same org; no re-parenting
+    // Nothing else changes. Never deploy this file to guardentra-prod or staging.
+    // ===============================================================
+    function orgIdUnchanged() {
+      return request.resource.data.organizationId == resource.data.organizationId;
+    }
+
+    function parentVendorUnchanged() {
+      return !('vendorId' in resource.data)
+        || request.resource.data.vendorId == resource.data.vendorId;
+    }
+
+    function parentAssessmentUnchanged() {
+      return !('assessmentId' in resource.data)
+        || request.resource.data.assessmentId == resource.data.assessmentId;
+    }
+
+    // existsAfter/getAfter so a parent created in the same batch (sample seeding) counts.
+    function childVendorBoundIfPresent() {
+      return !('vendorId' in request.resource.data)
+        || (
+          request.resource.data.vendorId is string
+          && request.resource.data.vendorId.size() > 0
+          && existsAfter(/databases/$(database)/documents/vendors/$(request.resource.data.vendorId))
+          && getAfter(/databases/$(database)/documents/vendors/$(request.resource.data.vendorId)).data.organizationId
+            == request.resource.data.organizationId
+        );
+    }
+
+    function childAssessmentBoundIfPresent() {
+      return !('assessmentId' in request.resource.data)
+        || (
+          request.resource.data.assessmentId is string
+          && request.resource.data.assessmentId.size() > 0
+          && existsAfter(/databases/$(database)/documents/assessments/$(request.resource.data.assessmentId))
+          && getAfter(/databases/$(database)/documents/assessments/$(request.resource.data.assessmentId)).data.organizationId
+            == request.resource.data.organizationId
+        );
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Type guards used to add basic field-shape validation without a strict hasOnly()
+    // allowlist — deliberately "soft": they never reject a missing or unknown field
+    // (so they can't break existing documents or fields this rules file doesn't know
+    // about), they only reject a *known* field written with an obviously wrong type
+    // (e.g. riskScore set to a string). Safer than guessing an exact field list against
+    // data this repo can't inspect (no access to what's already in any deployed DB).
+    function isStringIfPresent(data, field) {
+      return !(field in data) || data[field] is string;
+    }
+
+    function isNumberIfPresent(data, field) {
+      return !(field in data) || data[field] is number;
+    }
+
+    // Soft type guards for the collections that previously had none (KNOWN_ISSUES #11).
+    //
+    // These field lists are not guesses — they were read off the real documents in
+    // guardentra-7f582 via the Firestore REST API, which is what unblocked this: the
+    // original concern was that a strict hasOnly() would reject updates to existing
+    // docs carrying fields this repo had never seen. Staying with the isXIfPresent
+    // pattern keeps that impossible: a missing field is always fine, an unknown field
+    // is always fine, and only a *known* field written with an obviously wrong type is
+    // rejected. That is the same posture Sprint 5a used for vendors.
+    function riskFieldsValid() {
+      let d = request.resource.data;
+      return isStringIfPresent(d, 'title') && isStringIfPresent(d, 'category') &&
+        isStringIfPresent(d, 'severity') && isStringIfPresent(d, 'status') &&
+        isStringIfPresent(d, 'owner') && isStringIfPresent(d, 'mitigation') &&
+        isNumberIfPresent(d, 'impact') && isNumberIfPresent(d, 'likelihood');
+    }
+
+    function incidentFieldsValid() {
+      let d = request.resource.data;
+      return isStringIfPresent(d, 'title') && isStringIfPresent(d, 'severity') &&
+        isStringIfPresent(d, 'status') && isStringIfPresent(d, 'reporter') &&
+        isStringIfPresent(d, 'date');
+    }
+
+    function complianceFieldsValid() {
+      let d = request.resource.data;
+      return isStringIfPresent(d, 'name') && isStringIfPresent(d, 'status') &&
+        isStringIfPresent(d, 'description') && isStringIfPresent(d, 'nextAudit') &&
+        isNumberIfPresent(d, 'progress');
+    }
+
+    function connectorFieldsValid() {
+      let d = request.resource.data;
+      return isStringIfPresent(d, 'name') && isStringIfPresent(d, 'type') &&
+        isStringIfPresent(d, 'status') &&
+        isNumberIfPresent(d, 'findings') && isNumberIfPresent(d, 'health');
+    }
+
+    function policyFieldsValid() {
+      let d = request.resource.data;
+      return isStringIfPresent(d, 'title') && isStringIfPresent(d, 'category') &&
+        isStringIfPresent(d, 'status') && isStringIfPresent(d, 'content') &&
+        isStringIfPresent(d, 'version');
+    }
+
+    function calendarEventFieldsValid() {
+      let d = request.resource.data;
+      return isStringIfPresent(d, 'title') && isStringIfPresent(d, 'type') &&
+        isStringIfPresent(d, 'description') && isStringIfPresent(d, 'startDate');
+    }
+
+    function identityFieldsValid() {
+      let d = request.resource.data;
+      return isStringIfPresent(d, 'name') && isStringIfPresent(d, 'email') &&
+        isStringIfPresent(d, 'accessLevel') && isStringIfPresent(d, 'dataSensitivity') &&
+        isStringIfPresent(d, 'device') &&
+        isNumberIfPresent(d, 'riskScore') && isNumberIfPresent(d, 'deviceHealth');
+    }
+
+    // Written only by AI-generated flows, so no live documents existed to sample. Guards
+    // are derived from the writing code rather than from data: RemediationService.ts's
+    // RemediationTicket for remediations, and the AI route response shapes for the rest.
+    function remediationFieldsValid() {
+      let d = request.resource.data;
+      return isStringIfPresent(d, 'finding') && isStringIfPresent(d, 'severity') &&
+        isStringIfPresent(d, 'status') && isStringIfPresent(d, 'priority') &&
+        isStringIfPresent(d, 'dueDate') && isStringIfPresent(d, 'vendorName');
+    }
+
+    function genericAIDocFieldsValid() {
+      let d = request.resource.data;
+      return isStringIfPresent(d, 'title') && isStringIfPresent(d, 'status') &&
+        isStringIfPresent(d, 'createdAt') && isNumberIfPresent(d, 'score');
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+
+    // Users Collection
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isOrgMember(resource.data.organizationId));
+      // Create is still client-trusted for role + organizationId (bootstrapUserProfile /
+      // a malicious SDK caller). Tightening that needs invite-bound create and/or
+      // Admin-SDK provisioning — see KNOWN_ISSUES #6 residual. Role and orgId are
+      // immutable after create so an admin cannot hop into another tenant by updating
+      // their own profile (KI#6 audit, 2026-08-03; emulator cases in firestore.rules.test.mjs).
+      allow create: if isValidUserCreate(userId);
+      allow update: if isAuthenticated() && request.auth.uid == userId
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.organizationId == resource.data.organizationId;
+    }
+
+    // Only seatCount (orgBootstrap.ts, incremented in the same batch as a joining
+    // member's own profile) and vendorCount (VendorsDirectory.tsx's cap-check
+    // transaction) are legitimately written by a non-admin member. Everything else —
+    // name, industry, onboarded, setupAt — is a settings field only Onboarding.tsx's
+    // isOrgCreator branch writes, and that branch already only runs for admins.
+    function onlyMemberWritableOrgFieldsChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['seatCount', 'vendorCount']);
+    }
+
+    // P2B: dataRegion ('eu'|'us') is immutable after first set.
+    function orgDataRegionPreserved() {
+      return !('dataRegion' in resource.data)
+        || request.resource.data.dataRegion == resource.data.dataRegion;
+    }
+
+    // Organizations Collection
+    match /organizations/{orgId} {
+      allow read: if isAuthenticated() && isOrgMember(orgId);
+      allow create: if isAuthenticated()
+        && !exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId == orgId
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+        && isStarterOrgCreate();
+      // Deeper token/role review (task #27) found this allowed ANY member to write
+      // ANY field, including name/industry — so Onboarding.tsx's isOrgCreator check
+      // (KI#8: stop an invited member from overwriting the shared org's settings) was
+      // enforced only client-side. A member using the SDK/REST directly could still
+      // overwrite it. Can't just require isAdmin() outright: a joining member's own
+      // batch legitimately increments seatCount, and VendorsDirectory's cap-check
+      // transaction increments vendorCount from any member's session — both must keep
+      // working. So: admins may change anything; everyone else is limited to exactly
+      // the two counters. dataRegion is always immutable once set (admins included).
+      allow update: if isAuthenticated() && isOrgMember(orgId) && orgDataRegionPreserved() &&
+        billingFieldsUnchanged() &&
+        (isAdmin() || onlyMemberWritableOrgFieldsChanged());
+    }
+
+    // Org invites: a brand-new signup (no org yet) must be able to look up
+    // "is there a pending invite for my email" before they're a member of
+    // anything, so this can't gate on org membership alone like other
+    // collections — it also allows read/accept by exact email match on the
+    // invite itself (request.auth.token.email is a Firebase-set claim, not
+    // client-controlled, so this can't be used to read someone else's invite).
+    match /org_invites/{inviteId} {
+      allow read: if isAuthenticated() &&
+        (resource.data.email == request.auth.token.email || isDocOrgMember());
+      // Seat cap (docs/ARCHITECTURE_FOUNDATION.md §4: Starter 3, Growth 10). Enforced at
+      // invite time because that is the only chokepoint an admin controls — the profile
+      // write that actually consumes the seat happens later, during the invitee's own
+      // signup, when there is no admin in the request to reject.
+      //
+      // seatCount is maintained by src/lib/orgBootstrap.ts: set to 1 when an org is
+      // created, incremented in the same batch as the joining member's profile. Same
+      // soft-metering posture as vendorCount — a client writing through the SDK directly
+      // could still skip the increment (KNOWN_ISSUES.md #12 covers the equivalent gap for
+      // vendors); this stops the ordinary path, not a determined bypass.
+      allow create: if isCreatingForOwnOrg() && isAdmin() && request.resource.data.email is string &&
+        (!('role' in request.resource.data) || isAllowedBootstrapRole(request.resource.data.role)) &&
+        orgField(request.resource.data.organizationId, 'seatCount', 1) <
+        orgField(request.resource.data.organizationId, 'seatCap', 3);
+      allow update: if isAuthenticated() && (
+        (hasVerifiedEmail(resource.data.email) &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptedByUid', 'acceptedAt'])) ||
+        (isDocOrgMember() && isAdmin()
+          && request.resource.data.organizationId == resource.data.organizationId
+          && (!('role' in request.resource.data) || isAllowedBootstrapRole(request.resource.data.role)))
+      );
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // Risks Collection
+    match /risks/{riskId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg() && riskFieldsValid();
+      allow update: if isDocOrgMember() && orgIdUnchanged() && riskFieldsValid();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // Incidents Collection
+    match /incidents/{incidentId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg() && incidentFieldsValid();
+      allow update: if isDocOrgMember() && orgIdUnchanged() && incidentFieldsValid();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // Compliance Collection
+    match /compliance/{complianceId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg() && complianceFieldsValid();
+      allow update: if isDocOrgMember() && orgIdUnchanged() && complianceFieldsValid();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // Connectors Collection
+    match /connectors/{connectorId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg() && connectorFieldsValid();
+      allow update: if isDocOrgMember() && orgIdUnchanged() && connectorFieldsValid();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // Policies Collection
+    match /policies/{policyId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg() && policyFieldsValid();
+      allow update: if isDocOrgMember() && orgIdUnchanged() && policyFieldsValid();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // Vendors Collection — src/lib/vendor/types.ts Vendor interface is the shape;
+    // soft type guards on the fields most likely to be attacked (score/rating spoofing).
+    function vendorFieldsValid() {
+      return isStringIfPresent(request.resource.data, 'name') &&
+        isStringIfPresent(request.resource.data, 'category') &&
+        isStringIfPresent(request.resource.data, 'criticality') &&
+        isNumberIfPresent(request.resource.data, 'riskScore') &&
+        isNumberIfPresent(request.resource.data, 'trustScore');
+    }
+
+    // Vendor-cap enforcement (docs/ARCHITECTURE_FOUNDATION.md §4 tier sketch — Starter
+    // defaults below match that sketch). This is soft enforcement, not airtight: the
+    // counter is maintained by client code (src/pages/VendorsDirectory.tsx createVendor,
+    // via a transaction) alongside the create, so it stops normal over-cap growth through
+    // the app but a client using the Firestore SDK/REST API directly could skip the
+    // increment and bypass it — same accepted risk tolerance as the AI soft-metering
+    // already described in that doc. True hard enforcement needs vendor writes routed
+    // through a server endpoint that authoritatively counts via the Admin SDK; not done
+    // here (bigger change, no live customers to violate a cap yet — see KNOWN_ISSUES.md).
+    function orgField(orgId, field, fallback) {
+      let org = get(/databases/$(database)/documents/organizations/$(orgId)).data;
+      return (field in org) ? org[field] : fallback;
+    }
+
+    match /vendors/{vendorId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg() && vendorFieldsValid() &&
+        orgField(request.resource.data.organizationId, 'vendorCount', 0) <
+        orgField(request.resource.data.organizationId, 'vendorCap', 25);
+      allow update: if isDocOrgMember() && orgIdUnchanged() && vendorFieldsValid();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // Vendor invite audit trail (src/pages/VendorsDirectory.tsx "Invite Vendor" quick
+    // action) — write-once record of who was invited and by whom; not user-editable
+    // after creation.
+    match /vendor_invites/{inviteId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // FastTrack triage persistence (answers + Lite/Standard/Enhanced recommendation).
+    // Doc id = vendorId; org members may create/update their org's triage docs.
+    match /vendor_triage/{vendorId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg();
+      allow update: if isDocOrgMember()
+        && request.resource.data.organizationId == resource.data.organizationId
+        && request.resource.data.vendorId == resource.data.vendorId;
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // Vendor Assessments Collections (handle both names)
+    match /vendor_assessments/{assessmentId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg() && childVendorBoundIfPresent();
+      allow update: if isDocOrgMember() && orgIdUnchanged() && parentVendorUnchanged() && childVendorBoundIfPresent();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    function isOpenPortalAssessment() {
+      return isAuthenticated() && resource.data.portalOpen == true;
+    }
+
+    // Vendors may re-open the link after submit to see a receipt (read-only).
+    // Writes still require portalOpen via isOpenPortalAssessment().
+    function isPortalReadableAssessment() {
+      return isAuthenticated() && (
+        resource.data.portalOpen == true ||
+        resource.data.status == 'Under Review' ||
+        resource.data.status == 'Completed' ||
+        resource.data.keys().hasAny(['completedAt'])
+      );
+    }
+
+    // Binds a portal session to the ONE assessment its link was minted for.
+    // server/routes/portal.ts puts this claim on the custom token; without it, a
+    // session authenticated for assessment A could reach every other open assessment
+    // (docs/KNOWN_ISSUES.md #17 — confirmed live). Org members never carry the claim
+    // and are authorised by isDocOrgMember() instead.
+    function isPortalSessionFor(assessmentId) {
+      return isAuthenticated() && request.auth.token.portalAssessmentId == assessmentId;
+    }
+
+    // Fields VendorPortal.tsx actually writes during autosave/submit (src/pages/VendorPortal.tsx).
+    // A portal session (incl. anonymous) may only ever change these — never organizationId,
+    // vendorId, frameworks, dueAt/dueDate. portalOpen/submittedSnapshot only on submit transition.
+    // Authoritative trust map is backend-only (P0-2). Portal and org browser
+    // clients must not write evidenceTrustByStoragePath.
+    function onlyPortalAssessmentFieldsChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['answers', 'comments', 'evidenceByQuestion', 'progressPct', 'progress', 'status', 'questions', 'updatedAt', 'completedAt', 'attestations', 'answerProposals', 'confirmedAnswerIds']);
+    }
+
+    function orgPreservesEvidenceTrust() {
+      return !request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(['evidenceTrustByStoragePath']);
+    }
+
+    function orgDeniesClientDecisionWrites() {
+      return !request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(['decisionOutcome', 'decisionNotes', 'decidedAt', 'decidedBy']);
+    }
+
+    function portalSubmitTransition() {
+      return resource.data.portalOpen == true
+        && resource.data.status != 'Under Review'
+        && resource.data.status != 'Completed'
+        && request.resource.data.status == 'Under Review'
+        && request.resource.data.portalOpen == false
+        && request.resource.data.keys().hasAny(['submittedSnapshot']);
+    }
+
+    function portalSubmitFieldsChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['answers', 'comments', 'evidenceByQuestion', 'progressPct', 'progress', 'status', 'completedAt', 'attestations', 'answerProposals', 'portalOpen', 'submittedSnapshot', 'versionLocked']);
+    }
+
+    // After send, org members cannot silently rewrite the questionnaire snapshot
+    // (questions / packs / frameworks). Empty snapshots may still be recovered.
+    function orgPreservesSentSnapshot() {
+      return !('sentAt' in resource.data)
+        || !('versionLocked' in resource.data)
+        || resource.data.versionLocked != true
+        || !(resource.data.keys().hasAll(['questions']))
+        || resource.data.questions.size() == 0
+        || (
+          !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['questions', 'frameworkPackIds', 'frameworks', 'questionBankVersion', 'versionLocked'])
+        );
+    }
+
+    // Finalized decisions stay locked.
+    function orgPreservesFinalDecision() {
+      return !('decidedAt' in resource.data)
+        || !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['decisionOutcome', 'decisionNotes', 'decidedAt', 'decidedBy']);
+    }
+
+    // Portal writes require portalOpen=true (P0-1 closes portal on submit). Under Review
+    // stays read-only until org remediate or correction reopen — never self-service edit.
+    function portalMayWriteAssessment(assessmentId) {
+      return isPortalSessionFor(assessmentId)
+        && resource.data.portalOpen == true
+        && resource.data.status != 'Completed'
+        && (
+          resource.data.status != 'Under Review'
+          || ('decisionOutcome' in resource.data && resource.data.decisionOutcome == 'remediate')
+          || resource.data.keys().hasAny(['correctionReopenedAt'])
+        );
+    }
+
+    match /assessments/{assessmentId} {
+      allow read: if isDocOrgMember() || (isPortalSessionFor(assessmentId) && isPortalReadableAssessment());
+      allow create: if isCreatingForOwnOrg() && childVendorBoundIfPresent();
+      allow update: if (isDocOrgMember() && orgIdUnchanged() && parentVendorUnchanged() && childVendorBoundIfPresent() && orgPreservesSentSnapshot() && orgPreservesFinalDecision() && orgPreservesEvidenceTrust() && orgDeniesClientDecisionWrites()) ||
+        (isPortalSessionFor(assessmentId) && portalSubmitTransition() && portalSubmitFieldsChanged()) ||
+        (portalMayWriteAssessment(assessmentId) && onlyPortalAssessmentFieldsChanged());
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // assessment_responses has no current writer in the app, but keep the same
+    // allowlist discipline for whenever it's used, so anonymous access stays answer-scoped.
+    function onlyPortalResponseFieldsChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['answer', 'comment', 'evidenceFileIds', 'updatedAt']);
+    }
+
+    // Still has no writer in the app (see above), but kept in step with /assessments
+    // so it can't become the loophole later: a portal session must hold the claim for
+    // the assessment this response belongs to.
+    match /assessment_responses/{responseId} {
+      allow read: if isDocOrgMember() || isPortalSessionFor(resource.data.assessmentId);
+      allow create: if isCreatingForOwnOrg() && childAssessmentBoundIfPresent();
+      allow update: if (isDocOrgMember() && orgIdUnchanged() && parentAssessmentUnchanged() && childAssessmentBoundIfPresent()) ||
+        (isPortalSessionFor(resource.data.assessmentId) && onlyPortalResponseFieldsChanged());
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    match /evidence/{evidenceId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg() && childAssessmentBoundIfPresent();
+      allow update: if isDocOrgMember() && orgIdUnchanged() && parentAssessmentUnchanged() && childAssessmentBoundIfPresent();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // Audit Readiness Collection — shape written by AuditReadiness.tsx / seeding.ts.
+    function auditReadinessFieldsValid() {
+      return isStringIfPresent(request.resource.data, 'framework') &&
+        isStringIfPresent(request.resource.data, 'status') &&
+        isNumberIfPresent(request.resource.data, 'readinessScore') &&
+        isNumberIfPresent(request.resource.data, 'coveragePercent');
+    }
+
+    match /audit_readiness/{auditId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg() && auditReadinessFieldsValid();
+      allow update: if isDocOrgMember() && orgIdUnchanged() && auditReadinessFieldsValid();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // Executive Reports Collection
+    match /executive_reports/{reportId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg() && genericAIDocFieldsValid();
+      allow update: if isDocOrgMember() && orgIdUnchanged() && genericAIDocFieldsValid();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // Calendar Events Collection
+    match /calendar_events/{eventId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg() && calendarEventFieldsValid();
+      allow update: if isDocOrgMember() && orgIdUnchanged() && calendarEventFieldsValid();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // Identities Collection
+    match /identities/{identityId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg() && identityFieldsValid();
+      allow update: if isDocOrgMember() && orgIdUnchanged() && identityFieldsValid();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // Contract Audits
+    match /contract_audits/{auditId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg() && genericAIDocFieldsValid();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // Evidence Reviews
+    match /evidence_reviews/{reviewId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg() && genericAIDocFieldsValid();
+      allow update: if isDocOrgMember() && orgIdUnchanged() && genericAIDocFieldsValid();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // Remediations Collection
+    match /remediations/{remediationId} {
+      allow read: if isDocOrgMember();
+      allow create: if isCreatingForOwnOrg() && remediationFieldsValid();
+      allow update: if isDocOrgMember() && orgIdUnchanged() && remediationFieldsValid();
+      allow delete: if isDocOrgMember() && isAdmin();
+    }
+
+    // System Collection (for connectivity tests)
+    match /system/{docId} {
+      allow read: if isAuthenticated();
+    }
+
+    // Mail queue (Firebase "Trigger Email from Firestore" extension shape). Only
+    // written by server/routes/notify.ts via the Admin SDK, which bypasses these
+    // rules entirely — so this stays fully closed to every client, preventing any
+    // authenticated user from queuing arbitrary emails directly through Firestore.
+    match /mail/{mailId} {
+      allow read, write: if false;
+    }
+  }
+}
