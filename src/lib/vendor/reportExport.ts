@@ -242,7 +242,11 @@ ${input.remediationOwner || input.remediationDueAt
 
 export function openDecisionPacketForPrint(input: DecisionPacketInput): void {
   const html = buildDecisionPacketHtml(input);
-  const reportWindow = window.open('', '_blank', 'noopener,noreferrer');
+  // noopener/noreferrer cannot be used here: we need a reference to the opened
+  // window so we can call document.write() and print() on it.  The blank URL
+  // means the browser opens a same-origin tab with no navigation, so omitting
+  // the opener restriction is safe (we control all content written to it).
+  const reportWindow = window.open('', '_blank');
   if (!reportWindow) {
     throw new Error('Popup blocked — allow popups to print the decision packet.');
   }
