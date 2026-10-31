@@ -28,7 +28,7 @@ import {
 } from '../../lib/vendor/emptyAssessmentRecovery';
 import type { FrameworkPackDefaults } from '../../lib/vendor/orgFrameworkPacks';
 import type { StoredAssessment } from '../../lib/vendor/localAssessmentStore';
-import { hasTerminalOrgDecision } from '../../lib/vendor/assessmentLifecycle';
+import { hasTerminalOrgDecision, recordedDecisionOutcome } from '../../lib/vendor/assessmentLifecycle';
 import type { RiskLevel } from '../../lib/vendor/types';
 
 function frameworkLabel(a: StoredAssessment): string {
@@ -684,7 +684,9 @@ function AssessmentDecisionBar({
             className="w-full border-white/10 text-slate-200"
             onClick={onDownloadDecisionPacket}
           >
-            Download decision PDF
+            {recordedDecisionOutcome(assessment)
+              ? 'Download decision PDF'
+              : 'Download draft summary (no decision yet)'}
           </Button>
         )}
         {assessment.status !== 'Under Review' && progressOf(assessment) <= 0 && (

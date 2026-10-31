@@ -183,7 +183,11 @@ export type DecisionPacketInput = {
   vendorName: string;
   assessmentId: string;
   frameworksLabel: string;
-  outcome: string;
+  /**
+   * The outcome recorded on the assessment, or null when no decision exists yet.
+   * Never pass the reviewer's unsaved form selection here.
+   */
+  outcome: string | null;
   decisionNotes?: string;
   decidedBy?: string;
   decidedAt?: string;
@@ -196,8 +200,12 @@ export type DecisionPacketInput = {
   reviewCadence?: string;
 };
 
+export const NO_DECISION_RECORDED_LABEL = 'No decision recorded';
+
 /** FastTrack decision packet (print → Save as PDF) — distinct from Impact report. */
 export function buildDecisionPacketHtml(input: DecisionPacketInput): string {
+  const outcome = typeof input.outcome === 'string' ? input.outcome.trim() : '';
+  const recorded = outcome.length > 0;
   const rows = input.exceptions
     .map(
       (e) =>
@@ -206,24 +214,14 @@ export function buildDecisionPacketHtml(input: DecisionPacketInput): string {
         )}</td></tr>`
     )
     .join('');
-  return `<!doctype html>
-<html><head><meta charset="utf-8"/><title>Decision packet — ${escapeHtml(input.vendorName)}</title>
-<style>
-  body{font-family:Georgia,serif;margin:40px;color:#111;line-height:1.45}
-  h1{font-size:22px;margin:0 0 8px} h2{font-size:16px;margin:24px 0 8px}
-  .meta{color:#444;font-size:13px} table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px}
-  th,td{border:1px solid #ccc;padding:8px;text-align:left;vertical-align:top} th{background:#f4f4f4}
-  .banner{border-left:4px solid #0f766e;padding:8px 12px;background:#f0fdfa;margin:16px 0}
-</style></head><body>
-<h1>Guardentra FastTrack decision packet</h1>
-<p class="meta">Generated ${escapeHtml(new Date().toISOString())}</p>
-<div class="banner">
-  <strong>${escapeHtml(input.vendorName)}</strong> · ${escapeHtml(input.frameworksLabel)}<br/>
-  Outcome: <strong>${escapeHtml(input.outcome)}</strong>
-  ${input.triageTier ? ` · Triage: ${escapeHtml(input.triageTier)}` : ''}
-</div>
-<p class="meta">Assessment ${escapeHtml(input.assessmentId)}</p>
-<p>Decided by: ${escapeHtml(input.decidedBy || '—')} at ${escapeHtml(input.decidedAt || '—')}</p>
+  const heading = recorded
+    ? 'Guardentra FastTrack decision packet'
+    : 'Guardentra FastTrack pre-decision summary (DRAFT)';
+  const title = recorded ? 'Decision packet' : 'Pre-decision summary (DRAFT)';
+  // Without a recorded decision, every decision field is withheld: printing who
+  // "decided", when, or the reviewer's unsaved selection would read as a decision.
+  const decisionSection = recorded
+    ? `<p>Decided by: ${escapeHtml(input.decidedBy || '—')} at ${escapeHtml(input.decidedAt || '—')}</p>
 <p>Residual risk: <strong>${escapeHtml(input.residualRiskLevel || '—')}</strong></p>
 ${input.remediationOwner || input.remediationDueAt
   ? `<p>Remediation owner: ${escapeHtml(input.remediationOwner || '—')} · Due: ${escapeHtml(input.remediationDueAt || '—')}</p>`
@@ -232,7 +230,28 @@ ${input.remediationOwner || input.remediationDueAt
     input.reviewCadence ? ` (cadence: ${escapeHtml(input.reviewCadence)})` : ''
   }</p>
 <h2>Conditions / rationale</h2>
-<p>${escapeHtml(input.decisionNotes || 'None recorded.')}</p>
+<p>${escapeHtml(input.decisionNotes || 'None recorded.')}</p>`
+    : `<div class="draft"><strong>DRAFT. No decision has been recorded for this assessment.</strong><br/>
+This summary is not an approval, rejection or remediation decision. A decision exists only once a reviewer records it in Guardentra.</div>`;
+  return `<!doctype html>
+<html><head><meta charset="utf-8"/><title>${title} — ${escapeHtml(input.vendorName)}</title>
+<style>
+  body{font-family:Georgia,serif;margin:40px;color:#111;line-height:1.45}
+  h1{font-size:22px;margin:0 0 8px} h2{font-size:16px;margin:24px 0 8px}
+  .meta{color:#444;font-size:13px} table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px}
+  th,td{border:1px solid #ccc;padding:8px;text-align:left;vertical-align:top} th{background:#f4f4f4}
+  .banner{border-left:4px solid #0f766e;padding:8px 12px;background:#f0fdfa;margin:16px 0}
+  .draft{border:2px dashed #b45309;padding:10px 12px;background:#fffbeb;color:#78350f;margin:16px 0}
+</style></head><body>
+<h1>${heading}</h1>
+<p class="meta">Generated ${escapeHtml(new Date().toISOString())}</p>
+<div class="banner">
+  <strong>${escapeHtml(input.vendorName)}</strong> · ${escapeHtml(input.frameworksLabel)}<br/>
+  Outcome: <strong>${escapeHtml(recorded ? outcome : NO_DECISION_RECORDED_LABEL)}</strong>
+  ${input.triageTier ? ` · Triage: ${escapeHtml(input.triageTier)}` : ''}
+</div>
+<p class="meta">Assessment ${escapeHtml(input.assessmentId)}</p>
+${decisionSection}
 <h2>Exceptions summary (${input.exceptions.length})</h2>
 <table><thead><tr><th>Question</th><th>Reason</th><th>Answer</th></tr></thead>
 <tbody>${rows || '<tr><td colspan="3">No exceptions flagged.</td></tr>'}</tbody></table>

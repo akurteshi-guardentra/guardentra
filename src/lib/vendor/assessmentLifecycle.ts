@@ -262,6 +262,24 @@ export function hasTerminalOrgDecision(assessment: {
   return isTerminalDecisionOutcome(assessment.decisionOutcome);
 }
 
+const DECISION_OUTCOMES: readonly DecisionOutcome[] = ['approved', 'conditional', 'remediate', 'rejected'];
+
+/**
+ * The outcome an org reviewer actually recorded, or null when no decision exists.
+ * Reports must use this, never the reviewer's unsaved form selection: a pre-decision
+ * export must not read as an approval (#124 finding, 2026-10-31). `remediate` counts
+ * as recorded (it is non-terminal but still a decision on record).
+ */
+export function recordedDecisionOutcome(assessment: {
+  decisionOutcome?: unknown;
+  decidedAt?: unknown;
+}): DecisionOutcome | null {
+  const outcome = assessment.decisionOutcome;
+  if (!DECISION_OUTCOMES.includes(outcome as DecisionOutcome)) return null;
+  if (typeof assessment.decidedAt !== 'string' || !assessment.decidedAt.trim()) return null;
+  return outcome as DecisionOutcome;
+}
+
 export function nextReviewAtForDecision(
   outcome: DecisionOutcome,
   from: Date = new Date()

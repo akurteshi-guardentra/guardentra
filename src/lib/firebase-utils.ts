@@ -1,7 +1,7 @@
 import { auth, db } from '../firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { GoogleAuthProvider, signInWithPopup, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification, updateProfile } from 'firebase/auth';
-import { bootstrapUserProfile } from './orgBootstrap';
+import { bootstrapUserProfile, clearSignupProfile, rememberSignupProfile } from './orgBootstrap';
 
 import { OperationType, handleFirestoreError } from './firestoreError';
 
@@ -53,6 +53,9 @@ export const signInWithGoogle = async () => {
 };
 
 export const signUpWithEmail = async (email: string, password: string, name: string) => {
+  // Must be set before createUserWithEmailAndPassword: its onAuthStateChanged can start
+  // AuthContext's bootstrap before updateProfile() below has stored the name.
+  rememberSignupProfile(email, name);
   try {
     const result = await createUserWithEmailAndPassword(auth, email, password);
     const user = result.user;
@@ -79,6 +82,7 @@ export const signUpWithEmail = async (email: string, password: string, name: str
 
     return user;
   } catch (error: any) {
+    clearSignupProfile();
     console.error("Error signing up with email", error);
     throw error;
   }
