@@ -99,7 +99,7 @@ health, the SPA index, and the `/portal/{id}` deep-link fallback all serve from
 a token.
 
 **One backend per environment**, each pointed at its own Firebase project and branch
-(today: `release/rc-2026-10-08` → staging; `main` → prod and legacy with automatic rollouts off):
+(today: `release/rc-2026-10-08` → staging, via the CI-promoted `deploy/staging` branch per `docs/release/STAGING_PROMOTION.md`; `main` → prod and legacy with automatic rollouts off):
 
 ```bash
 firebase apphosting:backends:create --project guardentra-7f582

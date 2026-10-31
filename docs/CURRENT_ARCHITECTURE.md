@@ -73,7 +73,7 @@ docs is the original plan and is **not** how App Hosting is wired today.
 
 | Environment | Firebase project / backend | Builds from | Automatic rollouts | Live build | Label |
 |---|---|---|---|---|---|
-| Staging | `guardentra-staging` / `guardentra-staging` | `release/rc-2026-10-08` | On (an RC merge deploys staging) | last verified `a32f9f68` via `/api/health`; `caf27094` UNVERIFIED | LIVE VERIFIED / UNVERIFIED |
+| Staging | `guardentra-staging` / `guardentra` (us-east4) | App Hosting live branch: `release/rc-2026-10-08`, or `deploy/staging` once step 6 of `docs/release/STAGING_PROMOTION.md` is done (current setting UNVERIFIED). CI fast-forwards `deploy/staging` to each RC head that passes `verify` + `dispatcher` | On | last verified `a32f9f68` via `/api/health`; `deploy/staging` at `f74771f` (CI-promoted 2026-10-31), not yet read back | LIVE VERIFIED / UNVERIFIED |
 | Production | `guardentra-prod` / `guardentra-prod` (env name `prod`) | `main` | **Off** | `29171a6` (build 2026-08-27) | LIVE VERIFIED |
 | Legacy | `guardentra-7f582` / `guardentra` (env name empty) | `main` | **Off** (`disabled=true`) | `7b914ee` (build-2026-10-06-001) | OWNER REPORTED 2026-10-31 |
 
@@ -82,8 +82,10 @@ docs is the original plan and is **not** how App Hosting is wired today.
 - `guardentra.com` is served by `guardentra-prod`. The legacy backend still has
   a stale `guardentra.com` domain attachment (cleanup is a separate owner
   decision).
-- The `test` branch and `deploy/staging` branch exist but are not the staging
-  build source.
+- `deploy/staging` is moved only by the CI `promote-staging` job (deploy key, #126).
+  A superseded RC commit is refused on purpose, so a red `promote-staging` on an
+  older push is expected when a newer merge lands first.
+- The `test` branch is not the staging build source.
 - `main` and the RC have diverged since 2026-10-26; changes reach `main` by
   separate PRs.
 - Branch name alone is never deployment truth (see #126). Check the live
