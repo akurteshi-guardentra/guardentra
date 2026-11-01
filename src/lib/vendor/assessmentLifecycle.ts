@@ -293,6 +293,28 @@ export function nextReviewAtForDecision(
   return next.toISOString();
 }
 
+/**
+ * The next-review date a recorded decision schedules. Shared by the vendor record
+ * projection and the decision packet so they cannot disagree (#124 acceptance
+ * finding 2: the packet printed decidedAt + 1 year while the vendor record had the
+ * remediation due date). Remediate follows up at the remediation due date;
+ * terminal outcomes schedule the periodic review.
+ */
+export function decisionNextReviewAt(input: {
+  outcome: DecisionOutcome;
+  decidedAt?: string | null;
+  remediationDueAt?: string | null;
+}): string {
+  const closes = decisionClosesPortal(input.outcome);
+  const followUp = closes ? null : normalizeRemediationDueAt(input.remediationDueAt);
+  if (followUp) return followUp;
+  const decided = input.decidedAt ? new Date(input.decidedAt) : new Date();
+  return nextReviewAtForDecision(
+    input.outcome,
+    Number.isNaN(decided.getTime()) ? new Date() : decided
+  );
+}
+
 export type VendorDecisionProjection = {
   residualRiskLevel: RiskLevel;
   nextReviewAt: string;
@@ -317,11 +339,9 @@ export function buildVendorDecisionProjection(input: {
   remediationDueAt?: string | null;
 }): VendorDecisionProjection {
   const closes = decisionClosesPortal(input.outcome);
-  const decidedAtDate = new Date(input.decidedAt);
-  const followUp = closes ? null : normalizeRemediationDueAt(input.remediationDueAt);
   const projection: VendorDecisionProjection = {
     residualRiskLevel: input.residualRiskLevel,
-    nextReviewAt: followUp || nextReviewAtForDecision(input.outcome, decidedAtDate),
+    nextReviewAt: decisionNextReviewAt(input),
     lastAssessmentAt: input.decidedAt,
     updatedAt: input.decidedAt,
   };

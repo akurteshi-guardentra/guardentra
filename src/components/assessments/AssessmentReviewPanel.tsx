@@ -31,6 +31,7 @@ import type { FrameworkPackDefaults } from '../../lib/vendor/orgFrameworkPacks';
 import type { StoredAssessment } from '../../lib/vendor/localAssessmentStore';
 import { hasTerminalOrgDecision, recordedDecisionOutcome } from '../../lib/vendor/assessmentLifecycle';
 import type { RiskLevel } from '../../lib/vendor/types';
+import { ReviewEvidenceList } from './ReviewEvidenceList';
 
 function frameworkLabel(a: StoredAssessment): string {
   if (a.frameworkName) {
@@ -323,9 +324,15 @@ export function AssessmentReviewPanel({
                                   : formatAssessmentAnswer(ex.answer)}
                               </p>
                               <p className="mt-1 text-[10px] uppercase tracking-wide text-amber-400/80">
-                                {exceptionReasonsLabel(ex.reasons)}
+                                {exceptionReasonsLabel(ex.reasons, ex.evidenceStatus)}
                               </p>
                             </div>
+                            <ReviewEvidenceList
+                              assessmentId={reviewAssessment.id}
+                              items={reviewAssessment.evidenceByQuestion?.[ex.id]}
+                              trustMap={reviewAssessment.evidenceTrustByStoragePath}
+                              allowDownload={!isLocal}
+                            />
                             <div className="mt-2 flex items-center gap-2">
                               <Badge
                                 variant="outline"
@@ -361,6 +368,14 @@ export function AssessmentReviewPanel({
                                 : 'No response provided.'}
                             </p>
                           </div>
+                          {q.id && (
+                            <ReviewEvidenceList
+                              assessmentId={reviewAssessment.id}
+                              items={reviewAssessment.evidenceByQuestion?.[q.id]}
+                              trustMap={reviewAssessment.evidenceTrustByStoragePath}
+                              allowDownload={!isLocal}
+                            />
+                          )}
                           {q.category && (
                             <div className="mt-2 flex items-center gap-2">
                               <Badge

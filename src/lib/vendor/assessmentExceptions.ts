@@ -3,9 +3,17 @@
  * Pure: no Firestore / React.
  */
 import { isAnswered } from './questionBank';
-import { hasTrustedEvidence, type EvidenceTrustMap } from './evidenceTrust';
+import { effectiveEvidenceState, hasTrustedEvidence, type EvidenceTrustMap } from './evidenceTrust';
 
 export type ExceptionReason = 'unanswered' | 'negative' | 'missing_evidence';
+
+/**
+ * Why a `missing_evidence` question has no trusted evidence (#124 acceptance
+ * finding 3). A quarantined upload was labelled "Missing evidence", which hides
+ * that the vendor did upload something and the scanner blocked it. Display
+ * only: the reason code and the approval guard are unchanged.
+ */
+export type EvidenceGapStatus = 'none' | 'pending' | 'quarantined' | 'scan_failed';
 
 export interface ExceptionQuestion {
   id: string;
@@ -20,6 +28,8 @@ export interface AssessmentException {
   question: string;
   reason: ExceptionReason;
   answer?: string | string[];
+  /** Set only for reason `missing_evidence`. */
+  evidenceStatus?: EvidenceGapStatus;
 }
 
 const NEGATIVE = new Set(['No', 'Partially']);
@@ -34,6 +44,19 @@ function hasEvidence(
   trustMap?: EvidenceTrustMap | null
 ): boolean {
   return hasTrustedEvidence(questionId, evidenceByQuestion, trustMap);
+}
+
+/** Worst-first: quarantined beats scan_failed beats any untrusted upload. */
+export function evidenceGapStatus(
+  items: unknown[] | undefined,
+  trustMap?: EvidenceTrustMap | null
+): EvidenceGapStatus {
+  if (!Array.isArray(items) || items.length === 0) return 'none';
+  const states = items.map((item) => effectiveEvidenceState(item, trustMap));
+  if (states.includes('quarantined')) return 'quarantined';
+  if (states.includes('scan_failed')) return 'scan_failed';
+  if (states.some((st) => st !== 'missing' && st !== 'malformed')) return 'pending';
+  return 'none';
 }
 
 /**
@@ -92,6 +115,10 @@ export function listAssessmentExceptions(input: {
         question,
         reason: 'missing_evidence',
         answer: formatAnswer(answer),
+        evidenceStatus: evidenceGapStatus(
+          input.evidenceByQuestion?.[q.id],
+          input.evidenceTrustByStoragePath
+        ),
       });
     }
   }
@@ -111,6 +138,7 @@ export interface GroupedAssessmentException {
   question: string;
   reasons: ExceptionReason[];
   answer?: string | string[];
+  evidenceStatus?: EvidenceGapStatus;
 }
 
 /**
@@ -127,6 +155,7 @@ export function groupExceptionsByQuestion(
     const existing = byId.get(ex.id);
     if (existing) {
       if (!existing.reasons.includes(ex.reason)) existing.reasons.push(ex.reason);
+      if (ex.evidenceStatus) existing.evidenceStatus = ex.evidenceStatus;
       continue;
     }
     const row: GroupedAssessmentException = {
@@ -135,6 +164,7 @@ export function groupExceptionsByQuestion(
       question: ex.question,
       reasons: [ex.reason],
       answer: ex.answer,
+      ...(ex.evidenceStatus ? { evidenceStatus: ex.evidenceStatus } : {}),
     };
     byId.set(ex.id, row);
     out.push(row);
@@ -142,18 +172,33 @@ export function groupExceptionsByQuestion(
   return out;
 }
 
-export function exceptionReasonsLabel(reasons: ExceptionReason[]): string {
-  return reasons.map(exceptionReasonLabel).join(' · ');
+export function exceptionReasonsLabel(
+  reasons: ExceptionReason[],
+  evidenceStatus?: EvidenceGapStatus
+): string {
+  return reasons.map((r) => exceptionReasonLabel(r, evidenceStatus)).join(' · ');
 }
 
-export function exceptionReasonLabel(reason: ExceptionReason): string {
+export function exceptionReasonLabel(
+  reason: ExceptionReason,
+  evidenceStatus?: EvidenceGapStatus
+): string {
   switch (reason) {
     case 'unanswered':
       return 'Unanswered';
     case 'negative':
       return 'No / Partially';
     case 'missing_evidence':
-      return 'Missing evidence';
+      switch (evidenceStatus) {
+        case 'quarantined':
+          return 'Evidence quarantined (malware detected)';
+        case 'scan_failed':
+          return 'Evidence scan failed';
+        case 'pending':
+          return 'Evidence not yet verified clean';
+        default:
+          return 'Missing evidence';
+      }
     default:
       return reason;
   }

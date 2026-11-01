@@ -79,7 +79,9 @@ describe('decision packet after a recorded decision', () => {
       remediationDueAt: '2026-11-30T23:59:59.999Z',
     });
     expect(html).toContain('Outcome: <strong>remediate</strong>');
-    expect(html).toContain('Decided by: admin@example.com at 2026-10-31T10:00:00.000Z');
+    // Readable UTC timestamp since the #124 acceptance date fix (was raw ISO).
+    expect(html).toContain('Decided by: admin@example.com at Oct 31, 2026, 10:00 UTC');
+    expect(html).toContain('Due: Nov 30, 2026');
     expect(html).not.toContain('DRAFT');
     expect(html).not.toContain(NO_DECISION_RECORDED_LABEL);
   });

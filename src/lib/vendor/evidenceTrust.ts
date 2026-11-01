@@ -206,6 +206,49 @@ export function trustedEvidenceFileNames(
     .filter((n): n is string => Boolean(n));
 }
 
+/**
+ * Portal display state for one uploaded file (#124 acceptance finding 1).
+ *
+ * The portal used to show only the in-memory hint from the upload response, so
+ * after a reload every file read "Uploaded" even when the backend scanner had
+ * already recorded clean or quarantined. The backend-written trust map on the
+ * assessment doc is authoritative; a fresher in-session hint (same upload) only
+ * wins when it is further along. Display only: trust decisions still go through
+ * isTrustedEvidence / the server.
+ */
+export function portalEvidenceDisplayState(
+  storagePath: string | undefined,
+  map?: EvidenceTrustMap | null,
+  hint?: EvidenceState
+): EvidenceState {
+  const fromMap = lookupTrustRecord(storagePath, map)?.state;
+  if (fromMap && hint) {
+    return (STATE_RANK[hint] ?? -1) > (STATE_RANK[fromMap] ?? -1) ? hint : fromMap;
+  }
+  return fromMap || hint || 'uploaded';
+}
+
+/**
+ * True while any listed portal file has no terminal scanner verdict yet. The
+ * portal listens for verdicts only while this holds, so the label moves from
+ * "Scan pending" to clean / quarantined without a reload.
+ */
+export function hasPendingEvidenceScan(
+  evidenceByQuestion: Record<string, Array<{ storagePath?: string }> | undefined>,
+  map?: EvidenceTrustMap | null,
+  hints?: Record<string, EvidenceState>
+): boolean {
+  for (const list of Object.values(evidenceByQuestion || {})) {
+    if (!Array.isArray(list)) continue;
+    for (const item of list) {
+      if (!item?.storagePath) continue;
+      const state = portalEvidenceDisplayState(item.storagePath, map, hints?.[item.storagePath]);
+      if (!TERMINAL.has(state)) return true;
+    }
+  }
+  return false;
+}
+
 export function evidenceStateLabel(state: EvidenceState | 'missing' | 'unknown' | 'malformed'): string {
   switch (state) {
     case 'uploaded':
