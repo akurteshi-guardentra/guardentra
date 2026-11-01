@@ -177,3 +177,28 @@ export async function authorizeAuditEmit(
 
   return userActor;
 }
+
+/**
+ * Authorizes every event of a batch with the same rules as
+ * `authorizeAuditEmit`, before any of them is written. One unauthorized event
+ * rejects the whole batch. Checks are memoized per (event type, object,
+ * tenant) inside this one call, so twenty `answer.saved` events for the same
+ * assessment cost one Firestore read instead of twenty.
+ */
+export async function authorizeAuditEmitBatch(
+  principal: AuditFirebasePrincipal | undefined,
+  inputs: AuditEmitEnvelope[],
+): Promise<AuthorizedAuditActor[]> {
+  const memo = new Map<string, Promise<AuthorizedAuditActor>>();
+  const actors: AuthorizedAuditActor[] = [];
+  for (const input of inputs) {
+    const key = JSON.stringify([input.eventType, input.objectType, input.objectId, input.tenantId]);
+    let pending = memo.get(key);
+    if (!pending) {
+      pending = authorizeAuditEmit(principal, input);
+      memo.set(key, pending);
+    }
+    actors.push(await pending);
+  }
+  return actors;
+}
