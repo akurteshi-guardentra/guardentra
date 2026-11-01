@@ -476,7 +476,7 @@ export function VendorsDirectory() {
       } else {
         setInviteBanner({
           tone: 'warn',
-          text: `Vendor saved; email could not be queued to ${input.primaryContactEmail} — check Trigger Email / SMTP${emailQueueError ? ` (${emailQueueError})` : ''}.`,
+          text: `Vendor saved; email could not be queued to ${input.primaryContactEmail}. Try again later or contact support${emailQueueError ? ` (${emailQueueError})` : ''}.`,
         });
       }
       if (vendorId) {

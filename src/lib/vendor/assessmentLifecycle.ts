@@ -293,6 +293,42 @@ export function nextReviewAtForDecision(
   return next.toISOString();
 }
 
+export type VendorDecisionProjection = {
+  residualRiskLevel: RiskLevel;
+  nextReviewAt: string;
+  lastAssessmentAt: string;
+  updatedAt: string;
+  assessmentStatus?: 'Completed';
+};
+
+/**
+ * Vendor record fields written with every recorded decision (#124 journey findings 7–8):
+ * nextReviewAt stayed null and updatedAt never moved after a decision.
+ * The reviewer-recorded residualRiskLevel is the authoritative classification. riskScore is
+ * deliberately NOT written: there is no validated quantitative scoring model yet, and a
+ * fixed number per band would be false precision (owner decision 2026-10-31).
+ * Terminal outcomes schedule the next periodic review; remediate schedules follow-up at the
+ * remediation due date and leaves the vendor Under Review.
+ */
+export function buildVendorDecisionProjection(input: {
+  outcome: DecisionOutcome;
+  residualRiskLevel: RiskLevel;
+  decidedAt: string;
+  remediationDueAt?: string | null;
+}): VendorDecisionProjection {
+  const closes = decisionClosesPortal(input.outcome);
+  const decidedAtDate = new Date(input.decidedAt);
+  const followUp = closes ? null : normalizeRemediationDueAt(input.remediationDueAt);
+  const projection: VendorDecisionProjection = {
+    residualRiskLevel: input.residualRiskLevel,
+    nextReviewAt: followUp || nextReviewAtForDecision(input.outcome, decidedAtDate),
+    lastAssessmentAt: input.decidedAt,
+    updatedAt: input.decidedAt,
+  };
+  if (closes) projection.assessmentStatus = 'Completed';
+  return projection;
+}
+
 export type OrgDecisionPatch = {
   decisionOutcome: DecisionOutcome;
   decisionNotes?: string | null;

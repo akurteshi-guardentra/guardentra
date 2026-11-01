@@ -32,16 +32,18 @@ import {
   loadOrgFrameworkPackDefaults,
   type FrameworkPackDefaults,
 } from '../lib/vendor/orgFrameworkPacks';
-import { syncVendorAfterAssessmentApprove } from '../lib/vendor/syncVendorAssessment';
+import { syncVendorAfterLocalDecision } from '../lib/vendor/syncVendorAssessment';
 import {
+  exceptionReasonsLabel,
+  groupExceptionsByQuestion,
   listAssessmentExceptions,
   type DecisionOutcome,
 } from '../lib/vendor/assessmentExceptions';
 import {
   buildOrgDecisionPatch,
+  buildVendorDecisionProjection,
   canSignOffAssessment,
   decidedByDisplay,
-  decisionClosesPortal,
   decisionRequiresNotes,
   decisionRequiresRemediationPlan,
   hasTerminalOrgDecision,
@@ -390,8 +392,6 @@ export function Assessments() {
       remediationDueAt: normalizedRemediationDueAt || undefined,
       residualRiskLevel,
     });
-    const closes = decisionClosesPortal(outcome);
-    const nextReviewAt = nextReviewAtForDecision(outcome);
 
     try {
       if (preferLocal) {
@@ -416,12 +416,16 @@ export function Assessments() {
         }
       }
 
-      if (closes) {
-        await syncVendorAfterAssessmentApprove(
+      if (preferLocal || reviewAssessment.vendorId.startsWith('local_')) {
+        syncVendorAfterLocalDecision(
           orgId,
           reviewAssessment.vendorId,
-          preferLocal,
-          nextReviewAt
+          buildVendorDecisionProjection({
+            outcome,
+            residualRiskLevel,
+            decidedAt: patch.decidedAt,
+            remediationDueAt: normalizedRemediationDueAt,
+          })
         );
       }
 
@@ -750,9 +754,9 @@ export function Assessments() {
                         ),
                       }
                     : { outcome: null }),
-                  exceptions: reviewExceptions.map((e) => ({
+                  exceptions: groupExceptionsByQuestion(reviewExceptions).map((e) => ({
                     question: e.question,
-                    reason: e.reason,
+                    reason: exceptionReasonsLabel(e.reasons),
                     answer: Array.isArray(e.answer) ? e.answer.join(', ') : e.answer,
                   })),
                   triageTier: (reviewAssessment as { triageTier?: string }).triageTier,

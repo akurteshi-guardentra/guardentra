@@ -16,7 +16,7 @@
     "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --runInBand --config jest.config.js",
     "test:vitest": "vitest run",
     "test:audit-material-pg": "vitest run src/tests/auditMaterialEventIdentity.postgres.test.ts",
-    "test:storage-rules": "firebase emulators:exec --only firestore,storage --project demo-guardentra-storage-rules \"node src/tests/storage.rules.test.mjs\"",
+    "test:storage-rules": "node scripts/run-storage-rules-tests.mjs",
     "smoke:portal": "node src/tests/portal.smoke.mjs",
     "verify:live": "node scripts/verify-live-deploy.mjs",
     "firebase:reauth": "node scripts/firebase-reauth.mjs",

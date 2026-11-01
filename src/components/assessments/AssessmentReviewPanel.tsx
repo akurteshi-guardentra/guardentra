@@ -18,7 +18,8 @@ import { cn } from '../../lib/utils';
 import { FRAMEWORK_CATALOG } from '../../lib/vendor/constants';
 import { SAFE_EMPTY_RECOVERY_UI } from '../../lib/vendor/safePackWording';
 import {
-  exceptionReasonLabel,
+  exceptionReasonsLabel,
+  groupExceptionsByQuestion,
   type AssessmentException,
   type DecisionOutcome,
 } from '../../lib/vendor/assessmentExceptions';
@@ -139,6 +140,7 @@ export function AssessmentReviewPanel({
   onDownloadDecisionPacket,
   decidedByLabel,
 }: AssessmentReviewPanelProps) {
+  const groupedExceptions = groupExceptionsByQuestion(reviewExceptions);
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
       <motion.div
@@ -184,8 +186,8 @@ export function AssessmentReviewPanel({
                 {!hasEmptyQuestionSnapshot(reviewAssessment) && (
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-200">
-                      {reviewExceptions.length} exception
-                      {reviewExceptions.length === 1 ? '' : 's'}
+                      {groupedExceptions.length} exception
+                      {groupedExceptions.length === 1 ? '' : 's'}
                     </span>
                     <div className="inline-flex rounded-lg border border-white/10 p-0.5">
                       <button
@@ -300,14 +302,14 @@ export function AssessmentReviewPanel({
                 </div>
               ) : reviewFilter === 'exceptions' ? (
                 <>
-                  {reviewExceptions.length === 0 ? (
+                  {groupedExceptions.length === 0 ? (
                     <p className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-sm text-emerald-200">
                       No exceptions flagged — answers look complete. Switch to All answers for a
                       full walkthrough.
                     </p>
                   ) : (
-                    reviewExceptions.map((ex, idx) => (
-                      <div key={`${ex.id}-${ex.reason}`} className="space-y-3">
+                    groupedExceptions.map((ex, idx) => (
+                      <div key={ex.id} className="space-y-3">
                         <div className="flex gap-4">
                           <span className="mt-1 font-mono text-xs text-slate-700">
                             {String(idx + 1).padStart(2, '0')}
@@ -316,12 +318,12 @@ export function AssessmentReviewPanel({
                             <p className="mb-2 text-sm font-medium text-slate-200">{ex.question}</p>
                             <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
                               <p className="text-sm font-medium text-amber-100">
-                                {ex.reason === 'unanswered'
+                                {ex.reasons.includes('unanswered')
                                   ? 'No response provided.'
                                   : formatAssessmentAnswer(ex.answer)}
                               </p>
                               <p className="mt-1 text-[10px] uppercase tracking-wide text-amber-400/80">
-                                {exceptionReasonLabel(ex.reason)}
+                                {exceptionReasonsLabel(ex.reasons)}
                               </p>
                             </div>
                             <div className="mt-2 flex items-center gap-2">
