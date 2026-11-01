@@ -137,6 +137,48 @@ The emulator does not prove that the production composite index is deployed.
    reviewed resubmission, not a widened cutoff or mass status reset.
 7. Promote only with recorded staging evidence and a separate production command.
 
+## Lost-email reconcile (`scripts/mail-reconcile.ts`)
+
+Closes the loss window in cutover step 6: a doc created after the extension is gone
+but before the worker is enabled has its create event consumed by the disabled
+worker, and `recoverMail` only scans worker-owned docs. Take the cutoff (`CUT`)
+**before** uninstalling the extension and use the same value for
+`MAIL_WORKER_CUTOVER_AT` and `--cutover-at`.
+
+- **Dry run is the default.** It pages through `mail` reading only id, create time
+  and a `delivery` projection (no recipients or bodies), builds no provider, reads no
+  key, writes nothing, and prints ids and counts as JSON.
+- Classes: `CANDIDATE` (created at/after `CUT`, no `delivery`, older than
+  `--min-age-seconds`, default 300) is the only class `--apply` acts on.
+  `RECENT_UNCLAIMED` is left to the live trigger. `PRE_CUTOVER_UNDELIVERED`,
+  `WORKER_PROCESSING` and `WORKER_OUTCOME_UNKNOWN` are listed for owner review
+  against provider activity and are never acted on. `WORKER_OTHER` and
+  `FOREIGN_DELIVERY` (extension-finished) are counts only.
+- `--apply` (separately owner-authorized) calls `worker.process(id)` once per
+  candidate, sequentially. It needs `--confirm-project` equal to `--project-id`,
+  `--mail-from`, `--provider-region`, `SENDGRID_API_KEY` in the environment, and
+  refuses to start if candidates exceed `--max` (default 10, hard cap 50). It stops
+  at the first failure. `process(id)` is idempotent (transactional claim refuses
+  owned, terminal or pre-cutoff docs), so a re-run or a race with the live trigger
+  cannot send twice. The script never writes or clears `delivery`.
+- Targets: `guardentra-staging` only, or a `demo-*` project on a localhost
+  emulator. Production is refused until its separate mail-queue database design is
+  reviewed. Credentials come from ADC; run as the worker SA (for example
+  `gcloud auth application-default login --impersonate-service-account <worker SA>`).
+- Errors print a coded message only (`TARGET_REFUSED`, `LIMIT_EXCEEDED`,
+  `RECONCILE_FAILED`, ...). Exit codes: 0 ok, 1 runtime failure, 2 usage/refusal,
+  3 an apply call failed.
+
+```bash
+npx tsx scripts/mail-reconcile.ts --project-id guardentra-staging \
+  --database "(default)" --cutover-at <CUT>
+```
+
+With ingress paused the dry run should find 0 candidates; the script exists in case
+it does not. Tests: `src/tests/mailReconcile.test.ts` (unit, CLI guards) and
+`src/tests/mailReconcile.firestore.test.ts` (emulator, run by
+`npm run test:mail-worker-firestore`).
+
 ## Observability and staging acceptance gate
 
 Create log-based alerts for ERROR codes, RETRY_EXHAUSTED, OUTCOME_UNKNOWN,
