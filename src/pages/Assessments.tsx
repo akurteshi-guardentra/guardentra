@@ -49,7 +49,7 @@ import {
   hasTerminalOrgDecision,
   normalizeRemediationDueAt,
   recordedDecisionOutcome,
-  nextReviewAtForDecision,
+  decisionNextReviewAt,
 } from '../lib/vendor/assessmentLifecycle';
 import {
   buildArchiveEmptyAssessmentPatch,
@@ -748,15 +748,16 @@ export function Assessments() {
                         remediationOwner: reviewAssessment.remediationOwner || undefined,
                         remediationDueAt: reviewAssessment.remediationDueAt || undefined,
                         residualRiskLevel: reviewAssessment.residualRiskLevel || undefined,
-                        nextReviewAt: nextReviewAtForDecision(
-                          recorded,
-                          reviewAssessment.decidedAt ? new Date(reviewAssessment.decidedAt) : undefined
-                        ),
+                        nextReviewAt: decisionNextReviewAt({
+                          outcome: recorded,
+                          decidedAt: reviewAssessment.decidedAt,
+                          remediationDueAt: reviewAssessment.remediationDueAt,
+                        }),
                       }
                     : { outcome: null }),
                   exceptions: groupExceptionsByQuestion(reviewExceptions).map((e) => ({
                     question: e.question,
-                    reason: exceptionReasonsLabel(e.reasons),
+                    reason: exceptionReasonsLabel(e.reasons, e.evidenceStatus),
                     answer: Array.isArray(e.answer) ? e.answer.join(', ') : e.answer,
                   })),
                   triageTier: (reviewAssessment as { triageTier?: string }).triageTier,

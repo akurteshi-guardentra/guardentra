@@ -31,7 +31,13 @@ import {
   type PortalQuestion,
 } from '../lib/vendor/questionBank';
 import { uploadPortalEvidence, requestPortalEvidenceValidate, fetchPortalEvidenceDownloadUrl, type UploadedEvidence } from '../lib/vendor/evidenceUpload';
-import { evidenceStateLabel, trustedEvidenceFileNames, type EvidenceState } from '../lib/vendor/evidenceTrust';
+import {
+  evidenceStateLabel,
+  portalEvidenceDisplayState,
+  trustedEvidenceFileNames,
+  type EvidenceState,
+  type EvidenceTrustMap,
+} from '../lib/vendor/evidenceTrust';
 import { syncVendorAfterAssessmentProgress } from '../lib/vendor/syncVendorAssessment';
 import { assessmentDueDay, formatDueDay } from '../lib/vendor/dueDate';
 import {
@@ -88,7 +94,10 @@ export function VendorPortal() {
   const [answers, setAnswers] = useState<AnswersMap>({});
   const [comments, setComments] = useState<CommentsMap>({});
   const [evidence, setEvidence] = useState<EvidenceMap>({});
-  const [trustHints, setTrustHints] = useState<Record<string, EvidenceState | 'uploaded'>>({});
+  const [trustHints, setTrustHints] = useState<Record<string, EvidenceState>>({});
+  // Backend-written scan/trust records, read with the assessment so file status
+  // survives a reload (#124 acceptance finding 1).
+  const [trustMap, setTrustMap] = useState<EvidenceTrustMap>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   // #124 F10: portal audit events are batched (one request per batch, not per
   // answer) so fast navigation can't exhaust the audit rate limit and drop
@@ -234,6 +243,9 @@ export function VendorPortal() {
         if (data.answers) setAnswers(data.answers);
         if (data.comments) setComments(data.comments);
         if (data.evidenceByQuestion) setEvidence(data.evidenceByQuestion);
+        if (data.evidenceTrustByStoragePath && typeof data.evidenceTrustByStoragePath === 'object') {
+          setTrustMap(data.evidenceTrustByStoragePath as EvidenceTrustMap);
+        }
         if (data.answerProposals && typeof data.answerProposals === 'object') {
           setProposals(data.answerProposals as Record<string, AnswerProposal>);
         }
@@ -376,7 +388,7 @@ export function VendorPortal() {
         file,
         questionId: currentQuestion.id,
       });
-      let displayState: EvidenceState | 'uploaded' = 'uploaded';
+      let displayState: EvidenceState = 'uploaded';
       try {
         const validated = await requestPortalEvidenceValidate({
           assessmentId,
@@ -1038,7 +1050,9 @@ export function VendorPortal() {
                         {f.fileName}
                       </button>
                       <span className="shrink-0 text-[10px] uppercase tracking-wide text-slate-500">
-                        {evidenceStateLabel(trustHints[f.storagePath] || 'uploaded')}
+                        {evidenceStateLabel(
+                          portalEvidenceDisplayState(f.storagePath, trustMap, trustHints[f.storagePath])
+                        )}
                       </span>
                     </span>
                     <button

@@ -206,6 +206,28 @@ export function trustedEvidenceFileNames(
     .filter((n): n is string => Boolean(n));
 }
 
+/**
+ * Portal display state for one uploaded file (#124 acceptance finding 1).
+ *
+ * The portal used to show only the in-memory hint from the upload response, so
+ * after a reload every file read "Uploaded" even when the backend scanner had
+ * already recorded clean or quarantined. The backend-written trust map on the
+ * assessment doc is authoritative; a fresher in-session hint (same upload) only
+ * wins when it is further along. Display only: trust decisions still go through
+ * isTrustedEvidence / the server.
+ */
+export function portalEvidenceDisplayState(
+  storagePath: string | undefined,
+  map?: EvidenceTrustMap | null,
+  hint?: EvidenceState
+): EvidenceState {
+  const fromMap = lookupTrustRecord(storagePath, map)?.state;
+  if (fromMap && hint) {
+    return (STATE_RANK[hint] ?? -1) > (STATE_RANK[fromMap] ?? -1) ? hint : fromMap;
+  }
+  return fromMap || hint || 'uploaded';
+}
+
 export function evidenceStateLabel(state: EvidenceState | 'missing' | 'unknown' | 'malformed'): string {
   switch (state) {
     case 'uploaded':

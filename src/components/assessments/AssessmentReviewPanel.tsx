@@ -323,7 +323,7 @@ export function AssessmentReviewPanel({
                                   : formatAssessmentAnswer(ex.answer)}
                               </p>
                               <p className="mt-1 text-[10px] uppercase tracking-wide text-amber-400/80">
-                                {exceptionReasonsLabel(ex.reasons)}
+                                {exceptionReasonsLabel(ex.reasons, ex.evidenceStatus)}
                               </p>
                             </div>
                             <div className="mt-2 flex items-center gap-2">

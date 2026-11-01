@@ -809,13 +809,16 @@ export async function handleOrgAttachmentDownload(req: Request, res: Response, d
 
 export async function handleOrgDecision(req: Request, res: Response, deps: EvidenceDeps) {
   try {
+    // Authenticate before parsing the body (#124 acceptance finding 4): an
+    // unauthenticated caller with an incomplete body got 400 (and a hint about
+    // the expected fields) instead of 401.
+    const decoded = await requireVerifiedToken(req, deps);
     const assessmentId = String(req.body?.assessmentId || '').trim();
     const outcome = parseDecisionOutcome(req.body?.outcome);
     const decisionNotes = String(req.body?.decisionNotes || '');
     const remediationOwner = String(req.body?.remediationOwner || '').trim();
     const remediationDueAt = normalizeRemediationDueAt(String(req.body?.remediationDueAt || ''));
     const residualRiskLevel = parseResidualRiskLevel(req.body?.residualRiskLevel);
-    const decoded = await requireVerifiedToken(req, deps);
     if (!assessmentId) {
       res.status(400).json({ error: 'assessmentId is required.' });
       return;
