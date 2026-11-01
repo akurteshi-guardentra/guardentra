@@ -40,7 +40,8 @@ describe('#204 in-range dependency patch', () => {
     expect(pkg.dependencies.express).toBe('^5.3.0');
     expect(pkg.dependencies['react-router-dom']).toBe('^7.15.1');
     expect(pkg.dependencies.firebase).toBe('^12.13.0');
-    expect(pkg.dependencies['firebase-admin']).toBe('^13.10.0');
+    // firebase-admin 14 major upgrade (follow-up to #242): Node >=22, modular entry points only.
+    expect(pkg.dependencies['firebase-admin']).toBe('^14.5.0');
     expect(pkg.overrides).toBeUndefined();
   });
 
@@ -61,20 +62,20 @@ describe('#204 in-range dependency patch', () => {
     expect(entry('node_modules/react-router-dom').dependencies?.['react-router']).toBe('7.18.2');
     expect(entry('node_modules/react-router').version).toBe('7.18.2');
 
-    expect(entry('node_modules/firebase-admin').version).toBe('13.10.0');
+    expect(entry('node_modules/firebase-admin').version).toBe('14.5.0');
     expect(entry('node_modules/firebase-admin').dependencies?.['@fastify/busboy']).toBe('^3.0.0');
     expect(entry('node_modules/@fastify/busboy').version).toBe('3.2.2');
 
+    // With firebase-admin 14 (@google-cloud/firestore 9 / storage 8), Cloud Tasks and the Admin SDK
+    // share one hoisted google-gax 6.x; the nested Cloud Tasks copy is gone.
     expect(entry('node_modules/@google-cloud/tasks').version).toBe('7.1.0');
-    expect(entry('node_modules/@google-cloud/tasks/node_modules/google-gax').dependencies?.['@grpc/grpc-js']).toBe(
-      '^1.12.6',
-    );
-    expect(entry('node_modules/@google-cloud/tasks/node_modules/@grpc/grpc-js').version).toBe('1.14.5');
+    expect(entry('node_modules/@google-cloud/tasks').dependencies?.['google-gax']).toBe('^6.0.0');
+    expect(packages['node_modules/@google-cloud/tasks/node_modules/google-gax']).toBeUndefined();
 
-    expect(entry('node_modules/google-gax').version).toBe('4.6.1');
-    expect(entry('node_modules/google-gax').dependencies?.['@grpc/grpc-js']).toBe('^1.10.9');
-    expect(entry('node_modules/google-gax/node_modules/@grpc/grpc-js').version).toBe('1.14.5');
-    expect(entry('node_modules/google-gax/node_modules/@grpc/grpc-js').optional).toBe(true);
+    expect(entry('node_modules/google-gax').version).toBe('6.14.0');
+    expect(entry('node_modules/google-gax').dependencies?.['@grpc/grpc-js']).toBe('^1.12.6');
+    expect(entry('node_modules/google-gax/node_modules/@grpc/grpc-js').version).toBe('1.14.7');
+    expect(entry('node_modules/@google-cloud/firestore-api/node_modules/@grpc/grpc-js').version).toBe('1.14.7');
 
     expect(entry('node_modules/@google-cloud/pubsub/node_modules/google-gax').dependencies?.['@grpc/grpc-js']).toBe(
       '^1.12.6',
@@ -89,7 +90,7 @@ describe('#204 in-range dependency patch', () => {
     expect(entry('node_modules/@firebase/firestore').version).toBe('4.17.2');
     expect(entry('node_modules/@firebase/firestore').dependencies?.['@grpc/grpc-js']).toBe('~1.9.0');
     expect(entry('node_modules/@grpc/grpc-js').version).toBe('1.9.16');
-    expect(resolvedVersions('@grpc/grpc-js')).toEqual(['1.14.5', '1.14.5', '1.14.5', '1.9.16']);
+    expect(resolvedVersions('@grpc/grpc-js')).toEqual(['1.14.5', '1.14.7', '1.14.7', '1.9.16']);
   });
 
   it('does not leave a second resolved copy of the other patched packages', () => {
