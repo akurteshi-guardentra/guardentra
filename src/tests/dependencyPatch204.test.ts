@@ -34,16 +34,22 @@ const resolvedVersions = (packageName: string) => {
 
 describe('#204 in-range dependency patch', () => {
   it('keeps the root ranges and does not add an override', () => {
-    expect(pkg.dependencies.express).toBe('^5.2.1');
+    // Deliberately moved from ^5.2.1 to ^5.3.0 by the Express 5.3 upgrade PR. #204 kept
+    // Express at 5.2.1 because it was an in-range patch of other families; the minor
+    // bump is its own change with HTTP regression evidence in expressUpgrade.test.ts.
+    expect(pkg.dependencies.express).toBe('^5.3.0');
     expect(pkg.dependencies['react-router-dom']).toBe('^7.15.1');
     expect(pkg.dependencies.firebase).toBe('^12.13.0');
     expect(pkg.dependencies['firebase-admin']).toBe('^13.10.0');
     expect(pkg.overrides).toBeUndefined();
   });
 
-  it('resolves the four approved families and retains Express 5.2.1', () => {
-    expect(entry('node_modules/express').version).toBe('5.2.1');
-    expect(entry('node_modules/express').dependencies?.['proxy-addr']).toBe('^2.0.7');
+  it('resolves the four approved families on the reviewed Express 5.3.0', () => {
+    expect(entry('node_modules/express').version).toBe('5.3.0');
+    // 5.3.0 raised its own floor to ^2.0.8, the version #204 already resolved.
+    expect(entry('node_modules/express').dependencies?.['proxy-addr']).toBe('^2.0.8');
+    expect(entry('node_modules/express').dependencies?.['body-parser']).toBe('^2.3.0');
+    expect(entry('node_modules/express').dependencies?.router).toBe('^2.2.0');
     expect(entry('node_modules/firebase-tools/node_modules/express').version).toBe('4.22.2');
     expect(entry('node_modules/firebase-tools/node_modules/express').dependencies?.['proxy-addr']).toBe('~2.0.7');
     expect(entry('node_modules/proxy-addr').version).toBe('2.0.8');
