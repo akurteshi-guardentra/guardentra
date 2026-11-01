@@ -147,9 +147,11 @@ export function VendorTable({
                           ? 'Security residual score'
                           : v.finalRating
                             ? 'Final rating (impact + security)'
-                            : v.impactLevel
-                              ? 'From impact assessment'
-                              : 'From vendor criticality (no security score yet)'
+                            : v.residualRiskLevel
+                              ? 'Residual risk recorded at the latest assessment decision'
+                              : v.impactLevel
+                                ? 'From impact assessment'
+                                : 'From vendor criticality (no security score yet)'
                       }
                     >
                       {hasRealRiskScore(v) && (

@@ -104,6 +104,48 @@ export function listAssessmentExceptions(input: {
   });
 }
 
+/** One reviewer-facing row per question, carrying every reason it was flagged. */
+export interface GroupedAssessmentException {
+  id: string;
+  category: string;
+  question: string;
+  reasons: ExceptionReason[];
+  answer?: string | string[];
+}
+
+/**
+ * Collapse per-reason exceptions into one row per question (#124 journey finding 6):
+ * a "Partially" answer with no trusted evidence was listed twice. Display-only; the
+ * approval guard still evaluates the ungrouped list from listAssessmentExceptions.
+ */
+export function groupExceptionsByQuestion(
+  exceptions: AssessmentException[]
+): GroupedAssessmentException[] {
+  const byId = new Map<string, GroupedAssessmentException>();
+  const out: GroupedAssessmentException[] = [];
+  for (const ex of exceptions) {
+    const existing = byId.get(ex.id);
+    if (existing) {
+      if (!existing.reasons.includes(ex.reason)) existing.reasons.push(ex.reason);
+      continue;
+    }
+    const row: GroupedAssessmentException = {
+      id: ex.id,
+      category: ex.category,
+      question: ex.question,
+      reasons: [ex.reason],
+      answer: ex.answer,
+    };
+    byId.set(ex.id, row);
+    out.push(row);
+  }
+  return out;
+}
+
+export function exceptionReasonsLabel(reasons: ExceptionReason[]): string {
+  return reasons.map(exceptionReasonLabel).join(' · ');
+}
+
 export function exceptionReasonLabel(reason: ExceptionReason): string {
   switch (reason) {
     case 'unanswered':

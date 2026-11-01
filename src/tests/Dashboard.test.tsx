@@ -107,7 +107,7 @@ describe('Dashboard progressive setup (#67)', () => {
       </MemoryRouter>,
     );
     await waitFor(() => {
-      expect(screen.getByText(/Welcome back/i)).toBeInTheDocument();
+      expect(screen.getByText(/Welcome, Ada/i)).toBeInTheDocument();
     });
     expect(screen.getByRole('button', { name: /New Assessment/i })).toBeInTheDocument();
   });
