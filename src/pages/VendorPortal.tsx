@@ -44,7 +44,7 @@ import {
   type AnswerProposal,
   type PortalAttestations,
 } from '../lib/vendor/portalProposals';
-import { emitAuditBestEffort } from '../lib/auditClient';
+import { createAuditBatcher } from '../lib/auditClient';
 
 type AnswersMap = Record<string, AnswerValue | string | string[] | undefined>;
 type CommentsMap = Record<string, string>;
@@ -90,6 +90,23 @@ export function VendorPortal() {
   const [evidence, setEvidence] = useState<EvidenceMap>({});
   const [trustHints, setTrustHints] = useState<Record<string, EvidenceState | 'uploaded'>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // #124 F10: portal audit events are batched (one request per batch, not per
+  // answer) so fast navigation can't exhaust the audit rate limit and drop
+  // events. Portal auth headers only (GitHub #63).
+  const [portalAudit] = useState(() => createAuditBatcher({ getAuthHeaders: getPortalAuthHeaders }));
+  useEffect(() => {
+    const flushOnHide = () => {
+      if (document.visibilityState === 'hidden') void portalAudit.flush({ keepalive: true });
+    };
+    const flushOnPageHide = () => void portalAudit.flush({ keepalive: true });
+    document.addEventListener('visibilitychange', flushOnHide);
+    window.addEventListener('pagehide', flushOnPageHide);
+    return () => {
+      document.removeEventListener('visibilitychange', flushOnHide);
+      window.removeEventListener('pagehide', flushOnPageHide);
+      void portalAudit.flush({ keepalive: true });
+    };
+  }, [portalAudit]);
   const [isSuccess, setIsSuccess] = useState(false);
   const [started, setStarted] = useState(false);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -385,20 +402,17 @@ export function VendorPortal() {
       setTrustHints((prev) => ({ ...prev, [uploaded.storagePath]: displayState }));
       scheduleSave(answers, comments, next);
       if (assessment?.organizationId) {
-        void emitAuditBestEffort(
-          {
-            tenantId: assessment.organizationId,
-            eventType: 'evidence.uploaded',
-            objectType: 'assessment',
-            objectId: assessmentId,
-            payload: {
-              questionId: currentQuestion.id,
-              fileName: uploaded.fileName,
-              contentType: uploaded.contentType,
-            },
+        portalAudit.enqueue({
+          tenantId: assessment.organizationId,
+          eventType: 'evidence.uploaded',
+          objectType: 'assessment',
+          objectId: assessmentId,
+          payload: {
+            questionId: currentQuestion.id,
+            fileName: uploaded.fileName,
+            contentType: uploaded.contentType,
           },
-          { getAuthHeaders: getPortalAuthHeaders }
-        );
+        });
       }
     } catch (err: any) {
       setUploadError(err?.message || 'Upload failed. Check Storage rules / anonymous auth.');
@@ -465,20 +479,17 @@ export function VendorPortal() {
       setProposals(nextProps);
       scheduleSave(answers, comments, evidence, nextProps);
       if (assessment?.organizationId) {
-        void emitAuditBestEffort(
-          {
-            tenantId: assessment.organizationId,
-            eventType: 'answer.proposed',
-            objectType: 'assessment',
-            objectId: assessmentId,
-            payload: {
-              questionId: currentQuestion.id,
-              confidence: proposal.confidence,
-              sourceFileName: proposal.sourceFileName,
-            },
+        portalAudit.enqueue({
+          tenantId: assessment.organizationId,
+          eventType: 'answer.proposed',
+          objectType: 'assessment',
+          objectId: assessmentId,
+          payload: {
+            questionId: currentQuestion.id,
+            confidence: proposal.confidence,
+            sourceFileName: proposal.sourceFileName,
           },
-          { getAuthHeaders: getPortalAuthHeaders }
-        );
+        });
       }
     } catch (err: any) {
       setUploadError(err?.message || 'Could not propose answers from evidence.');
@@ -509,16 +520,13 @@ export function VendorPortal() {
     }
     scheduleSave(nextAnswers, comments, evidence, nextProps);
     if (assessment?.organizationId && assessmentId) {
-      void emitAuditBestEffort(
-        {
-          tenantId: assessment.organizationId,
-          eventType: status === 'rejected' ? 'answer.saved' : 'answer.confirmed',
-          objectType: 'assessment',
-          objectId: assessmentId,
-          payload: { questionId: currentQuestion.id, status },
-        },
-        { getAuthHeaders: getPortalAuthHeaders }
-      );
+      portalAudit.enqueue({
+        tenantId: assessment.organizationId,
+        eventType: status === 'rejected' ? 'answer.saved' : 'answer.confirmed',
+        objectType: 'assessment',
+        objectId: assessmentId,
+        payload: { questionId: currentQuestion.id, status },
+      });
     }
   };
 
@@ -537,6 +545,10 @@ export function VendorPortal() {
       return;
     }
     setIsSubmitting(true);
+    // Deliver queued answer/evidence audit events before the server records
+    // assessment.submitted, so the audit trail keeps their order. Best effort:
+    // flush never throws and never blocks the submission on audit failure.
+    await portalAudit.flush();
     try {
       const attestationPayload = {
         ...attestations,
@@ -1175,16 +1187,13 @@ export function VendorPortal() {
                       className="bg-primary text-white hover:bg-primary/90"
                       onClick={() => {
                         if (assessment?.organizationId && assessmentId && currentQuestion) {
-                          void emitAuditBestEffort(
-                            {
-                              tenantId: assessment.organizationId,
-                              eventType: 'answer.saved',
-                              objectType: 'assessment',
-                              objectId: assessmentId,
-                              payload: { questionId: currentQuestion.id },
-                            },
-                            { getAuthHeaders: getPortalAuthHeaders }
-                          );
+                          portalAudit.enqueue({
+                            tenantId: assessment.organizationId,
+                            eventType: 'answer.saved',
+                            objectType: 'assessment',
+                            objectId: assessmentId,
+                            payload: { questionId: currentQuestion.id },
+                          });
                         }
                         goNext();
                       }}
