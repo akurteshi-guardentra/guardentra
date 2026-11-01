@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   encodeTrustMapKey,
+  hasPendingEvidenceScan,
   portalEvidenceDisplayState,
   type EvidenceTrustMap,
 } from '../lib/vendor/evidenceTrust';
@@ -45,6 +46,21 @@ describe('finding 1: portal evidence status after reload', () => {
   });
   it('a stale in-session hint does not override a later scanner verdict', () => {
     expect(portalEvidenceDisplayState(bad, map, 'scan_pending')).toBe('quarantined');
+  });
+});
+
+describe('follow-up: live scan verdict listener gate', () => {
+  it('listens while a file has no terminal verdict, stops once all do', () => {
+    const pending = 'portal/asm1/q_3/new.pdf';
+    const ev = { q_1: [{ storagePath: clean }], q_3: [{ storagePath: pending }] };
+    expect(hasPendingEvidenceScan(ev, map, { [pending]: 'scan_pending' })).toBe(true);
+    const done: EvidenceTrustMap = {
+      ...map,
+      [encodeTrustMapKey(pending)]: { state: 'clean', storagePath: pending, updatedAt: 'x' },
+    };
+    expect(hasPendingEvidenceScan(ev, done, { [pending]: 'scan_pending' })).toBe(false);
+    expect(hasPendingEvidenceScan({ q_2: [{ storagePath: bad }] }, map)).toBe(false);
+    expect(hasPendingEvidenceScan({}, map)).toBe(false);
   });
 });
 

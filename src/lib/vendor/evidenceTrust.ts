@@ -228,6 +228,27 @@ export function portalEvidenceDisplayState(
   return fromMap || hint || 'uploaded';
 }
 
+/**
+ * True while any listed portal file has no terminal scanner verdict yet. The
+ * portal listens for verdicts only while this holds, so the label moves from
+ * "Scan pending" to clean / quarantined without a reload.
+ */
+export function hasPendingEvidenceScan(
+  evidenceByQuestion: Record<string, Array<{ storagePath?: string }> | undefined>,
+  map?: EvidenceTrustMap | null,
+  hints?: Record<string, EvidenceState>
+): boolean {
+  for (const list of Object.values(evidenceByQuestion || {})) {
+    if (!Array.isArray(list)) continue;
+    for (const item of list) {
+      if (!item?.storagePath) continue;
+      const state = portalEvidenceDisplayState(item.storagePath, map, hints?.[item.storagePath]);
+      if (!TERMINAL.has(state)) return true;
+    }
+  }
+  return false;
+}
+
 export function evidenceStateLabel(state: EvidenceState | 'missing' | 'unknown' | 'malformed'): string {
   switch (state) {
     case 'uploaded':

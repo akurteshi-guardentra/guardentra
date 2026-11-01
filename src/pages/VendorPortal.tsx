@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { signInWithCustomToken } from 'firebase/auth';
 import { 
   Shield, 
@@ -33,6 +33,7 @@ import {
 import { uploadPortalEvidence, requestPortalEvidenceValidate, fetchPortalEvidenceDownloadUrl, type UploadedEvidence } from '../lib/vendor/evidenceUpload';
 import {
   evidenceStateLabel,
+  hasPendingEvidenceScan,
   portalEvidenceDisplayState,
   trustedEvidenceFileNames,
   type EvidenceState,
@@ -277,6 +278,28 @@ export function VendorPortal() {
       if (savedClearTimer.current) clearTimeout(savedClearTimer.current);
     };
   }, [assessmentId]);
+
+  // Live scan verdicts (#124 follow-up): while any file is still awaiting the
+  // backend scanner, listen to the assessment doc and take ONLY the
+  // backend-written trust map from it. Answers/comments are never overwritten
+  // from the listener, so in-progress edits are not clobbered.
+  const awaitingScan = useMemo(
+    () => hasPendingEvidenceScan(evidence, trustMap, trustHints),
+    [evidence, trustMap, trustHints]
+  );
+  const assessmentLoaded = Boolean(assessment?.id);
+  useEffect(() => {
+    if (!assessmentId || !assessmentLoaded || !awaitingScan || portalAccess !== 'ready') return;
+    const unsubscribe = onSnapshot(
+      doc(getPortalDb(), 'assessments', assessmentId),
+      (snap) => {
+        const map = snap.data()?.evidenceTrustByStoragePath;
+        if (map && typeof map === 'object') setTrustMap(map as EvidenceTrustMap);
+      },
+      (err) => console.error('Scan status listener failed', err)
+    );
+    return unsubscribe;
+  }, [assessmentId, assessmentLoaded, awaitingScan, portalAccess]);
 
   const categoryQs = useMemo(
     () => questions.filter((q) => q.category === activeCategory),
