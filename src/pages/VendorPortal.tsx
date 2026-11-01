@@ -33,6 +33,7 @@ import {
 import { uploadPortalEvidence, requestPortalEvidenceValidate, fetchPortalEvidenceDownloadUrl, type UploadedEvidence } from '../lib/vendor/evidenceUpload';
 import { evidenceStateLabel, trustedEvidenceFileNames, type EvidenceState } from '../lib/vendor/evidenceTrust';
 import { syncVendorAfterAssessmentProgress } from '../lib/vendor/syncVendorAssessment';
+import { assessmentDueDay, formatDueDay } from '../lib/vendor/dueDate';
 import {
   buildPortalAutosavePatch,
   isReceiptMode,
@@ -713,10 +714,7 @@ export function VendorPortal() {
   }
 
   if (!started) {
-    const due = assessment.dueAt || assessment.dueDate;
-    const dueLabel = due
-      ? new Date(due).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-      : '—';
+    const dueLabel = formatDueDay(assessmentDueDay(assessment));
     const ring = 2 * Math.PI * 36;
     const ringOffset = ring - (progress / 100) * ring;
     const downloadInstructions = () => {

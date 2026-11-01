@@ -25,7 +25,7 @@ export function AuditSpineCard() {
       const body = await res.json().catch(() => ({}));
       if (res.status === 503) {
         setTone('warn');
-        setMessage('Audit spine disabled. Set AUDIT_SPINE_ENABLED=true and AUDIT_DATABASE_URL locally.');
+        setMessage('Audit chain verification is not available in this workspace yet. Contact support if you need it enabled.');
         return;
       }
       if (!res.ok) {
