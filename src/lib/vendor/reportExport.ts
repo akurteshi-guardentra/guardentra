@@ -202,6 +202,32 @@ export type DecisionPacketInput = {
 
 export const NO_DECISION_RECORDED_LABEL = 'No decision recorded';
 
+/**
+ * Packet date formatting (#124 acceptance finding 2: raw ISO timestamps were
+ * printed). Due and next-review dates are calendar days, shown as their UTC day
+ * (the day the reviewer picked, the same in every timezone). Timestamps keep the
+ * time, explicitly in UTC.
+ */
+export function formatPacketDay(value: string | undefined): string {
+  if (!value) return '—';
+  const ms = Date.parse(value);
+  if (Number.isNaN(ms)) return value;
+  return new Date(ms).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+export function formatPacketTimestamp(value: string | undefined): string {
+  if (!value) return '—';
+  const ms = Date.parse(value);
+  if (Number.isNaN(ms)) return value;
+  const iso = new Date(ms).toISOString();
+  return `${formatPacketDay(iso)}, ${iso.slice(11, 16)} UTC`;
+}
+
 /** FastTrack decision packet (print → Save as PDF) — distinct from Impact report. */
 export function buildDecisionPacketHtml(input: DecisionPacketInput): string {
   const outcome = typeof input.outcome === 'string' ? input.outcome.trim() : '';
@@ -221,12 +247,12 @@ export function buildDecisionPacketHtml(input: DecisionPacketInput): string {
   // Without a recorded decision, every decision field is withheld: printing who
   // "decided", when, or the reviewer's unsaved selection would read as a decision.
   const decisionSection = recorded
-    ? `<p>Decided by: ${escapeHtml(input.decidedBy || '—')} at ${escapeHtml(input.decidedAt || '—')}</p>
+    ? `<p>Decided by: ${escapeHtml(input.decidedBy || '—')} at ${escapeHtml(formatPacketTimestamp(input.decidedAt))}</p>
 <p>Residual risk: <strong>${escapeHtml(input.residualRiskLevel || '—')}</strong></p>
 ${input.remediationOwner || input.remediationDueAt
-  ? `<p>Remediation owner: ${escapeHtml(input.remediationOwner || '—')} · Due: ${escapeHtml(input.remediationDueAt || '—')}</p>`
+  ? `<p>Remediation owner: ${escapeHtml(input.remediationOwner || '—')} · Due: ${escapeHtml(formatPacketDay(input.remediationDueAt))}</p>`
   : ''}
-<p>Next review: ${escapeHtml(input.nextReviewAt || '—')}${
+<p>Next review: ${escapeHtml(formatPacketDay(input.nextReviewAt))}${
     input.reviewCadence ? ` (cadence: ${escapeHtml(input.reviewCadence)})` : ''
   }</p>
 <h2>Conditions / rationale</h2>
@@ -244,7 +270,7 @@ This summary is not an approval, rejection or remediation decision. A decision e
   .draft{border:2px dashed #b45309;padding:10px 12px;background:#fffbeb;color:#78350f;margin:16px 0}
 </style></head><body>
 <h1>${heading}</h1>
-<p class="meta">Generated ${escapeHtml(new Date().toISOString())}</p>
+<p class="meta">Generated ${escapeHtml(formatPacketTimestamp(new Date().toISOString()))}</p>
 <div class="banner">
   <strong>${escapeHtml(input.vendorName)}</strong> · ${escapeHtml(input.frameworksLabel)}<br/>
   Outcome: <strong>${escapeHtml(recorded ? outcome : NO_DECISION_RECORDED_LABEL)}</strong>
