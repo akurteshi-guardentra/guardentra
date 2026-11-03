@@ -17,6 +17,11 @@ describe('#163 server-authoritative material transition contract', () => {
     expect(vendorBlock).toContain('vendorArchiveFieldsUnchanged()');
     expect(vendorBlock).toContain('/api/org/vendor-archive');
 
+    // #226 archive open-assessment query needs this composite index before env enablement.
+    const indexes = read('firestore.indexes.json');
+    expect(indexes).toContain('"collectionGroup": "assessments"');
+    expect(indexes).toMatch(/"fieldPath": "organizationId"[\s\S]*?"fieldPath": "vendorId"/);
+
     const assessmentBlock = rules.slice(
       rules.indexOf('match /assessments/{assessmentId}'),
       rules.indexOf('match /assessment_responses/{responseId}'),

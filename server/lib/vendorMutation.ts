@@ -253,7 +253,16 @@ export async function archiveVendorWithDurableAudit(input: {
 
     const org = orgSnap.data() || {};
     const count = typeof org.vendorCount === 'number' ? org.vendorCount : 0;
-    const nextCount = Math.max(0, count - 1);
+    // Refuse to archive when the plan counter cannot cover this active vendor.
+    // Clamping with Math.max(0, count - 1) would conceal an already-wrong counter (#226 review).
+    if (count < 1) {
+      throw new VendorMutationError(
+        409,
+        'vendor_count_inconsistent',
+        'Organization vendorCount is already zero while an active vendor still exists. Repair the counter before archiving.',
+      );
+    }
+    const nextCount = count - 1;
 
     const preparedAudit = await prepareMaterialAuditIntent(tx, db, {
       eventId: materialAuditEventId([organizationId, 'vendor.archived', vendorId]),
@@ -268,6 +277,8 @@ export async function archiveVendorWithDurableAudit(input: {
         previousStatus: String(vendor.status || 'Active'),
         reasonPresent: Boolean(reason),
         openAssessmentCount: 0,
+        previousVendorCount: count,
+        nextVendorCount: nextCount,
       },
     });
 

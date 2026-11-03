@@ -219,6 +219,56 @@ describe('#226 vendor archive durable audit coupling', () => {
     expect(rows.get('organizations/org1')?.vendorCount).toBe(1);
   });
 
+  it('fails closed when vendorCount is already zero for an active vendor', async () => {
+    const { db, rows } = fakeFirestore({
+      'organizations/org1': { vendorCount: 0, planId: 'starter' },
+      'vendors/v1': { name: 'Drifted', organizationId: 'org1', status: 'Active' },
+    });
+
+    await expect(
+      archiveVendorWithDurableAudit({
+        db,
+        organizationId: 'org1',
+        actorId: 'admin1',
+        vendorId: 'v1',
+      }),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: 'vendor_count_inconsistent',
+    } satisfies Partial<VendorMutationError>);
+
+    expect(rows.get('vendors/v1')?.status).toBe('Active');
+    expect(rows.get('organizations/org1')?.vendorCount).toBe(0);
+    expect(
+      [...rows.keys()].filter((k) => k.startsWith(`${MATERIAL_AUDIT_COLLECTION}/`)),
+    ).toHaveLength(0);
+  });
+
+  it('records previous and next vendorCount on a successful archive audit intent', async () => {
+    const { db, rows } = fakeFirestore({
+      'organizations/org1': { vendorCount: 3, planId: 'starter' },
+      'vendors/v1': { name: 'Acme', organizationId: 'org1', status: 'Active' },
+    });
+
+    await archiveVendorWithDurableAudit({
+      db,
+      organizationId: 'org1',
+      actorId: 'admin1',
+      vendorId: 'v1',
+      nowIso: '2026-11-03T09:00:00.000Z',
+    });
+
+    const auditDocs = [...rows.entries()].filter(([k]) =>
+      k.startsWith(`${MATERIAL_AUDIT_COLLECTION}/`),
+    );
+    expect(auditDocs).toHaveLength(1);
+    expect(auditDocs[0][1].envelope.payload).toMatchObject({
+      previousVendorCount: 3,
+      nextVendorCount: 2,
+    });
+    expect(rows.get('organizations/org1')?.vendorCount).toBe(2);
+  });
+
   it('rejects cross-tenant archive attempts', async () => {
     const { db } = fakeFirestore({
       'organizations/org1': { vendorCount: 1 },
