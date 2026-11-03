@@ -1,0 +1,128 @@
+name: Post-release QA
+
+# Runs the Playwright suites in e2e/ after a release reaches an environment.
+#
+#   staging: automatic. promote-staging (ci.yml) fast-forwards deploy/staging with a
+#            deploy key, and that push starts this workflow from the same tree. The job
+#            waits until staging /api/health serves the pushed SHA, then runs the
+#            read-only smoke suite and the signed-in read-only regression suite.
+#   prod:    manual (workflow_dispatch) after the owner rolls prod. Smoke suite only:
+#            GET requests and signed-out page loads. No sign-in, no writes.
+#
+# Nothing here deploys, writes to Firestore/Storage, or changes cloud settings.
+# The repo is public: traces, videos and signed-in reports are never uploaded, and
+# credentials come only from the staging-e2e environment secrets.
+
+on:
+  push:
+    branches: [deploy/staging]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Environment (prod runs the read-only smoke suite only)'
+        type: choice
+        options: [staging, prod]
+        default: staging
+      expect_sha:
+        description: 'Full 40-char commit the target should serve (blank = do not pin)'
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: post-release-qa-${{ github.event.inputs.target || 'staging' }}
+  cancel-in-progress: false
+
+env:
+  E2E_TARGET: ${{ github.event.inputs.target || 'staging' }}
+  E2E_EXPECT_SHA: ${{ github.event_name == 'push' && github.sha || github.event.inputs.expect_sha }}
+
+jobs:
+  # Pinned: ubuntu-latest moved to 26.04, which Playwright 1.56.1 cannot install browsers on
+  # (first run 41689800988). Move both together when Playwright is upgraded.
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: e2e
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+
+      - run: npm ci
+      - run: npm run test:unit
+      - run: npx playwright install --with-deps chromium
+
+      - name: Wait until the target serves this commit
+        if: env.E2E_EXPECT_SHA != ''
+        run: node scripts/wait-for-release.mjs --timeout-min 45
+
+      - name: Smoke (read-only)
+        run: npx playwright test --project=smoke
+
+      - name: Summary
+        if: always()
+        env:
+          REGRESSION_ENABLED: ${{ vars.E2E_REGRESSION_ENABLED }}
+        run: |
+          node scripts/summary.mjs test-results/results.json "Smoke on ${E2E_TARGET}" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$E2E_TARGET" = staging ] && [ "$REGRESSION_ENABLED" != true ]; then
+            echo "Signed-in regression NOT RUN: E2E_REGRESSION_ENABLED is not set." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Signed-out pages only, so failure screenshots hold no account data.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: smoke-report-${{ env.E2E_TARGET }}
+          path: e2e/playwright-report
+          retention-days: 7
+
+  regression:
+    needs: smoke
+    # Staging only. A prod account needs a separate owner OK and a change to e2e/lib/targets.mjs.
+    # Off until the owner sets repo variable E2E_REGRESSION_ENABLED=true and creates the environment,
+    # so this workflow never creates the environment as a side effect.
+    if: (github.event.inputs.target || 'staging') == 'staging' && vars.E2E_REGRESSION_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # Holds E2E_ADMIN_EMAIL / E2E_ADMIN_PASSWORD for one synthetic staging admin.
+    # Until the owner creates it, every regression test is skipped and the summary says so.
+    environment: staging-e2e
+    defaults:
+      run:
+        working-directory: e2e
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      - name: Signed-in regression (read-only)
+        env:
+          E2E_ADMIN_EMAIL: ${{ secrets.E2E_ADMIN_EMAIL }}
+          E2E_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}
+        run: npx playwright test --project=regression
+
+      - name: Summary
+        if: always()
+        run: node scripts/summary.mjs test-results/results.json "Signed-in regression on staging" >> "$GITHUB_STEP_SUMMARY"
+      # No artifact upload: reports of a signed-in session stay on the runner.

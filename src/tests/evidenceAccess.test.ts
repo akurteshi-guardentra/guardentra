@@ -674,24 +674,93 @@ describe('evidence download', () => {
     expect(res.statusCode).toBe(403);
   });
 
-  it('allows portal self-download of untrusted files while the portal is open', async () => {
-    const d = deps();
+  function portalTrustAssessment(record?: Record<string, unknown>, extra: Record<string, unknown> = {}) {
+    return {
+      organizationId: 'org1',
+      portalOpen: true,
+      status: 'In Progress',
+      ...(record
+        ? { evidenceTrustByStoragePath: { [encodeTrustMapKey('portal/asmA/a.pdf')]: record } }
+        : {}),
+      ...extra,
+    };
+  }
+
+  async function portalDownload(assessment: Record<string, unknown>, token = 'portal-a') {
+    const d = deps({ getAssessment: vi.fn(async () => assessment) });
     const res = mockRes();
     await handleEvidenceDownload(
       req({
-        token: 'portal-a',
-        query: {
-          assessmentId: 'asmA',
-          storagePath: 'portal/asmA/a.pdf',
-          generation: '9999',
-        },
+        token,
+        query: { assessmentId: 'asmA', storagePath: 'portal/asmA/a.pdf', generation: '9999' },
       }),
       res as any,
       d,
       'portal'
     );
+    return { res, d };
+  }
+
+  it('refuses portal self-download of a file with no trust record (F1 fail-closed)', async () => {
+    const { res, d } = await portalDownload(portalTrustAssessment());
+    expect(res.statusCode).toBe(403);
+    expect((res.body as { error?: string }).error).toMatch(/malware scan marks it clean/);
+    expect(d.signReadUrl).not.toHaveBeenCalled();
+  });
+
+  it.each(['scan_pending', 'validated', 'uploaded', 'scan_failed', 'unknown'])(
+    'refuses portal self-download while the live generation is %s',
+    async (state) => {
+      const { res, d } = await portalDownload(
+        portalTrustAssessment({ state, storagePath: 'portal/asmA/a.pdf', generation: '1' })
+      );
+      expect(res.statusCode).toBe(403);
+      expect(d.signReadUrl).not.toHaveBeenCalled();
+    }
+  );
+
+  it('refuses portal self-download when the clean record is for an older generation', async () => {
+    const { res, d } = await portalDownload(
+      portalTrustAssessment({ state: 'clean', storagePath: 'portal/asmA/a.pdf', generation: '0' })
+    );
+    expect(res.statusCode).toBe(403);
+    expect(d.signReadUrl).not.toHaveBeenCalled();
+  });
+
+  it('refuses portal self-download when the clean record names a different object', async () => {
+    const { res, d } = await portalDownload(
+      portalTrustAssessment({ state: 'clean', storagePath: 'portal/asmA/other.pdf', generation: '1' })
+    );
+    expect(res.statusCode).toBe(403);
+    expect(d.signReadUrl).not.toHaveBeenCalled();
+  });
+
+  it('allows portal self-download of a file recorded clean at the live generation', async () => {
+    const { res, d } = await portalDownload(
+      portalTrustAssessment({ state: 'clean', storagePath: 'portal/asmA/a.pdf', generation: '1' })
+    );
     expect(res.statusCode).toBe(200);
     expect(d.signReadUrl).toHaveBeenCalledWith('portal/asmA/a.pdf', '1');
+  });
+
+  it('keeps tenant isolation for clean files: another portal session is refused', async () => {
+    const { res, d } = await portalDownload(
+      portalTrustAssessment({ state: 'clean', storagePath: 'portal/asmA/a.pdf', generation: '1' }),
+      'portal-b'
+    );
+    expect(res.statusCode).toBe(403);
+    expect(d.signReadUrl).not.toHaveBeenCalled();
+  });
+
+  it('refuses a clean portal download once the portal is closed', async () => {
+    const { res, d } = await portalDownload(
+      portalTrustAssessment(
+        { state: 'clean', storagePath: 'portal/asmA/a.pdf', generation: '1' },
+        { portalOpen: false }
+      )
+    );
+    expect(res.statusCode).toBe(403);
+    expect(d.signReadUrl).not.toHaveBeenCalled();
   });
 
   it('refuses portal self-download of a file quarantined at the live generation', async () => {
@@ -721,31 +790,12 @@ describe('evidence download', () => {
     expect(d.signReadUrl).not.toHaveBeenCalled();
   });
 
-  it('allows portal self-download when the quarantine was for an older generation', async () => {
-    const d = deps({
-      getAssessment: vi.fn(async () => ({
-        organizationId: 'org1',
-        portalOpen: true,
-        status: 'In Progress',
-        evidenceTrustByStoragePath: {
-          [encodeTrustMapKey('portal/asmA/a.pdf')]: {
-            state: 'quarantined',
-            storagePath: 'portal/asmA/a.pdf',
-            generation: '0',
-            updatedAt: '2026-10-30T18:03:47.863Z',
-          },
-        },
-      })),
-    });
-    const res = mockRes();
-    await handleEvidenceDownload(
-      req({ token: 'portal-a', query: { assessmentId: 'asmA', storagePath: 'portal/asmA/a.pdf' } }),
-      res as any,
-      d,
-      'portal'
+  it('refuses portal self-download when only an older generation was quarantined and the live one is unscanned', async () => {
+    const { res, d } = await portalDownload(
+      portalTrustAssessment({ state: 'quarantined', storagePath: 'portal/asmA/a.pdf', generation: '0' })
     );
-    expect(res.statusCode).toBe(200);
-    expect(d.signReadUrl).toHaveBeenCalledWith('portal/asmA/a.pdf', '1');
+    expect(res.statusCode).toBe(403);
+    expect(d.signReadUrl).not.toHaveBeenCalled();
   });
 
   it('does not treat portal self-download as a reviewer bypass', async () => {
