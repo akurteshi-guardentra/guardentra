@@ -4,7 +4,7 @@
  */
 
 export type RiskLevel = 'Critical' | 'High' | 'Medium' | 'Low';
-export type VendorStatus = 'Active' | 'Pending' | 'Terminated';
+export type VendorStatus = 'Active' | 'Pending' | 'Terminated' | 'Archived';
 export type AssessmentStatus =
   | 'Not Started'
   | 'In Progress'

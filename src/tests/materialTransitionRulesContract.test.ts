@@ -13,6 +13,9 @@ describe('#163 server-authoritative material transition contract', () => {
       rules.indexOf('match /vendor_invites/{inviteId}'),
     );
     expect(vendorBlock).toContain('allow create: if false;');
+    expect(vendorBlock).toContain('allow delete: if false;');
+    expect(vendorBlock).toContain('vendorArchiveFieldsUnchanged()');
+    expect(vendorBlock).toContain('/api/org/vendor-archive');
 
     const assessmentBlock = rules.slice(
       rules.indexOf('match /assessments/{assessmentId}'),
@@ -31,6 +34,7 @@ describe('#163 server-authoritative material transition contract', () => {
     const wizard = read('src/pages/AssessmentWizard.tsx');
 
     expect(vendors).toContain("fetch('/api/org/vendor-create'");
+    expect(vendors).toContain("fetch('/api/org/vendor-archive'");
     expect(wizard).toContain("fetch('/api/org/assessment-create'");
     expect(wizard).not.toContain("addDoc(collection(db, 'assessments')");
   });

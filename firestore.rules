@@ -378,6 +378,13 @@ service cloud.firestore {
         isNumberIfPresent(request.resource.data, 'trustScore');
     }
 
+    // Soft-archive fields are server-only (#226). Client updates may still edit
+    // contacts/risk/impact, but cannot flip lifecycle status or forge archive metadata.
+    function vendorArchiveFieldsUnchanged() {
+      let affected = request.resource.data.diff(resource.data).affectedKeys();
+      return !affected.hasAny(['status', 'archivedAt', 'archivedBy', 'archiveReason']);
+    }
+
     // Vendor-cap enforcement (docs/ARCHITECTURE_FOUNDATION.md §4 tier sketch — Starter
     // defaults below match that sketch). This is soft enforcement, not airtight: the
     // counter is maintained by client code (src/pages/VendorsDirectory.tsx createVendor,
@@ -394,11 +401,15 @@ service cloud.firestore {
 
     match /vendors/{vendorId} {
       allow read: if isDocOrgMember();
-      // Material vendor creation is server-authoritative so its vendorCount update
-      // and durable audit intent cannot be bypassed by an SDK/REST client.
+      // Material vendor creation/archive is server-authoritative so its vendorCount
+      // update and durable audit intent cannot be bypassed by an SDK/REST client.
       allow create: if false;
-      allow update: if isDocOrgMember() && orgIdUnchanged() && vendorFieldsValid();
-      allow delete: if isDocOrgMember() && isAdmin();
+      allow update: if isDocOrgMember()
+        && orgIdUnchanged()
+        && vendorFieldsValid()
+        && vendorArchiveFieldsUnchanged();
+      // Hard delete is forbidden; use POST /api/org/vendor-archive (#226).
+      allow delete: if false;
     }
 
     // Vendor invite record for the "Invite Vendor" quick action. Written only by the

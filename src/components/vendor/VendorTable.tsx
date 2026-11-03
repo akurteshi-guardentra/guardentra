@@ -57,6 +57,9 @@ type VendorTableProps = {
   setMenuVendorId: (value: string | null | ((prev: string | null) => string | null)) => void;
   assessmentsByVendor: Map<string, AssessmentLike[]>;
   onNavigate: (path: string) => void;
+  onArchiveVendor?: (vendor: Vendor) => void;
+  canArchiveVendor?: boolean;
+  archivingVendorId?: string | null;
 };
 
 export function VendorTable({
@@ -72,6 +75,9 @@ export function VendorTable({
   setMenuVendorId,
   assessmentsByVendor,
   onNavigate,
+  onArchiveVendor,
+  canArchiveVendor = false,
+  archivingVendorId = null,
 }: VendorTableProps) {
   return (
     <>
@@ -244,6 +250,19 @@ export function VendorTable({
                           >
                             View assessments ({linked.length})
                           </button>
+                          {canArchiveVendor && onArchiveVendor && (
+                            <button
+                              type="button"
+                              className="block w-full px-3 py-2 text-left text-xs text-rose-300 hover:bg-white/5 disabled:opacity-50"
+                              disabled={archivingVendorId === v.id}
+                              onClick={() => {
+                                setMenuVendorId(null);
+                                onArchiveVendor(v);
+                              }}
+                            >
+                              {archivingVendorId === v.id ? 'Archiving…' : 'Archive vendor'}
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
