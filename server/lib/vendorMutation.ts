@@ -252,16 +252,19 @@ export async function archiveVendorWithDurableAudit(input: {
     }
 
     const org = orgSnap.data() || {};
-    const count = typeof org.vendorCount === 'number' ? org.vendorCount : 0;
-    // Refuse to archive when the plan counter cannot cover this active vendor.
-    // Clamping with Math.max(0, count - 1) would conceal an already-wrong counter (#226 review).
-    if (count < 1) {
+    const rawCount = org.vendorCount;
+    // Fail closed on missing, non-integer, zero or negative counters. A silent
+    // Math.max(0, count - 1) clamp would conceal drift (#226 / PR #255 review).
+    const countValid =
+      typeof rawCount === 'number' && Number.isInteger(rawCount) && rawCount >= 1;
+    if (!countValid) {
       throw new VendorMutationError(
         409,
         'vendor_count_inconsistent',
-        'Organization vendorCount is already zero while an active vendor still exists. Repair the counter before archiving.',
+        'Organization vendorCount is missing or inconsistent with an active vendor. Repair the counter before archiving.',
       );
     }
+    const count = rawCount;
     const nextCount = count - 1;
 
     const preparedAudit = await prepareMaterialAuditIntent(tx, db, {

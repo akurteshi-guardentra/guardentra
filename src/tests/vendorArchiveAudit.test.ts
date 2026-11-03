@@ -219,9 +219,30 @@ describe('#226 vendor archive durable audit coupling', () => {
     expect(rows.get('organizations/org1')?.vendorCount).toBe(1);
   });
 
-  it('fails closed when vendorCount is already zero for an active vendor', async () => {
+  it.each([
+    {
+      label: 'missing vendorCount',
+      org: { planId: 'starter' },
+      expectCount: undefined,
+    },
+    {
+      label: 'zero vendorCount',
+      org: { vendorCount: 0, planId: 'starter' },
+      expectCount: 0,
+    },
+    {
+      label: 'negative (inconsistent) vendorCount',
+      org: { vendorCount: -1, planId: 'starter' },
+      expectCount: -1,
+    },
+    {
+      label: 'non-integer (inconsistent) vendorCount',
+      org: { vendorCount: 1.5, planId: 'starter' },
+      expectCount: 1.5,
+    },
+  ])('fails closed without writes when $label', async ({ org, expectCount }) => {
     const { db, rows } = fakeFirestore({
-      'organizations/org1': { vendorCount: 0, planId: 'starter' },
+      'organizations/org1': org,
       'vendors/v1': { name: 'Drifted', organizationId: 'org1', status: 'Active' },
     });
 
@@ -238,7 +259,7 @@ describe('#226 vendor archive durable audit coupling', () => {
     } satisfies Partial<VendorMutationError>);
 
     expect(rows.get('vendors/v1')?.status).toBe('Active');
-    expect(rows.get('organizations/org1')?.vendorCount).toBe(0);
+    expect(rows.get('organizations/org1')?.vendorCount).toBe(expectCount);
     expect(
       [...rows.keys()].filter((k) => k.startsWith(`${MATERIAL_AUDIT_COLLECTION}/`)),
     ).toHaveLength(0);
@@ -267,6 +288,7 @@ describe('#226 vendor archive durable audit coupling', () => {
       nextVendorCount: 2,
     });
     expect(rows.get('organizations/org1')?.vendorCount).toBe(2);
+    expect(rows.get('vendors/v1')?.status).toBe('Archived');
   });
 
   it('rejects cross-tenant archive attempts', async () => {
