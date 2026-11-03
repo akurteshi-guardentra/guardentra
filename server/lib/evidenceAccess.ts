@@ -736,14 +736,22 @@ export async function handleEvidenceDownload(
     if (!generation) return;
 
     if (kind === 'portal') {
-      // A vendor may re-open their own pending/validated upload, but never get a
-      // signed URL back for bytes the scanner quarantined at this generation.
+      // Fail closed (#124 prod smoke finding F1): a vendor gets a signed URL back
+      // only for bytes the scanner recorded as clean at this exact generation.
+      // Pending, validated, failed, quarantined or stale-generation uploads are
+      // refused, so unscanned bytes are never served back out of the bucket.
       const trust = lookupTrustRecord(
         storagePath,
         assessment.evidenceTrustByStoragePath as EvidenceTrustMap
       );
-      if (trust?.state === 'quarantined' && trust.generation === generation) {
+      if (trust?.state === 'quarantined' && String(trust.generation ?? '') === generation) {
         res.status(403).json({ error: 'This file was quarantined by the malware scanner.' });
+        return;
+      }
+      if (!reviewerTrustMatchesObject({ trust, storagePath, generation })) {
+        res.status(403).json({
+          error: 'This file can be downloaded once the malware scan marks it clean.',
+        });
         return;
       }
     }

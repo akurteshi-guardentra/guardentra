@@ -118,7 +118,16 @@ export async function fetchPortalEvidenceDownloadUrl(input: {
   });
   const res = await fetch(`/api/portal/evidence-download?${params.toString()}`, { headers });
   if (!res.ok) {
-    throw new Error('Evidence download was not authorized.');
+    let message = 'Evidence download was not authorized.';
+    if (res.status === 403) {
+      try {
+        const err = (await res.json()) as { error?: unknown };
+        if (typeof err.error === 'string' && /malware scan/i.test(err.error)) message = err.error;
+      } catch {
+        // keep the generic message
+      }
+    }
+    throw new Error(message);
   }
   const body = (await res.json()) as { url?: string };
   if (!body.url) throw new Error('Evidence download was not authorized.');
