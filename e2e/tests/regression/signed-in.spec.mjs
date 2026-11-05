@@ -47,8 +47,12 @@ for (const p of PAGES) {
     page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
     await page.goto(p.path);
     await expect(page).toHaveURL(new RegExp(p.path.replace(/\//g, '\\/')));
-    await page.waitForLoadState('networkidle');
-    await expect(page.locator('h1, h2').first()).toBeVisible();
+    // Signed-in pages keep Firestore listen/long-poll connections open, so
+    // 'networkidle' never settles there. Wait for rendered content instead,
+    // then give late permission errors a moment to surface.
+    await page.waitForLoadState('domcontentloaded');
+    await expect(page.locator('h1, h2').first()).toBeVisible({ timeout: 30_000 });
+    await page.waitForTimeout(3_000);
     const text = await page.locator('body').innerText();
     expect(text).not.toMatch(/Missing or insufficient permissions/i);
     expect(text).not.toMatch(/Something went wrong/i);
