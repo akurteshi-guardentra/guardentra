@@ -29,6 +29,7 @@ const EVENT_OBJECT_TYPE = new Map<string, 'vendor' | 'assessment' | 'organizatio
   ['vendor.created', 'vendor'],
   ['vendor.imported', 'vendor'],
   ['vendor.invite_queued', 'vendor'],
+  ['vendor.archived', 'vendor'],
   ['triage.completed', 'vendor'],
   ['assessment.created', 'assessment'],
   ['assessment.sent', 'assessment'],

@@ -180,6 +180,129 @@ export async function createVendorWithDurableAudit(input: {
   });
 }
 
+export type VendorArchiveResult = {
+  vendorId: string;
+  alreadyArchived: boolean;
+};
+
+/** Assessments that still need reviewer/vendor work block archive (#226). */
+export function assessmentBlocksVendorArchive(assessment: {
+  status?: unknown;
+  decisionOutcome?: unknown;
+}): boolean {
+  if (String(assessment.status || '') === 'Archived') return false;
+  const outcome = assessment.decisionOutcome;
+  return outcome !== 'approved' && outcome !== 'conditional' && outcome !== 'rejected';
+}
+
+export async function archiveVendorWithDurableAudit(input: {
+  db: Firestore;
+  organizationId: string;
+  actorId: string;
+  vendorId: string;
+  reason?: string;
+  nowIso?: string;
+}): Promise<VendorArchiveResult> {
+  const { db, organizationId, actorId, vendorId } = input;
+  const reason = normalize(input.reason).slice(0, 500);
+  const nowIso = input.nowIso || new Date().toISOString();
+  if (!vendorId || vendorId.length > 128 || /[/.\s]/.test(vendorId)) {
+    throw new VendorMutationError(400, 'invalid_vendor', 'vendorId is invalid.');
+  }
+
+  const vendorRef = db.collection('vendors').doc(vendorId);
+  const orgRef = db.collection('organizations').doc(organizationId);
+  const openAssessmentsQuery = db
+    .collection('assessments')
+    .where('organizationId', '==', organizationId)
+    .where('vendorId', '==', vendorId);
+
+  return db.runTransaction(async (tx) => {
+    const [orgSnap, vendorSnap, assessmentSnap] = await Promise.all([
+      tx.get(orgRef),
+      tx.get(vendorRef),
+      tx.get(openAssessmentsQuery),
+    ]);
+
+    if (!orgSnap.exists) {
+      throw new VendorMutationError(404, 'organization_missing', 'Organization not found.');
+    }
+    if (!vendorSnap.exists) {
+      throw new VendorMutationError(404, 'vendor_missing', 'Vendor not found.');
+    }
+
+    const vendor = vendorSnap.data() || {};
+    if (String(vendor.organizationId || '') !== organizationId) {
+      throw new VendorMutationError(403, 'vendor_forbidden', 'Vendor is not in this organization.');
+    }
+
+    if (String(vendor.status || '') === 'Archived') {
+      return { vendorId, alreadyArchived: true };
+    }
+
+    const blockers = assessmentSnap.docs.filter((doc) =>
+      assessmentBlocksVendorArchive(doc.data() || {}),
+    );
+    if (blockers.length > 0) {
+      throw new VendorMutationError(
+        409,
+        'vendor_has_open_assessments',
+        `Cannot archive vendor while ${blockers.length} open assessment(s) remain. Complete or archive empty assessments first.`,
+      );
+    }
+
+    const org = orgSnap.data() || {};
+    const rawCount = org.vendorCount;
+    // Fail closed on missing, non-integer, zero or negative counters. A silent
+    // Math.max(0, count - 1) clamp would conceal drift (#226 / PR #255 review).
+    const countValid =
+      typeof rawCount === 'number' && Number.isInteger(rawCount) && rawCount >= 1;
+    if (!countValid) {
+      throw new VendorMutationError(
+        409,
+        'vendor_count_inconsistent',
+        'Organization vendorCount is missing or inconsistent with an active vendor. Repair the counter before archiving.',
+      );
+    }
+    const count = rawCount;
+    const nextCount = count - 1;
+
+    const preparedAudit = await prepareMaterialAuditIntent(tx, db, {
+      eventId: materialAuditEventId([organizationId, 'vendor.archived', vendorId]),
+      tenantId: organizationId,
+      eventType: 'vendor.archived',
+      actorId,
+      actorType: 'user',
+      objectType: 'vendor',
+      objectId: vendorId,
+      createdAt: nowIso,
+      payload: {
+        previousStatus: String(vendor.status || 'Active'),
+        reasonPresent: Boolean(reason),
+        openAssessmentCount: 0,
+        previousVendorCount: count,
+        nextVendorCount: nextCount,
+      },
+    });
+
+    tx.set(
+      vendorRef,
+      {
+        status: 'Archived',
+        archivedAt: nowIso,
+        archivedBy: actorId,
+        ...(reason ? { archiveReason: reason } : {}),
+        updatedAt: nowIso,
+      },
+      { merge: true },
+    );
+    tx.set(orgRef, { vendorCount: nextCount }, { merge: true });
+    commitPreparedMaterialAuditIntent(tx, preparedAudit);
+
+    return { vendorId, alreadyArchived: false };
+  });
+}
+
 export type VendorMutationDeps = {
   verifyIdToken: (token: string) => Promise<DecodedIdToken>;
   getUser: (uid: string) => Promise<Record<string, unknown> | null>;
@@ -189,6 +312,12 @@ export type VendorMutationDeps = {
     ownerName: string;
     vendor: VendorCreateInput;
   }) => Promise<VendorCreateResult>;
+  archiveVendor: (args: {
+    organizationId: string;
+    actorId: string;
+    vendorId: string;
+    reason?: string;
+  }) => Promise<VendorArchiveResult>;
 };
 
 export function liveVendorMutationDeps(): VendorMutationDeps {
@@ -205,6 +334,13 @@ export function liveVendorMutationDeps(): VendorMutationDeps {
     async createVendor(args) {
       ensureAdmin();
       return createVendorWithDurableAudit({
+        db: getAdminDb(),
+        ...args,
+      });
+    },
+    async archiveVendor(args) {
+      ensureAdmin();
+      return archiveVendorWithDurableAudit({
         db: getAdminDb(),
         ...args,
       });
@@ -271,5 +407,67 @@ export async function handleOrgVendorCreate(
     }
     console.error('[vendor-create] failed', err);
     res.status(500).json({ error: 'Could not create vendor.' });
+  }
+}
+
+export async function handleOrgVendorArchive(
+  req: Request,
+  res: Response,
+  deps: VendorMutationDeps,
+): Promise<void> {
+  try {
+    const token = bearerToken(req);
+    if (!token) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+
+    let decoded: DecodedIdToken;
+    try {
+      decoded = await deps.verifyIdToken(token);
+    } catch {
+      res.status(401).json({ error: 'Invalid or expired token' });
+      return;
+    }
+
+    const user = await deps.getUser(decoded.uid);
+    if (!user) {
+      res.status(403).json({ error: 'Organization membership required' });
+      return;
+    }
+    const organizationId = normalize(user.organizationId);
+    const role = normalize(user.role || 'member');
+    if (!organizationId) {
+      res.status(403).json({ error: 'Organization membership required' });
+      return;
+    }
+    // Archive changes plan capacity — admin/owner only (#226).
+    if (!['admin', 'owner'].includes(role)) {
+      res.status(403).json({ error: 'Vendor archive permission required' });
+      return;
+    }
+
+    const body = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+    const vendorId = normalize(body.vendorId);
+    const reason = normalize(body.reason);
+    if (!vendorId) {
+      res.status(400).json({ error: 'vendorId is required.' });
+      return;
+    }
+
+    const result = await deps.archiveVendor({
+      organizationId,
+      actorId: decoded.uid,
+      vendorId,
+      ...(reason ? { reason } : {}),
+    });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    if (err instanceof VendorMutationError) {
+      res.status(err.status).json({ error: err.message, code: err.code });
+      return;
+    }
+    console.error('[vendor-archive] failed', err);
+    res.status(500).json({ error: 'Could not archive vendor.' });
   }
 }

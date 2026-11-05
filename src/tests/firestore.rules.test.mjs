@@ -225,6 +225,53 @@ async function main() {
     ),
   );
 
+  // #226: soft-archive is server-only; client delete and archive-field forgery stay denied.
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'vendors/archive-rules-v1'), {
+      organizationId: ORG,
+      name: 'Archive Rules Vendor',
+      category: 'SaaS',
+      criticality: 'Medium',
+      status: 'Active',
+      trustScore: 50,
+    });
+  });
+
+  await check('org admin CANNOT hard-delete a vendor via the client (#226)', () =>
+    assertFails(deleteDoc(doc(db, 'vendors/archive-rules-v1'))),
+  );
+
+  await check('org member CANNOT hard-delete a vendor via the client (#226)', () =>
+    assertFails(deleteDoc(doc(memberDb, 'vendors/archive-rules-v1'))),
+  );
+
+  await check('org admin CANNOT forge vendor status Archived via the client (#226)', () =>
+    assertFails(
+      updateDoc(doc(db, 'vendors/archive-rules-v1'), {
+        status: 'Archived',
+      }),
+    ),
+  );
+
+  await check('org admin CANNOT forge archivedAt/archivedBy/archiveReason via the client (#226)', () =>
+    assertFails(
+      updateDoc(doc(db, 'vendors/archive-rules-v1'), {
+        archivedAt: '2026-11-03T00:00:00.000Z',
+        archivedBy: 'member-1',
+        archiveReason: 'forged',
+      }),
+    ),
+  );
+
+  await check('org admin CAN still update non-archive vendor fields (#226)', () =>
+    assertSucceeds(
+      updateDoc(doc(db, 'vendors/archive-rules-v1'), {
+        category: 'Infrastructure',
+        trustScore: 55,
+      }),
+    ),
+  );
+
   await check('org member CANNOT directly create a hosted assessment', () =>
     assertFails(
       setDoc(doc(db, 'assessments/direct-client-assessment'), {
