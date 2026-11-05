@@ -1175,6 +1175,42 @@ async function main() {
     assertSucceeds(updateDoc(doc(db, 'organizations', ORG), { industry: 'Fintech' })),
   );
 
+  // Stripe webhook ordering cursor (server/lib/stripeWebhookIntegrity.ts). A client-written
+  // future cursor would make every real webhook event look stale and freeze billing.
+  for (const [field, value] of [
+    ['stripeLastEventId', 'evt_zzzzzzzz_forged'],
+    ['stripeLastEventCreated', 4102444800],
+    ['stripeLastEventType', 'customer.subscription.deleted'],
+  ]) {
+    await check(`org admin CANNOT write the Stripe cursor field ${field}`, () =>
+      assertFails(updateDoc(doc(db, 'organizations', ORG), { [field]: value })),
+    );
+  }
+  await check('member CANNOT write the Stripe cursor on the org', () =>
+    assertFails(updateDoc(doc(memberDb, 'organizations', ORG), {
+      // Distinct value, so the write still changes the cursor even if an earlier case leaked.
+      seatCount: 3, stripeLastEventCreated: 4102444801,
+    })),
+  );
+
+  // users/{uid} billing mirror: the webhook resolves a customer by users.stripeCustomerId,
+  // so a self-written value could hijack or jam another tenant's billing events.
+  for (const [field, value] of [
+    ['stripeCustomerId', 'cus_victim'],
+    ['stripeSubscriptionId', 'sub_forged'],
+    ['subscriptionStatus', 'active'],
+    ['stripeLastEventId', 'evt_zzzzzzzz_forged'],
+    ['stripeLastEventCreated', 4102444800],
+    ['stripeLastEventType', 'checkout.session.completed'],
+  ]) {
+    await check(`user CANNOT write their own profile billing field ${field}`, () =>
+      assertFails(updateDoc(doc(db, 'users', 'member-1'), { [field]: value })),
+    );
+  }
+  await check('user CAN still update a normal profile field', () =>
+    assertSucceeds(updateDoc(doc(db, 'users', 'member-1'), { displayName: 'Still Fine' })),
+  );
+
   // Founder bootstrap must be an atomic batch (org + admin profile), so both cases use
   // the real shape; the paid-plan case would otherwise fail for the wrong reason.
   const founderBatch = (uid, orgId, org) => {
@@ -1194,6 +1230,26 @@ async function main() {
       name: 'Stripe', seatCount: 1, vendorCount: 0, stripeSubscriptionId: 'sub_forged',
     })),
   );
+  await check('founder CANNOT bootstrap an org with a pre-set Stripe cursor', () =>
+    assertFails(founderBatch('cursor-founder', 'cursor-org', {
+      name: 'Cursor', planId: 'starter', vendorCap: 25, seatCap: 3,
+      seatCount: 1, vendorCount: 0, subscriptionStatus: 'none',
+      stripeLastEventCreated: 4102444800,
+    })),
+  );
+  await check('founder CANNOT bootstrap a profile with Stripe billing fields', async () => {
+    const fs = testEnv.authenticatedContext('profile-stripe-founder', { email: 'psf@example.com' }).firestore();
+    const batch = writeBatch(fs);
+    batch.set(doc(fs, 'organizations/psf-org'), {
+      name: 'PSF', planId: 'starter', vendorCap: 25, seatCap: 3,
+      seatCount: 1, vendorCount: 0, subscriptionStatus: 'none',
+    });
+    batch.set(doc(fs, 'users/profile-stripe-founder'), {
+      organizationId: 'psf-org', role: 'admin', email: 'psf@example.com',
+      stripeCustomerId: 'cus_victim',
+    });
+    await assertFails(batch.commit());
+  });
   await check('founder CAN bootstrap a Starter org with Starter caps', () =>
     assertSucceeds(founderBatch('fine-founder', 'fine-org', {
       name: 'Fine', planId: 'starter', vendorCap: 25, seatCap: 3,

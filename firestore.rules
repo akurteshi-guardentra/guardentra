@@ -223,10 +223,15 @@ service cloud.firestore {
       allow read: if isAuthenticated() && (request.auth.uid == userId || isOrgMember(resource.data.organizationId));
       // Issue #61: create is invite-bound or new-tenant founder only. Role and
       // organizationId stay immutable after create (KI#6).
-      allow create: if isValidUserCreate(userId);
+      // Billing and Stripe-cursor fields on the profile are webhook-only (Admin SDK).
+      // The webhook resolves a customer by users.stripeCustomerId, so a self-written
+      // value could hijack or jam another tenant's billing events.
+      allow create: if isValidUserCreate(userId)
+        && !request.resource.data.keys().hasAny(userBillingKeys());
       allow update: if isAuthenticated() && request.auth.uid == userId
         && request.resource.data.role == resource.data.role
-        && request.resource.data.organizationId == resource.data.organizationId;
+        && request.resource.data.organizationId == resource.data.organizationId
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(userBillingKeys());
     }
 
     // Only seatCount remains a legitimate non-admin organization write.
@@ -245,9 +250,18 @@ service cloud.firestore {
 
     // Billing fields are written only by the Stripe webhook (Admin SDK, bypasses rules).
     // A client — including an org admin — must never be able to raise its own plan/caps.
+    // stripeLastEvent* is the webhook's ordering cursor (server/lib/stripeWebhookIntegrity.ts
+    // stripeBillingCursorFields): a client-written future cursor would make real events stale.
+    function stripeCursorKeys() {
+      return ['stripeLastEventId', 'stripeLastEventCreated', 'stripeLastEventType'];
+    }
     function billingKeys() {
       return ['planId', 'vendorCap', 'seatCap', 'subscriptionStatus',
-              'stripeCustomerId', 'stripeSubscriptionId'];
+              'stripeCustomerId', 'stripeSubscriptionId'].concat(stripeCursorKeys());
+    }
+    function userBillingKeys() {
+      return ['subscriptionStatus', 'stripeCustomerId', 'stripeSubscriptionId']
+        .concat(stripeCursorKeys());
     }
     function billingFieldsUnchanged() {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny(billingKeys());
@@ -259,7 +273,8 @@ service cloud.firestore {
         && d.get('vendorCap', 25) == 25
         && d.get('seatCap', 3) == 3
         && d.get('subscriptionStatus', 'none') == 'none'
-        && !d.keys().hasAny(['stripeCustomerId', 'stripeSubscriptionId']);
+        && !d.keys().hasAny(['stripeCustomerId', 'stripeSubscriptionId'])
+        && !d.keys().hasAny(stripeCursorKeys());
     }
 
     // Organizations Collection
