@@ -78,5 +78,12 @@
     "typescript": "~6.0.3",
     "vite": "^8.0.13",
     "vitest": "^4.1.6"
+  },
+  "overrides": {
+    "@google-cloud/firestore-api": {
+      "google-gax": {
+        "rimraf": "^6.1.4"
+      }
+    }
   }
 }

@@ -33,7 +33,7 @@ const resolvedVersions = (packageName: string) => {
 };
 
 describe('#204 in-range dependency patch', () => {
-  it('keeps the root ranges and does not add an override', () => {
+  it('keeps the root ranges and adds only the scoped rimraf override', () => {
     // Deliberately moved from ^5.2.1 to ^5.3.0 by the Express 5.3 upgrade PR. #204 kept
     // Express at 5.2.1 because it was an in-range patch of other families; the minor
     // bump is its own change with HTTP regression evidence in expressUpgrade.test.ts.
@@ -42,7 +42,17 @@ describe('#204 in-range dependency patch', () => {
     expect(pkg.dependencies.firebase).toBe('^12.13.0');
     // firebase-admin 14 major upgrade (follow-up to #242): Node >=22, modular entry points only.
     expect(pkg.dependencies['firebase-admin']).toBe('^14.5.0');
-    expect(pkg.overrides).toBeUndefined();
+    // Only override: the runtime firebase-admin -> @google-cloud/firestore-api@0.2 -> google-gax@5
+    // branch never loads rimraf (no require in google-gax/build), but rimraf 5 pulled glob 10 /
+    // minimatch 9 (GHSA-3g3m-2fjr-6pw4, GHSA-g3hv-75wg-m249) into the runtime tree. Scoped so no
+    // other rimraf copy changes.
+    expect(pkg.overrides).toEqual({
+      '@google-cloud/firestore-api': { 'google-gax': { rimraf: '^6.1.4' } },
+    });
+    expect(entry('node_modules/@google-cloud/firestore-api/node_modules/rimraf').version).toBe('6.1.4');
+    expect(entry('node_modules/@google-cloud/firestore-api/node_modules/glob').version).toBe('14.0.4');
+    expect(entry('node_modules/@google-cloud/firestore-api/node_modules/minimatch').version).toBe('11.0.5');
+    expect(entry('node_modules/@google-cloud/firestore-api/node_modules/google-gax').version).toBe('5.0.8');
   });
 
   it('resolves the four approved families on the reviewed Express 5.3.0', () => {
@@ -51,7 +61,7 @@ describe('#204 in-range dependency patch', () => {
     expect(entry('node_modules/express').dependencies?.['proxy-addr']).toBe('^2.0.8');
     expect(entry('node_modules/express').dependencies?.['body-parser']).toBe('^2.3.0');
     expect(entry('node_modules/express').dependencies?.router).toBe('^2.2.0');
-    expect(entry('node_modules/firebase-tools/node_modules/express').version).toBe('4.22.2');
+    expect(entry('node_modules/firebase-tools/node_modules/express').version).toBe('4.22.3');
     expect(entry('node_modules/firebase-tools/node_modules/express').dependencies?.['proxy-addr']).toBe('~2.0.7');
     expect(entry('node_modules/proxy-addr').version).toBe('2.0.8');
     expect(entry('node_modules/proxy-addr').resolved).toBe(
