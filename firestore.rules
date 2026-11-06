@@ -400,15 +400,9 @@ service cloud.firestore {
       return !affected.hasAny(['status', 'archivedAt', 'archivedBy', 'archiveReason']);
     }
 
-    // Vendor-cap enforcement (docs/ARCHITECTURE_FOUNDATION.md §4 tier sketch — Starter
-    // defaults below match that sketch). This is soft enforcement, not airtight: the
-    // counter is maintained by client code (src/pages/VendorsDirectory.tsx createVendor,
-    // via a transaction) alongside the create, so it stops normal over-cap growth through
-    // the app but a client using the Firestore SDK/REST API directly could skip the
-    // increment and bypass it — same accepted risk tolerance as the AI soft-metering
-    // already described in that doc. True hard enforcement needs vendor writes routed
-    // through a server endpoint that authoritatively counts via the Admin SDK; not done
-    // here (bigger change, no live customers to violate a cap yet — see KNOWN_ISSUES.md).
+    // Seat-cap helper. Hosted vendor create/delete are not client writes: the vendors
+    // match below denies both (#160/#226). vendorCount is updated only by the server
+    // transaction. Do not restore a client vendor create from the old soft-cap comment.
     function orgField(orgId, field, fallback) {
       let org = get(/databases/$(database)/documents/organizations/$(orgId)).data;
       return (field in org) ? org[field] : fallback;
