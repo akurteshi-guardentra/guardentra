@@ -726,16 +726,26 @@ describe('inline enqueue remains available', () => {
   it('enqueuePortalEvidenceScan returns inline mode when delivery unset', async () => {
     const prevEnabled = process.env.EVIDENCE_SCANNER_ENABLED;
     const prevDelivery = process.env.EVIDENCE_SCANNER_DELIVERY;
+    // The inline path schedules a real scanner on setImmediate. Drop that callback
+    // so the assertion does not open a Cloud client and reject on missing ADC.
+    const schedule = vi.spyOn(global, 'setImmediate').mockImplementation(((..._args: unknown[]) => {
+      return 0 as unknown as NodeJS.Immediate;
+    }) as typeof setImmediate);
     process.env.EVIDENCE_SCANNER_ENABLED = 'true';
     delete process.env.EVIDENCE_SCANNER_DELIVERY;
-    const result = await enqueuePortalEvidenceScan({
-      assessmentId: 'asmA',
-      storagePath: 'portal/asmA/a.pdf',
-      generation: '1',
-    });
-    expect(result.mode).toBe('inline');
-    process.env.EVIDENCE_SCANNER_ENABLED = prevEnabled;
-    if (prevDelivery === undefined) delete process.env.EVIDENCE_SCANNER_DELIVERY;
-    else process.env.EVIDENCE_SCANNER_DELIVERY = prevDelivery;
+    try {
+      const result = await enqueuePortalEvidenceScan({
+        assessmentId: 'asmA',
+        storagePath: 'portal/asmA/a.pdf',
+        generation: '1',
+      });
+      expect(result.mode).toBe('inline');
+      expect(schedule).toHaveBeenCalledOnce();
+    } finally {
+      schedule.mockRestore();
+      process.env.EVIDENCE_SCANNER_ENABLED = prevEnabled;
+      if (prevDelivery === undefined) delete process.env.EVIDENCE_SCANNER_DELIVERY;
+      else process.env.EVIDENCE_SCANNER_DELIVERY = prevDelivery;
+    }
   });
 });
