@@ -49,7 +49,6 @@ export function FastTrackStageBar({
 }) {
   const location = useLocation();
   const active = current || resolveFastTrackStage(location.pathname, location.search);
-  const activeIdx = STAGES.findIndex((s) => s.id === active);
 
   const hrefFor = (stage: (typeof STAGES)[number]) => {
     if (!stage.href) return undefined;
@@ -69,13 +68,13 @@ export function FastTrackStageBar({
       <ol className="flex min-w-max items-center gap-1">
         {STAGES.map((stage, idx) => {
           const isCurrent = stage.id === active;
-          const isDone = idx < activeIdx;
           const href = hrefFor(stage);
+          // Location only. An earlier stage is not a recorded completion:
+          // Monitor must not paint "Review & decide" as done (#42 / #212 follow-up).
           const className = cn(
             'inline-flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-colors',
             isCurrent && 'bg-primary/15 text-white ring-1 ring-primary/40',
-            isDone && !isCurrent && 'text-slate-300',
-            !isDone && !isCurrent && 'text-slate-500'
+            !isCurrent && 'text-slate-500'
           );
           const inner = (
             <>
@@ -83,8 +82,7 @@ export function FastTrackStageBar({
                 className={cn(
                   'flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold tabular-nums',
                   isCurrent && 'bg-primary text-white',
-                  isDone && !isCurrent && 'bg-emerald-500/20 text-emerald-300',
-                  !isDone && !isCurrent && 'bg-white/5 text-slate-500'
+                  !isCurrent && 'bg-white/5 text-slate-500'
                 )}
               >
                 {stage.n}
@@ -98,11 +96,15 @@ export function FastTrackStageBar({
                 <span className="mx-0.5 hidden h-px w-4 bg-white/10 sm:block" aria-hidden />
               ) : null}
               {href && !isCurrent ? (
-                <Link to={href} className={className}>
+                <Link to={href} className={className} data-stage-state="available">
                   {inner}
                 </Link>
               ) : (
-                <span className={className} aria-current={isCurrent ? 'step' : undefined}>
+                <span
+                  className={className}
+                  data-stage-state={isCurrent ? 'current' : 'available'}
+                  aria-current={isCurrent ? 'step' : undefined}
+                >
                   {inner}
                 </span>
               )}
