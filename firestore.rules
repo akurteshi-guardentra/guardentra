@@ -287,14 +287,12 @@ service cloud.firestore {
         && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
         && isStarterOrgCreate();
       // Deeper token/role review (task #27) found this allowed ANY member to write
-      // ANY field, including name/industry — so Onboarding.tsx's isOrgCreator check
-      // (KI#8: stop an invited member from overwriting the shared org's settings) was
-      // enforced only client-side. A member using the SDK/REST directly could still
-      // overwrite it. Can't just require isAdmin() outright: a joining member's own
-      // batch legitimately increments seatCount, and VendorsDirectory's cap-check
-      // transaction increments vendorCount from any member's session — both must keep
-      // working. So: admins may change anything; everyone else is limited to exactly
-      // the two counters. dataRegion is always immutable once set (admins included).
+      // ANY field, including name/industry. Onboarding.tsx's isOrgCreator check (KI#8)
+      // was enforced only client-side. Admins may still change non-billing fields.
+      // A joining member may increment seatCount only. vendorCount is not a member
+      // write: hosted vendor create is server-authoritative (#160) and
+      // onlyMemberWritableOrgFieldsChanged allows seatCount alone.
+      // dataRegion is always immutable once set (admins included).
       allow update: if isAuthenticated() && isOrgMember(orgId) && orgDataRegionPreserved() &&
         billingFieldsUnchanged() &&
         (isAdmin() || onlyMemberWritableOrgFieldsChanged());
@@ -318,10 +316,9 @@ service cloud.firestore {
       // signup, when there is no admin in the request to reject.
       //
       // seatCount is maintained by src/lib/orgBootstrap.ts: set to 1 when an org is
-      // created, incremented in the same batch as the joining member's profile. Same
-      // soft-metering posture as vendorCount — a client writing through the SDK directly
-      // could still skip the increment (KNOWN_ISSUES.md #12 covers the equivalent gap for
-      // vendors); this stops the ordinary path, not a determined bypass.
+      // created, then incremented after the joining member's profile commits. A failed
+      // increment undercounts seats (KNOWN_ISSUES.md #12). That gap is the seat counter,
+      // not vendor create: client vendor creates are denied (#160).
       // Issue #61: invite role is allowlisted — forged privileged values cannot
       // be stored for later self-elevation at join time.
       allow create: if isCreatingForOwnOrg() && isAdmin()

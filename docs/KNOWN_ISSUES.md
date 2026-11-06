@@ -2,7 +2,7 @@
 
 Standalone running list of everything found-but-not-fixed while working through `docs/PRODUCT_ROADMAP_2026.md`'s sprints. Each item was discovered as a side effect of other work, deliberately not fixed at the time (out of scope, needs its own testing pass, or would have been scope creep), and should not be lost. Update this file whenever a new one is found or an existing one gets fixed — move fixed items to the "Resolved" section with the commit that fixed them rather than deleting the row.
 
-*Last updated: 2026-08-03 (KI#1 stale deploy note cleared; App Hosting verified serving support@).*
+*Last updated: 2026-11-06 (KI#12 no longer describes client vendor create as the live cap path; the seat undercount remains open).*
 
 ---
 
@@ -10,7 +10,7 @@ Standalone running list of everything found-but-not-fixed while working through 
 
 | # | Issue | Where | Why it matters | Why not fixed yet |
 |---|---|---|---|---|
-| 12 | Cap enforcement is soft for **both** vendors and seats: `organizations.vendorCount` and `organizations.seatCount` are maintained by client-side writes, and `firestore.rules` checks those counters | `firestore.rules`, `src/pages/VendorsDirectory.tsx`, `src/lib/orgBootstrap.ts` | A client using the Firestore SDK/REST directly, rather than the app UI, could create vendor docs or profiles without incrementing the counter, keeping it artificially low and bypassing the cap indefinitely | Accepted risk, matching the soft-metering tolerance `ARCHITECTURE_FOUNDATION.md` §4 documents for AI usage. Hard enforcement needs the same fix for both: route the writes through a server endpoint that counts authoritatively via the Admin SDK, since security rules cannot aggregate a collection. That is a genuine architectural change and there are no paying customers to violate a cap yet. **Note the seat cap now shares this posture** — #13 made it enforced where it previously was not enforced at all, which is a real improvement, but it is the same soft model |
+| 12 | Seat cap remains a client increment after the profile commit. Hosted vendor create does not: client vendor creates are denied, and members cannot write `vendorCount` (#160). | `src/lib/orgBootstrap.ts` for the seat increment. `firestore.rules`: `onlyMemberWritableOrgFieldsChanged` is `seatCount` only, and vendors use `allow create: if false`. | A failed or skipped seat increment undercounts `seatCount`, so a later invite can admit one more member than the cap. An org admin can still write `vendorCount`, because admin organization updates are not limited to `seatCount`. That admin write is a residual meter edit, not a client vendor-create bypass. | The seat undercount is the accepted failure mode of committing the profile before the increment. Closing the admin `vendorCount` write would change the organization update rule and is outside this note. Resolved row 22 describes the older member-writable `vendorCount` rule; the live member rule is `seatCount` only. |
 
 ## Resolved
 
