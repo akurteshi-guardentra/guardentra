@@ -10,7 +10,7 @@ Standalone running list of everything found-but-not-fixed while working through 
 
 | # | Issue | Where | Why it matters | Why not fixed yet |
 |---|---|---|---|---|
-| 12 | Seat cap remains a client increment after the profile commit. | `src/lib/orgBootstrap.ts` | A failed or skipped seat increment undercounts `seatCount`, so a later invite can admit one more member than the cap. | Accepted failure mode of committing the profile before the increment. Client `vendorCount` writes, including org-admin writes, are denied. The server Admin SDK transaction is what moves that meter (#160). |
+| 12 | Seat cap remains a client increment after the profile commit. A failed increment undercounts. | `src/lib/orgBootstrap.ts` | A failed or skipped seat increment undercounts `seatCount`, so a later invite can admit one more member than the cap. | Accepted failure mode of committing the profile before the increment. A browser write may only raise `seatCount` by one; zeroing it or jumping it is denied. Client `vendorCount` writes, including org-admin writes, are denied. The server Admin SDK transaction is what moves that meter (#160). |
 
 ## Resolved
 

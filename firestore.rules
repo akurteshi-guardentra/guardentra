@@ -240,6 +240,16 @@ service cloud.firestore {
     function vendorCountUnchanged() {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['vendorCount']);
     }
+    // Invite creation trusts seatCount. A client may raise it by one after a join.
+    // Zeroing it, or jumping it, would forge the cap check. A failed increment can
+    // still undercount (KNOWN_ISSUES.md #12); this only blocks a forged write.
+    function seatCountChangeIsOneStep() {
+      let affected = request.resource.data.diff(resource.data).affectedKeys();
+      return !affected.hasAny(['seatCount'])
+        || (request.resource.data.seatCount is int
+            && resource.data.seatCount is int
+            && request.resource.data.seatCount == resource.data.seatCount + 1);
+    }
     function onlyMemberWritableOrgFieldsChanged() {
       return request.resource.data.diff(resource.data).affectedKeys()
         .hasOnly(['seatCount']);
@@ -296,7 +306,7 @@ service cloud.firestore {
       // the server vendor transaction. A joining member may increment seatCount only.
       // dataRegion is always immutable once set (admins included).
       allow update: if isAuthenticated() && isOrgMember(orgId) && orgDataRegionPreserved() &&
-        billingFieldsUnchanged() && vendorCountUnchanged() &&
+        billingFieldsUnchanged() && vendorCountUnchanged() && seatCountChangeIsOneStep() &&
         (isAdmin() || onlyMemberWritableOrgFieldsChanged());
     }
 
