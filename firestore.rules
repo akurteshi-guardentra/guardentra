@@ -235,8 +235,11 @@ service cloud.firestore {
     }
 
     // Only seatCount remains a legitimate non-admin organization write.
-    // Hosted vendor creation is now server-authoritative and updates vendorCount
-    // through the Admin SDK, so browser clients must not mutate that meter.
+    // vendorCount is server-authoritative (#160). No browser client, including an
+    // org admin, may change it. The Admin SDK transaction is what moves the meter.
+    function vendorCountUnchanged() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['vendorCount']);
+    }
     function onlyMemberWritableOrgFieldsChanged() {
       return request.resource.data.diff(resource.data).affectedKeys()
         .hasOnly(['seatCount']);
@@ -288,13 +291,12 @@ service cloud.firestore {
         && isStarterOrgCreate();
       // Deeper token/role review (task #27) found this allowed ANY member to write
       // ANY field, including name/industry. Onboarding.tsx's isOrgCreator check (KI#8)
-      // was enforced only client-side. Admins may still change non-billing fields.
-      // A joining member may increment seatCount only. vendorCount is not a member
-      // write: hosted vendor create is server-authoritative (#160) and
-      // onlyMemberWritableOrgFieldsChanged allows seatCount alone.
+      // was enforced only client-side. Admins may change non-billing fields other
+      // than vendorCount. A client write of that meter would reset the cap check in
+      // the server vendor transaction. A joining member may increment seatCount only.
       // dataRegion is always immutable once set (admins included).
       allow update: if isAuthenticated() && isOrgMember(orgId) && orgDataRegionPreserved() &&
-        billingFieldsUnchanged() &&
+        billingFieldsUnchanged() && vendorCountUnchanged() &&
         (isAdmin() || onlyMemberWritableOrgFieldsChanged());
     }
 
