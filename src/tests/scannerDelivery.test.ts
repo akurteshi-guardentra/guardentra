@@ -728,9 +728,9 @@ describe('inline enqueue remains available', () => {
     const prevDelivery = process.env.EVIDENCE_SCANNER_DELIVERY;
     // The inline path schedules a real scanner on setImmediate. Drop that callback
     // so the assertion does not open a Cloud client and reject on missing ADC.
-    const schedule = vi.spyOn(global, 'setImmediate').mockImplementation(((..._args: unknown[]) => {
+    const schedule = vi.spyOn(global, 'setImmediate').mockImplementation(() => {
       return 0 as unknown as NodeJS.Immediate;
-    }) as typeof setImmediate);
+    });
     process.env.EVIDENCE_SCANNER_ENABLED = 'true';
     delete process.env.EVIDENCE_SCANNER_DELIVERY;
     try {
