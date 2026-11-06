@@ -572,7 +572,7 @@ export function buildMailWorkerBundle(repoRoot, { runNpmBuild, binDir } = {}) {
   return bundlePath;
 }
 
-function writePackageManifest({ name, engines, dependencies, main }) {
+function writePackageManifest({ name, engines, dependencies, main, overrides }) {
   return `${JSON.stringify(
     {
       name,
@@ -583,6 +583,9 @@ function writePackageManifest({ name, engines, dependencies, main }) {
       main,
       engines,
       dependencies,
+      // The isolated lock copies the root lock's resolved closure, so the root's
+      // overrides must travel with it or `npm ci` rejects the lock as out of sync.
+      ...(overrides ? { overrides } : {}),
     },
     null,
     2,
@@ -726,6 +729,7 @@ export function prepareMailWorkerPackage(options = {}) {
     let sourceLockHash = null;
     let compiler = { script: 'npm run build:mail-worker', esbuildVersion: null, binDir: null };
     let inputIdentity = null;
+    let overrides = options.overrides;
 
     if (fixtureMode) {
       lockfile = options.lockfile;
@@ -742,6 +746,7 @@ export function prepareMailWorkerPackage(options = {}) {
       }
       sourceLockHash = sha256File(lockPath);
       lockfile = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+      overrides = JSON.parse(fs.readFileSync(path.join(buildRoot, 'package.json'), 'utf8')).overrides;
       compiler = assertCompiler(buildRoot, repoRoot, lockfile);
       const before = hashInputTree(buildRoot);
       const runNpmBuild = options.testHooks === true ? options.runNpmBuild : undefined;
@@ -774,6 +779,7 @@ export function prepareMailWorkerPackage(options = {}) {
       engines: { node: '22' },
       dependencies,
       main: 'index.cjs',
+      overrides,
     });
     fs.writeFileSync(path.join(canonicalOut, 'index.cjs'), bundleSource);
     fs.writeFileSync(path.join(canonicalOut, 'package.json'), packageJsonText);
