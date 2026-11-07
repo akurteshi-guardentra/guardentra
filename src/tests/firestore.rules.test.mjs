@@ -137,6 +137,14 @@ async function main() {
     assertFails(updateDoc(doc(memberDb, 'organizations', ORG), { vendorCount: 6 })),
   );
 
+  await check('org admin CANNOT mutate vendorCount — the meter is server-authoritative (#160)', () =>
+    assertFails(updateDoc(doc(db, 'organizations', ORG), { vendorCount: 0 })),
+  );
+
+  await check('org admin CANNOT smuggle vendorCount into a settings update', () =>
+    assertFails(updateDoc(doc(db, 'organizations', ORG), { name: 'Renamed Co', vendorCount: 0 })),
+  );
+
   await check('non-admin member CAN increment seatCount alone', () =>
     assertSucceeds(updateDoc(doc(memberDb, 'organizations', ORG), { seatCount: 3 })),
   );

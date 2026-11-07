@@ -235,8 +235,11 @@ service cloud.firestore {
     }
 
     // Only seatCount remains a legitimate non-admin organization write.
-    // Hosted vendor creation is now server-authoritative and updates vendorCount
-    // through the Admin SDK, so browser clients must not mutate that meter.
+    // vendorCount is server-authoritative (#160). No browser client, including an
+    // org admin, may change it. The Admin SDK transaction is what moves the meter.
+    function vendorCountUnchanged() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['vendorCount']);
+    }
     function onlyMemberWritableOrgFieldsChanged() {
       return request.resource.data.diff(resource.data).affectedKeys()
         .hasOnly(['seatCount']);
@@ -287,16 +290,13 @@ service cloud.firestore {
         && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
         && isStarterOrgCreate();
       // Deeper token/role review (task #27) found this allowed ANY member to write
-      // ANY field, including name/industry — so Onboarding.tsx's isOrgCreator check
-      // (KI#8: stop an invited member from overwriting the shared org's settings) was
-      // enforced only client-side. A member using the SDK/REST directly could still
-      // overwrite it. Can't just require isAdmin() outright: a joining member's own
-      // batch legitimately increments seatCount, and VendorsDirectory's cap-check
-      // transaction increments vendorCount from any member's session — both must keep
-      // working. So: admins may change anything; everyone else is limited to exactly
-      // the two counters. dataRegion is always immutable once set (admins included).
+      // ANY field, including name/industry. Onboarding.tsx's isOrgCreator check (KI#8)
+      // was enforced only client-side. Admins may change non-billing fields other
+      // than vendorCount. A client write of that meter would reset the cap check in
+      // the server vendor transaction. A joining member may increment seatCount only.
+      // dataRegion is always immutable once set (admins included).
       allow update: if isAuthenticated() && isOrgMember(orgId) && orgDataRegionPreserved() &&
-        billingFieldsUnchanged() &&
+        billingFieldsUnchanged() && vendorCountUnchanged() &&
         (isAdmin() || onlyMemberWritableOrgFieldsChanged());
     }
 
@@ -318,10 +318,9 @@ service cloud.firestore {
       // signup, when there is no admin in the request to reject.
       //
       // seatCount is maintained by src/lib/orgBootstrap.ts: set to 1 when an org is
-      // created, incremented in the same batch as the joining member's profile. Same
-      // soft-metering posture as vendorCount — a client writing through the SDK directly
-      // could still skip the increment (KNOWN_ISSUES.md #12 covers the equivalent gap for
-      // vendors); this stops the ordinary path, not a determined bypass.
+      // created, then incremented after the joining member's profile commits. A failed
+      // increment undercounts seats (KNOWN_ISSUES.md #12). That gap is the seat counter,
+      // not vendor create: client vendor creates are denied (#160).
       // Issue #61: invite role is allowlisted — forged privileged values cannot
       // be stored for later self-elevation at join time.
       allow create: if isCreatingForOwnOrg() && isAdmin()
@@ -400,15 +399,9 @@ service cloud.firestore {
       return !affected.hasAny(['status', 'archivedAt', 'archivedBy', 'archiveReason']);
     }
 
-    // Vendor-cap enforcement (docs/ARCHITECTURE_FOUNDATION.md §4 tier sketch — Starter
-    // defaults below match that sketch). This is soft enforcement, not airtight: the
-    // counter is maintained by client code (src/pages/VendorsDirectory.tsx createVendor,
-    // via a transaction) alongside the create, so it stops normal over-cap growth through
-    // the app but a client using the Firestore SDK/REST API directly could skip the
-    // increment and bypass it — same accepted risk tolerance as the AI soft-metering
-    // already described in that doc. True hard enforcement needs vendor writes routed
-    // through a server endpoint that authoritatively counts via the Admin SDK; not done
-    // here (bigger change, no live customers to violate a cap yet — see KNOWN_ISSUES.md).
+    // Seat-cap helper. Hosted vendor create/delete are not client writes: the vendors
+    // match below denies both (#160/#226). vendorCount is updated only by the server
+    // transaction. Do not restore a client vendor create from the old soft-cap comment.
     function orgField(orgId, field, fallback) {
       let org = get(/databases/$(database)/documents/organizations/$(orgId)).data;
       return (field in org) ? org[field] : fallback;

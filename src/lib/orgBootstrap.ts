@@ -239,8 +239,8 @@ async function runBootstrapUserProfile(uid: string, rawFields: NewProfileFields)
   // Once the profile is committed the same update passes cleanly. Splitting it costs
   // atomicity, but the failure mode is now benign and in the safe direction: an
   // undercounted seatCount lets an org invite one extra person, whereas the previous
-  // arrangement locked every invitee out entirely. That tolerance is consistent with the
-  // soft-metering posture already documented for both counters in KNOWN_ISSUES.md #12.
+  // arrangement locked every invitee out entirely. That tolerance is the seat-counter
+  // gap in KNOWN_ISSUES.md #12. Hosted vendorCount is not updated on this path.
   if (pendingInvite) {
     try {
       await updateDoc(doc(db, 'organizations', pendingInvite.organizationId), {
