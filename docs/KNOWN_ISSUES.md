@@ -2,7 +2,7 @@
 
 Standalone running list of everything found-but-not-fixed while working through `docs/PRODUCT_ROADMAP_2026.md`'s sprints. Each item was discovered as a side effect of other work, deliberately not fixed at the time (out of scope, needs its own testing pass, or would have been scope creep), and should not be lost. Update this file whenever a new one is found or an existing one gets fixed — move fixed items to the "Resolved" section with the commit that fixed them rather than deleting the row.
 
-*Last updated: 2026-11-06 (KI#12 is the seat undercount only. Client vendorCount writes, including org-admin writes, are denied.)*
+*Last updated: 2026-11-07 (KI#12: an invite join records seatCountApplied false, then one transaction raises seatCount and sets the marker. A retry does not add a second seat.)*
 
 ---
 
@@ -10,7 +10,7 @@ Standalone running list of everything found-but-not-fixed while working through 
 
 | # | Issue | Where | Why it matters | Why not fixed yet |
 |---|---|---|---|---|
-| 12 | Seat cap remains a client increment after the profile commit. A failed increment undercounts. | `src/lib/orgBootstrap.ts` | A failed or skipped seat increment undercounts `seatCount`, so a later invite can admit one more member than the cap. | Accepted failure mode of committing the profile before the increment. A browser write may only raise `seatCount` by one; zeroing it or jumping it is denied. Client `vendorCount` writes, including org-admin writes, are denied. The server Admin SDK transaction is what moves that meter (#160). |
+| 12 | A member can still raise `seatCount` by one without the invite marker, which uses up invite room. A custom client that never sets `seatCountApplied: false` can still join without counting. | `src/lib/orgBootstrap.ts`, `firestore.rules` | The honest join path now claims the seat in a transaction and retries while the marker stays false. Historical profiles omit the marker and are not counted again. | The marker cannot move false to true unless that same request raises `organizations.seatCount` by one. Clearing a true marker is denied. The +1 member write without the marker remains, in the direction that consumes cap room. |
 
 ## Resolved
 

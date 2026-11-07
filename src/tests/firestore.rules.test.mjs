@@ -15,7 +15,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertFails, assertSucceeds, initializeTestEnvironment } from '@firebase/rules-unit-testing';
-import { collection, deleteDoc, doc, getDoc, getDocs, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDoc, getDocs, query, runTransaction, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '../..');
@@ -207,6 +207,69 @@ async function main() {
       await assertSucceeds(updateDoc(doc(joinerDb, 'organizations', ORG), { seatCount: 4 }));
     },
   );
+
+  await check('an existing profile CANNOT grow a false seat marker', () =>
+    assertFails(updateDoc(doc(memberDb, 'users/member-2'), { seatCountApplied: false })),
+  );
+
+  await check('seat marker CANNOT flip to true without the org increment', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users/joiner-nomark'), {
+        organizationId: ORG,
+        role: 'member',
+        inviteId: 'inv-nomark',
+        seatCountApplied: false,
+      });
+    });
+    const nomarkDb = testEnv.authenticatedContext('joiner-nomark', {
+      email: 'nomark@example.com',
+      email_verified: true,
+    }).firestore();
+    await assertFails(updateDoc(doc(nomarkDb, 'users/joiner-nomark'), { seatCountApplied: true }));
+  });
+
+  await check('seat claim transaction raises seatCount by one and sets the marker', async () => {
+    let current = 0;
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const org = await getDoc(doc(ctx.firestore(), 'organizations', ORG));
+      current = org.data().seatCount;
+      await setDoc(doc(ctx.firestore(), 'users/joiner-claim'), {
+        organizationId: ORG,
+        role: 'member',
+        inviteId: 'inv-claim',
+        seatCountApplied: false,
+      });
+    });
+    const claimDb = testEnv.authenticatedContext('joiner-claim', {
+      email: 'claim@example.com',
+      email_verified: true,
+    }).firestore();
+    await assertSucceeds(runTransaction(claimDb, async (tx) => {
+      const userSnap = await tx.get(doc(claimDb, 'users/joiner-claim'));
+      const orgSnap = await tx.get(doc(claimDb, 'organizations', ORG));
+      if (userSnap.get('seatCountApplied') !== false) return;
+      tx.update(doc(claimDb, 'organizations', ORG), { seatCount: orgSnap.get('seatCount') + 1 });
+      tx.update(doc(claimDb, 'users/joiner-claim'), { seatCountApplied: true });
+    }));
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const org = await getDoc(doc(ctx.firestore(), 'organizations', ORG));
+      const user = await getDoc(doc(ctx.firestore(), 'users/joiner-claim'));
+      if (org.data().seatCount !== current + 1) {
+        throw new Error(`seatCount ${org.data().seatCount} !== ${current + 1}`);
+      }
+      if (user.data().seatCountApplied !== true) {
+        throw new Error('seatCountApplied was not set');
+      }
+    });
+  });
+
+  await check('a claimed seat marker CANNOT be cleared', async () => {
+    const claimDb = testEnv.authenticatedContext('joiner-claim', {
+      email: 'claim@example.com',
+      email_verified: true,
+    }).firestore();
+    await assertFails(updateDoc(doc(claimDb, 'users/joiner-claim'), { seatCountApplied: false }));
+  });
 
   console.log('\nUser profile role/orgId immutability (KI#6 audit):');
 

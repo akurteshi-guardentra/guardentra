@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { auth, db } from '../firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { bootstrapUserProfile } from './orgBootstrap';
+import { bootstrapUserProfile, claimInviteSeat } from './orgBootstrap';
 import {
   acknowledgeOnboardingComplete,
   clearAllOnboardingAcks,
@@ -24,6 +24,8 @@ export interface UserProfile {
   subscriptionStatus?: string;
   stripeSubscriptionId?: string;
   stripeCustomerId?: string;
+  /** False until the post-join seat claim commits. Omitted on older profiles. */
+  seatCountApplied?: boolean;
 }
 
 export type VerificationRefreshResult =
@@ -344,7 +346,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 if (json === lastAppliedProfileJson) return; // metadata-only change
               }
               lastAppliedProfileJson = JSON.stringify(userSnap.data());
-              applyCloudProfile(currentUser, userSnap.data() as UserProfile);
+              const cloudProfile = userSnap.data() as UserProfile;
+              applyCloudProfile(currentUser, cloudProfile);
+              if (cloudProfile.seatCountApplied === false && cloudProfile.organizationId) {
+                void claimInviteSeat(currentUser.uid, cloudProfile.organizationId);
+              }
             } else if (sawCloudProfile) {
               console.warn('AuthContext: Cloud profile disappeared after load — clearing session profile.');
               clearOnboardingAck(currentUser.uid);

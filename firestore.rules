@@ -217,6 +217,26 @@ service cloud.firestore {
     // Collection Rules
     // ===============================================================
 
+    // Invite joins store seatCountApplied:false on the new profile, then a second
+    // transaction raises seatCount by one and flips the marker to true. Historical
+    // profiles omit the field and must not grow one: absence is not "uncounted".
+    function seatCountAppliedCreateOk() {
+      return !('seatCountApplied' in request.resource.data)
+        || (request.resource.data.seatCountApplied == false
+            && request.resource.data.get('inviteId', '') is string
+            && request.resource.data.get('inviteId', '').size() > 0);
+    }
+    function orgSeatClaimedInThisRequest() {
+      let orgId = resource.data.organizationId;
+      return getAfter(/databases/$(database)/documents/organizations/$(orgId)).data.seatCount
+        == get(/databases/$(database)/documents/organizations/$(orgId)).data.seatCount + 1;
+    }
+    function seatCountAppliedTransitionOk() {
+      let before = resource.data.get('seatCountApplied', null);
+      let after = request.resource.data.get('seatCountApplied', null);
+      return after == before
+        || (before == false && after == true && orgSeatClaimedInThisRequest());
+    }
 
     // Users Collection
     match /users/{userId} {
@@ -227,11 +247,13 @@ service cloud.firestore {
       // The webhook resolves a customer by users.stripeCustomerId, so a self-written
       // value could hijack or jam another tenant's billing events.
       allow create: if isValidUserCreate(userId)
-        && !request.resource.data.keys().hasAny(userBillingKeys());
+        && !request.resource.data.keys().hasAny(userBillingKeys())
+        && seatCountAppliedCreateOk();
       allow update: if isAuthenticated() && request.auth.uid == userId
         && request.resource.data.role == resource.data.role
         && request.resource.data.organizationId == resource.data.organizationId
-        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(userBillingKeys());
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(userBillingKeys())
+        && seatCountAppliedTransitionOk();
     }
 
     // Only seatCount remains a legitimate non-admin organization write.
