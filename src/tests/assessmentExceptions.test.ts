@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   exceptionReasonLabel,
+  exceptionReasonsLabel,
+  groupExceptionsByQuestion,
   listAssessmentExceptions,
 } from '../lib/vendor/assessmentExceptions';
 
@@ -82,5 +84,37 @@ describe('listAssessmentExceptions', () => {
     expect(exceptionReasonLabel('unanswered')).toMatch(/unanswered/i);
     expect(exceptionReasonLabel('negative')).toMatch(/partially/i);
     expect(exceptionReasonLabel('missing_evidence')).toMatch(/evidence/i);
+  });
+});
+
+describe('groupExceptionsByQuestion (#124 finding 6)', () => {
+  it('lists a Partially answer with no trusted evidence once, with both reasons', () => {
+    const raw = listAssessmentExceptions({
+      questions,
+      answers: { q_1: 'Partially', q_2: 'Yes', q_3: 'Yes' },
+      evidenceByQuestion: { q_2: [], q_3: [] },
+      evidenceTrustByStoragePath: {},
+    });
+    expect(raw.filter((e) => e.id === 'q_1').map((e) => e.reason)).toEqual([
+      'negative',
+      'missing_evidence',
+    ]);
+    const grouped = groupExceptionsByQuestion(raw);
+    const q1 = grouped.filter((e) => e.id === 'q_1');
+    expect(q1).toHaveLength(1);
+    expect(q1[0].reasons).toEqual(['negative', 'missing_evidence']);
+    expect(exceptionReasonsLabel(q1[0].reasons)).toBe('No / Partially · Missing evidence');
+    expect(new Set(grouped.map((e) => e.id)).size).toBe(grouped.length);
+  });
+
+  it('keeps the ungrouped list intact for the approval guard', () => {
+    const raw = listAssessmentExceptions({
+      questions,
+      answers: { q_1: 'Partially', q_2: 'Yes', q_3: 'Yes' },
+      evidenceByQuestion: {},
+      evidenceTrustByStoragePath: {},
+    });
+    groupExceptionsByQuestion(raw);
+    expect(raw.some((e) => e.reason === 'missing_evidence')).toBe(true);
   });
 });

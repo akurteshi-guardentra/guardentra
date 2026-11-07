@@ -4,7 +4,7 @@
  */
 
 export type RiskLevel = 'Critical' | 'High' | 'Medium' | 'Low';
-export type VendorStatus = 'Active' | 'Pending' | 'Terminated';
+export type VendorStatus = 'Active' | 'Pending' | 'Terminated' | 'Archived';
 export type AssessmentStatus =
   | 'Not Started'
   | 'In Progress'
@@ -47,6 +47,9 @@ export interface Vendor {
   ownerName?: string;
   nextReviewAt?: string;
   lastAssessmentAt?: string;
+  updatedAt?: string;
+  /** Residual risk from the latest recorded assessment decision. */
+  residualRiskLevel?: RiskLevel;
   assessmentStatus?: AssessmentStatus;
   reputation?: string;
   riskTier?: string;

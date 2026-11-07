@@ -103,7 +103,12 @@ export function VendorsDirectory() {
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
   const [menuVendorId, setMenuVendorId] = useState<string | null>(null);
+  const [archivingVendorId, setArchivingVendorId] = useState<string | null>(null);
+  const [archiveBanner, setArchiveBanner] = useState<{ tone: 'ok' | 'err'; text: string } | null>(
+    null,
+  );
   const [page, setPage] = useState(1);
+  const canArchiveVendor = profile?.role === 'admin' || profile?.role === 'owner';
   const pageSize = 10;
   const [planMeter, setPlanMeter] = useState<{
     planName: string;
@@ -266,6 +271,8 @@ export function VendorsDirectory() {
 
   const filtered = useMemo(() => {
     return vendors.filter((v) => {
+      // Soft-archived vendors leave the active register (#226).
+      if (v.status === 'Archived') return false;
       const hay = `${v.name} ${v.category} ${v.primaryContactName || ''} ${v.primaryContactEmail || ''} ${v.ownerName || ''}`.toLowerCase();
       if (search && !hay.includes(search.toLowerCase())) return false;
       const level = effectiveRiskLevel(v);
@@ -308,6 +315,58 @@ export function VendorsDirectory() {
     setCategoryFilter('all');
     setStatusFilter('all');
     setOwnerFilter('all');
+  };
+
+  const handleArchiveVendor = async (vendor: Vendor) => {
+    if (!orgId || !canArchiveVendor) return;
+    const confirmed = window.confirm(
+      `Archive "${vendor.name}"?\n\nThis removes the vendor from the active register and frees one plan seat. Invites, mail, assessments and audit history are kept. Open assessments must be finished first.`,
+    );
+    if (!confirmed) return;
+
+    setArchiveBanner(null);
+    setArchivingVendorId(vendor.id);
+    try {
+      const response = await fetch('/api/org/vendor-archive', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ vendorId: vendor.id }),
+      });
+      const body = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        alreadyArchived?: boolean;
+      };
+      if (!response.ok) {
+        throw new Error(body.error || 'Could not archive vendor.');
+      }
+      setArchiveBanner({
+        tone: 'ok',
+        text: body.alreadyArchived
+          ? `${vendor.name} was already archived.`
+          : `${vendor.name} archived. Plan vendor count updated.`,
+      });
+      // Refresh plan meter from the authoritative org counter.
+      const snap = await getDoc(doc(db, 'organizations', orgId));
+      if (snap.exists()) {
+        const data = snap.data() || {};
+        const vendorCap =
+          typeof data.vendorCap === 'number' ? data.vendorCap : DEFAULT_VENDOR_CAP;
+        const vendorCount = typeof data.vendorCount === 'number' ? data.vendorCount : 0;
+        const plan = getPlan(typeof data.planId === 'string' ? data.planId : undefined);
+        setPlanMeter({
+          planName: plan.name,
+          vendorCount,
+          vendorCap,
+        });
+      }
+    } catch (err) {
+      setArchiveBanner({
+        tone: 'err',
+        text: err instanceof Error ? err.message : 'Could not archive vendor.',
+      });
+    } finally {
+      setArchivingVendorId(null);
+    }
   };
 
   const createVendor = async (input: {
@@ -476,7 +535,7 @@ export function VendorsDirectory() {
       } else {
         setInviteBanner({
           tone: 'warn',
-          text: `Vendor saved; email could not be queued to ${input.primaryContactEmail} — check Trigger Email / SMTP${emailQueueError ? ` (${emailQueueError})` : ''}.`,
+          text: `Vendor saved; email could not be queued to ${input.primaryContactEmail}. Try again later or contact support${emailQueueError ? ` (${emailQueueError})` : ''}.`,
         });
       }
       if (vendorId) {
@@ -714,6 +773,19 @@ export function VendorsDirectory() {
             onExport={() => downloadVendorRegisterReport(filtered)}
           />
 
+          {archiveBanner && (
+            <div
+              className={
+                archiveBanner.tone === 'ok'
+                  ? 'mb-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200'
+                  : 'mb-3 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200'
+              }
+              role="status"
+            >
+              {archiveBanner.text}
+            </div>
+          )}
+
           <VendorTable
             loading={loading}
             pageRows={pageRows}
@@ -727,6 +799,9 @@ export function VendorsDirectory() {
             setMenuVendorId={setMenuVendorId}
             assessmentsByVendor={assessmentsByVendor}
             onNavigate={navigate}
+            canArchiveVendor={canArchiveVendor && dataMode === 'firestore'}
+            archivingVendorId={archivingVendorId}
+            onArchiveVendor={(v) => void handleArchiveVendor(v)}
           />
         </PageBand>
       </div>

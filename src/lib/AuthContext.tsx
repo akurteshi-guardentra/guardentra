@@ -218,6 +218,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     let retryId: ReturnType<typeof setTimeout> | null = null;
     let sawCloudProfile = false;
+    let bootstrapping = false;
+    let lastAppliedProfileJson: string | null = null;
     let previousUid: string | null = null;
     let attempt = 0;
     let disposed = false;
@@ -313,28 +315,63 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const userRef = doc(db, 'users', currentUser.uid);
         profileUnsubscribe = onSnapshot(
           userRef,
+          // Metadata changes are needed to see a local-only profile become server-confirmed
+          // (hasPendingWrites true -> false); without them that transition emits nothing.
+          { includeMetadataChanges: true },
           async (userSnap) => {
             if (disposed || activeUser?.uid !== currentUser.uid) return;
             clearProfileTimeout();
-            console.log('AuthContext: userRef snapshot received. Exists:', userSnap.exists());
+            const pendingWrite = userSnap.metadata?.hasPendingWrites === true;
+            console.log(
+              'AuthContext: userRef snapshot received. Exists:',
+              userSnap.exists(),
+              pendingWrite ? '(pending local write)' : '',
+            );
+            if (!sawCloudProfile && (pendingWrite || (bootstrapping && !userSnap.exists()))) {
+              // New-workspace race (#124 retest 2026-11-01): the bootstrap writeBatch is
+              // applied to the local cache before the server commits it. Publishing that
+              // optimistic profile let Dashboard query vendors/assessments/org while the
+              // server still had no users/{uid}, so every rule's get(users/uid) failed and
+              // the first load showed "Dashboard data could not be loaded". Only a
+              // server-confirmed profile may unlock tenant reads. Rollback snapshots
+              // (exists=false) seen while our own bootstrap is in flight are ignored too;
+              // the bootstrap result decides the next step.
+              return;
+            }
             if (userSnap.exists()) {
+              if (sawCloudProfile && pendingWrite === false && lastAppliedProfileJson !== null) {
+                const json = JSON.stringify(userSnap.data());
+                if (json === lastAppliedProfileJson) return; // metadata-only change
+              }
+              lastAppliedProfileJson = JSON.stringify(userSnap.data());
               applyCloudProfile(currentUser, userSnap.data() as UserProfile);
             } else if (sawCloudProfile) {
               console.warn('AuthContext: Cloud profile disappeared after load — clearing session profile.');
               clearOnboardingAck(currentUser.uid);
               sawCloudProfile = false;
+              lastAppliedProfileJson = null;
               setProfile(null);
               setLoading(false);
             } else {
               console.log('AuthContext: Profile missing for authenticated user, attempting auto-initialization...');
+              bootstrapping = true;
               try {
                 await bootstrapUserProfile(currentUser.uid, {
                   email: currentUser.email,
                   displayName: currentUser.displayName || 'New User',
                 });
+                bootstrapping = false;
                 console.log('AuthContext: Auto-created/joined organization + user profile successfully');
-                // Listener stays attached; the created doc should arrive as the next snapshot.
+                // Normally the server-confirmed doc arrives on this listener as a snapshot
+                // with hasPendingWrites=false (includeMetadataChanges above). If it has not
+                // been published yet, re-attach: the commit is acknowledged, so a fresh
+                // listener reads the committed profile instead of waiting forever.
+                if (!disposed && activeUser?.uid === currentUser.uid && !sawCloudProfile) {
+                  attachProfileListener(currentUser);
+                }
               } catch (initErr: any) {
+                bootstrapping = false;
+                if (disposed || activeUser?.uid !== currentUser.uid) return;
                 console.error('AuthContext: Auto-initialization failed:', initErr);
                 if (initErr?.code === 'permission-denied') {
                   try {
@@ -387,6 +424,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       detachProfileListener();
       attempt = 0;
       sawCloudProfile = false;
+      bootstrapping = false;
+      lastAppliedProfileJson = null;
 
       refreshGeneration.current += 1;
       setVerificationRefreshError(null);

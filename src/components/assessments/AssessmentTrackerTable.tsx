@@ -1,4 +1,5 @@
 import React from 'react';
+import { assessmentDueDay } from '../../lib/vendor/dueDate';
 import { Link } from 'react-router-dom';
 import {
   Plus,
@@ -48,7 +49,7 @@ function progressOf(a: StoredAssessment): number {
 }
 
 function dueLabel(a: StoredAssessment): string {
-  return a.dueDate || (a.dueAt ? a.dueAt.slice(0, 10) : '—');
+  return assessmentDueDay(a) || '—';
 }
 
 function shortDate(iso?: string): string {

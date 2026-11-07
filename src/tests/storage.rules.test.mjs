@@ -111,6 +111,32 @@ async function main() {
       portalAssessmentId: assessmentId,
     });
 
+  // Preflight: prove the Storage emulator can actually read Firestore before trusting
+  // any result. If its cross-service lookups fail (e.g. firebase-tools routing them
+  // through HTTPS_PROXY), firestore.get() reads as "not found", every ALLOW case is
+  // denied, and every DENY case passes for the wrong reason. Stop instead of reporting
+  // vacuous denials as passes. Run through `npm run test:storage-rules`.
+  try {
+    await assertSucceeds(
+      uploadBytes(
+        ref(portal('assessmentA').storage(), 'portal/assessmentA/preflight.pdf'),
+        pdfBytes,
+        pdfMeta,
+      ),
+    );
+  } catch (err) {
+    console.error(
+      'PREFLIGHT FAILED: the Storage emulator could not read the seeded Firestore documents,\n' +
+        'so rules results would be meaningless. Most likely cause: HTTPS_PROXY/HTTP_PROXY is set\n' +
+        'and firebase-tools sends its emulator-to-emulator calls through it. Run the suite with\n' +
+        '`npm run test:storage-rules` (scripts/run-storage-rules-tests.mjs drops those variables).\n' +
+        `Underlying error: ${err?.message || err}`,
+    );
+    await testEnv.cleanup();
+    process.exit(2);
+  }
+  console.log('Preflight OK: Storage emulator reads Firestore (cross-service lookups work).\n');
+
   console.log('Matrix:');
 
   await check(

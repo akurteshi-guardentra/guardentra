@@ -28,13 +28,18 @@ vi.mock('../lib/firebase-utils', () => ({
 }));
 
 type SnapshotHandler = {
-  next: (snap: { exists: () => boolean; data: () => Record<string, unknown> }) => void | Promise<void>;
+  next: (snap: {
+    exists: () => boolean;
+    data: () => Record<string, unknown>;
+    metadata?: { hasPendingWrites: boolean; fromCache?: boolean };
+  }) => void | Promise<void>;
   error?: (err: { code?: string; message?: string }) => void;
 };
 
 const harness = vi.hoisted(() => ({
   authCb: null as null | ((user: unknown) => void),
   snapshot: null as null | SnapshotHandler,
+  snapshotOptions: null as null | Record<string, unknown>,
   snapshotCalls: 0,
   user: {
     uid: 'cloud-user-1',
@@ -143,7 +148,12 @@ function installAuthMocks() {
     return vi.fn();
   }) as unknown as typeof onAuthStateChanged);
 
-  vi.mocked(onSnapshot).mockImplementation(((_ref: unknown, next: SnapshotHandler['next'], error?: SnapshotHandler['error']) => {
+  vi.mocked(onSnapshot).mockImplementation(((_ref: unknown, ...args: unknown[]) => {
+    // AuthContext passes { includeMetadataChanges: true } before the handlers.
+    if (args[0] && typeof args[0] === 'object') {
+      harness.snapshotOptions = args.shift() as Record<string, unknown>;
+    }
+    const [next, error] = args as [SnapshotHandler['next'], SnapshotHandler['error']?];
     harness.snapshotCalls += 1;
     harness.snapshot = { next, error };
     return vi.fn();
@@ -363,6 +373,133 @@ describe('AuthContext hosted onboarding bounce', () => {
     await emitCloudProfile(cloudOnboarded);
     await waitFor(() => expect(screen.getByText(/DashboardPage/)).toBeInTheDocument());
     expect(screen.queryByText('ProfileLoadError')).toBeNull();
+  });
+});
+
+async function emitSnapshot(
+  exists: boolean,
+  data: Record<string, unknown>,
+  hasPendingWrites: boolean,
+  handler: SnapshotHandler | null = harness.snapshot,
+) {
+  await act(async () => {
+    await handler?.next({
+      exists: () => exists,
+      data: () => data,
+      metadata: { hasPendingWrites, fromCache: hasPendingWrites },
+    });
+  });
+}
+
+function deferred() {
+  let resolve!: () => void;
+  let reject!: (err: unknown) => void;
+  const promise = new Promise<void>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+describe('AuthContext new-workspace bootstrap race (#124 retest 2026-11-01)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    __resetOnboardingAcksForTests();
+    clearLocallyOnboarded(harness.user.uid);
+    bootstrapMock.mockReset();
+    localStorage.clear();
+    vi.stubEnv('VITE_FIREBASE_PROJECT_ID', 'guardentra-staging');
+    installAuthMocks();
+  });
+
+  afterEach(() => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    vi.stubEnv('VITE_FIREBASE_API_KEY', 'AIzaSyDummyVitestFirebaseKey000');
+  });
+
+  it('subscribes with includeMetadataChanges so the server confirmation is observable', async () => {
+    renderApp('/');
+    await signIn();
+    expect(harness.snapshotOptions).toEqual({ includeMetadataChanges: true });
+  });
+
+  it('does not expose organizationId from the optimistic (pending) bootstrap write', async () => {
+    const commit = deferred();
+    bootstrapMock.mockImplementation(() => commit.promise as Promise<undefined>);
+    renderApp('/');
+    await signIn();
+    const listener = harness.snapshot;
+    // Not awaited: the bootstrap stays in flight, like a real unacknowledged commit.
+    act(() => {
+      void listener?.next({ exists: () => false, data: () => ({}) });
+    });
+    await waitFor(() => expect(bootstrapMock).toHaveBeenCalledTimes(1));
+
+    // Latency compensation: the local cache already holds the new profile.
+    await emitSnapshot(true, cloudOnboarded, true, listener);
+    expect(screen.getByText('Loading')).toBeInTheDocument();
+    expect(screen.queryByText(/DashboardPage/)).toBeNull();
+
+    // Server acknowledges the batch; the same listener reports it as committed.
+    await emitSnapshot(true, cloudOnboarded, false, listener);
+    await waitFor(() => expect(screen.getByText(/DashboardPage/)).toBeInTheDocument());
+    expect(screen.getByText(/org=org_real_staging/)).toBeInTheDocument();
+
+    await act(async () => {
+      commit.resolve();
+      await commit.promise;
+    });
+    expect(screen.getByText(/DashboardPage/)).toBeInTheDocument();
+    expect(bootstrapMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-reads the profile when the commit resolves before a confirmed snapshot arrives', async () => {
+    renderApp('/');
+    await signIn();
+    const callsBefore = harness.snapshotCalls;
+    await emitMissingProfile(); // bootstrap mock resolves immediately
+    await waitFor(() => expect(harness.snapshotCalls).toBe(callsBefore + 1));
+    expect(screen.getByText('Loading')).toBeInTheDocument();
+
+    await emitSnapshot(true, cloudOnboarded, false);
+    await waitFor(() => expect(screen.getByText(/DashboardPage/)).toBeInTheDocument());
+  });
+
+  it('ignores a rollback (exists=false) snapshot while its own bootstrap is in flight', async () => {
+    const commit = deferred();
+    bootstrapMock.mockImplementation(() => commit.promise as Promise<undefined>);
+    renderApp('/');
+    await signIn();
+    const listener = harness.snapshot;
+    act(() => {
+      void listener?.next({ exists: () => false, data: () => ({}) });
+    });
+    await waitFor(() => expect(bootstrapMock).toHaveBeenCalledTimes(1));
+
+    await emitSnapshot(true, cloudOnboarded, true, listener);
+    await emitSnapshot(false, {}, false, listener); // local write rolled back
+    expect(bootstrapMock).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/DashboardPage/)).toBeNull();
+
+    await act(async () => {
+      commit.reject({ code: 'permission-denied', message: 'denied' });
+      await commit.promise.catch(() => undefined);
+    });
+    // Hosted: a failed bootstrap schedules a bounded retry, never a local_org profile.
+    expect(screen.queryByText(/DashboardPage/)).toBeNull();
+    expect(screen.queryByText(/local_org_/)).toBeNull();
+  });
+
+  it('a pending local edit after the profile is confirmed still updates the profile', async () => {
+    renderApp('/');
+    await signIn();
+    await emitSnapshot(true, cloudOnboarded, false);
+    await waitFor(() => expect(screen.getByText(/onboarded=true/)).toBeInTheDocument());
+    // Once a server-confirmed profile exists, the user's own later edits apply optimistically.
+    await emitSnapshot(true, { ...cloudOnboarded, organizationId: 'org_edited' }, true);
+    await waitFor(() => expect(screen.getByText(/org=org_edited/)).toBeInTheDocument());
   });
 });
 

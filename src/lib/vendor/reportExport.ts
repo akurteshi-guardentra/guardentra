@@ -183,7 +183,11 @@ export type DecisionPacketInput = {
   vendorName: string;
   assessmentId: string;
   frameworksLabel: string;
-  outcome: string;
+  /**
+   * The outcome recorded on the assessment, or null when no decision exists yet.
+   * Never pass the reviewer's unsaved form selection here.
+   */
+  outcome: string | null;
   decisionNotes?: string;
   decidedBy?: string;
   decidedAt?: string;
@@ -196,8 +200,38 @@ export type DecisionPacketInput = {
   reviewCadence?: string;
 };
 
+export const NO_DECISION_RECORDED_LABEL = 'No decision recorded';
+
+/**
+ * Packet date formatting (#124 acceptance finding 2: raw ISO timestamps were
+ * printed). Due and next-review dates are calendar days, shown as their UTC day
+ * (the day the reviewer picked, the same in every timezone). Timestamps keep the
+ * time, explicitly in UTC.
+ */
+export function formatPacketDay(value: string | undefined): string {
+  if (!value) return '—';
+  const ms = Date.parse(value);
+  if (Number.isNaN(ms)) return value;
+  return new Date(ms).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+export function formatPacketTimestamp(value: string | undefined): string {
+  if (!value) return '—';
+  const ms = Date.parse(value);
+  if (Number.isNaN(ms)) return value;
+  const iso = new Date(ms).toISOString();
+  return `${formatPacketDay(iso)}, ${iso.slice(11, 16)} UTC`;
+}
+
 /** FastTrack decision packet (print → Save as PDF) — distinct from Impact report. */
 export function buildDecisionPacketHtml(input: DecisionPacketInput): string {
+  const outcome = typeof input.outcome === 'string' ? input.outcome.trim() : '';
+  const recorded = outcome.length > 0;
   const rows = input.exceptions
     .map(
       (e) =>
@@ -206,37 +240,48 @@ export function buildDecisionPacketHtml(input: DecisionPacketInput): string {
         )}</td></tr>`
     )
     .join('');
+  const heading = recorded
+    ? 'Guardentra FastTrack decision packet'
+    : 'Guardentra FastTrack pre-decision summary (DRAFT)';
+  const title = recorded ? 'Decision packet' : 'Pre-decision summary (DRAFT)';
+  // Without a recorded decision, every decision field is withheld: printing who
+  // "decided", when, or the reviewer's unsaved selection would read as a decision.
+  const decisionSection = recorded
+    ? `<p>Decided by: ${escapeHtml(input.decidedBy || '—')} at ${escapeHtml(formatPacketTimestamp(input.decidedAt))}</p>
+<p>Residual risk: <strong>${escapeHtml(input.residualRiskLevel || '—')}</strong></p>
+${input.remediationOwner || input.remediationDueAt
+  ? `<p>Remediation owner: ${escapeHtml(input.remediationOwner || '—')} · Due: ${escapeHtml(formatPacketDay(input.remediationDueAt))}</p>`
+  : ''}
+<p>Next review: ${escapeHtml(formatPacketDay(input.nextReviewAt))}${
+    input.reviewCadence ? ` (cadence: ${escapeHtml(input.reviewCadence)})` : ''
+  }</p>
+<h2>Conditions / rationale</h2>
+<p>${escapeHtml(input.decisionNotes || 'None recorded.')}</p>`
+    : `<div class="draft"><strong>DRAFT. No decision has been recorded for this assessment.</strong><br/>
+This summary is not an approval, rejection or remediation decision. A decision exists only once a reviewer records it in Guardentra.</div>`;
   return `<!doctype html>
-<html><head><meta charset="utf-8"/><title>Decision packet — ${escapeHtml(input.vendorName)}</title>
+<html><head><meta charset="utf-8"/><title>${title} — ${escapeHtml(input.vendorName)}</title>
 <style>
   body{font-family:Georgia,serif;margin:40px;color:#111;line-height:1.45}
   h1{font-size:22px;margin:0 0 8px} h2{font-size:16px;margin:24px 0 8px}
   .meta{color:#444;font-size:13px} table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px}
   th,td{border:1px solid #ccc;padding:8px;text-align:left;vertical-align:top} th{background:#f4f4f4}
   .banner{border-left:4px solid #0f766e;padding:8px 12px;background:#f0fdfa;margin:16px 0}
+  .draft{border:2px dashed #b45309;padding:10px 12px;background:#fffbeb;color:#78350f;margin:16px 0}
 </style></head><body>
-<h1>Guardentra FastTrack decision packet</h1>
-<p class="meta">Generated ${escapeHtml(new Date().toISOString())}</p>
+<h1>${heading}</h1>
+<p class="meta">Generated ${escapeHtml(formatPacketTimestamp(new Date().toISOString()))}</p>
 <div class="banner">
   <strong>${escapeHtml(input.vendorName)}</strong> · ${escapeHtml(input.frameworksLabel)}<br/>
-  Outcome: <strong>${escapeHtml(input.outcome)}</strong>
+  Outcome: <strong>${escapeHtml(recorded ? outcome : NO_DECISION_RECORDED_LABEL)}</strong>
   ${input.triageTier ? ` · Triage: ${escapeHtml(input.triageTier)}` : ''}
 </div>
 <p class="meta">Assessment ${escapeHtml(input.assessmentId)}</p>
-<p>Decided by: ${escapeHtml(input.decidedBy || '—')} at ${escapeHtml(input.decidedAt || '—')}</p>
-<p>Residual risk: <strong>${escapeHtml(input.residualRiskLevel || '—')}</strong></p>
-${input.remediationOwner || input.remediationDueAt
-  ? `<p>Remediation owner: ${escapeHtml(input.remediationOwner || '—')} · Due: ${escapeHtml(input.remediationDueAt || '—')}</p>`
-  : ''}
-<p>Next review: ${escapeHtml(input.nextReviewAt || '—')}${
-    input.reviewCadence ? ` (cadence: ${escapeHtml(input.reviewCadence)})` : ''
-  }</p>
-<h2>Conditions / rationale</h2>
-<p>${escapeHtml(input.decisionNotes || 'None recorded.')}</p>
+${decisionSection}
 <h2>Exceptions summary (${input.exceptions.length})</h2>
 <table><thead><tr><th>Question</th><th>Reason</th><th>Answer</th></tr></thead>
 <tbody>${rows || '<tr><td colspan="3">No exceptions flagged.</td></tr>'}</tbody></table>
-<p class="meta" style="margin-top:28px">This packet is an org-side FastTrack artifact. Audit hash-chain verification is available in Settings when AUDIT_SPINE_ENABLED is on.</p>
+<p class="meta" style="margin-top:28px">This packet is an org-side FastTrack artifact. Where enabled for your workspace, audit hash-chain verification is available in Settings.</p>
 </body></html>`;
 }
 

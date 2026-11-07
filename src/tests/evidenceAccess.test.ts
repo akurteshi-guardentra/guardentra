@@ -381,7 +381,7 @@ describe('#158 durable portal submit', () => {
           expect(tx.get).toHaveBeenCalledWith(vendorRef);
           expect(vendorSet).toHaveBeenCalledWith(
             vendorRef,
-            { assessmentStatus: 'Under Review' },
+            { assessmentStatus: 'Under Review', updatedAt: expect.any(String) },
             { merge: true },
           );
 
@@ -674,24 +674,93 @@ describe('evidence download', () => {
     expect(res.statusCode).toBe(403);
   });
 
-  it('allows portal self-download of untrusted files while the portal is open', async () => {
-    const d = deps();
+  function portalTrustAssessment(record?: Record<string, unknown>, extra: Record<string, unknown> = {}) {
+    return {
+      organizationId: 'org1',
+      portalOpen: true,
+      status: 'In Progress',
+      ...(record
+        ? { evidenceTrustByStoragePath: { [encodeTrustMapKey('portal/asmA/a.pdf')]: record } }
+        : {}),
+      ...extra,
+    };
+  }
+
+  async function portalDownload(assessment: Record<string, unknown>, token = 'portal-a') {
+    const d = deps({ getAssessment: vi.fn(async () => assessment) });
     const res = mockRes();
     await handleEvidenceDownload(
       req({
-        token: 'portal-a',
-        query: {
-          assessmentId: 'asmA',
-          storagePath: 'portal/asmA/a.pdf',
-          generation: '9999',
-        },
+        token,
+        query: { assessmentId: 'asmA', storagePath: 'portal/asmA/a.pdf', generation: '9999' },
       }),
       res as any,
       d,
       'portal'
     );
+    return { res, d };
+  }
+
+  it('refuses portal self-download of a file with no trust record (F1 fail-closed)', async () => {
+    const { res, d } = await portalDownload(portalTrustAssessment());
+    expect(res.statusCode).toBe(403);
+    expect((res.body as { error?: string }).error).toMatch(/malware scan marks it clean/);
+    expect(d.signReadUrl).not.toHaveBeenCalled();
+  });
+
+  it.each(['scan_pending', 'validated', 'uploaded', 'scan_failed', 'unknown'])(
+    'refuses portal self-download while the live generation is %s',
+    async (state) => {
+      const { res, d } = await portalDownload(
+        portalTrustAssessment({ state, storagePath: 'portal/asmA/a.pdf', generation: '1' })
+      );
+      expect(res.statusCode).toBe(403);
+      expect(d.signReadUrl).not.toHaveBeenCalled();
+    }
+  );
+
+  it('refuses portal self-download when the clean record is for an older generation', async () => {
+    const { res, d } = await portalDownload(
+      portalTrustAssessment({ state: 'clean', storagePath: 'portal/asmA/a.pdf', generation: '0' })
+    );
+    expect(res.statusCode).toBe(403);
+    expect(d.signReadUrl).not.toHaveBeenCalled();
+  });
+
+  it('refuses portal self-download when the clean record names a different object', async () => {
+    const { res, d } = await portalDownload(
+      portalTrustAssessment({ state: 'clean', storagePath: 'portal/asmA/other.pdf', generation: '1' })
+    );
+    expect(res.statusCode).toBe(403);
+    expect(d.signReadUrl).not.toHaveBeenCalled();
+  });
+
+  it('allows portal self-download of a file recorded clean at the live generation', async () => {
+    const { res, d } = await portalDownload(
+      portalTrustAssessment({ state: 'clean', storagePath: 'portal/asmA/a.pdf', generation: '1' })
+    );
     expect(res.statusCode).toBe(200);
     expect(d.signReadUrl).toHaveBeenCalledWith('portal/asmA/a.pdf', '1');
+  });
+
+  it('keeps tenant isolation for clean files: another portal session is refused', async () => {
+    const { res, d } = await portalDownload(
+      portalTrustAssessment({ state: 'clean', storagePath: 'portal/asmA/a.pdf', generation: '1' }),
+      'portal-b'
+    );
+    expect(res.statusCode).toBe(403);
+    expect(d.signReadUrl).not.toHaveBeenCalled();
+  });
+
+  it('refuses a clean portal download once the portal is closed', async () => {
+    const { res, d } = await portalDownload(
+      portalTrustAssessment(
+        { state: 'clean', storagePath: 'portal/asmA/a.pdf', generation: '1' },
+        { portalOpen: false }
+      )
+    );
+    expect(res.statusCode).toBe(403);
+    expect(d.signReadUrl).not.toHaveBeenCalled();
   });
 
   it('refuses portal self-download of a file quarantined at the live generation', async () => {
@@ -721,31 +790,12 @@ describe('evidence download', () => {
     expect(d.signReadUrl).not.toHaveBeenCalled();
   });
 
-  it('allows portal self-download when the quarantine was for an older generation', async () => {
-    const d = deps({
-      getAssessment: vi.fn(async () => ({
-        organizationId: 'org1',
-        portalOpen: true,
-        status: 'In Progress',
-        evidenceTrustByStoragePath: {
-          [encodeTrustMapKey('portal/asmA/a.pdf')]: {
-            state: 'quarantined',
-            storagePath: 'portal/asmA/a.pdf',
-            generation: '0',
-            updatedAt: '2026-10-30T18:03:47.863Z',
-          },
-        },
-      })),
-    });
-    const res = mockRes();
-    await handleEvidenceDownload(
-      req({ token: 'portal-a', query: { assessmentId: 'asmA', storagePath: 'portal/asmA/a.pdf' } }),
-      res as any,
-      d,
-      'portal'
+  it('refuses portal self-download when only an older generation was quarantined and the live one is unscanned', async () => {
+    const { res, d } = await portalDownload(
+      portalTrustAssessment({ state: 'quarantined', storagePath: 'portal/asmA/a.pdf', generation: '0' })
     );
-    expect(res.statusCode).toBe(200);
-    expect(d.signReadUrl).toHaveBeenCalledWith('portal/asmA/a.pdf', '1');
+    expect(res.statusCode).toBe(403);
+    expect(d.signReadUrl).not.toHaveBeenCalled();
   });
 
   it('does not treat portal self-download as a reviewer bypass', async () => {
@@ -1440,5 +1490,96 @@ describe('empty assessment archive', () => {
       deps()
     );
     expect(res.statusCode).toBe(403);
+  });
+});
+
+describe('decision vendor projection (#124 findings 7–8)', () => {
+  function vendorTx(vendor: Record<string, unknown> | null) {
+    const writes: Array<{ path: string; data: Record<string, unknown>; opts: unknown }> = [];
+    const db = {
+      collection: (name: string) => ({
+        doc: (id: string) => ({ path: `${name}/${id}` }),
+      }),
+    };
+    const tx = {
+      get: vi.fn(async () => ({ exists: vendor !== null, data: () => vendor || undefined })),
+      set: vi.fn((ref: { path: string }, data: Record<string, unknown>, opts: unknown) => {
+        writes.push({ path: ref.path, data, opts });
+      }),
+    };
+    const d = deps({
+      runAssessmentTransaction: vi.fn(async (_id, updater, _audit, _skip, related) => {
+        const current = {
+          organizationId: 'org1',
+          vendorId: 'vendor-1',
+          questions: [],
+          answers: {},
+          submittedSnapshot: { submittedAt: '2026-10-30T12:00:00.000Z' },
+        };
+        const patch = await updater(current);
+        const commit = await related?.(tx as any, db as any, current, patch);
+        commit?.();
+        return patch;
+      }),
+    });
+    return { d, writes };
+  }
+
+  it('writes residual risk level, nextReviewAt and updatedAt (no invented riskScore) on remediate', async () => {
+    const { d, writes } = vendorTx({ organizationId: 'org1', riskScore: 0 });
+    const res = mockRes();
+    await handleOrgDecision(
+      req({
+        token: 'org',
+        body: {
+          assessmentId: 'asmA',
+          outcome: 'remediate',
+          decisionNotes: 'fix SSO',
+          residualRiskLevel: 'High',
+          remediationDueAt: '2026-11-30',
+        },
+      }),
+      res as any,
+      d,
+    );
+    expect(res.statusCode).toBe(200);
+    expect(writes).toHaveLength(1);
+    expect(writes[0].path).toBe('vendors/vendor-1');
+    expect(writes[0].opts).toEqual({ merge: true });
+    expect(writes[0].data).toMatchObject({ residualRiskLevel: 'High' });
+    expect(writes[0].data).not.toHaveProperty('riskScore');
+    expect(String(writes[0].data.nextReviewAt)).toContain('2026-11-30');
+    expect(writes[0].data.updatedAt).toBeTruthy();
+    expect(writes[0].data.assessmentStatus).toBeUndefined();
+  });
+
+  it('marks the vendor Completed with a 12-month review on approve', async () => {
+    const { d, writes } = vendorTx({ organizationId: 'org1' });
+    const res = mockRes();
+    await handleOrgDecision(
+      req({ token: 'org', body: { assessmentId: 'asmA', outcome: 'approved', residualRiskLevel: 'Low' } }),
+      res as any,
+      d,
+    );
+    expect(res.statusCode).toBe(200);
+    expect(writes[0].data).toMatchObject({ residualRiskLevel: 'Low', assessmentStatus: 'Completed' });
+    expect(writes[0].data).not.toHaveProperty('riskScore');
+    const updated = Date.parse(String(writes[0].data.updatedAt));
+    const next = Date.parse(String(writes[0].data.nextReviewAt));
+    expect(next - updated).toBeGreaterThan(360 * 24 * 3600 * 1000);
+  });
+
+  it('never projects onto a vendor from another tenant or a missing vendor', async () => {
+    for (const vendor of [{ organizationId: 'org2' }, null]) {
+      const { d, writes } = vendorTx(vendor);
+      const res = mockRes();
+      await handleOrgDecision(
+        req({ token: 'org', body: { assessmentId: 'asmA', outcome: 'approved' } }),
+        res as any,
+        d,
+      );
+      expect(res.statusCode).toBe(200);
+      expect(writes).toHaveLength(0);
+    }
   });
 });

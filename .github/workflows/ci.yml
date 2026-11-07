@@ -49,6 +49,9 @@ jobs:
       - name: Firestore rules
         run: npm run test:firestore-rules
 
+      - name: Storage rules
+        run: npm run test:storage-rules
+
       - name: Mail worker Firestore transactions
         run: npm run test:mail-worker-firestore
 

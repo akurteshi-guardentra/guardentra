@@ -67,3 +67,37 @@ export function parseAuditEmitBody(raw: unknown): { ok: true; value: AuditEmitEn
     },
   };
 }
+
+/**
+ * #124 F10 — one request can carry several audit events so a vendor clicking
+ * through a long questionnaire does not burn one `/api/audit` rate-limit slot
+ * per answer (60/min), which silently dropped `answer.saved` events.
+ * The cap keeps a single request bounded; each event is still validated with
+ * the exact single-event rules above, and any invalid event rejects the whole
+ * batch before anything is authorized or written.
+ */
+export const AUDIT_EMIT_BATCH_MAX = 25;
+
+export function parseAuditEmitBatchBody(
+  raw: unknown,
+): { ok: true; value: AuditEmitEnvelope[] } | { ok: false; error: string } {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { ok: false, error: 'Body must be an object' };
+  }
+  const body = raw as Record<string, unknown>;
+  for (const key of Object.keys(body)) {
+    if (key !== 'events') return { ok: false, error: `Unexpected field: ${key}` };
+  }
+  if (!Array.isArray(body.events)) return { ok: false, error: 'events must be an array' };
+  if (body.events.length === 0) return { ok: false, error: 'events must not be empty' };
+  if (body.events.length > AUDIT_EMIT_BATCH_MAX) {
+    return { ok: false, error: `events must contain at most ${AUDIT_EMIT_BATCH_MAX} items` };
+  }
+  const value: AuditEmitEnvelope[] = [];
+  for (let i = 0; i < body.events.length; i += 1) {
+    const parsed = parseAuditEmitBody(body.events[i]);
+    if (!parsed.ok) return { ok: false, error: `events[${i}]: ${parsed.error}` };
+    value.push(parsed.value);
+  }
+  return { ok: true, value };
+}

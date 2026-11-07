@@ -15,9 +15,13 @@ Durable architecture notes for Database, Auth/SSO, Policy validation, Stripe sub
 
 ---
 
+> **As-built 2026-10-31:** the vendor portal no longer uses anonymous Auth, and the
+> localStorage fallback is disabled on staging and prod. Where this document says
+> otherwise, [`docs/CURRENT_ARCHITECTURE.md`](./CURRENT_ARCHITECTURE.md) §§1–2 wins.
+
 ## 1. Database foundation
 
-Spine persistence today: Firestore collections for orgs/users/vendors/assessments, plus **localStorage fallbacks** when `(default)` DB is missing or unreachable. Demo project `guardentra-7f582` is not production. Target projects: `guardentra-dev` / `guardentra-staging` / `guardentra-prod` (`docs/ENVIRONMENTS.md`).
+Spine persistence today: Firestore collections for orgs/users/vendors/assessments, plus **localStorage fallbacks** when `(default)` DB is missing or unreachable — **local/demo/legacy only**; builds targeting `guardentra-staging` or `guardentra-prod` fail closed instead (`shouldUseLocalPersistenceFallback`, #62). Prod build `29171a6` predates that change. Demo project `guardentra-7f582` is not production. Target projects: `guardentra-dev` / `guardentra-staging` / `guardentra-prod` (`docs/ENVIRONMENTS.md`).
 
 ### Implementation
 
@@ -65,12 +69,12 @@ Spine persistence today: Firestore collections for orgs/users/vendors/assessment
 
 ## 2. Auth & sign-on
 
-Today: Firebase Auth via `AuthContext` + `firebase-utils` — email/password, Google popup, **anonymous** for Vendor Portal evidence. Server `/api/ai` gated by `requireFirebaseAuth` (Bearer ID token) in production/staging. Profile lives in `users/{uid}` with `organizationId`; local profile fallback if Firestore missing.
+Today: Firebase Auth via `AuthContext` + `firebase-utils` — email/password, Google popup. The Vendor Portal uses a server-minted custom token (`POST /api/portal/session`, claim `portalAssessmentId`), not anonymous Auth. Server `/api/ai` gated by `requireFirebaseAuth` (Bearer ID token) in production/staging. Profile lives in `users/{uid}` with `organizationId`; local profile fallback if Firestore missing (local/demo/legacy only; refused on staging/prod).
 
 ### Implementation
 
 - **Customer org users:** email/password + Google remain the baseline. Keep onboarding creating `organizations` + `users` docs (already in `AuthContext`).
-- **Vendor Portal:** keep `signInAnonymously` for evidence Storage; ensure Anonymous provider enabled per Firebase project. Do not grant anonymous users org-wide reads — only `portalOpen` assessment paths (current rules intent).
+- **Vendor Portal:** scoped custom token per link (`server/routes/portal.ts`); rules match `portalAssessmentId` to the path. The Anonymous provider is not needed and is disabled on prod; it is still enabled on legacy `guardentra-7f582` (open owner decision, #126).
 - **Session model:** client holds Firebase session; privileged server routes verify `Authorization: Bearer <ID token>` (`src/lib/authHeaders.ts` + `server/middleware/requireFirebaseAuth.ts`). Prefer server-side Gemini (`/api/ai`); never inject `GEMINI_API_KEY` into production Vite bundles.
 - **Future SSO / SAML (orgs & gov):** Firebase Auth SAML / OIDC providers (or Identity Platform) per enterprise org — **phase after** spine + Firestore hardening. Map IdP groups → Guardentra roles (`admin` / member) on `users` docs. Gov tenants may need separate Firebase tenants or dedicated projects.
 - **Billing identity:** Stripe Customer linked on `users` (`stripeCustomerId`, `subscriptionStatus`) — prefer org-level subscription ownership when MSP multi-client appears (future); today user-scoped is fine for Starter.
@@ -78,13 +82,13 @@ Today: Firebase Auth via `AuthContext` + `firebase-utils` — email/password, Go
 ### Test
 
 - Login / signup / Google / logout happy paths; onboarding sets `onboarded` + org.
-- Portal: anonymous session can update open assessment + upload evidence; cannot list other orgs’ vendors.
+- Portal: scoped portal session can update its own open assessment + upload evidence; cannot reach another assessment or list other orgs’ vendors (`npm run smoke:portal`, `[mode: scoped-token]`).
 - Staging: `/api/ai` without token → 401; with valid token → allowed.
-- Disable anonymous in a test project → portal upload fails with clear error (documents Console prerequisite).
+- With Anonymous disabled the portal still works (prod verifies this).
 
 ### Validation
 
-- Auth providers enabled explicitly on staging/prod (Email, Google, Anonymous).
+- Auth providers enabled explicitly on staging/prod (Email, Google). Anonymous not required.
 - No personal-email rule bypass in deployed `firestore.rules`.
 - Security review of portal update surface: fields anonymous may mutate should be allowlisted (answers/evidence), not org metadata or `portalOpen` flip — tighten rules if needed before customers.
 - SSO: treat as enterprise checklist item, not blocking Starter launch.
@@ -345,7 +349,7 @@ Firebase Auth's base tier doesn't support SAML/OIDC providers — that requires 
 
 ### Why this doesn't fit today's model
 
-Every `assessments` doc is scoped to exactly one `organizationId` + one `vendorId` (`firestore.rules`), and the vendor has no identity of their own — `VendorPortal.tsx` uses `signInAnonymously`, a fresh anonymous session per link, not a persistent vendor account. There is nothing to attach a "reusable" answer set *to*.
+Every `assessments` doc is scoped to exactly one `organizationId` + one `vendorId` (`firestore.rules`), and the vendor has no identity of their own — `VendorPortal.tsx` signs in with a per-assessment custom token (`portal_<assessmentId>`), not a persistent vendor account. There is nothing to attach a "reusable" answer set *to*.
 
 ### Design
 

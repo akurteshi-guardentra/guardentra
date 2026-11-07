@@ -667,7 +667,7 @@ export async function handlePortalSubmit(req: Request, res: Response, deps: Evid
           if (!projectVendor) return;
           tx.set(
             vendorRef,
-            { assessmentStatus: 'Under Review' },
+            { assessmentStatus: 'Under Review', updatedAt: nowIso },
             { merge: true },
           );
         };
@@ -736,14 +736,22 @@ export async function handleEvidenceDownload(
     if (!generation) return;
 
     if (kind === 'portal') {
-      // A vendor may re-open their own pending/validated upload, but never get a
-      // signed URL back for bytes the scanner quarantined at this generation.
+      // Fail closed (#124 prod smoke finding F1): a vendor gets a signed URL back
+      // only for bytes the scanner recorded as clean at this exact generation.
+      // Pending, validated, failed, quarantined or stale-generation uploads are
+      // refused, so unscanned bytes are never served back out of the bucket.
       const trust = lookupTrustRecord(
         storagePath,
         assessment.evidenceTrustByStoragePath as EvidenceTrustMap
       );
-      if (trust?.state === 'quarantined' && trust.generation === generation) {
+      if (trust?.state === 'quarantined' && String(trust.generation ?? '') === generation) {
         res.status(403).json({ error: 'This file was quarantined by the malware scanner.' });
+        return;
+      }
+      if (!reviewerTrustMatchesObject({ trust, storagePath, generation })) {
+        res.status(403).json({
+          error: 'This file can be downloaded once the malware scan marks it clean.',
+        });
         return;
       }
     }
@@ -809,13 +817,16 @@ export async function handleOrgAttachmentDownload(req: Request, res: Response, d
 
 export async function handleOrgDecision(req: Request, res: Response, deps: EvidenceDeps) {
   try {
+    // Authenticate before parsing the body (#124 acceptance finding 4): an
+    // unauthenticated caller with an incomplete body got 400 (and a hint about
+    // the expected fields) instead of 401.
+    const decoded = await requireVerifiedToken(req, deps);
     const assessmentId = String(req.body?.assessmentId || '').trim();
     const outcome = parseDecisionOutcome(req.body?.outcome);
     const decisionNotes = String(req.body?.decisionNotes || '');
     const remediationOwner = String(req.body?.remediationOwner || '').trim();
     const remediationDueAt = normalizeRemediationDueAt(String(req.body?.remediationDueAt || ''));
     const residualRiskLevel = parseResidualRiskLevel(req.body?.residualRiskLevel);
-    const decoded = await requireVerifiedToken(req, deps);
     if (!assessmentId) {
       res.status(400).json({ error: 'assessmentId is required.' });
       return;
@@ -839,9 +850,8 @@ export async function handleOrgDecision(req: Request, res: Response, deps: Evide
     const { approvalBlockedByUntrustedEvidence } = await import(
       '../../src/lib/vendor/evidenceTrust.ts'
     );
-    const { buildOrgDecisionPatch, hasTerminalOrgDecision } = await import(
-      '../../src/lib/vendor/assessmentLifecycle.ts'
-    );
+    const { buildOrgDecisionPatch, buildVendorDecisionProjection, hasTerminalOrgDecision } =
+      await import('../../src/lib/vendor/assessmentLifecycle.ts');
 
     const patch = await deps.runAssessmentTransaction(
       assessmentId,
@@ -955,6 +965,27 @@ export async function handleOrgDecision(req: Request, res: Response, deps: Evide
             remediationDueAt: remediationDueAt || null,
             hasNotes: Boolean(decisionNotes.trim()),
           },
+        };
+      },
+      undefined,
+      async (tx, db, current, decisionPatch) => {
+        // Vendor projection (#124 findings 7–8) commits atomically with the decision.
+        // A missing or foreign vendor never blocks the decision; it is simply not projected.
+        const tenantId = String(current.organizationId || '').trim();
+        const vendorId = String(current.vendorId || '').trim();
+        if (!tenantId || !vendorId) return;
+        const vendorRef = db.collection('vendors').doc(vendorId);
+        const vendorSnap = await tx.get(vendorRef);
+        if (!vendorSnap.exists) return;
+        if (String(vendorSnap.data()?.organizationId || '') !== tenantId) return;
+        const projection = buildVendorDecisionProjection({
+          outcome,
+          residualRiskLevel,
+          decidedAt: String(decisionPatch.decidedAt || new Date().toISOString()),
+          remediationDueAt: remediationDueAt || null,
+        });
+        return () => {
+          tx.set(vendorRef, projection, { merge: true });
         };
       },
     );

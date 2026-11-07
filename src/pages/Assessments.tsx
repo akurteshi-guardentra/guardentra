@@ -32,21 +32,24 @@ import {
   loadOrgFrameworkPackDefaults,
   type FrameworkPackDefaults,
 } from '../lib/vendor/orgFrameworkPacks';
-import { syncVendorAfterAssessmentApprove } from '../lib/vendor/syncVendorAssessment';
+import { syncVendorAfterLocalDecision } from '../lib/vendor/syncVendorAssessment';
 import {
+  exceptionReasonsLabel,
+  groupExceptionsByQuestion,
   listAssessmentExceptions,
   type DecisionOutcome,
 } from '../lib/vendor/assessmentExceptions';
 import {
   buildOrgDecisionPatch,
+  buildVendorDecisionProjection,
   canSignOffAssessment,
   decidedByDisplay,
-  decisionClosesPortal,
   decisionRequiresNotes,
   decisionRequiresRemediationPlan,
   hasTerminalOrgDecision,
   normalizeRemediationDueAt,
-  nextReviewAtForDecision,
+  recordedDecisionOutcome,
+  decisionNextReviewAt,
 } from '../lib/vendor/assessmentLifecycle';
 import {
   buildArchiveEmptyAssessmentPatch,
@@ -389,8 +392,6 @@ export function Assessments() {
       remediationDueAt: normalizedRemediationDueAt || undefined,
       residualRiskLevel,
     });
-    const closes = decisionClosesPortal(outcome);
-    const nextReviewAt = nextReviewAtForDecision(outcome);
 
     try {
       if (preferLocal) {
@@ -415,12 +416,16 @@ export function Assessments() {
         }
       }
 
-      if (closes) {
-        await syncVendorAfterAssessmentApprove(
+      if (preferLocal || reviewAssessment.vendorId.startsWith('local_')) {
+        syncVendorAfterLocalDecision(
           orgId,
           reviewAssessment.vendorId,
-          preferLocal,
-          nextReviewAt
+          buildVendorDecisionProjection({
+            outcome,
+            residualRiskLevel,
+            decidedAt: patch.decidedAt,
+            remediationDueAt: normalizedRemediationDueAt,
+          })
         );
       }
 
@@ -724,11 +729,9 @@ export function Assessments() {
             onDownloadDecisionPacket={() => {
               if (!reviewAssessment) return;
               try {
-                // A recorded terminal decision is the source of truth; the form state only
-                // describes a decision that has not been submitted yet.
-                const recorded = hasTerminalOrgDecision(reviewAssessment)
-                  ? (reviewAssessment.decisionOutcome as DecisionOutcome)
-                  : null;
+                // Only a recorded decision may appear as an outcome. Before one exists the
+                // export is a DRAFT summary; the unsaved form selection is never printed.
+                const recorded = recordedDecisionOutcome(reviewAssessment);
                 openDecisionPacketForPrint({
                   vendorName: reviewAssessment.vendorName || 'Vendor',
                   assessmentId: reviewAssessment.id,
@@ -744,30 +747,17 @@ export function Assessments() {
                         decidedAt: reviewAssessment.decidedAt || undefined,
                         remediationOwner: reviewAssessment.remediationOwner || undefined,
                         remediationDueAt: reviewAssessment.remediationDueAt || undefined,
-                        residualRiskLevel: reviewAssessment.residualRiskLevel || residualRiskLevel,
-                        nextReviewAt: nextReviewAtForDecision(
-                          recorded,
-                          reviewAssessment.decidedAt ? new Date(reviewAssessment.decidedAt) : undefined
-                        ),
+                        residualRiskLevel: reviewAssessment.residualRiskLevel || undefined,
+                        nextReviewAt: decisionNextReviewAt({
+                          outcome: recorded,
+                          decidedAt: reviewAssessment.decidedAt,
+                          remediationDueAt: reviewAssessment.remediationDueAt,
+                        }),
                       }
-                    : {
-                        outcome: decisionOutcome,
-                        decisionNotes: decisionNotes.trim() || undefined,
-                        decidedBy: profile?.email || profile?.displayName || undefined,
-                        decidedAt: new Date().toISOString(),
-                        remediationOwner:
-                          decisionRequiresRemediationPlan(decisionOutcome) && remediationOwner.trim()
-                            ? remediationOwner.trim()
-                            : undefined,
-                        remediationDueAt: decisionRequiresRemediationPlan(decisionOutcome)
-                          ? normalizeRemediationDueAt(remediationDueDate) || undefined
-                          : undefined,
-                        residualRiskLevel,
-                        nextReviewAt: nextReviewAtForDecision(decisionOutcome),
-                      }),
-                  exceptions: reviewExceptions.map((e) => ({
+                    : { outcome: null }),
+                  exceptions: groupExceptionsByQuestion(reviewExceptions).map((e) => ({
                     question: e.question,
-                    reason: e.reason,
+                    reason: exceptionReasonsLabel(e.reasons, e.evidenceStatus),
                     answer: Array.isArray(e.answer) ? e.answer.join(', ') : e.answer,
                   })),
                   triageTier: (reviewAssessment as { triageTier?: string }).triageTier,
@@ -780,7 +770,7 @@ export function Assessments() {
                     actorId: user?.uid || null,
                     objectType: 'assessment',
                     objectId: reviewAssessment.id,
-                    payload: { kind: 'decision_packet' },
+                    payload: { kind: recorded ? 'decision_packet' : 'pre_decision_summary' },
                   });
                 }
               } catch (err: any) {
