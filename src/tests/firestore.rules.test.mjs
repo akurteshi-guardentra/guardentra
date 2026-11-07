@@ -15,7 +15,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertFails, assertSucceeds, initializeTestEnvironment } from '@firebase/rules-unit-testing';
-import { collection, deleteDoc, doc, getDoc, getDocs, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDoc, getDocs, query, runTransaction, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '../..');
@@ -157,8 +157,12 @@ async function main() {
     assertFails(updateDoc(doc(db, 'organizations', ORG), { seatCount: 0 })),
   );
 
-  await check('non-admin member CAN increment seatCount alone', () =>
-    assertSucceeds(updateDoc(doc(memberDb, 'organizations', ORG), { seatCount: 3 })),
+  await check('non-admin member CANNOT increment seatCount without the invite marker', () =>
+    assertFails(updateDoc(doc(memberDb, 'organizations', ORG), { seatCount: 3 })),
+  );
+
+  await check('org admin CANNOT increment seatCount without the invite marker', () =>
+    assertFails(updateDoc(doc(db, 'organizations', ORG), { seatCount: 3 })),
   );
 
   await check('non-admin member CANNOT smuggle name in alongside an allowed counter', () =>
@@ -183,7 +187,7 @@ async function main() {
   );
 
   await check(
-    "orgBootstrap.ts's corrected order: invited profile first, then the seat increment succeeds",
+    "orgBootstrap.ts's corrected order: profile commit succeeds, and a lone seat increment is denied",
     async () => {
       await testEnv.withSecurityRulesDisabled(async (ctx) => {
         await setDoc(doc(ctx.firestore(), 'org_invites/inv-j2'), {
@@ -200,13 +204,77 @@ async function main() {
         organizationId: ORG,
         role: 'member',
         inviteId: 'inv-j2',
+        seatCountApplied: false,
       });
       await assertSucceeds(batch.commit());
-      // Step 2 — now that the profile exists, isOrgMember() resolves and the
-      // counter-only update passes the admin-or-counters rule.
-      await assertSucceeds(updateDoc(doc(joinerDb, 'organizations', ORG), { seatCount: 4 }));
+      // Step 2 — the meter moves only together with the marker. A counter-only
+      // update no longer passes.
+      await assertFails(updateDoc(doc(joinerDb, 'organizations', ORG), { seatCount: 3 }));
     },
   );
+
+  await check('an existing profile CANNOT grow a false seat marker', () =>
+    assertFails(updateDoc(doc(memberDb, 'users/member-2'), { seatCountApplied: false })),
+  );
+
+  await check('seat marker CANNOT flip to true without the org increment', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users/joiner-nomark'), {
+        organizationId: ORG,
+        role: 'member',
+        inviteId: 'inv-nomark',
+        seatCountApplied: false,
+      });
+    });
+    const nomarkDb = testEnv.authenticatedContext('joiner-nomark', {
+      email: 'nomark@example.com',
+      email_verified: true,
+    }).firestore();
+    await assertFails(updateDoc(doc(nomarkDb, 'users/joiner-nomark'), { seatCountApplied: true }));
+  });
+
+  await check('seat claim transaction raises seatCount by one and sets the marker', async () => {
+    let current = 0;
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const org = await getDoc(doc(ctx.firestore(), 'organizations', ORG));
+      current = org.data().seatCount;
+      await setDoc(doc(ctx.firestore(), 'users/joiner-claim'), {
+        organizationId: ORG,
+        role: 'member',
+        inviteId: 'inv-claim',
+        seatCountApplied: false,
+      });
+    });
+    const claimDb = testEnv.authenticatedContext('joiner-claim', {
+      email: 'claim@example.com',
+      email_verified: true,
+    }).firestore();
+    await assertSucceeds(runTransaction(claimDb, async (tx) => {
+      const userSnap = await tx.get(doc(claimDb, 'users/joiner-claim'));
+      const orgSnap = await tx.get(doc(claimDb, 'organizations', ORG));
+      if (userSnap.get('seatCountApplied') !== false) return;
+      tx.update(doc(claimDb, 'organizations', ORG), { seatCount: orgSnap.get('seatCount') + 1 });
+      tx.update(doc(claimDb, 'users/joiner-claim'), { seatCountApplied: true });
+    }));
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const org = await getDoc(doc(ctx.firestore(), 'organizations', ORG));
+      const user = await getDoc(doc(ctx.firestore(), 'users/joiner-claim'));
+      if (org.data().seatCount !== current + 1) {
+        throw new Error(`seatCount ${org.data().seatCount} !== ${current + 1}`);
+      }
+      if (user.data().seatCountApplied !== true) {
+        throw new Error('seatCountApplied was not set');
+      }
+    });
+  });
+
+  await check('a claimed seat marker CANNOT be cleared', async () => {
+    const claimDb = testEnv.authenticatedContext('joiner-claim', {
+      email: 'claim@example.com',
+      email_verified: true,
+    }).firestore();
+    await assertFails(updateDoc(doc(claimDb, 'users/joiner-claim'), { seatCountApplied: false }));
+  });
 
   console.log('\nUser profile role/orgId immutability (KI#6 audit):');
 
