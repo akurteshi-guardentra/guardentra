@@ -2,12 +2,13 @@
 
 Source: `reports/env-consistency-2026-10-31.md` (read-only audit, owner-PC readback 2026-10-31T15:41Z).
 
-**Status (2026-11-07):**
+**Status (2026-11-07, updated 18:40Z):**
+- **Done by the owner on 2026-11-07 (not with these scripts):** `firebase deploy --only firestore:rules,firestore:indexes` from RC `5407219` to staging (15:38Z) and prod (15:47Z). Prod now has all 9 RC indexes READY, including #226 `assessments(organizationId, vendorId)`, and prod serves `5407219` (#226 comments 6709148063, 6709277368). So `-Set rc` and `ops/226-index` have nothing left to create; keep them only as the record.
 - **Done elsewhere:** prod RC indexes (D1, 8 READY 2026-11-02, #124 comment 6570660545, run from the owner's copy of the fixed `01-create-indexes.ps1`); prod delete protection + PITR (D3, 2026-11-02); `PUBLIC_APP_URL` in the prod yamls (landed in the RC via #247).
-- **Not run:** prod `-Set rc` for the 9th (#226) index, legacy `-Set running` (legacy hold), `03-staging-anonymous-signin.ps1`, staging delete protection/PITR.
+- **Not run:** legacy `-Set running` (legacy hold), `03-staging-anonymous-signin.ps1`, staging delete protection/PITR.
 - **In this PR (repo only):** `.firebaserc` default removal + test, and the scripts below as the record.
 
-Each remaining step needs its own explicit owner go. Merging this PR does not run anything and does not change prod: prod tracks `main` with rollout disabled, and the yaml change only takes effect when the RC is promoted to prod. Never deploy the RC Firestore rules to prod; nothing here touches rules.
+Each remaining step needs its own explicit owner go. Merging this PR does not run anything and does not change prod: prod tracks `main` with rollout disabled. Nothing here touches rules.
 
 Every script checks live state first and stops if it is not what was verified, asks you to type the project name before changing anything, reads the result back, writes `out\*.json`, and has an undo.
 
@@ -29,7 +30,7 @@ Every script checks live state first and stops if it is not what was verified, a
 - The index list call sends no `pageSize` (the API rejects it); fixed 2026-11-02, script sha `116a1678…` before this refresh.
 - The script uses the Firestore Admin API directly instead of `firebase deploy --only firestore:indexes`, so it can't pick up the CLI default project and can never delete an index that isn't in the file.
 - Creating an index doesn't touch documents. It builds in the background, minutes on small collections, and costs only index storage. Run the same command again later: it reads back and reports READY.
-- Suggested order now: #226 index on staging (`ops/226-index`), then prod `-Set rc`. Legacy `running` stays on hold.
+- Nothing index-related is left for staging or prod. Legacy `running` stays on hold.
 
 ## 2. PUBLIC_APP_URL (E1)
 
