@@ -1,6 +1,5 @@
 {
   "projects": {
-    "default": "guardentra-7f582",
     "demo": "guardentra-7f582",
     "dev": "guardentra-dev",
     "staging": "guardentra-staging",
