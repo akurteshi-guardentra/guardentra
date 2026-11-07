@@ -38,5 +38,12 @@ export default defineConfig({
       testDir: './tests/regression',
       use: { ...devices['Desktop Chrome'], userAgent: UA },
     },
+    {
+      // Sends ONE real email on staging. Manual dispatch only; never retried.
+      name: 'mail',
+      testDir: './tests/mail',
+      retries: 0,
+      use: { ...devices['Desktop Chrome'], userAgent: UA },
+    },
   ],
 });

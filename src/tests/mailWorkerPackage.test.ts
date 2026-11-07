@@ -17,6 +17,8 @@ import {
   prepareMailWorkerPackage,
   resolveDependencyVersions,
   smokeCleanInstallAndLoad,
+  needsWindowsShell,
+  withPathPrefix,
 } from '../../scripts/prepare-mail-worker-package.mjs';
 
 const nodeRequire = createRequire(import.meta.url);
@@ -140,6 +142,36 @@ describe('mail worker package preparation', () => {
     ]);
     expect(resolved.database).toBeNull();
     expect(resolved.region).toBeNull();
+  });
+
+  it('uses Gmail (Google Workspace) inputs without provider region or secret for gmail_api', () => {
+    const { unresolved } = collectUnresolvedInputs({}, 'gmail_api') as { unresolved: string[] };
+    expect(unresolved).toEqual(['database', 'region', 'serviceAccount', 'mailFrom', 'gmailSender', 'cutoverAt']);
+    expect(() => collectUnresolvedInputs({ gmailSender: 'not an address' }, 'gmail_api')).toThrowError(/INVALID_GMAIL_SENDER/);
+    expect(() => collectUnresolvedInputs({}, 'smtp')).toThrowError(/INVALID_PROVIDER/);
+    const args = parseArgs(['--provider', 'gmail_api', '--gmail-sender', 'admin@example.test']);
+    expect(args.provider).toBe('gmail_api');
+    expect(args.gmailSender).toBe('admin@example.test');
+  });
+
+  it('writes a gmail_api descriptor with no secret parameter', () => {
+    const dirs = tempDirs();
+    scratch.push(dirs.root);
+    const repoRoot = path.join(dirs.root, 'repo');
+    fs.mkdirSync(repoRoot, { recursive: true });
+    fs.writeFileSync(path.join(repoRoot, 'firebase.json'), JSON.stringify({ firestore: {} }));
+    const bundlePath = path.join(dirs.root, 'index-fixture.cjs');
+    writeMiniBundle(bundlePath);
+    const receipt = prepareMailWorkerPackage(baseOptions(dirs, {
+      repoRoot, bundlePath, provider: 'gmail_api', gmailSender: 'admin@example.test',
+    }));
+    expect(receipt.provider).toBe('gmail_api');
+    const descriptor = JSON.parse(fs.readFileSync(path.join(dirs.outDir, 'staging.descriptor.json'), 'utf8'));
+    expect(descriptor.provider).toBe('gmail_api');
+    expect(descriptor.params.MAIL_GMAIL_SENDER).toBe('admin@example.test');
+    expect(descriptor.params.MAIL_WORKER_ENABLED).toBe(false);
+    expect(descriptor.params).not.toHaveProperty('SENDGRID_API_KEY_SECRET');
+    expect(descriptor.params).not.toHaveProperty('MAIL_PROVIDER_REGION');
   });
 
   it('derives package dependency versions from the same-commit lockfile after reading bundle externals', () => {
@@ -562,6 +594,21 @@ describe('mail worker exact source binding', () => {
     ).toThrowError(/SOURCE_CHANGED/);
     expect(fs.existsSync(dirs.outDir)).toBe(false);
     expect(fs.readFileSync(path.join(repo, 'server', 'mailWorkerFunctions.ts'), 'utf8')).toContain('STILL_DIRTY');
+  });
+});
+
+describe('mail worker packager on Windows', () => {
+  it('uses a shell only for npm/npx on win32', () => {
+    expect(needsWindowsShell('npm', 'win32')).toBe(true);
+    expect(needsWindowsShell('npx', 'win32')).toBe(true);
+    expect(needsWindowsShell('git', 'win32')).toBe(false);
+    expect(needsWindowsShell('npm', 'linux')).toBe(false);
+  });
+  it('prepends to the existing Path key without duplicating it', () => {
+    const env = withPathPrefix({ Path: 'C:\\Windows', OTHER: 'x' }, 'C:\\bin');
+    expect(Object.keys(env).filter((k) => k.toUpperCase() === 'PATH')).toEqual(['Path']);
+    expect(env.Path.startsWith('C:\\bin')).toBe(true);
+    expect(withPathPrefix({ PATH: '/usr/bin' }, '/opt/bin').PATH.startsWith('/opt/bin')).toBe(true);
   });
 });
 

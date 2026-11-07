@@ -20,6 +20,13 @@
  *   --database --region --service-account --mail-from
  *   --provider-region us|eu --cutover-at <UTC ISO ending Z>
  *   --secret-name SENDGRID_API_KEY
+ *
+ * Provider (default sendgrid):
+ *   --provider gmail_api   Google Workspace via Gmail API with keyless
+ *                          domain-wide delegation. Builds
+ *                          server/mailWorkerGmailFunctions.ts (binds no secret)
+ *                          and takes --gmail-sender instead of
+ *                          --provider-region / --secret-name.
  */
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
@@ -42,15 +49,19 @@ export const ALLOWED_TARGET = 'staging';
 export const STAGING_PROJECT_ID = 'guardentra-staging';
 export const FORBIDDEN_PROJECT_FRAGMENTS = ['prod', 'production', 'demo', '7f582'];
 
-const RUNTIME_INPUT_KEYS = [
-  'database',
-  'region',
-  'serviceAccount',
-  'mailFrom',
-  'providerRegion',
-  'cutoverAt',
-  'secretName',
-];
+export const PROVIDERS = ['sendgrid', 'gmail_api'];
+const RUNTIME_INPUT_KEYS = {
+  sendgrid: ['database', 'region', 'serviceAccount', 'mailFrom', 'providerRegion', 'cutoverAt', 'secretName'],
+  gmail_api: ['database', 'region', 'serviceAccount', 'mailFrom', 'gmailSender', 'cutoverAt'],
+};
+const BUILD_SCRIPTS = { sendgrid: 'build:mail-worker', gmail_api: 'build:mail-worker-gmail' };
+
+export function assertProvider(provider = 'sendgrid') {
+  if (!PROVIDERS.includes(provider)) {
+    throw new PrepareError('INVALID_PROVIDER', 'provider must be sendgrid or gmail_api');
+  }
+  return provider;
+}
 
 const EXCLUDED_NAME_RE =
   /(^|[/\\])(\.env|\.env\..*|\.git|terraform|\.tfstate|\.tfplan|.*\.(pem|p12|key)|serviceAccount.*\.json|.*token.*|node_modules)([/\\]|$)/i;
@@ -92,6 +103,8 @@ export function parseArgs(argv = process.argv.slice(2)) {
     providerRegion: out['provider-region'],
     cutoverAt: out['cutover-at'],
     secretName: out['secret-name'],
+    provider: out.provider,
+    gmailSender: out['gmail-sender'],
     skipSmoke: Boolean(out['skip-smoke']),
     repoRoot: out['repo-root'],
   };
@@ -164,12 +177,12 @@ export function assertTarget(target, projectId) {
  * @param {Record<string, unknown>} [inputs]
  * @returns {{ unresolved: string[], resolved: Record<string, string | null> }}
  */
-export function collectUnresolvedInputs(inputs = {}) {
+export function collectUnresolvedInputs(inputs = {}, provider = 'sendgrid') {
   const unresolved = [];
   /** @type {Record<string, string | null>} */
   const resolved = {};
 
-  for (const key of RUNTIME_INPUT_KEYS) {
+  for (const key of RUNTIME_INPUT_KEYS[assertProvider(provider)]) {
     const value = inputs[key];
     if (value === undefined || value === null || String(value).trim() === '') {
       unresolved.push(key);
@@ -182,6 +195,9 @@ export function collectUnresolvedInputs(inputs = {}) {
     }
     if (key === 'cutoverAt' && (!Number.isFinite(Date.parse(text)) || !/Z$/.test(text))) {
       throw new PrepareError('INVALID_CUTOVER', 'cutoverAt must be UTC ISO ending in Z');
+    }
+    if (key === 'gmailSender' && !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(text)) {
+      throw new PrepareError('INVALID_GMAIL_SENDER', 'gmailSender must be a Workspace mailbox address shape');
     }
     if (key === 'mailFrom' && !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(text)) {
       throw new PrepareError('INVALID_MAIL_FROM', 'mailFrom must be a verified sender address shape');
@@ -458,15 +474,35 @@ function assertNoExcludedPaths(dir) {
   }
 }
 
+/**
+ * Windows ships npm/npx as .cmd shims, which Node refuses to spawn without a shell
+ * (CVE-2024-27980). Only these fixed tool names get a shell, and every argument this
+ * script passes is a constant, so no caller-controlled text reaches the shell.
+ */
+export function needsWindowsShell(command, platform = process.platform) {
+  return platform === 'win32' && ['npm', 'npx'].includes(command);
+}
+
+/** Prepend a directory to PATH, reusing the existing key (Windows spells it `Path`). */
+export function withPathPrefix(env, dir) {
+  const key = Object.keys(env).find((name) => name.toUpperCase() === 'PATH') || 'PATH';
+  const next = { ...env };
+  for (const name of Object.keys(next)) {
+    if (name !== key && name.toUpperCase() === 'PATH') delete next[name];
+  }
+  next[key] = `${dir}${path.delimiter}${env[key] || ''}`;
+  return next;
+}
+
 function runCommand(command, args, cwd, label, env = process.env) {
   const result = spawnSync(command, args, {
     cwd,
     encoding: 'utf8',
-    shell: false,
+    shell: needsWindowsShell(command),
     env,
   });
   if (result.status !== 0) {
-    const detail = (result.stderr || result.stdout || `exit ${result.status}`).trim();
+    const detail = (result.stderr || result.stdout || result.error?.message || `exit ${result.status}`).trim();
     throw new PrepareError('COMMAND_FAILED', `${label} failed: ${detail}`);
   }
   return result;
@@ -526,11 +562,12 @@ function materializeCommit(repoRoot, sourceSha) {
   return { dest, tree };
 }
 
-function assertCompiler(tree, repoRoot, lockfile) {
+function assertCompiler(tree, repoRoot, lockfile, provider = 'sendgrid') {
   const pkg = JSON.parse(fs.readFileSync(path.join(tree, 'package.json'), 'utf8'));
-  const script = pkg.scripts?.['build:mail-worker'];
+  const scriptName = BUILD_SCRIPTS[assertProvider(provider)];
+  const script = pkg.scripts?.[scriptName];
   if (!script || typeof script !== 'string') {
-    throw new PrepareError('COMPILER_MISSING', 'Committed package.json has no build:mail-worker script');
+    throw new PrepareError('COMPILER_MISSING', `Committed package.json has no ${scriptName} script`);
   }
   if (!script.includes('esbuild')) {
     return { script, esbuildVersion: null, binDir: null };
@@ -557,13 +594,14 @@ function assertCompiler(tree, repoRoot, lockfile) {
   };
 }
 
-export function buildMailWorkerBundle(repoRoot, { runNpmBuild, binDir } = {}) {
+export function buildMailWorkerBundle(repoRoot, { runNpmBuild, binDir, provider = 'sendgrid' } = {}) {
   if (typeof runNpmBuild === 'function') {
     runNpmBuild(repoRoot);
   } else {
-    const env = { ...process.env, npm_config_ignore_scripts: 'true' };
-    if (binDir) env.PATH = `${binDir}${path.delimiter}${env.PATH || ''}`;
-    runCommand('npm', ['run', 'build:mail-worker'], repoRoot, 'npm run build:mail-worker', env);
+    let env = { ...process.env, npm_config_ignore_scripts: 'true' };
+    if (binDir) env = withPathPrefix(env, binDir);
+    const scriptName = BUILD_SCRIPTS[assertProvider(provider)];
+    runCommand('npm', ['run', scriptName], repoRoot, `npm run ${scriptName}`, env);
   }
   const bundlePath = path.join(repoRoot, BUNDLE_REL);
   if (!fs.existsSync(bundlePath)) {
@@ -593,6 +631,7 @@ function writePackageManifest({ name, engines, dependencies, main, overrides }) 
 }
 
 function writeStagingDescriptor({
+  provider = 'sendgrid',
   projectId,
   sourceSha,
   unresolved,
@@ -628,16 +667,27 @@ function writeStagingDescriptor({
           },
         ],
       },
-      params: {
-        MAIL_WORKER_ENABLED: false,
-        MAIL_WORKER_DATABASE: resolved.database,
-        MAIL_WORKER_REGION: resolved.region,
-        MAIL_WORKER_SERVICE_ACCOUNT: resolved.serviceAccount,
-        MAIL_FROM: resolved.mailFrom,
-        MAIL_PROVIDER_REGION: resolved.providerRegion,
-        MAIL_WORKER_CUTOVER_AT: resolved.cutoverAt,
-        SENDGRID_API_KEY_SECRET: resolved.secretName,
-      },
+      provider,
+      params: provider === 'gmail_api'
+        ? {
+          MAIL_WORKER_ENABLED: false,
+          MAIL_WORKER_DATABASE: resolved.database,
+          MAIL_WORKER_REGION: resolved.region,
+          MAIL_WORKER_SERVICE_ACCOUNT: resolved.serviceAccount,
+          MAIL_GMAIL_SENDER: resolved.gmailSender,
+          MAIL_FROM: resolved.mailFrom,
+          MAIL_WORKER_CUTOVER_AT: resolved.cutoverAt,
+        }
+        : {
+          MAIL_WORKER_ENABLED: false,
+          MAIL_WORKER_DATABASE: resolved.database,
+          MAIL_WORKER_REGION: resolved.region,
+          MAIL_WORKER_SERVICE_ACCOUNT: resolved.serviceAccount,
+          MAIL_FROM: resolved.mailFrom,
+          MAIL_PROVIDER_REGION: resolved.providerRegion,
+          MAIL_WORKER_CUTOVER_AT: resolved.cutoverAt,
+          SENDGRID_API_KEY_SECRET: resolved.secretName,
+        },
       unresolvedInputs: unresolved,
       externalImports,
       dependencies,
@@ -648,7 +698,7 @@ function writeStagingDescriptor({
 }
 
 function toolVersion(command) {
-  const result = spawnSync(command, ['--version'], { encoding: 'utf8', shell: false });
+  const result = spawnSync(command, ['--version'], { encoding: 'utf8', shell: needsWindowsShell(command) });
   if (result.status !== 0) {
     throw new PrepareError('COMMAND_FAILED', `${command} --version failed`);
   }
@@ -717,7 +767,8 @@ export function prepareMailWorkerPackage(options = {}) {
     );
   }
 
-  const { unresolved, resolved } = collectUnresolvedInputs(options);
+  const provider = assertProvider(options.provider || 'sendgrid');
+  const { unresolved, resolved } = collectUnresolvedInputs(options, provider);
   const firebaseBefore = fs.existsSync(path.join(repoRoot, 'firebase.json'))
     ? sha256File(path.join(repoRoot, 'firebase.json'))
     : null;
@@ -727,7 +778,7 @@ export function prepareMailWorkerPackage(options = {}) {
     let buildRoot = repoRoot;
     let lockfile;
     let sourceLockHash = null;
-    let compiler = { script: 'npm run build:mail-worker', esbuildVersion: null, binDir: null };
+    let compiler = { script: `npm run ${BUILD_SCRIPTS[provider]}`, esbuildVersion: null, binDir: null };
     let inputIdentity = null;
     let overrides = options.overrides;
 
@@ -747,10 +798,10 @@ export function prepareMailWorkerPackage(options = {}) {
       sourceLockHash = sha256File(lockPath);
       lockfile = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
       overrides = JSON.parse(fs.readFileSync(path.join(buildRoot, 'package.json'), 'utf8')).overrides;
-      compiler = assertCompiler(buildRoot, repoRoot, lockfile);
+      compiler = assertCompiler(buildRoot, repoRoot, lockfile, provider);
       const before = hashInputTree(buildRoot);
       const runNpmBuild = options.testHooks === true ? options.runNpmBuild : undefined;
-      buildMailWorkerBundle(buildRoot, { runNpmBuild, binDir: compiler.binDir });
+      buildMailWorkerBundle(buildRoot, { runNpmBuild, binDir: compiler.binDir, provider });
       const after = hashInputTree(buildRoot);
       if (before !== after) {
         throw new PrepareError(
@@ -762,7 +813,7 @@ export function prepareMailWorkerPackage(options = {}) {
     }
 
     const bundlePath = fixtureMode
-      ? options.bundlePath || buildMailWorkerBundle(repoRoot, { runNpmBuild: options.runNpmBuild })
+      ? options.bundlePath || buildMailWorkerBundle(repoRoot, { runNpmBuild: options.runNpmBuild, provider })
       : path.join(buildRoot, BUNDLE_REL);
     const bundleSource = fs.readFileSync(bundlePath, 'utf8');
     const externalImports = extractExternalImports(bundleSource);
@@ -785,6 +836,7 @@ export function prepareMailWorkerPackage(options = {}) {
     fs.writeFileSync(path.join(canonicalOut, 'package.json'), packageJsonText);
 
     const descriptorText = writeStagingDescriptor({
+      provider,
       projectId: options.projectId,
       sourceSha,
       unresolved,
@@ -852,6 +904,7 @@ export function prepareMailWorkerPackage(options = {}) {
       schema: 'guardentra.mail_worker_package_receipt.v1',
       sourceSha,
       target: ALLOWED_TARGET,
+      provider,
       projectId: options.projectId,
       codebase: CODEBASE_NAME,
       preparedAt: new Date().toISOString(),
@@ -918,6 +971,8 @@ function main(argv = process.argv.slice(2)) {
       providerRegion: args.providerRegion,
       cutoverAt: args.cutoverAt,
       secretName: args.secretName,
+      provider: args.provider,
+      gmailSender: args.gmailSender,
       skipSmoke: args.skipSmoke,
       repoRoot: args.repoRoot || DEFAULT_REPO_ROOT,
     });

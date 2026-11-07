@@ -112,6 +112,42 @@ checks both builds and explicitly executes `npm run test:mail-worker-firestore`
 inside the local Firestore emulator, so the transaction suite is not silently skipped.
 The emulator does not prove that the production composite index is deployed.
 
+## Google Workspace provider (Gmail API, keyless) — #72
+
+`server/mailWorkerGmailFunctions.ts` is a second entrypoint with the same worker,
+store, lease and retry model, but it delivers through the Gmail API
+(`users.messages.send`) as one Workspace mailbox. It binds **no secret**:
+
+1. The runtime service account (`MAIL_WORKER_SERVICE_ACCOUNT`) gets a metadata token.
+2. It signs a JWT for itself with IAM Credentials `signJwt`
+   (`sub` = `MAIL_GMAIL_SENDER`, scope `https://www.googleapis.com/auth/gmail.send` only).
+3. It exchanges that JWT at `oauth2.googleapis.com/token` (cached until 5 min before expiry).
+
+| Name | Requirement |
+|---|---|
+| `MAIL_GMAIL_SENDER` | The Workspace mailbox the worker acts as (pinned from config, never from a queue doc) |
+| `MAIL_FROM` | That mailbox or one of its Gmail "Send mail as" aliases (otherwise Gmail rewrites From) |
+| `MAIL_FROM_NAME` / `MAIL_REPLY_TO` | Optional. No invented company details |
+| Other `MAIL_WORKER_*` | As above. No `MAIL_PROVIDER_REGION`, no `SENDGRID_API_KEY` |
+
+Prerequisites per project (owner-authorized, none created by this repository):
+Gmail API and IAM Credentials API enabled; `roles/iam.serviceAccountTokenCreator`
+for the worker service account **on itself only**; a Workspace domain-wide
+delegation entry for that service account's client ID with the `gmail.send` scope
+only; no service-account key file. Residual risk: delegation is domain-wide, so code
+running as that identity could send as any domain mailbox. Removing the delegation
+entry in the Workspace admin console stops all sending immediately.
+
+Classification: 200 accepted; 401 (token dropped), 429 and 403 rate/daily-limit
+reasons → temporary (`dailyLimitExceeded` waits 1 h); token minting failure →
+temporary (no request was made); other 4xx → permanent; 408/5xx/transport → unknown,
+never auto-replayed. Only the error `reason` field is read; bodies are never logged.
+Gmail caps a sending user at roughly 2,000 messages/day; move to a dedicated mail
+service before volume approaches that.
+
+Build: `npm run build:mail-worker-gmail` (same `dist/mail-worker/index.cjs` path).
+Package: `scripts/prepare-mail-worker-package.mjs --provider gmail_api --gmail-sender <mailbox> ...`.
+
 ## Cutover — separately authorized operation
 
 1. Verify actual #72 consumer installation/version, queue database, region, sender,
