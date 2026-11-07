@@ -18,6 +18,7 @@ import {
   assessmentReminderQueueId,
   processAssessmentReminders,
 } from '../../server/lib/reminders/worker';
+import { createMailWorker, type MailRecord } from '../../server/lib/mailWorker/worker';
 
 function buildDbFixture() {
   const assessmentQuery: {
@@ -93,7 +94,7 @@ describe('#152 assessment reminder idempotency', () => {
     expect(h.mailCreate).toHaveBeenCalledTimes(1);
     expect(h.mailCreate.mock.calls[0]?.[0]).toMatchObject({
       to: ['vendor@example.com'],
-      source: 'guardentra.reminder',
+      source: 'guardentra.notify',
       notification: {
         intentType: 'assessment_reminder',
         assessmentId: 'asm_123',
@@ -140,5 +141,33 @@ describe('#152 assessment reminder idempotency', () => {
     );
     expect(h.mailCreate).toHaveBeenCalledTimes(2);
     expect(h.markerSet).toHaveBeenCalledTimes(2);
+  });
+
+  it('queues a reminder the self-managed mail worker will deliver (#191)', async () => {
+    await expect(processAssessmentReminders()).resolves.toBe(1);
+    const data = structuredClone(h.mailCreate.mock.calls[0]?.[0]) as Record<string, unknown>;
+    const record: MailRecord = { data, createdAtMs: 2_000 };
+    const send = vi.fn().mockResolvedValue({ outcome: 'accepted' });
+    const worker = createMailWorker({
+      store: {
+        async transact(_id, fn) {
+          const change = fn(structuredClone(record));
+          if (change.delivery) record.data.delivery = change.delivery;
+          return change.value;
+        },
+        async due() { return []; },
+      },
+      provider: { send },
+      options: { enabled: true, cutoverMs: 1_000 },
+      now: () => 3_000,
+    });
+
+    await expect(worker.process('assessment-reminder_asm_123_on_due')).resolves.toBe('SUCCESS');
+    expect(send).toHaveBeenCalledTimes(1);
+    // Only recipient and content reach the provider; reminder metadata stays on the queue doc.
+    expect(send.mock.calls[0]?.[0]).toEqual({
+      to: ['vendor@example.com'],
+      message: { subject: expect.any(String), text: expect.any(String) },
+    });
   });
 });

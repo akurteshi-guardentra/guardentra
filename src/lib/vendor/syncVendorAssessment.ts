@@ -1,5 +1,6 @@
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
+import type { VendorDecisionProjection } from './assessmentLifecycle';
 import {
   isFirestoreUnavailableError,
   markLocalVendorAssessmentSent,
@@ -143,4 +144,16 @@ export async function syncVendorAfterAssessmentApprove(
       throw err;
     }
   }
+}
+
+/**
+ * Local (offline/demo) decision path. Cloud decisions project the vendor inside the
+ * server decision transaction, so the browser does not write the vendor record there.
+ */
+export function syncVendorAfterLocalDecision(
+  orgId: string,
+  vendorId: string,
+  projection: VendorDecisionProjection
+): void {
+  patchLocalVendor(orgId, vendorId, projection);
 }

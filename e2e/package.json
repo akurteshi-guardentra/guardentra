@@ -1,0 +1,16 @@
+{
+  "name": "guardentra-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Post-release Playwright smoke, regression and journey suites. Separate from the app so root npm ci is unchanged.",
+  "scripts": {
+    "test:unit": "node --test lib/*.test.mjs",
+    "smoke": "playwright test --project=smoke",
+    "regression": "playwright test --project=regression",
+    "journey": "playwright test --project=journey",
+    "wait-for-release": "node scripts/wait-for-release.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1"
+  }
+}

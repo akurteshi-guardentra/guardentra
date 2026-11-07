@@ -1,11 +1,11 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
-  increment,
   limit,
   query,
-  updateDoc,
+  runTransaction,
   where,
   writeBatch,
 } from 'firebase/firestore';
@@ -58,7 +58,123 @@ export function resolveBootstrapJoinRole(inviteRole: unknown): BootstrapJoinRole
  * Issue #61: organizationId and role are never taken from caller input.
  * Join writes inviteId so Firestore rules can re-verify the pending invite.
  */
-export async function bootstrapUserProfile(uid: string, fields: NewProfileFields): Promise<void> {
+const inflightBootstraps = new Map<string, Promise<void>>();
+const inflightSeatClaims = new Map<string, Promise<void>>();
+const finishedSeatClaims = new Set<string>();
+let pendingSignupProfile: { email: string; displayName: string } | null = null;
+
+function normalizeEmail(email: string | null | undefined): string {
+  return (email || '').trim().toLowerCase();
+}
+
+/**
+ * Sign-up race (#124 finding, 2026-10-31): createUserWithEmailAndPassword fires
+ * onAuthStateChanged before signUpWithEmail has set the display name, so
+ * AuthContext's auto-init and signUpWithEmail both bootstrapped the same uid.
+ * The first batch won with the placeholder name ("New User's Organization");
+ * the second was correctly denied by the rules (the profile already existed),
+ * which surfaced as a permission-denied sign-up error.
+ *
+ * Call this before createUserWithEmailAndPassword so whichever caller runs the
+ * bootstrap uses the name the person actually typed.
+ */
+export function rememberSignupProfile(email: string, displayName: string): void {
+  const normalized = normalizeEmail(email);
+  const name = displayName.trim();
+  pendingSignupProfile = normalized && name ? { email: normalized, displayName: name } : null;
+}
+
+export function clearSignupProfile(): void {
+  pendingSignupProfile = null;
+}
+
+function resolveProfileFields(fields: NewProfileFields): NewProfileFields {
+  const pending = pendingSignupProfile;
+  if (pending && pending.email === normalizeEmail(fields.email)) {
+    return { email: fields.email, displayName: pending.displayName };
+  }
+  return fields;
+}
+
+function isPermissionDenied(err: unknown): boolean {
+  return Boolean(
+    err && typeof err === 'object' && 'code' in err && (err as { code?: unknown }).code === 'permission-denied',
+  );
+}
+
+/** Test-only: reset module state between cases. */
+export function __resetBootstrapStateForTests(): void {
+  inflightBootstraps.clear();
+  inflightSeatClaims.clear();
+  finishedSeatClaims.clear();
+  pendingSignupProfile = null;
+}
+
+/**
+ * Raise organizations.seatCount by one and set users/{uid}.seatCountApplied,
+ * in one transaction, only when this profile was created with the marker false.
+ * A retry sees the marker and does not add a second seat. Profiles that omit
+ * the field (joins from before this claim) are left alone.
+ * Failure is logged. The join itself must already have committed.
+ */
+export function claimInviteSeat(uid: string, organizationId: string): Promise<void> {
+  if (finishedSeatClaims.has(uid)) return Promise.resolve();
+  const existing = inflightSeatClaims.get(uid);
+  if (existing) return existing;
+  const run = claimInviteSeatWithRetry(uid, organizationId).finally(() => {
+    inflightSeatClaims.delete(uid);
+    finishedSeatClaims.add(uid);
+  });
+  inflightSeatClaims.set(uid, run);
+  return run;
+}
+
+async function claimInviteSeatWithRetry(uid: string, organizationId: string): Promise<void> {
+  const userRef = doc(db, 'users', uid);
+  const orgRef = doc(db, 'organizations', organizationId);
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await runTransaction(db, async (tx) => {
+        const userSnap = await tx.get(userRef);
+        const orgSnap = await tx.get(orgRef);
+        if (!userSnap.exists()) return;
+        if (userSnap.get('seatCountApplied') !== false) return;
+        if (userSnap.get('organizationId') !== organizationId) return;
+        const current = orgSnap.get('seatCount');
+        if (typeof current !== 'number' || !Number.isInteger(current)) {
+          throw new Error('orgBootstrap: seatCount is not an integer');
+        }
+        tx.update(orgRef, { seatCount: current + 1 });
+        tx.update(userRef, { seatCountApplied: true });
+      });
+      return;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  console.warn('orgBootstrap: seat count claim failed; user joined regardless', lastErr);
+}
+
+/**
+ * Single-flight per uid: concurrent callers (AuthContext auto-init, the sign-up
+ * form, Google sign-in) share one bootstrap instead of racing two founder batches.
+ * If a commit is denied only because the profile was created meanwhile (another
+ * tab or an earlier attempt), the existing profile is accepted as success. The
+ * rules still decide: nothing here widens what a client may write.
+ */
+export function bootstrapUserProfile(uid: string, fields: NewProfileFields): Promise<void> {
+  const existing = inflightBootstraps.get(uid);
+  if (existing) return existing;
+  const run = runBootstrapUserProfile(uid, fields).finally(() => {
+    inflightBootstraps.delete(uid);
+  });
+  inflightBootstraps.set(uid, run);
+  return run;
+}
+
+async function runBootstrapUserProfile(uid: string, rawFields: NewProfileFields): Promise<void> {
+  const fields = resolveProfileFields(rawFields);
   const userRef = doc(db, 'users', uid);
   const email = (fields.email || '').trim().toLowerCase();
 
@@ -102,6 +218,9 @@ export async function bootstrapUserProfile(uid: string, fields: NewProfileFields
       inviteId: pendingInvite.id,
       onboarded: true,
       createdAt: new Date().toISOString(),
+      // False until claimInviteSeat commits the +1. Absence would look like a
+      // historical profile and would never be repaired.
+      seatCountApplied: false,
     });
     batch.update(doc(db, 'org_invites', pendingInvite.id), {
       status: 'accepted',
@@ -138,30 +257,39 @@ export async function bootstrapUserProfile(uid: string, fields: NewProfileFields
     });
   }
 
-  await batch.commit();
-
-  // Seat accounting happens AFTER the batch, not inside it, and its failure must never
-  // block the join.
-  //
-  // Security rules get no read-your-writes consistency within a writeBatch: a get() in a
-  // rule cannot see a sibling write from the same commit. The organizations update rule
-  // calls isOrgMember(orgId), which get()s users/{uid} — a document this very batch is
-  // creating. So bundling the increment made the rule evaluate against a non-existent
-  // profile, and the ENTIRE batch was rejected: the invited user could not create their
-  // profile at all. Verified against the emulator, which is the only way this surfaces.
-  //
-  // Once the profile is committed the same update passes cleanly. Splitting it costs
-  // atomicity, but the failure mode is now benign and in the safe direction: an
-  // undercounted seatCount lets an org invite one extra person, whereas the previous
-  // arrangement locked every invitee out entirely. That tolerance is consistent with the
-  // soft-metering posture already documented for both counters in KNOWN_ISSUES.md #12.
-  if (pendingInvite) {
-    try {
-      await updateDoc(doc(db, 'organizations', pendingInvite.organizationId), {
-        seatCount: increment(1),
-      });
-    } catch (err) {
-      console.warn('orgBootstrap: seat count increment failed; user joined regardless', err);
+  try {
+    await batch.commit();
+  } catch (commitErr) {
+    if (isPermissionDenied(commitErr)) {
+      // A profile created by a concurrent bootstrap is the expected outcome, not a failure.
+      let snap: Awaited<ReturnType<typeof getDoc>> | null = null;
+      try {
+        snap = await getDoc(userRef);
+      } catch {
+        snap = null;
+      }
+      if (snap?.exists()) {
+        clearSignupProfile();
+        if (pendingInvite && typeof snap.data === 'function') {
+          const data = snap.data() as { organizationId?: string; seatCountApplied?: boolean };
+          if (data?.organizationId === pendingInvite.organizationId && data.seatCountApplied === false) {
+            await claimInviteSeat(uid, pendingInvite.organizationId);
+          }
+        }
+        return;
+      }
     }
+    throw commitErr;
+  }
+  clearSignupProfile();
+
+  // Seat accounting stays OUTSIDE the profile batch. Rules get no read-your-writes
+  // consistency inside a writeBatch, so isOrgMember() cannot see the profile this
+  // batch is creating and the whole join used to be rejected. claimInviteSeat runs
+  // only after that profile exists. It retries a few times, and a later signed-in
+  // session retries once while seatCountApplied is still false. The marker makes a
+  // retry a no-op instead of a second seat. Hosted vendorCount is not updated here.
+  if (pendingInvite) {
+    await claimInviteSeat(uid, pendingInvite.organizationId);
   }
 }

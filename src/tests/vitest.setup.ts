@@ -33,7 +33,9 @@ vi.mock('firebase/firestore', () => ({
   collection: vi.fn(),
   query: vi.fn(),
   where: vi.fn(),
-  onSnapshot: vi.fn((ref, cb) => {
+  onSnapshot: vi.fn((ref, optsOrCb, maybeCb) => {
+    // Real signature allows onSnapshot(ref, options, onNext, onError).
+    const cb = typeof optsOrCb === 'function' ? optsOrCb : maybeCb;
     // Default snapshot for users
     if (ref && ref.path && ref.path.includes('users')) {
       cb({ 

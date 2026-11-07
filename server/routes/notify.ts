@@ -14,6 +14,7 @@ import {
   resolveNotificationIntent,
   type NotificationAuthorityStore,
 } from '../lib/notificationIntent';
+import { queueVendorWelcomeWithDurableAudit } from '../lib/vendorWelcomeInvite';
 
 const router = Router();
 
@@ -210,6 +211,20 @@ router.post('/mail', async (req, res) => {
         return { deduplicated };
       });
 
+      return res.json({
+        queued: true,
+        id: ref.id,
+        deduplicated: result.deduplicated,
+      });
+    }
+
+    if (resolved.intentType === 'vendor_welcome') {
+      const result = await queueVendorWelcomeWithDurableAudit({
+        db,
+        actorId: uid,
+        resolved,
+        queueDoc,
+      });
       return res.json({
         queued: true,
         id: ref.id,

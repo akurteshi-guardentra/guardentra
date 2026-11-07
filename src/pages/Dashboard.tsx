@@ -13,6 +13,7 @@ import {
   type OrgSetupSnapshot,
 } from '../lib/setupProgress';
 import { parseReadinessScore, readinessMetricCaption } from '../lib/dashboardStats';
+import { dashboardGreeting } from '../lib/greeting';
 
 type DashStats = {
   vendorCount: number;
@@ -27,7 +28,7 @@ type DashStats = {
 
 export function Dashboard() {
   const navigate = useNavigate();
-  const { profile, loading } = useAuth();
+  const { user, profile, loading } = useAuth();
   const [stats, setStats] = useState<DashStats>({
     vendorCount: 0,
     pendingAssessments: 0,
@@ -156,7 +157,7 @@ export function Dashboard() {
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 className="font-display text-3xl font-bold tracking-tight text-white">
-            Welcome back, {firstName}
+            {dashboardGreeting(firstName, user?.metadata)}
           </h1>
           <p className="mt-1 text-slate-400">
             Vendor register, structured assessments, and Audit Lab — the Guardentra TPRM spine.

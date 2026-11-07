@@ -12,11 +12,11 @@
     "lint": "tsc --noEmit",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && (git rev-parse HEAD > dist/.commit-sha 2>/dev/null || true)",
     "build:mail-worker": "esbuild server/mailWorkerFunctions.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist/mail-worker/index.cjs",
-    "test:mail-worker-firestore": "firebase emulators:exec --only firestore --project demo-guardentra-firestore-rules \"vitest run src/tests/mailWorker.firestore.test.ts\"",
+    "test:mail-worker-firestore": "firebase emulators:exec --only firestore --project demo-guardentra-firestore-rules \"vitest run src/tests/mailWorker.firestore.test.ts src/tests/mailReconcile.firestore.test.ts\"",
     "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --runInBand --config jest.config.js",
     "test:vitest": "vitest run",
     "test:audit-material-pg": "vitest run src/tests/auditMaterialEventIdentity.postgres.test.ts",
-    "test:storage-rules": "firebase emulators:exec --only firestore,storage --project demo-guardentra-storage-rules \"node src/tests/storage.rules.test.mjs\"",
+    "test:storage-rules": "node scripts/run-storage-rules-tests.mjs",
     "smoke:portal": "node src/tests/portal.smoke.mjs",
     "verify:live": "node scripts/verify-live-deploy.mjs",
     "firebase:reauth": "node scripts/firebase-reauth.mjs",
@@ -38,9 +38,9 @@
     "cors": "^2.8.6",
     "d3": "^7.9.0",
     "dotenv": "^17.4.2",
-    "express": "^5.2.1",
+    "express": "^5.3.0",
     "firebase": "^12.13.0",
-    "firebase-admin": "^13.10.0",
+    "firebase-admin": "^14.5.0",
     "firebase-functions": "^7.4.0",
     "framer-motion": "^12.38.0",
     "google-auth-library": "^11.0.2",
@@ -78,5 +78,12 @@
     "typescript": "~6.0.3",
     "vite": "^8.0.13",
     "vitest": "^4.1.6"
+  },
+  "overrides": {
+    "@google-cloud/firestore-api": {
+      "google-gax": {
+        "rimraf": "^6.1.4"
+      }
+    }
   }
 }

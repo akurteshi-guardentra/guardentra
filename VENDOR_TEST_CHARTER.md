@@ -22,13 +22,16 @@
 - Very long vendor name / unicode characters
 - Portal evidence upload size >25MB rejected
 - Org isolation: user A must not see user B vendors (rules)
-- Portal works while org user is logged out (scoped custom token via `/api/portal/token`, not anonymous Auth)
+- Portal works while org user is logged out (scoped custom token via `/api/portal/session`, not anonymous Auth)
 - Empty legacy assessment (`questions: []`): Review → Rebuild from packs or Archive with reason
 
 ## Firebase console checklist for uploads
 
 - Authentication → custom token minting works for portal (Admin SDK on server)
-- Deploy `firestore.rules` and `storage.rules` (`firebase deploy --only firestore:rules,storage`)
+- Deploy `firestore.rules` and `storage.rules` only to an explicitly named environment.
+  - staging: `firebase deploy --only firestore:rules,storage --project=guardentra-staging`
+  - production: only through the approved production release packet, explicitly targeting `--project=guardentra-prod`
+  - never rely on the Firebase CLI default project for a rules deployment
 
 ## Not yet covered (later steps)
 

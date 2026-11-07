@@ -13,6 +13,9 @@ describe('#163 server-authoritative material transition contract', () => {
       rules.indexOf('match /vendor_invites/{inviteId}'),
     );
     expect(vendorBlock).toContain('allow create: if false;');
+    expect(vendorBlock).toContain('allow delete: if false;');
+    expect(vendorBlock).toContain('vendorArchiveFieldsUnchanged()');
+    expect(vendorBlock).toContain('/api/org/vendor-archive');
 
     const assessmentBlock = rules.slice(
       rules.indexOf('match /assessments/{assessmentId}'),
@@ -31,6 +34,7 @@ describe('#163 server-authoritative material transition contract', () => {
     const wizard = read('src/pages/AssessmentWizard.tsx');
 
     expect(vendors).toContain("fetch('/api/org/vendor-create'");
+    expect(vendors).toContain("fetch('/api/org/vendor-archive'");
     expect(wizard).toContain("fetch('/api/org/assessment-create'");
     expect(wizard).not.toContain("addDoc(collection(db, 'assessments')");
   });
@@ -53,5 +57,35 @@ describe('#163 server-authoritative material transition contract', () => {
     expect(portal).toContain("fetch('/api/portal/submit'");
     expect(portal).not.toContain('syncVendorAfterAssessmentSubmit');
     expect(lifecycle).not.toMatch(/status: 'Sent' \| 'In Progress';\s*questions:/);
+  });
+});
+
+describe('#226 vendor-archive index and staging gate contract', () => {
+  it('defines the assessments organizationId+vendorId composite index required by archive', () => {
+    const indexes = JSON.parse(read('firestore.indexes.json')) as {
+      indexes: Array<{
+        collectionGroup: string;
+        fields: Array<{ fieldPath: string; order: string }>;
+      }>;
+    };
+    const match = indexes.indexes.find(
+      (entry) =>
+        entry.collectionGroup === 'assessments' &&
+        entry.fields.length === 2 &&
+        entry.fields[0]?.fieldPath === 'organizationId' &&
+        entry.fields[0]?.order === 'ASCENDING' &&
+        entry.fields[1]?.fieldPath === 'vendorId' &&
+        entry.fields[1]?.order === 'ASCENDING',
+    );
+    expect(match).toBeDefined();
+  });
+
+  it('documents the staging index-deploy acceptance gate (not performed by source PR)', () => {
+    const gate = read('docs/release/VENDOR_ARCHIVE_STAGING_GATE_226.md');
+    expect(gate).toContain('#226');
+    expect(gate).toContain('INDEX NOT DEPLOYED BY THIS WORK');
+    expect(gate).toContain('firebase deploy --only firestore:indexes');
+    expect(gate).toContain('organizationId');
+    expect(gate).toContain('vendorId');
   });
 });

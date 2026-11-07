@@ -933,7 +933,7 @@ describe('live V4 reviewer signing', () => {
       } as never,
       res as never,
       {
-        ...reviewerDeps({ organizationId: 'org-probe', portalOpen: true }),
+        ...reviewerDeps({ ...cleanAssessment('1001'), portalOpen: true }),
         verifyIdToken: async () => ({ uid: 'portal-user', portalAssessmentId: 'asm-probe' }),
       } as never,
       'portal',
@@ -941,6 +941,27 @@ describe('live V4 reviewer signing', () => {
     expect(res.statusCode).toBe(200);
     expect(canonicalRequests.some((row) => row.includes('generation=1001'))).toBe(true);
     expect(canonicalRequests.some((row) => row.includes('9999'))).toBe(false);
+  });
+
+  it('refuses a portal download of unscanned bytes before signing (F1)', async () => {
+    resetWorld(stored('1001', 'PORTAL-BYTES'));
+    const res = mockRes();
+    await handleEvidenceDownload(
+      {
+        headers: { authorization: 'Bearer synthetic-portal-token' },
+        query: { assessmentId: 'asm-probe', storagePath: PATH_NAME },
+        body: {},
+      } as never,
+      res as never,
+      {
+        ...reviewerDeps({ organizationId: 'org-probe', portalOpen: true }),
+        verifyIdToken: async () => ({ uid: 'portal-user', portalAssessmentId: 'asm-probe' }),
+      } as never,
+      'portal',
+    );
+    expect(res.statusCode).toBe(403);
+    expect(canonicalRequests).toEqual([]);
+    expect(signerVersions).toEqual([]);
   });
 
   it('rejects a cross-tenant attachment before signing and signs a same-tenant attachment generation', async () => {
