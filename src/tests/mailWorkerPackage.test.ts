@@ -17,6 +17,8 @@ import {
   prepareMailWorkerPackage,
   resolveDependencyVersions,
   smokeCleanInstallAndLoad,
+  needsWindowsShell,
+  withPathPrefix,
 } from '../../scripts/prepare-mail-worker-package.mjs';
 
 const nodeRequire = createRequire(import.meta.url);
@@ -592,6 +594,21 @@ describe('mail worker exact source binding', () => {
     ).toThrowError(/SOURCE_CHANGED/);
     expect(fs.existsSync(dirs.outDir)).toBe(false);
     expect(fs.readFileSync(path.join(repo, 'server', 'mailWorkerFunctions.ts'), 'utf8')).toContain('STILL_DIRTY');
+  });
+});
+
+describe('mail worker packager on Windows', () => {
+  it('uses a shell only for npm/npx on win32', () => {
+    expect(needsWindowsShell('npm', 'win32')).toBe(true);
+    expect(needsWindowsShell('npx', 'win32')).toBe(true);
+    expect(needsWindowsShell('git', 'win32')).toBe(false);
+    expect(needsWindowsShell('npm', 'linux')).toBe(false);
+  });
+  it('prepends to the existing Path key without duplicating it', () => {
+    const env = withPathPrefix({ Path: 'C:\\Windows', OTHER: 'x' }, 'C:\\bin');
+    expect(Object.keys(env).filter((k) => k.toUpperCase() === 'PATH')).toEqual(['Path']);
+    expect(env.Path.startsWith('C:\\bin')).toBe(true);
+    expect(withPathPrefix({ PATH: '/usr/bin' }, '/opt/bin').PATH.startsWith('/opt/bin')).toBe(true);
   });
 });
 

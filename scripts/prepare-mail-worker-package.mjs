@@ -474,15 +474,35 @@ function assertNoExcludedPaths(dir) {
   }
 }
 
+/**
+ * Windows ships npm/npx as .cmd shims, which Node refuses to spawn without a shell
+ * (CVE-2024-27980). Only these fixed tool names get a shell, and every argument this
+ * script passes is a constant, so no caller-controlled text reaches the shell.
+ */
+export function needsWindowsShell(command, platform = process.platform) {
+  return platform === 'win32' && ['npm', 'npx'].includes(command);
+}
+
+/** Prepend a directory to PATH, reusing the existing key (Windows spells it `Path`). */
+export function withPathPrefix(env, dir) {
+  const key = Object.keys(env).find((name) => name.toUpperCase() === 'PATH') || 'PATH';
+  const next = { ...env };
+  for (const name of Object.keys(next)) {
+    if (name !== key && name.toUpperCase() === 'PATH') delete next[name];
+  }
+  next[key] = `${dir}${path.delimiter}${env[key] || ''}`;
+  return next;
+}
+
 function runCommand(command, args, cwd, label, env = process.env) {
   const result = spawnSync(command, args, {
     cwd,
     encoding: 'utf8',
-    shell: false,
+    shell: needsWindowsShell(command),
     env,
   });
   if (result.status !== 0) {
-    const detail = (result.stderr || result.stdout || `exit ${result.status}`).trim();
+    const detail = (result.stderr || result.stdout || result.error?.message || `exit ${result.status}`).trim();
     throw new PrepareError('COMMAND_FAILED', `${label} failed: ${detail}`);
   }
   return result;
@@ -578,8 +598,8 @@ export function buildMailWorkerBundle(repoRoot, { runNpmBuild, binDir, provider 
   if (typeof runNpmBuild === 'function') {
     runNpmBuild(repoRoot);
   } else {
-    const env = { ...process.env, npm_config_ignore_scripts: 'true' };
-    if (binDir) env.PATH = `${binDir}${path.delimiter}${env.PATH || ''}`;
+    let env = { ...process.env, npm_config_ignore_scripts: 'true' };
+    if (binDir) env = withPathPrefix(env, binDir);
     const scriptName = BUILD_SCRIPTS[assertProvider(provider)];
     runCommand('npm', ['run', scriptName], repoRoot, `npm run ${scriptName}`, env);
   }
@@ -678,7 +698,7 @@ function writeStagingDescriptor({
 }
 
 function toolVersion(command) {
-  const result = spawnSync(command, ['--version'], { encoding: 'utf8', shell: false });
+  const result = spawnSync(command, ['--version'], { encoding: 'utf8', shell: needsWindowsShell(command) });
   if (result.status !== 0) {
     throw new PrepareError('COMMAND_FAILED', `${command} --version failed`);
   }
