@@ -1,0 +1,13 @@
+rules_version = '2';
+
+// EMERGENCY (P0, 2026-10-30) for legacy guardentra-7f582 ONLY, if the owner confirms
+// the legacy app is no longer used. Denies ALL client SDK/REST access to (default).
+// Server code using the Admin SDK and the Firebase console are unaffected.
+// Rollback: re-release ruleset c12a5117-1675-4775-b25b-ca463b36e7dc.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
