@@ -84,7 +84,6 @@
       "google-gax": {
         "rimraf": "^6.1.4"
       }
-    },
-    "@grpc/grpc-js": "1.14.7"
+    }
   }
 }
