@@ -145,6 +145,18 @@ async function main() {
     assertFails(updateDoc(doc(db, 'organizations', ORG), { name: 'Renamed Co', vendorCount: 0 })),
   );
 
+  await check('non-admin member CANNOT zero seatCount', () =>
+    assertFails(updateDoc(doc(memberDb, 'organizations', ORG), { seatCount: 0 })),
+  );
+
+  await check('non-admin member CANNOT jump seatCount by more than one', () =>
+    assertFails(updateDoc(doc(memberDb, 'organizations', ORG), { seatCount: 4 })),
+  );
+
+  await check('org admin CANNOT zero seatCount', () =>
+    assertFails(updateDoc(doc(db, 'organizations', ORG), { seatCount: 0 })),
+  );
+
   await check('non-admin member CAN increment seatCount alone', () =>
     assertSucceeds(updateDoc(doc(memberDb, 'organizations', ORG), { seatCount: 3 })),
   );
