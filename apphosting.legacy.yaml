@@ -1,0 +1,43 @@
+# Legacy overrides for App Hosting backend guardentra-7f582 / us-central1 / guardentra
+# (Environment name = "legacy"). Merged over apphosting.yaml at build time.
+#
+# Why: since e5fa50d the Vite client resolver (src/lib/firebaseClientConfig.ts) fails
+# closed in production builds unless all six VITE_FIREBASE_* values are present. The
+# legacy backend had no Environment name, so only apphosting.yaml applied (API key only)
+# and /login rendered blank. See issue #126.
+#
+# Scope: BUILD-time Firebase web identifiers ONLY. This file adds no RUNTIME variables,
+# so runtime settings (APP_ENV, NODE_ENV, GEMINI_API_KEY, AUDIT_*) still come unchanged
+# from apphosting.yaml. VITE_FIREBASE_API_KEY stays a Secret Manager reference
+# (guardentra-7f582 secret) declared in apphosting.yaml.
+#
+# Identifiers: public Firebase web app config of project guardentra-7f582
+# (project number 967769575761), same values as firebase-applet-config.json.
+# Inert until an owner sets the legacy backend's Environment name to exactly "legacy".
+# Never use these identifiers on the staging or prod backends.
+
+env:
+  - variable: VITE_FIREBASE_PROJECT_ID
+    value: guardentra-7f582
+    availability:
+      - BUILD
+
+  - variable: VITE_FIREBASE_AUTH_DOMAIN
+    value: guardentra-7f582.firebaseapp.com
+    availability:
+      - BUILD
+
+  - variable: VITE_FIREBASE_STORAGE_BUCKET
+    value: guardentra-7f582.firebasestorage.app
+    availability:
+      - BUILD
+
+  - variable: VITE_FIREBASE_MESSAGING_SENDER_ID
+    value: "967769575761"
+    availability:
+      - BUILD
+
+  - variable: VITE_FIREBASE_APP_ID
+    value: "1:967769575761:web:5f5ea9e666e0f314f64370"
+    availability:
+      - BUILD
