@@ -1,8 +1,13 @@
-# Environment-gap fixes (prepared 2026-10-31, NOT applied)
+# Environment-gap fixes (prepared 2026-10-31, refreshed 2026-11-07 on RC ffb1a65)
 
 Source: `reports/env-consistency-2026-10-31.md` (read-only audit, owner-PC readback 2026-10-31T15:41Z).
 
-**Status: PREPARED, NOTHING RUN.** Each step below needs its own explicit owner go. Merging this PR does not run anything and does not change prod: prod tracks `main` with rollout disabled, and the yaml change only takes effect when the RC is promoted to prod. Never deploy the RC Firestore rules to prod; nothing here touches rules.
+**Status (2026-11-07):**
+- **Done elsewhere:** prod RC indexes (D1, 8 READY 2026-11-02, #124 comment 6570660545, run from the owner's copy of the fixed `01-create-indexes.ps1`); prod delete protection + PITR (D3, 2026-11-02); `PUBLIC_APP_URL` in the prod yamls (landed in the RC via #247).
+- **Not run:** prod `-Set rc` for the 9th (#226) index, legacy `-Set running` (legacy hold), `03-staging-anonymous-signin.ps1`, staging delete protection/PITR.
+- **In this PR (repo only):** `.firebaserc` default removal + test, and the scripts below as the record.
+
+Each remaining step needs its own explicit owner go. Merging this PR does not run anything and does not change prod: prod tracks `main` with rollout disabled, and the yaml change only takes effect when the RC is promoted to prod. Never deploy the RC Firestore rules to prod; nothing here touches rules.
 
 Every script checks live state first and stops if it is not what was verified, asks you to type the project name before changing anything, reads the result back, writes `out\*.json`, and has an undo.
 
@@ -10,8 +15,8 @@ Every script checks live state first and stops if it is not what was verified, a
 |---|---|---|---|
 | I1 prod has 0 of the 4 indexes 29171a6 defines | `01-create-indexes.ps1 -Project guardentra-prod -Set running` | Creates only the missing composite indexes on `(default)` | `02-rollback-indexes.ps1` with the `out\indexes-created-…json` it wrote |
 | I1 legacy has 0 of the 4 indexes 7b914ee defines | `01-create-indexes.ps1 -Project guardentra-7f582 -Set running` | Same | Same |
-| RC needs 8 indexes on prod | `01-create-indexes.ps1 -Project guardentra-prod -Set rc` **at promotion** | Adds the 4 RC-only ones (mail, remediations x2, evidence_reviews). If `running` already ran, only these 4 are created | Same |
-| E1 prod yaml lacks `PUBLIC_APP_URL` | `apphosting.prod.yaml` + `apphosting.production.yaml` (repo, this PR) | `PUBLIC_APP_URL=https://guardentra.com`, RUNTIME. Applies only when a build of this config rolls out on guardentra-prod | Revert the two lines |
+| RC needs 9 indexes on prod | `01-create-indexes.ps1 -Project guardentra-prod -Set rc` | 8 already READY (D1, 2026-11-02). Today it would create only the #226 `assessments(organizationId, vendorId)` index. Staging-first for #226 uses `ops/226-index` (separate owner go) | Same |
+| E1 prod yaml lacks `PUBLIC_APP_URL` | Landed in the RC via #247 (no longer in this PR) | `PUBLIC_APP_URL=https://guardentra.com`, RUNTIME | n/a |
 | A1 staging anonymous sign-in ON | `03-staging-anonymous-signin.ps1` | Auth `signIn.anonymous.enabled=false` on guardentra-staging only | `03-staging-anonymous-signin.ps1 -Rollback` |
 | R1 CLI default = legacy | `.firebaserc` (repo, this PR) | Removes `"default": "guardentra-7f582"`. Plus the per-machine check below | Re-add the line |
 | I2 delete protection / PITR off | Commands below (no script) | Per-database setting | `--no-delete-protection` / `--no-enable-pitr` |
@@ -19,10 +24,12 @@ Every script checks live state first and stops if it is not what was verified, a
 ## 1. Indexes (I1)
 
 - `indexes.running-29171a6-7b914ee.json` is byte-identical to `firestore.indexes.json` at both live builds, prod 29171a6 and legacy 7b914ee: `policies` and `incidents` (organizationId+status), `contract_audits` (organizationId+createdAt desc), `vendor_assessments` (vendorId+createdAt desc). Today the queries that need these fail with FAILED_PRECONDITION.
-- `indexes.rc-caf2709.json` is the RC's `firestore.indexes.json` at caf2709 (8 indexes, the same 8 that are READY on staging). `-Set rc` is refused for legacy.
+- `indexes.rc-ffb1a65.json` is the RC's `firestore.indexes.json` at ffb1a65, byte-identical (9 indexes: the 8 READY on prod and staging plus #226 `assessments(organizationId, vendorId)`). `-Set rc` uses it and is refused for legacy.
+- `indexes.rc-caf2709.json` (8 indexes) is kept as the record of the set used for D1 on 2026-11-02.
+- The index list call sends no `pageSize` (the API rejects it); fixed 2026-11-02, script sha `116a1678…` before this refresh.
 - The script uses the Firestore Admin API directly instead of `firebase deploy --only firestore:indexes`, so it can't pick up the CLI default project and can never delete an index that isn't in the file.
 - Creating an index doesn't touch documents. It builds in the background, minutes on small collections, and costs only index storage. Run the same command again later: it reads back and reports READY.
-- Suggested order: legacy `running`, then prod `running`. Prod `rc` waits for the promotion packet.
+- Suggested order now: #226 index on staging (`ops/226-index`), then prod `-Set rc`. Legacy `running` stays on hold.
 
 ## 2. PUBLIC_APP_URL (E1)
 

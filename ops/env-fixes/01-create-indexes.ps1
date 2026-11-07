@@ -3,12 +3,14 @@
 #
 #   .\01-create-indexes.ps1 -Project guardentra-prod  -Set running   # the 4 that prod 29171a6 needs today
 #   .\01-create-indexes.ps1 -Project guardentra-7f582 -Set running   # the 4 that legacy 7b914ee needs today
-#   .\01-create-indexes.ps1 -Project guardentra-prod  -Set rc        # all 8 the RC needs, AT PROMOTION ONLY
+#   .\01-create-indexes.ps1 -Project guardentra-prod  -Set rc        # all 9 the RC needs (adds only missing ones)
 #
 # Sets:
 #   running = indexes.running-29171a6-7b914ee.json (byte-identical firestore.indexes.json of both live builds)
-#   rc      = indexes.rc-caf2709.json (firestore.indexes.json of release/rc-2026-10-08 @ caf2709).
+#   rc      = indexes.rc-ffb1a65.json (firestore.indexes.json of release/rc-2026-10-08 @ ffb1a65, 9 indexes:
+#             the 8 already READY on prod since 2026-11-02 plus the #226 assessments(organizationId, vendorId)).
 #             Superset of 'running'. Only allowed for guardentra-prod.
+#   indexes.rc-caf2709.json is kept as the record of the 8-index set used for D1 on 2026-11-02.
 #
 # What it does, in order (stops at the first problem):
 #   1. Checks the index file's SHA-256 (line endings normalised to LF) against the value below.
@@ -30,7 +32,7 @@ $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $files = @{
   running = @{ name = 'indexes.running-29171a6-7b914ee.json'; sha = 'fea694e87733801e1eb5f1f98a7fe1119215f00ca79205ce5fed6ea664b83918' }
-  rc      = @{ name = 'indexes.rc-caf2709.json';              sha = 'f2d695c074d4c5307659823c88e5815af6f5f79f08ea411cd3f748e0f4127532' }
+  rc      = @{ name = 'indexes.rc-ffb1a65.json';              sha = '7397ea2cb4dfd5aafe3ac254d6fe54d622fb8541f83bf817427975c0ff0a3dae' }
 }
 if ($Set -eq 'rc' -and $Project -ne 'guardentra-prod') { throw "Set 'rc' is only for guardentra-prod. Nothing changed." }
 
@@ -60,8 +62,8 @@ function Get-Key($cg, $scope, $fields) {
 function Get-LiveIndexes {
   $all = @(); $pageToken = $null
   do {
-    $u = "$base/collectionGroups/-/indexes?pageSize=200"
-    if ($pageToken) { $u += "&pageToken=$pageToken" }
+    $u = "$base/collectionGroups/-/indexes"
+    if ($pageToken) { $u += "?pageToken=$pageToken" }
     $r = Invoke-RestMethod -Method Get -Headers $h -Uri $u
     if ($r.indexes) { $all += $r.indexes }
     $pageToken = $r.nextPageToken
