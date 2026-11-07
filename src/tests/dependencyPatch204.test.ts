@@ -33,18 +33,35 @@ const resolvedVersions = (packageName: string) => {
 };
 
 describe('#204 in-range dependency patch', () => {
-  it('keeps the root ranges and does not add an override', () => {
-    expect(pkg.dependencies.express).toBe('^5.2.1');
+  it('keeps the root ranges and adds only the scoped rimraf override', () => {
+    // Deliberately moved from ^5.2.1 to ^5.3.0 by the Express 5.3 upgrade PR. #204 kept
+    // Express at 5.2.1 because it was an in-range patch of other families; the minor
+    // bump is its own change with HTTP regression evidence in expressUpgrade.test.ts.
+    expect(pkg.dependencies.express).toBe('^5.3.0');
     expect(pkg.dependencies['react-router-dom']).toBe('^7.15.1');
     expect(pkg.dependencies.firebase).toBe('^12.13.0');
-    expect(pkg.dependencies['firebase-admin']).toBe('^13.10.0');
-    expect(pkg.overrides).toBeUndefined();
+    // firebase-admin 14 major upgrade (follow-up to #242): Node >=22, modular entry points only.
+    expect(pkg.dependencies['firebase-admin']).toBe('^14.5.0');
+    // Only override: the runtime firebase-admin -> @google-cloud/firestore-api@0.2 -> google-gax@5
+    // branch never loads rimraf (no require in google-gax/build), but rimraf 5 pulled glob 10 /
+    // minimatch 9 (GHSA-3g3m-2fjr-6pw4, GHSA-g3hv-75wg-m249) into the runtime tree. Scoped so no
+    // other rimraf copy changes.
+    expect(pkg.overrides).toEqual({
+      '@google-cloud/firestore-api': { 'google-gax': { rimraf: '^6.1.4' } },
+    });
+    expect(entry('node_modules/@google-cloud/firestore-api/node_modules/rimraf').version).toBe('6.1.4');
+    expect(entry('node_modules/@google-cloud/firestore-api/node_modules/glob').version).toBe('14.0.4');
+    expect(entry('node_modules/@google-cloud/firestore-api/node_modules/minimatch').version).toBe('11.0.5');
+    expect(entry('node_modules/@google-cloud/firestore-api/node_modules/google-gax').version).toBe('5.0.8');
   });
 
-  it('resolves the four approved families and retains Express 5.2.1', () => {
-    expect(entry('node_modules/express').version).toBe('5.2.1');
-    expect(entry('node_modules/express').dependencies?.['proxy-addr']).toBe('^2.0.7');
-    expect(entry('node_modules/firebase-tools/node_modules/express').version).toBe('4.22.2');
+  it('resolves the four approved families on the reviewed Express 5.3.0', () => {
+    expect(entry('node_modules/express').version).toBe('5.3.0');
+    // 5.3.0 raised its own floor to ^2.0.8, the version #204 already resolved.
+    expect(entry('node_modules/express').dependencies?.['proxy-addr']).toBe('^2.0.8');
+    expect(entry('node_modules/express').dependencies?.['body-parser']).toBe('^2.3.0');
+    expect(entry('node_modules/express').dependencies?.router).toBe('^2.2.0');
+    expect(entry('node_modules/firebase-tools/node_modules/express').version).toBe('4.22.3');
     expect(entry('node_modules/firebase-tools/node_modules/express').dependencies?.['proxy-addr']).toBe('~2.0.7');
     expect(entry('node_modules/proxy-addr').version).toBe('2.0.8');
     expect(entry('node_modules/proxy-addr').resolved).toBe(
@@ -55,20 +72,20 @@ describe('#204 in-range dependency patch', () => {
     expect(entry('node_modules/react-router-dom').dependencies?.['react-router']).toBe('7.18.2');
     expect(entry('node_modules/react-router').version).toBe('7.18.2');
 
-    expect(entry('node_modules/firebase-admin').version).toBe('13.10.0');
+    expect(entry('node_modules/firebase-admin').version).toBe('14.5.0');
     expect(entry('node_modules/firebase-admin').dependencies?.['@fastify/busboy']).toBe('^3.0.0');
     expect(entry('node_modules/@fastify/busboy').version).toBe('3.2.2');
 
+    // With firebase-admin 14 (@google-cloud/firestore 9 / storage 8), Cloud Tasks and the Admin SDK
+    // share one hoisted google-gax 6.x; the nested Cloud Tasks copy is gone.
     expect(entry('node_modules/@google-cloud/tasks').version).toBe('7.1.0');
-    expect(entry('node_modules/@google-cloud/tasks/node_modules/google-gax').dependencies?.['@grpc/grpc-js']).toBe(
-      '^1.12.6',
-    );
-    expect(entry('node_modules/@google-cloud/tasks/node_modules/@grpc/grpc-js').version).toBe('1.14.5');
+    expect(entry('node_modules/@google-cloud/tasks').dependencies?.['google-gax']).toBe('^6.0.0');
+    expect(packages['node_modules/@google-cloud/tasks/node_modules/google-gax']).toBeUndefined();
 
-    expect(entry('node_modules/google-gax').version).toBe('4.6.1');
-    expect(entry('node_modules/google-gax').dependencies?.['@grpc/grpc-js']).toBe('^1.10.9');
-    expect(entry('node_modules/google-gax/node_modules/@grpc/grpc-js').version).toBe('1.14.5');
-    expect(entry('node_modules/google-gax/node_modules/@grpc/grpc-js').optional).toBe(true);
+    expect(entry('node_modules/google-gax').version).toBe('6.14.0');
+    expect(entry('node_modules/google-gax').dependencies?.['@grpc/grpc-js']).toBe('^1.12.6');
+    expect(entry('node_modules/google-gax/node_modules/@grpc/grpc-js').version).toBe('1.14.7');
+    expect(entry('node_modules/@google-cloud/firestore-api/node_modules/@grpc/grpc-js').version).toBe('1.14.7');
 
     expect(entry('node_modules/@google-cloud/pubsub/node_modules/google-gax').dependencies?.['@grpc/grpc-js']).toBe(
       '^1.12.6',
@@ -78,11 +95,12 @@ describe('#204 in-range dependency patch', () => {
   });
 
   it('preserves the Firestore client gRPC branch that cannot accept 1.14.x', () => {
-    expect(entry('node_modules/firebase').version).toBe('12.16.0');
-    expect(entry('node_modules/@firebase/firestore').version).toBe('4.16.0');
+    // #220 moved the client SDK forward in range (12.16.0 -> 12.19.0); the gRPC pin is unchanged.
+    expect(entry('node_modules/firebase').version).toBe('12.19.0');
+    expect(entry('node_modules/@firebase/firestore').version).toBe('4.17.2');
     expect(entry('node_modules/@firebase/firestore').dependencies?.['@grpc/grpc-js']).toBe('~1.9.0');
     expect(entry('node_modules/@grpc/grpc-js').version).toBe('1.9.16');
-    expect(resolvedVersions('@grpc/grpc-js')).toEqual(['1.14.5', '1.14.5', '1.14.5', '1.9.16']);
+    expect(resolvedVersions('@grpc/grpc-js')).toEqual(['1.14.5', '1.14.7', '1.14.7', '1.9.16']);
   });
 
   it('does not leave a second resolved copy of the other patched packages', () => {

@@ -199,6 +199,7 @@ describe('#160 vendor create durable audit coupling', () => {
         return { vendorId: 'vendor_1', deduplicated: false };
       },
     );
+    const archiveVendor = vi.fn(async () => ({ vendorId: 'vendor_1', alreadyArchived: false }));
     const deps: VendorMutationDeps = {
       verifyIdToken: vi.fn(async () => ({ uid: 'user1', email: 'token@example.com' }) as any),
       getUser: vi.fn(async () => ({
@@ -207,6 +208,7 @@ describe('#160 vendor create durable audit coupling', () => {
         displayName: 'Authoritative Owner',
       })),
       createVendor,
+      archiveVendor,
     };
     const req: any = {
       headers: { authorization: 'Bearer token' },

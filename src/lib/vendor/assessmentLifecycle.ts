@@ -262,6 +262,24 @@ export function hasTerminalOrgDecision(assessment: {
   return isTerminalDecisionOutcome(assessment.decisionOutcome);
 }
 
+const DECISION_OUTCOMES: readonly DecisionOutcome[] = ['approved', 'conditional', 'remediate', 'rejected'];
+
+/**
+ * The outcome an org reviewer actually recorded, or null when no decision exists.
+ * Reports must use this, never the reviewer's unsaved form selection: a pre-decision
+ * export must not read as an approval (#124 finding, 2026-10-31). `remediate` counts
+ * as recorded (it is non-terminal but still a decision on record).
+ */
+export function recordedDecisionOutcome(assessment: {
+  decisionOutcome?: unknown;
+  decidedAt?: unknown;
+}): DecisionOutcome | null {
+  const outcome = assessment.decisionOutcome;
+  if (!DECISION_OUTCOMES.includes(outcome as DecisionOutcome)) return null;
+  if (typeof assessment.decidedAt !== 'string' || !assessment.decidedAt.trim()) return null;
+  return outcome as DecisionOutcome;
+}
+
 export function nextReviewAtForDecision(
   outcome: DecisionOutcome,
   from: Date = new Date()
@@ -273,6 +291,62 @@ export function nextReviewAtForDecision(
     next.setFullYear(next.getFullYear() + 1);
   }
   return next.toISOString();
+}
+
+/**
+ * The next-review date a recorded decision schedules. Shared by the vendor record
+ * projection and the decision packet so they cannot disagree (#124 acceptance
+ * finding 2: the packet printed decidedAt + 1 year while the vendor record had the
+ * remediation due date). Remediate follows up at the remediation due date;
+ * terminal outcomes schedule the periodic review.
+ */
+export function decisionNextReviewAt(input: {
+  outcome: DecisionOutcome;
+  decidedAt?: string | null;
+  remediationDueAt?: string | null;
+}): string {
+  const closes = decisionClosesPortal(input.outcome);
+  const followUp = closes ? null : normalizeRemediationDueAt(input.remediationDueAt);
+  if (followUp) return followUp;
+  const decided = input.decidedAt ? new Date(input.decidedAt) : new Date();
+  return nextReviewAtForDecision(
+    input.outcome,
+    Number.isNaN(decided.getTime()) ? new Date() : decided
+  );
+}
+
+export type VendorDecisionProjection = {
+  residualRiskLevel: RiskLevel;
+  nextReviewAt: string;
+  lastAssessmentAt: string;
+  updatedAt: string;
+  assessmentStatus?: 'Completed';
+};
+
+/**
+ * Vendor record fields written with every recorded decision (#124 journey findings 7–8):
+ * nextReviewAt stayed null and updatedAt never moved after a decision.
+ * The reviewer-recorded residualRiskLevel is the authoritative classification. riskScore is
+ * deliberately NOT written: there is no validated quantitative scoring model yet, and a
+ * fixed number per band would be false precision (owner decision 2026-10-31).
+ * Terminal outcomes schedule the next periodic review; remediate schedules follow-up at the
+ * remediation due date and leaves the vendor Under Review.
+ */
+export function buildVendorDecisionProjection(input: {
+  outcome: DecisionOutcome;
+  residualRiskLevel: RiskLevel;
+  decidedAt: string;
+  remediationDueAt?: string | null;
+}): VendorDecisionProjection {
+  const closes = decisionClosesPortal(input.outcome);
+  const projection: VendorDecisionProjection = {
+    residualRiskLevel: input.residualRiskLevel,
+    nextReviewAt: decisionNextReviewAt(input),
+    lastAssessmentAt: input.decidedAt,
+    updatedAt: input.decidedAt,
+  };
+  if (closes) projection.assessmentStatus = 'Completed';
+  return projection;
 }
 
 export type OrgDecisionPatch = {

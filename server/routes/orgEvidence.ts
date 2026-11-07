@@ -9,6 +9,7 @@ import {
 } from '../lib/evidenceAccess.ts';
 import { handleAssessmentCreate } from '../lib/assessmentCreate.ts';
 import {
+  handleOrgVendorArchive,
   handleOrgVendorCreate,
   liveVendorMutationDeps,
 } from '../lib/vendorMutation.ts';
@@ -29,6 +30,10 @@ router.get('/attachment-download', limiter, (req, res) =>
 
 router.post('/vendor-create', limiter, (req, res) =>
   handleOrgVendorCreate(req, res, vendorDeps)
+);
+
+router.post('/vendor-archive', limiter, (req, res) =>
+  handleOrgVendorArchive(req, res, vendorDeps)
 );
 
 router.post('/vendor-triage', limiter, (req, res) => handleOrgVendorTriage(req, res));

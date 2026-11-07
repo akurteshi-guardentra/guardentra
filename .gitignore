@@ -65,3 +65,7 @@ infra/envs/named-staging/*.tfplan
 
 # Reviewed operations credential root provider lock (metadata only).
 !infra/bootstrap/staging-audit-ops/.terraform.lock.hcl
+
+# Playwright post-release QA output (e2e/)
+e2e/test-results/
+e2e/playwright-report/

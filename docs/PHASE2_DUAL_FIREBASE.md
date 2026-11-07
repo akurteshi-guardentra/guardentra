@@ -1,76 +1,45 @@
-# Dual Firebase EU / US (Phase 2 Week 1)
+# Dual Firebase EU / US — GATED ROADMAP CAPABILITY
 
-Prep code already exists (`organizations.dataRegion`, `server/lib/regionRouter.ts`).
-Live isolation needs two Firebase projects.
+Prep code exists for regional routing (`organizations.dataRegion`,
+`server/lib/regionRouter.ts`), but repository code is not proof that separate residency
+projects exist or are ready for customer traffic.
 
-## Status (re-verified 2026-08-11) — GATED
+## Current environment truth
 
-| Check | Result |
-|-------|--------|
-| GCP projects matching `guardentra*` visible to `admin@guardentra.com` | **Only** `guardentra-7f582` |
-| `.firebaserc` aliases `eu` / `us` / `dev` / `staging` / `prod` | Present as **placeholders** — target IDs not created |
-| `gcloud projects describe guardentra-eu` / `-us` / `-dev` / `-staging` / `-prod` | Permission denied / missing |
-| Firebase CLI `projects:list` | **Blocked** — `npx firebase-tools login --reauth` required |
-| Org Owner project create | **Required** — do not fake create |
+- named staging: `guardentra-staging`
+- named production: `guardentra-prod`
+- `guardentra-7f582`: demo / legacy / rollback-history context pending #126
+- EU/US residency projects: **UNVERIFIED until a fresh #116 read-only inventory proves them**
 
-## Create projects (Firebase console — CLI blocked)
+The 2026-08-11 status that only `guardentra-7f582` was visible and that staging/prod did
+not exist is historical and must not be reused.
 
-```bash
-# Suggested IDs (aliases already in .firebaserc):
-#   guardentra-eu
-#   guardentra-us
-# Also reserved aliases: guardentra-dev / guardentra-staging / guardentra-prod
+## Before any residency project work
 
-npx firebase-tools projects:list
-```
+1. Collect current #116 cloud inventory and record whether the intended EU/US projects
+   exist, their parent/billing attachment and non-secret environment identity.
+2. Use a fresh issue-bound task for project creation, Firebase enablement, billing, IAM,
+   App Hosting, rules, or data migration.
+3. Never infer project-create permission from organization roles or retry historical
+   creation commands from git history.
+4. Never reuse staging/prod credentials, Auth, Firestore or Storage across residency
+   environments merely to make a test pass.
 
-### Org permission note (re-verified 2026-08-11)
+## Intended wiring after separately approved provisioning
 
-Account `admin@guardentra.com` on `organizations/280975227603` currently has:
+The server design expects explicit environment configuration for regional Firebase project
+and storage identities. Values must come from the actual provisioned projects, not from
+this document or a copied historical example.
 
-- `roles/billing.admin`
-- `roles/resourcemanager.organizationAdmin`
+## Acceptance before enabling dual routing
 
-But project create for `guardentra-eu` / `guardentra-us` is still denied / projects do not appear under this account.
+- exact project IDs and regions are read back live;
+- Firebase Auth/Firestore/Storage are configured per residency environment;
+- cross-region isolation tests fail closed for unauthorized EU↔US reads/writes;
+- deployment/source SHA and rollback are recorded;
+- no staging/production tenant is silently moved between projects;
+- evidence remains environment- and source-bound.
 
-Prior `firebase_create_project` / CLI create for `guardentra-eu` failed with:
+Until those gates pass, dual routing stays prep-only.
 
-`Permission 'resourcemanager.projects.create' denied on parent resource 'organizations/280975227603'.`
-
-**Do not retry CLI create until create permission is confirmed.** Prefer console create by an org Owner
-who can actually create projects, or grant Project Creator / fix org policy, then:
-
-```bash
-npx firebase-tools projects:create guardentra-eu --display-name "Guardentra EU"
-npx firebase-tools projects:create guardentra-us --display-name "Guardentra US"
-```
-
-### Org Owner checklist
-
-1. In Google Cloud Console → IAM (org `280975227603`), ensure a principal can create projects
-   (`roles/resourcemanager.projectCreator` or equivalent; check org policies if create still fails).
-2. Create Firebase projects `guardentra-eu` and `guardentra-us` (link billing).
-3. Grant `admin@guardentra.com` Owner/Editor on both projects.
-4. Confirm: `gcloud projects describe guardentra-eu` and `.firebaserc` aliases `eu` / `us`.
-5. (Optional later) Create `guardentra-dev` / `guardentra-staging` / `guardentra-prod` to match env aliases.
-
-## Env wiring (App Hosting / server)
-
-```
-FIREBASE_PROJECT_ID_EU=guardentra-eu
-FIREBASE_PROJECT_ID_US=guardentra-us
-FIREBASE_STORAGE_BUCKET_EU=guardentra-eu.appspot.com
-FIREBASE_STORAGE_BUCKET_US=guardentra-us.appspot.com
-```
-
-## Prove
-
-```bash
-npm run test:e2e-gate
-# includes assertRegionIsolation — must fail EU→US cross reads when dual projects are wired
-```
-
-Until both projects exist, keep a single project and leave dual routing as prep-only
-(see [`docs/ENVIRONMENTS.md`](./ENVIRONMENTS.md)).
-
-Runbook printout: `powershell -File scripts/phase2-dual-firebase.ps1`
+Issue #138 tracks the removal of stale environment assumptions from this roadmap guide.

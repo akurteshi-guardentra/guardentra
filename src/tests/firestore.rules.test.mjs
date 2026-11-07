@@ -15,7 +15,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertFails, assertSucceeds, initializeTestEnvironment } from '@firebase/rules-unit-testing';
-import { collection, doc, getDoc, getDocs, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDoc, getDocs, query, runTransaction, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '../..');
@@ -137,8 +137,32 @@ async function main() {
     assertFails(updateDoc(doc(memberDb, 'organizations', ORG), { vendorCount: 6 })),
   );
 
-  await check('non-admin member CAN increment seatCount alone', () =>
-    assertSucceeds(updateDoc(doc(memberDb, 'organizations', ORG), { seatCount: 3 })),
+  await check('org admin CANNOT mutate vendorCount — the meter is server-authoritative (#160)', () =>
+    assertFails(updateDoc(doc(db, 'organizations', ORG), { vendorCount: 0 })),
+  );
+
+  await check('org admin CANNOT smuggle vendorCount into a settings update', () =>
+    assertFails(updateDoc(doc(db, 'organizations', ORG), { name: 'Renamed Co', vendorCount: 0 })),
+  );
+
+  await check('non-admin member CANNOT zero seatCount', () =>
+    assertFails(updateDoc(doc(memberDb, 'organizations', ORG), { seatCount: 0 })),
+  );
+
+  await check('non-admin member CANNOT jump seatCount by more than one', () =>
+    assertFails(updateDoc(doc(memberDb, 'organizations', ORG), { seatCount: 4 })),
+  );
+
+  await check('org admin CANNOT zero seatCount', () =>
+    assertFails(updateDoc(doc(db, 'organizations', ORG), { seatCount: 0 })),
+  );
+
+  await check('non-admin member CANNOT increment seatCount without the invite marker', () =>
+    assertFails(updateDoc(doc(memberDb, 'organizations', ORG), { seatCount: 3 })),
+  );
+
+  await check('org admin CANNOT increment seatCount without the invite marker', () =>
+    assertFails(updateDoc(doc(db, 'organizations', ORG), { seatCount: 3 })),
   );
 
   await check('non-admin member CANNOT smuggle name in alongside an allowed counter', () =>
@@ -163,7 +187,7 @@ async function main() {
   );
 
   await check(
-    "orgBootstrap.ts's corrected order: invited profile first, then the seat increment succeeds",
+    "orgBootstrap.ts's corrected order: profile commit succeeds, and a lone seat increment is denied",
     async () => {
       await testEnv.withSecurityRulesDisabled(async (ctx) => {
         await setDoc(doc(ctx.firestore(), 'org_invites/inv-j2'), {
@@ -180,13 +204,77 @@ async function main() {
         organizationId: ORG,
         role: 'member',
         inviteId: 'inv-j2',
+        seatCountApplied: false,
       });
       await assertSucceeds(batch.commit());
-      // Step 2 — now that the profile exists, isOrgMember() resolves and the
-      // counter-only update passes the admin-or-counters rule.
-      await assertSucceeds(updateDoc(doc(joinerDb, 'organizations', ORG), { seatCount: 4 }));
+      // Step 2 — the meter moves only together with the marker. A counter-only
+      // update no longer passes.
+      await assertFails(updateDoc(doc(joinerDb, 'organizations', ORG), { seatCount: 3 }));
     },
   );
+
+  await check('an existing profile CANNOT grow a false seat marker', () =>
+    assertFails(updateDoc(doc(memberDb, 'users/member-2'), { seatCountApplied: false })),
+  );
+
+  await check('seat marker CANNOT flip to true without the org increment', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users/joiner-nomark'), {
+        organizationId: ORG,
+        role: 'member',
+        inviteId: 'inv-nomark',
+        seatCountApplied: false,
+      });
+    });
+    const nomarkDb = testEnv.authenticatedContext('joiner-nomark', {
+      email: 'nomark@example.com',
+      email_verified: true,
+    }).firestore();
+    await assertFails(updateDoc(doc(nomarkDb, 'users/joiner-nomark'), { seatCountApplied: true }));
+  });
+
+  await check('seat claim transaction raises seatCount by one and sets the marker', async () => {
+    let current = 0;
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const org = await getDoc(doc(ctx.firestore(), 'organizations', ORG));
+      current = org.data().seatCount;
+      await setDoc(doc(ctx.firestore(), 'users/joiner-claim'), {
+        organizationId: ORG,
+        role: 'member',
+        inviteId: 'inv-claim',
+        seatCountApplied: false,
+      });
+    });
+    const claimDb = testEnv.authenticatedContext('joiner-claim', {
+      email: 'claim@example.com',
+      email_verified: true,
+    }).firestore();
+    await assertSucceeds(runTransaction(claimDb, async (tx) => {
+      const userSnap = await tx.get(doc(claimDb, 'users/joiner-claim'));
+      const orgSnap = await tx.get(doc(claimDb, 'organizations', ORG));
+      if (userSnap.get('seatCountApplied') !== false) return;
+      tx.update(doc(claimDb, 'organizations', ORG), { seatCount: orgSnap.get('seatCount') + 1 });
+      tx.update(doc(claimDb, 'users/joiner-claim'), { seatCountApplied: true });
+    }));
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const org = await getDoc(doc(ctx.firestore(), 'organizations', ORG));
+      const user = await getDoc(doc(ctx.firestore(), 'users/joiner-claim'));
+      if (org.data().seatCount !== current + 1) {
+        throw new Error(`seatCount ${org.data().seatCount} !== ${current + 1}`);
+      }
+      if (user.data().seatCountApplied !== true) {
+        throw new Error('seatCountApplied was not set');
+      }
+    });
+  });
+
+  await check('a claimed seat marker CANNOT be cleared', async () => {
+    const claimDb = testEnv.authenticatedContext('joiner-claim', {
+      email: 'claim@example.com',
+      email_verified: true,
+    }).firestore();
+    await assertFails(updateDoc(doc(claimDb, 'users/joiner-claim'), { seatCountApplied: false }));
+  });
 
   console.log('\nUser profile role/orgId immutability (KI#6 audit):');
 
@@ -221,6 +309,53 @@ async function main() {
         name: 'Direct Client Vendor',
         category: 'SaaS',
         criticality: 'Medium',
+      }),
+    ),
+  );
+
+  // #226: soft-archive is server-only; client delete and archive-field forgery stay denied.
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'vendors/archive-rules-v1'), {
+      organizationId: ORG,
+      name: 'Archive Rules Vendor',
+      category: 'SaaS',
+      criticality: 'Medium',
+      status: 'Active',
+      trustScore: 50,
+    });
+  });
+
+  await check('org admin CANNOT hard-delete a vendor via the client (#226)', () =>
+    assertFails(deleteDoc(doc(db, 'vendors/archive-rules-v1'))),
+  );
+
+  await check('org member CANNOT hard-delete a vendor via the client (#226)', () =>
+    assertFails(deleteDoc(doc(memberDb, 'vendors/archive-rules-v1'))),
+  );
+
+  await check('org admin CANNOT forge vendor status Archived via the client (#226)', () =>
+    assertFails(
+      updateDoc(doc(db, 'vendors/archive-rules-v1'), {
+        status: 'Archived',
+      }),
+    ),
+  );
+
+  await check('org admin CANNOT forge archivedAt/archivedBy/archiveReason via the client (#226)', () =>
+    assertFails(
+      updateDoc(doc(db, 'vendors/archive-rules-v1'), {
+        archivedAt: '2026-11-03T00:00:00.000Z',
+        archivedBy: 'member-1',
+        archiveReason: 'forged',
+      }),
+    ),
+  );
+
+  await check('org admin CAN still update non-archive vendor fields (#226)', () =>
+    assertSucceeds(
+      updateDoc(doc(db, 'vendors/archive-rules-v1'), {
+        category: 'Infrastructure',
+        trustScore: 55,
       }),
     ),
   );
@@ -1128,6 +1263,42 @@ async function main() {
     assertSucceeds(updateDoc(doc(db, 'organizations', ORG), { industry: 'Fintech' })),
   );
 
+  // Stripe webhook ordering cursor (server/lib/stripeWebhookIntegrity.ts). A client-written
+  // future cursor would make every real webhook event look stale and freeze billing.
+  for (const [field, value] of [
+    ['stripeLastEventId', 'evt_zzzzzzzz_forged'],
+    ['stripeLastEventCreated', 4102444800],
+    ['stripeLastEventType', 'customer.subscription.deleted'],
+  ]) {
+    await check(`org admin CANNOT write the Stripe cursor field ${field}`, () =>
+      assertFails(updateDoc(doc(db, 'organizations', ORG), { [field]: value })),
+    );
+  }
+  await check('member CANNOT write the Stripe cursor on the org', () =>
+    assertFails(updateDoc(doc(memberDb, 'organizations', ORG), {
+      // Distinct value, so the write still changes the cursor even if an earlier case leaked.
+      seatCount: 3, stripeLastEventCreated: 4102444801,
+    })),
+  );
+
+  // users/{uid} billing mirror: the webhook resolves a customer by users.stripeCustomerId,
+  // so a self-written value could hijack or jam another tenant's billing events.
+  for (const [field, value] of [
+    ['stripeCustomerId', 'cus_victim'],
+    ['stripeSubscriptionId', 'sub_forged'],
+    ['subscriptionStatus', 'active'],
+    ['stripeLastEventId', 'evt_zzzzzzzz_forged'],
+    ['stripeLastEventCreated', 4102444800],
+    ['stripeLastEventType', 'checkout.session.completed'],
+  ]) {
+    await check(`user CANNOT write their own profile billing field ${field}`, () =>
+      assertFails(updateDoc(doc(db, 'users', 'member-1'), { [field]: value })),
+    );
+  }
+  await check('user CAN still update a normal profile field', () =>
+    assertSucceeds(updateDoc(doc(db, 'users', 'member-1'), { displayName: 'Still Fine' })),
+  );
+
   // Founder bootstrap must be an atomic batch (org + admin profile), so both cases use
   // the real shape; the paid-plan case would otherwise fail for the wrong reason.
   const founderBatch = (uid, orgId, org) => {
@@ -1147,11 +1318,146 @@ async function main() {
       name: 'Stripe', seatCount: 1, vendorCount: 0, stripeSubscriptionId: 'sub_forged',
     })),
   );
+  await check('founder CANNOT bootstrap an org with a pre-set Stripe cursor', () =>
+    assertFails(founderBatch('cursor-founder', 'cursor-org', {
+      name: 'Cursor', planId: 'starter', vendorCap: 25, seatCap: 3,
+      seatCount: 1, vendorCount: 0, subscriptionStatus: 'none',
+      stripeLastEventCreated: 4102444800,
+    })),
+  );
+  await check('founder CANNOT bootstrap a profile with Stripe billing fields', async () => {
+    const fs = testEnv.authenticatedContext('profile-stripe-founder', { email: 'psf@example.com' }).firestore();
+    const batch = writeBatch(fs);
+    batch.set(doc(fs, 'organizations/psf-org'), {
+      name: 'PSF', planId: 'starter', vendorCap: 25, seatCap: 3,
+      seatCount: 1, vendorCount: 0, subscriptionStatus: 'none',
+    });
+    batch.set(doc(fs, 'users/profile-stripe-founder'), {
+      organizationId: 'psf-org', role: 'admin', email: 'psf@example.com',
+      stripeCustomerId: 'cus_victim',
+    });
+    await assertFails(batch.commit());
+  });
   await check('founder CAN bootstrap a Starter org with Starter caps', () =>
     assertSucceeds(founderBatch('fine-founder', 'fine-org', {
       name: 'Fine', planId: 'starter', vendorCap: 25, seatCap: 3,
       seatCount: 1, vendorCount: 0, subscriptionStatus: 'none',
     })),
+  );
+
+  // #124 sign-up finding (2026-10-31): the exact orgBootstrap.ts founder payload, run
+  // through the real sign-up sequence (unverified email/password token, invite lookup,
+  // then the atomic batch). A second founder batch for the same uid, which is what
+  // the AuthContext/signUpWithEmail race produced, must stay denied.
+  console.log('\n#124 first-workspace sign-up (exact client payload):');
+  const signupUid = 'signup-124';
+  const signupEmail = 'signup-124@example.com';
+  const signupDb = testEnv
+    .authenticatedContext(signupUid, { email: signupEmail, email_verified: false })
+    .firestore();
+  const starterOrg = (name) => ({
+    name,
+    createdAt: new Date().toISOString(),
+    autoCreated: true,
+    dataRegion: 'us',
+    planId: 'starter',
+    vendorCount: 0,
+    vendorCap: 25,
+    seatCount: 1,
+    seatCap: 3,
+    subscriptionStatus: 'none',
+  });
+  const founderProfile = (orgId, displayName) => ({
+    email: signupEmail,
+    displayName,
+    role: 'admin',
+    organizationId: orgId,
+    onboarded: true,
+    createdAt: new Date().toISOString(),
+  });
+  const signupBatch = (orgId, displayName) => {
+    const batch = writeBatch(signupDb);
+    batch.set(doc(signupDb, `organizations/${orgId}`), starterOrg(`${displayName}'s Organization`));
+    batch.set(doc(signupDb, `users/${signupUid}`), founderProfile(orgId, displayName));
+    return batch.commit();
+  };
+  await check('new sign-up CAN run the pending-invite lookup exactly as orgBootstrap does', () =>
+    assertSucceeds(getDocs(query(
+      collection(signupDb, 'org_invites'),
+      where('email', '==', signupEmail),
+      where('status', '==', 'pending'),
+    ))),
+  );
+  await check('new unverified sign-up CAN create its first workspace with the exact client payload', () =>
+    assertSucceeds(signupBatch('signup-org-124-a', 'Dana Smith')),
+  );
+  await check('founder CAN read the new org and own profile right after sign-up', async () => {
+    await assertSucceeds(getDoc(doc(signupDb, 'organizations/signup-org-124-a')));
+    await assertSucceeds(getDoc(doc(signupDb, `users/${signupUid}`)));
+  });
+  await check('a second concurrent founder batch for the same uid is DENIED (no duplicate org)', () =>
+    assertFails(signupBatch('signup-org-124-b', 'New User')),
+  );
+  await check('the denied race left no second organization behind', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const snap = await getDoc(doc(ctx.firestore(), 'organizations/signup-org-124-b'));
+      if (snap.exists()) throw new Error('duplicate org was created');
+      const profile = await getDoc(doc(ctx.firestore(), `users/${signupUid}`));
+      if (profile.data()?.organizationId !== 'signup-org-124-a') throw new Error('profile moved tenant');
+    });
+  });
+  await check('founder CANNOT move their profile to another tenant after sign-up', () =>
+    assertFails(updateDoc(doc(signupDb, `users/${signupUid}`), { organizationId: ORG })),
+  );
+  await check('new founder CANNOT read another tenant\'s organization', () =>
+    assertFails(getDoc(doc(signupDb, `organizations/${ORG}`))),
+  );
+
+  // #167/#209: vendor_invites is written only by the server (Admin SDK) in the same
+  // transaction as the welcome mail queue entry and its vendor.invite_queued audit intent.
+  const INVITE = 'vinv-209';
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), `vendor_invites/${INVITE}`), {
+      organizationId: ORG, vendorId: 'v-209', email: 'vendor@example.com', invitedBy: 'member-1',
+    });
+  });
+  await check('org admin CANNOT create a vendor_invites record from the browser', () =>
+    assertFails(setDoc(doc(db, 'vendor_invites/forged-admin'), {
+      organizationId: ORG, vendorId: 'v-209', email: 'vendor@example.com', invitedBy: 'member-1',
+    })),
+  );
+  await check('org member CANNOT create a vendor_invites record from the browser', () =>
+    assertFails(setDoc(doc(memberDb, 'vendor_invites/forged-member'), {
+      organizationId: ORG, vendorId: 'v-209', email: 'vendor@example.com', invitedBy: 'member-2',
+    })),
+  );
+  await check('cross-tenant user CANNOT create a vendor_invites record for another org', () =>
+    assertFails(setDoc(doc(outsiderDb, 'vendor_invites/forged-outsider'), {
+      organizationId: ORG, vendorId: 'v-209', email: 'vendor@example.com', invitedBy: 'outsider-1',
+    })),
+  );
+  await check('same-tenant member CAN read a server-written vendor_invites record', () =>
+    assertSucceeds(getDoc(doc(memberDb, `vendor_invites/${INVITE}`))),
+  );
+  await check('cross-tenant user CANNOT read another org vendor_invites record', () =>
+    assertFails(getDoc(doc(outsiderDb, `vendor_invites/${INVITE}`))),
+  );
+  await check('org member CANNOT update a vendor_invites record', () =>
+    assertFails(updateDoc(doc(memberDb, `vendor_invites/${INVITE}`), { email: 'attacker@example.com' })),
+  );
+  await check('org member (non-admin) CANNOT delete a vendor_invites record', () =>
+    assertFails(deleteDoc(doc(memberDb, `vendor_invites/${INVITE}`))),
+  );
+  await check('cross-tenant admin CANNOT delete another org vendor_invites record', () =>
+    assertFails(deleteDoc(doc(outsiderDb, `vendor_invites/${INVITE}`))),
+  );
+  await check('org admin CAN delete a vendor_invites record', () =>
+    assertSucceeds(deleteDoc(doc(db, `vendor_invites/${INVITE}`))),
+  );
+
+  // #216: decidedByName is a server-written decision field like decidedBy.
+  await check('org member CANNOT write decidedByName on an assessment via the browser', () =>
+    assertFails(updateDoc(doc(db, 'assessments', ASSESS_T), { decidedByName: 'Forged Reviewer' })),
   );
 
   await testEnv.cleanup();

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { signInWithCustomToken } from 'firebase/auth';
 import { 
   Shield, 
@@ -31,8 +31,16 @@ import {
   type PortalQuestion,
 } from '../lib/vendor/questionBank';
 import { uploadPortalEvidence, requestPortalEvidenceValidate, fetchPortalEvidenceDownloadUrl, type UploadedEvidence } from '../lib/vendor/evidenceUpload';
-import { evidenceStateLabel, trustedEvidenceFileNames, type EvidenceState } from '../lib/vendor/evidenceTrust';
+import {
+  evidenceStateLabel,
+  hasPendingEvidenceScan,
+  portalEvidenceDisplayState,
+  trustedEvidenceFileNames,
+  type EvidenceState,
+  type EvidenceTrustMap,
+} from '../lib/vendor/evidenceTrust';
 import { syncVendorAfterAssessmentProgress } from '../lib/vendor/syncVendorAssessment';
+import { assessmentDueDay, formatDueDay } from '../lib/vendor/dueDate';
 import {
   buildPortalAutosavePatch,
   isReceiptMode,
@@ -43,7 +51,7 @@ import {
   type AnswerProposal,
   type PortalAttestations,
 } from '../lib/vendor/portalProposals';
-import { emitAuditBestEffort } from '../lib/auditClient';
+import { createAuditBatcher } from '../lib/auditClient';
 
 type AnswersMap = Record<string, AnswerValue | string | string[] | undefined>;
 type CommentsMap = Record<string, string>;
@@ -87,8 +95,28 @@ export function VendorPortal() {
   const [answers, setAnswers] = useState<AnswersMap>({});
   const [comments, setComments] = useState<CommentsMap>({});
   const [evidence, setEvidence] = useState<EvidenceMap>({});
-  const [trustHints, setTrustHints] = useState<Record<string, EvidenceState | 'uploaded'>>({});
+  const [trustHints, setTrustHints] = useState<Record<string, EvidenceState>>({});
+  // Backend-written scan/trust records, read with the assessment so file status
+  // survives a reload (#124 acceptance finding 1).
+  const [trustMap, setTrustMap] = useState<EvidenceTrustMap>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // #124 F10: portal audit events are batched (one request per batch, not per
+  // answer) so fast navigation can't exhaust the audit rate limit and drop
+  // events. Portal auth headers only (GitHub #63).
+  const [portalAudit] = useState(() => createAuditBatcher({ getAuthHeaders: getPortalAuthHeaders }));
+  useEffect(() => {
+    const flushOnHide = () => {
+      if (document.visibilityState === 'hidden') void portalAudit.flush({ keepalive: true });
+    };
+    const flushOnPageHide = () => void portalAudit.flush({ keepalive: true });
+    document.addEventListener('visibilitychange', flushOnHide);
+    window.addEventListener('pagehide', flushOnPageHide);
+    return () => {
+      document.removeEventListener('visibilitychange', flushOnHide);
+      window.removeEventListener('pagehide', flushOnPageHide);
+      void portalAudit.flush({ keepalive: true });
+    };
+  }, [portalAudit]);
   const [isSuccess, setIsSuccess] = useState(false);
   const [started, setStarted] = useState(false);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -216,6 +244,9 @@ export function VendorPortal() {
         if (data.answers) setAnswers(data.answers);
         if (data.comments) setComments(data.comments);
         if (data.evidenceByQuestion) setEvidence(data.evidenceByQuestion);
+        if (data.evidenceTrustByStoragePath && typeof data.evidenceTrustByStoragePath === 'object') {
+          setTrustMap(data.evidenceTrustByStoragePath as EvidenceTrustMap);
+        }
         if (data.answerProposals && typeof data.answerProposals === 'object') {
           setProposals(data.answerProposals as Record<string, AnswerProposal>);
         }
@@ -247,6 +278,28 @@ export function VendorPortal() {
       if (savedClearTimer.current) clearTimeout(savedClearTimer.current);
     };
   }, [assessmentId]);
+
+  // Live scan verdicts (#124 follow-up): while any file is still awaiting the
+  // backend scanner, listen to the assessment doc and take ONLY the
+  // backend-written trust map from it. Answers/comments are never overwritten
+  // from the listener, so in-progress edits are not clobbered.
+  const awaitingScan = useMemo(
+    () => hasPendingEvidenceScan(evidence, trustMap, trustHints),
+    [evidence, trustMap, trustHints]
+  );
+  const assessmentLoaded = Boolean(assessment?.id);
+  useEffect(() => {
+    if (!assessmentId || !assessmentLoaded || !awaitingScan || portalAccess !== 'ready') return;
+    const unsubscribe = onSnapshot(
+      doc(getPortalDb(), 'assessments', assessmentId),
+      (snap) => {
+        const map = snap.data()?.evidenceTrustByStoragePath;
+        if (map && typeof map === 'object') setTrustMap(map as EvidenceTrustMap);
+      },
+      (err) => console.error('Scan status listener failed', err)
+    );
+    return unsubscribe;
+  }, [assessmentId, assessmentLoaded, awaitingScan, portalAccess]);
 
   const categoryQs = useMemo(
     () => questions.filter((q) => q.category === activeCategory),
@@ -358,7 +411,7 @@ export function VendorPortal() {
         file,
         questionId: currentQuestion.id,
       });
-      let displayState: EvidenceState | 'uploaded' = 'uploaded';
+      let displayState: EvidenceState = 'uploaded';
       try {
         const validated = await requestPortalEvidenceValidate({
           assessmentId,
@@ -384,20 +437,17 @@ export function VendorPortal() {
       setTrustHints((prev) => ({ ...prev, [uploaded.storagePath]: displayState }));
       scheduleSave(answers, comments, next);
       if (assessment?.organizationId) {
-        void emitAuditBestEffort(
-          {
-            tenantId: assessment.organizationId,
-            eventType: 'evidence.uploaded',
-            objectType: 'assessment',
-            objectId: assessmentId,
-            payload: {
-              questionId: currentQuestion.id,
-              fileName: uploaded.fileName,
-              contentType: uploaded.contentType,
-            },
+        portalAudit.enqueue({
+          tenantId: assessment.organizationId,
+          eventType: 'evidence.uploaded',
+          objectType: 'assessment',
+          objectId: assessmentId,
+          payload: {
+            questionId: currentQuestion.id,
+            fileName: uploaded.fileName,
+            contentType: uploaded.contentType,
           },
-          { getAuthHeaders: getPortalAuthHeaders }
-        );
+        });
       }
     } catch (err: any) {
       setUploadError(err?.message || 'Upload failed. Check Storage rules / anonymous auth.');
@@ -464,20 +514,17 @@ export function VendorPortal() {
       setProposals(nextProps);
       scheduleSave(answers, comments, evidence, nextProps);
       if (assessment?.organizationId) {
-        void emitAuditBestEffort(
-          {
-            tenantId: assessment.organizationId,
-            eventType: 'answer.proposed',
-            objectType: 'assessment',
-            objectId: assessmentId,
-            payload: {
-              questionId: currentQuestion.id,
-              confidence: proposal.confidence,
-              sourceFileName: proposal.sourceFileName,
-            },
+        portalAudit.enqueue({
+          tenantId: assessment.organizationId,
+          eventType: 'answer.proposed',
+          objectType: 'assessment',
+          objectId: assessmentId,
+          payload: {
+            questionId: currentQuestion.id,
+            confidence: proposal.confidence,
+            sourceFileName: proposal.sourceFileName,
           },
-          { getAuthHeaders: getPortalAuthHeaders }
-        );
+        });
       }
     } catch (err: any) {
       setUploadError(err?.message || 'Could not propose answers from evidence.');
@@ -508,16 +555,13 @@ export function VendorPortal() {
     }
     scheduleSave(nextAnswers, comments, evidence, nextProps);
     if (assessment?.organizationId && assessmentId) {
-      void emitAuditBestEffort(
-        {
-          tenantId: assessment.organizationId,
-          eventType: status === 'rejected' ? 'answer.saved' : 'answer.confirmed',
-          objectType: 'assessment',
-          objectId: assessmentId,
-          payload: { questionId: currentQuestion.id, status },
-        },
-        { getAuthHeaders: getPortalAuthHeaders }
-      );
+      portalAudit.enqueue({
+        tenantId: assessment.organizationId,
+        eventType: status === 'rejected' ? 'answer.saved' : 'answer.confirmed',
+        objectType: 'assessment',
+        objectId: assessmentId,
+        payload: { questionId: currentQuestion.id, status },
+      });
     }
   };
 
@@ -536,6 +580,10 @@ export function VendorPortal() {
       return;
     }
     setIsSubmitting(true);
+    // Deliver queued answer/evidence audit events before the server records
+    // assessment.submitted, so the audit trail keeps their order. Best effort:
+    // flush never throws and never blocks the submission on audit failure.
+    await portalAudit.flush();
     try {
       const attestationPayload = {
         ...attestations,
@@ -713,10 +761,7 @@ export function VendorPortal() {
   }
 
   if (!started) {
-    const due = assessment.dueAt || assessment.dueDate;
-    const dueLabel = due
-      ? new Date(due).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-      : '—';
+    const dueLabel = formatDueDay(assessmentDueDay(assessment));
     const ring = 2 * Math.PI * 36;
     const ringOffset = ring - (progress / 100) * ring;
     const downloadInstructions = () => {
@@ -1028,7 +1073,9 @@ export function VendorPortal() {
                         {f.fileName}
                       </button>
                       <span className="shrink-0 text-[10px] uppercase tracking-wide text-slate-500">
-                        {evidenceStateLabel(trustHints[f.storagePath] || 'uploaded')}
+                        {evidenceStateLabel(
+                          portalEvidenceDisplayState(f.storagePath, trustMap, trustHints[f.storagePath])
+                        )}
                       </span>
                     </span>
                     <button
@@ -1177,16 +1224,13 @@ export function VendorPortal() {
                       className="bg-primary text-white hover:bg-primary/90"
                       onClick={() => {
                         if (assessment?.organizationId && assessmentId && currentQuestion) {
-                          void emitAuditBestEffort(
-                            {
-                              tenantId: assessment.organizationId,
-                              eventType: 'answer.saved',
-                              objectType: 'assessment',
-                              objectId: assessmentId,
-                              payload: { questionId: currentQuestion.id },
-                            },
-                            { getAuthHeaders: getPortalAuthHeaders }
-                          );
+                          portalAudit.enqueue({
+                            tenantId: assessment.organizationId,
+                            eventType: 'answer.saved',
+                            objectType: 'assessment',
+                            objectId: assessmentId,
+                            payload: { questionId: currentQuestion.id },
+                          });
                         }
                         goNext();
                       }}

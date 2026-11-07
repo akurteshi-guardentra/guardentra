@@ -22,12 +22,25 @@ export function riskBandClasses(level: RiskLevel): string {
 }
 
 export function effectiveRiskLevel(
-  vendor: Pick<Vendor, 'criticality' | 'riskScore'> & { finalRating?: RiskLevel; impactLevel?: RiskLevel }
+  vendor: Pick<Vendor, 'criticality' | 'riskScore'> & {
+    finalRating?: RiskLevel;
+    impactLevel?: RiskLevel;
+    residualRiskLevel?: RiskLevel;
+  }
 ): RiskLevel {
   if (vendor.finalRating) return vendor.finalRating;
+  // Reviewer-recorded residual risk from the latest decision (label only, no numeric score).
+  if (vendor.residualRiskLevel) return vendor.residualRiskLevel;
   if (vendor.riskScore > 0) return riskLevelFromScore(vendor.riskScore);
   if (vendor.impactLevel) return vendor.impactLevel;
   return vendor.criticality;
+}
+
+/** True when a reviewer decision or a stored score has assessed this vendor's risk. */
+export function hasAssessedRiskLevel(
+  vendor: Pick<Vendor, 'riskScore'> & { residualRiskLevel?: RiskLevel }
+): boolean {
+  return Boolean(vendor.residualRiskLevel) || vendor.riskScore > 0;
 }
 
 /** True when the vendor has a real, stored risk score rather than a derived/fabricated one. */
