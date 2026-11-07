@@ -10,7 +10,7 @@ Standalone running list of everything found-but-not-fixed while working through 
 
 | # | Issue | Where | Why it matters | Why not fixed yet |
 |---|---|---|---|---|
-| 12 | A member can still raise `seatCount` by one without the invite marker, which uses up invite room. A custom client that never sets `seatCountApplied: false` can still join without counting. | `src/lib/orgBootstrap.ts`, `firestore.rules` | The honest join path now claims the seat in a transaction and retries while the marker stays false. Historical profiles omit the marker and are not counted again. | The marker cannot move false to true unless that same request raises `organizations.seatCount` by one. Clearing a true marker is denied. The +1 member write without the marker remains, in the direction that consumes cap room. |
+| 12 | A custom client that never writes `seatCountApplied: false` can still join without counting a seat. | `src/lib/orgBootstrap.ts`, `firestore.rules` | The app writes the marker false, then one transaction raises `seatCount` and sets it true. A lone `seatCount` change is denied for members and admins. Historical profiles omit the marker and are not counted again. | The marker can move false to true only in the same request that raises `seatCount` by one. A join that omits the marker never becomes claimable from the browser. Repair of that undercount is an Admin SDK write, not a client increment. |
 
 ## Resolved
 

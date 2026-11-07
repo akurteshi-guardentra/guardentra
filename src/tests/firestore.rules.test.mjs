@@ -157,8 +157,12 @@ async function main() {
     assertFails(updateDoc(doc(db, 'organizations', ORG), { seatCount: 0 })),
   );
 
-  await check('non-admin member CAN increment seatCount alone', () =>
-    assertSucceeds(updateDoc(doc(memberDb, 'organizations', ORG), { seatCount: 3 })),
+  await check('non-admin member CANNOT increment seatCount without the invite marker', () =>
+    assertFails(updateDoc(doc(memberDb, 'organizations', ORG), { seatCount: 3 })),
+  );
+
+  await check('org admin CANNOT increment seatCount without the invite marker', () =>
+    assertFails(updateDoc(doc(db, 'organizations', ORG), { seatCount: 3 })),
   );
 
   await check('non-admin member CANNOT smuggle name in alongside an allowed counter', () =>
@@ -183,7 +187,7 @@ async function main() {
   );
 
   await check(
-    "orgBootstrap.ts's corrected order: invited profile first, then the seat increment succeeds",
+    "orgBootstrap.ts's corrected order: profile commit succeeds, and a lone seat increment is denied",
     async () => {
       await testEnv.withSecurityRulesDisabled(async (ctx) => {
         await setDoc(doc(ctx.firestore(), 'org_invites/inv-j2'), {
@@ -200,11 +204,12 @@ async function main() {
         organizationId: ORG,
         role: 'member',
         inviteId: 'inv-j2',
+        seatCountApplied: false,
       });
       await assertSucceeds(batch.commit());
-      // Step 2 — now that the profile exists, isOrgMember() resolves and the
-      // counter-only update passes the admin-or-counters rule.
-      await assertSucceeds(updateDoc(doc(joinerDb, 'organizations', ORG), { seatCount: 4 }));
+      // Step 2 — the meter moves only together with the marker. A counter-only
+      // update no longer passes.
+      await assertFails(updateDoc(doc(joinerDb, 'organizations', ORG), { seatCount: 3 }));
     },
   );
 
