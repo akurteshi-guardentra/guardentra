@@ -27,6 +27,11 @@ on:
         description: 'Full 40-char commit the target should serve (blank = do not pin)'
         type: string
         required: false
+      suite:
+        description: 'qa = smoke + read-only regression. mail = #72 staging mail acceptance: sends ONE real email (owner-requested runs only)'
+        type: choice
+        options: [qa, mail]
+        default: qa
 
 permissions:
   contents: read
@@ -43,6 +48,7 @@ jobs:
   # Pinned: ubuntu-latest moved to 26.04, which Playwright 1.56.1 cannot install browsers on
   # (first run 41689800988). Move both together when Playwright is upgraded.
   smoke:
+    if: github.event.inputs.suite != 'mail'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     defaults:
@@ -126,3 +132,40 @@ jobs:
         if: always()
         run: node scripts/summary.mjs test-results/results.json "Signed-in regression on staging" >> "$GITHUB_STEP_SUMMARY"
       # No artifact upload: reports of a signed-in session stay on the runner.
+
+  # #72 staging mail acceptance. Manual only, staging only, never on push.
+  # Adds ONE test vendor whose contact is the synthetic admin's own (owner-controlled) address
+  # and checks the app queues its welcome email. Inbox receipt is checked outside CI.
+  mail:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.suite == 'mail' && github.event.inputs.target == 'staging'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: staging-e2e
+    defaults:
+      run:
+        working-directory: e2e
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      - name: Staging mail acceptance (sends one email)
+        env:
+          E2E_ADMIN_EMAIL: ${{ secrets.E2E_ADMIN_EMAIL }}
+          E2E_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}
+          E2E_MAIL_TO: ${{ secrets.E2E_ADMIN_EMAIL }}
+        run: npx playwright test --project=mail --retries=0
+
+      - name: Summary
+        if: always()
+        run: node scripts/summary.mjs test-results/results.json "Mail acceptance on staging" >> "$GITHUB_STEP_SUMMARY"
+      # No artifact upload: signed-in session.

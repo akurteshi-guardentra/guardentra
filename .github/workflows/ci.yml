@@ -38,6 +38,7 @@ jobs:
       - name: Build application and mail worker
         run: |
           npm run build
+          npm run build:mail-worker-gmail
           npm run build:mail-worker
 
       - name: Set up Java 21 for Firebase emulator
