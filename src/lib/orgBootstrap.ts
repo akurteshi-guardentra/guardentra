@@ -115,16 +115,20 @@ export function __resetBootstrapStateForTests(): void {
  * in one transaction, only when this profile was created with the marker false.
  * A retry sees the marker and does not add a second seat. Profiles that omit
  * the field (joins from before this claim) are left alone.
- * Failure is logged. The join itself must already have committed.
+ * Failure throws. The profile stays uncounted, and a later call may try again.
+ * The join itself must already have committed. Tenant access waits for success.
  */
 export function claimInviteSeat(uid: string, organizationId: string): Promise<void> {
   if (finishedSeatClaims.has(uid)) return Promise.resolve();
   const existing = inflightSeatClaims.get(uid);
   if (existing) return existing;
-  const run = claimInviteSeatWithRetry(uid, organizationId).finally(() => {
-    inflightSeatClaims.delete(uid);
-    finishedSeatClaims.add(uid);
-  });
+  const run = claimInviteSeatWithRetry(uid, organizationId)
+    .then(() => {
+      finishedSeatClaims.add(uid);
+    })
+    .finally(() => {
+      inflightSeatClaims.delete(uid);
+    });
   inflightSeatClaims.set(uid, run);
   return run;
 }
@@ -153,7 +157,8 @@ async function claimInviteSeatWithRetry(uid: string, organizationId: string): Pr
       lastErr = err;
     }
   }
-  console.warn('orgBootstrap: seat count claim failed; user joined regardless', lastErr);
+  console.warn('orgBootstrap: seat count claim failed; profile stays locked', lastErr);
+  throw lastErr instanceof Error ? lastErr : new Error('orgBootstrap: seat count claim failed');
 }
 
 /**
@@ -273,7 +278,11 @@ async function runBootstrapUserProfile(uid: string, rawFields: NewProfileFields)
         if (pendingInvite && typeof snap.data === 'function') {
           const data = snap.data() as { organizationId?: string; seatCountApplied?: boolean };
           if (data?.organizationId === pendingInvite.organizationId && data.seatCountApplied === false) {
-            await claimInviteSeat(uid, pendingInvite.organizationId);
+            try {
+              await claimInviteSeat(uid, pendingInvite.organizationId);
+            } catch (claimErr) {
+              console.warn('orgBootstrap: seat count claim failed after a concurrent join', claimErr);
+            }
           }
         }
         return;
@@ -286,10 +295,15 @@ async function runBootstrapUserProfile(uid: string, rawFields: NewProfileFields)
   // Seat accounting stays OUTSIDE the profile batch. Rules get no read-your-writes
   // consistency inside a writeBatch, so isOrgMember() cannot see the profile this
   // batch is creating and the whole join used to be rejected. claimInviteSeat runs
-  // only after that profile exists. It retries a few times, and a later signed-in
-  // session retries once while seatCountApplied is still false. The marker makes a
-  // retry a no-op instead of a second seat. Hosted vendorCount is not updated here.
+  // only after that profile exists. It retries a few times. A failed claim leaves
+  // seatCountApplied false, and rules then deny tenant access until a later attempt
+  // succeeds. The marker makes a successful retry a no-op instead of a second seat.
+  // Hosted vendorCount is not updated here.
   if (pendingInvite) {
-    await claimInviteSeat(uid, pendingInvite.organizationId);
+    try {
+      await claimInviteSeat(uid, pendingInvite.organizationId);
+    } catch (claimErr) {
+      console.warn('orgBootstrap: seat count claim failed after join', claimErr);
+    }
   }
 }
