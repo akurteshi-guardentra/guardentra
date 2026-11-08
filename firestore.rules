@@ -217,14 +217,14 @@ service cloud.firestore {
     // Collection Rules
     // ===============================================================
 
-    // Invite joins store seatCountApplied:false on the new profile, then a second
-    // transaction raises seatCount by one and flips the marker to true. Historical
-    // profiles omit the field and must not grow one: absence is not "uncounted".
+    // Invite joins must store seatCountApplied:false on the new profile. A later
+    // transaction raises seatCount by one and flips the marker to true. Omitting the
+    // marker would join without a claimable seat. Founder creates have no invite and
+    // must omit the field: absence on an existing profile is not "uncounted".
     function seatCountAppliedCreateOk() {
-      return !('seatCountApplied' in request.resource.data)
-        || (request.resource.data.seatCountApplied == false
-            && request.resource.data.get('inviteId', '') is string
-            && request.resource.data.get('inviteId', '').size() > 0);
+      return request.resource.data.keys().hasAll(['inviteId'])
+        ? request.resource.data.seatCountApplied == false
+        : !('seatCountApplied' in request.resource.data);
     }
     function orgSeatClaimedInThisRequest() {
       let orgId = resource.data.organizationId;

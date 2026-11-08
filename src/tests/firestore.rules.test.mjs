@@ -1027,12 +1027,40 @@ async function main() {
     ),
   );
 
-  await check('valid invited bootstrap (member + inviteId) SUCCEEDS', () =>
+  await check('invited bootstrap WITHOUT seatCountApplied is DENIED', () =>
+    assertFails(
+      setDoc(doc(testEnv.authenticatedContext('invited-61-omit', {
+        email: 'invited61@example.com',
+        email_verified: true,
+      }).firestore(), 'users/invited-61-omit'), {
+        organizationId: ORG,
+        role: 'member',
+        inviteId: 'inv-member-61',
+      }),
+    ),
+  );
+
+  await check('invited bootstrap CANNOT pre-set seatCountApplied true', () =>
+    assertFails(
+      setDoc(doc(testEnv.authenticatedContext('invited-61-true', {
+        email: 'invited61@example.com',
+        email_verified: true,
+      }).firestore(), 'users/invited-61-true'), {
+        organizationId: ORG,
+        role: 'member',
+        inviteId: 'inv-member-61',
+        seatCountApplied: true,
+      }),
+    ),
+  );
+
+  await check('valid invited bootstrap (member + inviteId + seat marker) SUCCEEDS', () =>
     assertSucceeds(
       setDoc(doc(invitedDb, 'users/invited-61'), {
         organizationId: ORG,
         role: 'member',
         inviteId: 'inv-member-61',
+        seatCountApplied: false,
       }),
     ),
   );
@@ -1052,6 +1080,27 @@ async function main() {
       email: 'founder@example.com',
     });
     await assertSucceeds(batch.commit());
+  });
+
+  await check('founder bootstrap CANNOT set seatCountApplied', () => {
+    const markedFounder = testEnv
+      .authenticatedContext('founder-marked', { email: 'founder-marked@example.com' })
+      .firestore();
+    const batch = writeBatch(markedFounder);
+    batch.set(doc(markedFounder, 'organizations/founder-org-marked'), {
+      name: "Marked Founder's Organization",
+      autoCreated: true,
+      seatCount: 1,
+      vendorCount: 0,
+      vendorCap: 25,
+    });
+    batch.set(doc(markedFounder, 'users/founder-marked'), {
+      organizationId: 'founder-org-marked',
+      role: 'admin',
+      email: 'founder-marked@example.com',
+      seatCountApplied: false,
+    });
+    return assertFails(batch.commit());
   });
 
   await check('existing member CANNOT reassign a tenant document to another org', () =>
