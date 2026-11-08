@@ -32,6 +32,10 @@ on:
         type: choice
         options: [qa, mail]
         default: qa
+      mail_to:
+        description: 'mail suite only: recipient, must be an @guardentra.com address (blank = the synthetic admin itself). Visible in the run inputs.'
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -162,7 +166,7 @@ jobs:
         env:
           E2E_ADMIN_EMAIL: ${{ secrets.E2E_ADMIN_EMAIL }}
           E2E_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}
-          E2E_MAIL_TO: ${{ secrets.E2E_ADMIN_EMAIL }}
+          E2E_MAIL_TO: ${{ github.event.inputs.mail_to || secrets.E2E_ADMIN_EMAIL }}
         run: npx playwright test --project=mail --retries=0
 
       - name: Summary

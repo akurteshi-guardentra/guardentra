@@ -18,6 +18,10 @@ if (process.env.E2E_TARGET !== 'staging') {
 }
 test.skip(!email || !password, 'E2E_ADMIN_EMAIL / E2E_ADMIN_PASSWORD not configured');
 test.skip(!mailTo, 'E2E_MAIL_TO not set');
+// Only owner-controlled company mailboxes may receive test mail.
+if (mailTo && !/^[^\s@<>]+@guardentra\.com$/i.test(mailTo.trim())) {
+  throw new Error('E2E_MAIL_TO must be an @guardentra.com address.');
+}
 
 test('M1 Invite vendor queues one welcome email', async ({ page }) => {
   await page.goto('/login');
