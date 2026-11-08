@@ -850,8 +850,12 @@ export async function handleOrgDecision(req: Request, res: Response, deps: Evide
     const { approvalBlockedByUntrustedEvidence } = await import(
       '../../src/lib/vendor/evidenceTrust.ts'
     );
-    const { buildOrgDecisionPatch, buildVendorDecisionProjection, hasTerminalOrgDecision } =
-      await import('../../src/lib/vendor/assessmentLifecycle.ts');
+    const {
+      buildOrgDecisionPatch,
+      buildVendorDecisionProjection,
+      hasTerminalOrgDecision,
+      canSignOffAssessment,
+    } = await import('../../src/lib/vendor/assessmentLifecycle.ts');
 
     const patch = await deps.runAssessmentTransaction(
       assessmentId,
@@ -859,6 +863,25 @@ export async function handleOrgDecision(req: Request, res: Response, deps: Evide
       await requireOrgAssessmentAccess(decoded, current, deps.getUser);
       if (hasTerminalOrgDecision(current)) {
         throw new HttpError(409, 'A terminal decision already exists');
+      }
+      // Server-side readiness parity (#124): the UI gates sign-off with
+      // canSignOffAssessment, but the server did not — so a decision could be
+      // recorded on a "Not Started"/zero-progress assessment. Mirror the EXACT
+      // UI rule here by reusing the canonical function. The Firestore assessment
+      // doc carries the same status/progressPct/progress fields the UI shape
+      // uses (see buildOrgDecisionPatch and sibling patches in
+      // assessmentLifecycle.ts), so the current snapshot maps directly.
+      if (
+        !canSignOffAssessment({
+          status: current.status as string | undefined,
+          progressPct: current.progressPct as number | undefined,
+          progress: current.progress as number | undefined,
+        })
+      ) {
+        throw new HttpError(
+          409,
+          'readiness/not-started: Assessment has not been started and cannot be decided yet.'
+        );
       }
       const questions = Array.isArray(current.questions) ? current.questions : [];
       const exceptions = listAssessmentExceptions({

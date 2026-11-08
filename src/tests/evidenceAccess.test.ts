@@ -1100,6 +1100,9 @@ describe('org decisions', () => {
       organizationId: 'org1',
       questions: [],
       answers: {},
+      // A real assessment reaching a decision has been submitted; default the
+      // fixture to a readiness state that passes the server parity gate (#124).
+      status: 'Under Review',
       ...initial,
     };
     const d = deps({
@@ -1124,6 +1127,7 @@ describe('org decisions', () => {
           organizationId: 'org1',
           questions: [],
           answers: {},
+          status: 'Under Review',
           submittedSnapshot: { submittedAt: '2026-10-07T12:00:00.000Z' },
         };
         const patch = await updater(current);
@@ -1359,6 +1363,7 @@ describe('org decisions', () => {
       organizationId: 'org1',
       questions: [],
       answers: {},
+      status: 'Under Review',
     };
     let committed: Record<string, unknown> | null = null;
     const d = deps({
@@ -1403,7 +1408,12 @@ describe('org decisions', () => {
     let patch: Record<string, unknown> | undefined;
     const d = deps({
       runAssessmentTransaction: vi.fn(async (_id, updater) => {
-        patch = await updater({ organizationId: 'org1', questions: [], answers: {} });
+        patch = await updater({
+          organizationId: 'org1',
+          questions: [],
+          answers: {},
+          status: 'Under Review',
+        });
         return patch!;
       }),
     });
@@ -1455,7 +1465,12 @@ describe('org decisions', () => {
     let patch: Record<string, unknown> | undefined;
     const d = deps({
       runAssessmentTransaction: vi.fn(async (_id, updater) => {
-        patch = await updater({ organizationId: 'org1', questions: [], answers: {} });
+        patch = await updater({
+          organizationId: 'org1',
+          questions: [],
+          answers: {},
+          status: 'Under Review',
+        });
         return patch!;
       }),
     });
@@ -1468,6 +1483,89 @@ describe('org decisions', () => {
     expect(res.statusCode).toBe(200);
     expect(patch!.decisionNotes).toBeNull();
     assertNoUndefinedValues(patch!);
+  });
+});
+
+describe('org decision readiness parity (#124)', () => {
+  function readinessDeps(current: Record<string, unknown>) {
+    let capturedPatch: Record<string, unknown> | null = null;
+    const base: Record<string, unknown> = {
+      organizationId: 'org1',
+      questions: [],
+      answers: {},
+      ...current,
+    };
+    const d = deps({
+      runAssessmentTransaction: vi.fn(async (_id, updater) => {
+        const patch = await updater({ ...base });
+        capturedPatch = patch;
+        return patch;
+      }),
+    });
+    return { d, getPatch: () => capturedPatch };
+  }
+
+  it('rejects a Not Started zero-progress assessment before any write', async () => {
+    const { d, getPatch } = readinessDeps({ status: 'Not Started', progressPct: 0, progress: 0 });
+    const res = mockRes();
+    await handleOrgDecision(
+      req({ token: 'org', body: { assessmentId: 'asmA', outcome: 'approved' } }),
+      res as any,
+      d,
+    );
+    expect(res.statusCode).not.toBe(200);
+    expect(res.statusCode).toBe(409);
+    expect((res.body as { error?: string }).error).toMatch(/readiness\/not-started/);
+    // No completed decision was produced.
+    expect(getPatch()).toBeNull();
+  });
+
+  it('rejects a zero-progress assessment with no status', async () => {
+    const { d, getPatch } = readinessDeps({ progress: 0 });
+    const res = mockRes();
+    await handleOrgDecision(
+      req({ token: 'org', body: { assessmentId: 'asmA', outcome: 'rejected', decisionNotes: 'n/a' } }),
+      res as any,
+      d,
+    );
+    expect(res.statusCode).toBe(409);
+    expect(getPatch()).toBeNull();
+  });
+
+  it('allows a started in-progress assessment (progress > 0) to be decided', async () => {
+    const { d, getPatch } = readinessDeps({ status: 'In Progress', progressPct: 40, progress: 40 });
+    const res = mockRes();
+    await handleOrgDecision(
+      req({ token: 'org', body: { assessmentId: 'asmA', outcome: 'approved' } }),
+      res as any,
+      d,
+    );
+    expect(res.statusCode).toBe(200);
+    expect(getPatch()?.decisionOutcome).toBe('approved');
+  });
+
+  it('allows an Under Review assessment to be decided', async () => {
+    const { d, getPatch } = readinessDeps({ status: 'Under Review', progressPct: 0, progress: 0 });
+    const res = mockRes();
+    await handleOrgDecision(
+      req({ token: 'org', body: { assessmentId: 'asmA', outcome: 'approved' } }),
+      res as any,
+      d,
+    );
+    expect(res.statusCode).toBe(200);
+    expect(getPatch()?.decisionOutcome).toBe('approved');
+  });
+
+  it('allows a Completed assessment to be decided', async () => {
+    const { d, getPatch } = readinessDeps({ status: 'Completed', progressPct: 100, progress: 100 });
+    const res = mockRes();
+    await handleOrgDecision(
+      req({ token: 'org', body: { assessmentId: 'asmA', outcome: 'rejected', decisionNotes: 'late' } }),
+      res as any,
+      d,
+    );
+    expect(res.statusCode).toBe(200);
+    expect(getPatch()?.decisionOutcome).toBe('rejected');
   });
 });
 
@@ -1514,6 +1612,7 @@ describe('decision vendor projection (#124 findings 7–8)', () => {
           vendorId: 'vendor-1',
           questions: [],
           answers: {},
+          status: 'Under Review',
           submittedSnapshot: { submittedAt: '2026-10-30T12:00:00.000Z' },
         };
         const patch = await updater(current);
