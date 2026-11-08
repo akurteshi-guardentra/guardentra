@@ -1,0 +1,13 @@
+rules_version = '2';
+// EMERGENCY (P0, 2026-10-31) for the legacy named database
+// ai-studio-guardentra-0c572bb5-3c5a-4cab-8963-fb0921691f79 in guardentra-7f582 ONLY.
+// Owner decision 2026-10-31: lock the AI Studio prototype database. Blocks all client
+// reads and writes; data is kept and the Admin SDK is unaffected.
+// Rollback: re-release ruleset 546970cd-d45f-48c0-85c3-5cf73c0016b2 (59d1485 rules).
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
