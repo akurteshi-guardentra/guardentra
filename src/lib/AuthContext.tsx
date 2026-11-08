@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { auth, db } from '../firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { bootstrapUserProfile, claimInviteSeat } from './orgBootstrap';
 import {
   acknowledgeOnboardingComplete,
@@ -345,12 +345,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 const json = JSON.stringify(userSnap.data());
                 if (json === lastAppliedProfileJson) return; // metadata-only change
               }
-              lastAppliedProfileJson = JSON.stringify(userSnap.data());
               const cloudProfile = userSnap.data() as UserProfile;
-              applyCloudProfile(currentUser, cloudProfile);
+              // An unclaimed invite can read the org only to finish the seat
+              // transaction. Publishing the profile first let the app query
+              // tenant data while seatCount was still short.
               if (cloudProfile.seatCountApplied === false && cloudProfile.organizationId) {
-                void claimInviteSeat(currentUser.uid, cloudProfile.organizationId);
+                if (pendingWrite) return;
+                try {
+                  await claimInviteSeat(currentUser.uid, cloudProfile.organizationId);
+                  const fresh = await getDoc(userRef);
+                  if (!fresh.exists()) return;
+                  const settled = fresh.data() as UserProfile;
+                  if (settled.seatCountApplied === false) {
+                    throw new Error('seat claim left the marker false');
+                  }
+                  lastAppliedProfileJson = JSON.stringify(settled);
+                  applyCloudProfile(currentUser, settled);
+                } catch (claimErr) {
+                  console.error('AuthContext: seat claim failed', claimErr);
+                  if (!sawCloudProfile) {
+                    scheduleHostedRetry(currentUser, 'seat-claim-failed');
+                  }
+                }
+                return;
               }
+              lastAppliedProfileJson = JSON.stringify(cloudProfile);
+              applyCloudProfile(currentUser, cloudProfile);
             } else if (sawCloudProfile) {
               console.warn('AuthContext: Cloud profile disappeared after load — clearing session profile.');
               clearOnboardingAck(currentUser.uid);

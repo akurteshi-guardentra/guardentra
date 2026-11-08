@@ -2,7 +2,7 @@
 
 Standalone running list of everything found-but-not-fixed while working through `docs/PRODUCT_ROADMAP_2026.md`'s sprints. Each item was discovered as a side effect of other work, deliberately not fixed at the time (out of scope, needs its own testing pass, or would have been scope creep), and should not be lost. Update this file whenever a new one is found or an existing one gets fixed — move fixed items to the "Resolved" section with the commit that fixed them rather than deleting the row.
 
-*Last updated: 2026-11-08 (KI#12: an invite join must record seatCountApplied false. A join that omits the marker is denied, so the seat stays claimable.)*
+*Last updated: 2026-11-08 (KI#12: an unclaimed invite profile cannot read or write tenant data. The app unlocks only after the seat claim commits.)*
 
 ---
 
@@ -10,7 +10,7 @@ Standalone running list of everything found-but-not-fixed while working through 
 
 | # | Issue | Where | Why it matters | Why not fixed yet |
 |---|---|---|---|---|
-| 12 | A client can write `seatCountApplied: false` and never run the claim, so the seat stays uncounted until a later session claims it. Profiles that already exist without the marker cannot be repaired from the browser. | `src/lib/orgBootstrap.ts`, `firestore.rules` | Invite-join creates must set the marker false. Founder creates omit it. The claim transaction then raises `seatCount` by one and sets the marker true. A lone `seatCount` change is denied. | The claim is a second request. Rules cannot force it. The app retries while the marker is false. Historical profiles that omit the marker stay uncounted; repairing those is an Admin SDK write, not a client increment. |
+| 12 | Admin SDK routes still authorize from `organizationId` alone, so a profile left at `seatCountApplied: false` can call those routes until the claim lands. Historical profiles that omit the marker are not repaired from the browser. | `server/` membership checks, `src/lib/orgBootstrap.ts` | Client SDK tenant reads and writes now require the marker to be absent or true. The claim itself may still read the organization and raise `seatCount` by one. | Server routes bypass rules. Gating each Admin SDK check is a separate pass. Repair of historical undercounts remains an Admin SDK write, not a client increment. |
 
 ## Resolved
 
