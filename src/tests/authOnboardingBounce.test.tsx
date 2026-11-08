@@ -21,6 +21,7 @@ const bootstrapMock = vi.hoisted(() =>
 vi.mock('../lib/orgBootstrap', () => ({
   bootstrapUserProfile: (uid: string, fields: { email: string | null; displayName: string }) =>
     bootstrapMock(uid, fields),
+  claimInviteSeat: vi.fn(async () => undefined),
 }));
 
 vi.mock('../lib/firebase-utils', () => ({
