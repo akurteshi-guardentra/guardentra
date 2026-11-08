@@ -1027,12 +1027,40 @@ async function main() {
     ),
   );
 
-  await check('valid invited bootstrap (member + inviteId) SUCCEEDS', () =>
+  await check('invited bootstrap WITHOUT seatCountApplied is DENIED', () =>
+    assertFails(
+      setDoc(doc(testEnv.authenticatedContext('invited-61-omit', {
+        email: 'invited61@example.com',
+        email_verified: true,
+      }).firestore(), 'users/invited-61-omit'), {
+        organizationId: ORG,
+        role: 'member',
+        inviteId: 'inv-member-61',
+      }),
+    ),
+  );
+
+  await check('invited bootstrap CANNOT pre-set seatCountApplied true', () =>
+    assertFails(
+      setDoc(doc(testEnv.authenticatedContext('invited-61-true', {
+        email: 'invited61@example.com',
+        email_verified: true,
+      }).firestore(), 'users/invited-61-true'), {
+        organizationId: ORG,
+        role: 'member',
+        inviteId: 'inv-member-61',
+        seatCountApplied: true,
+      }),
+    ),
+  );
+
+  await check('valid invited bootstrap (member + inviteId + seat marker) SUCCEEDS', () =>
     assertSucceeds(
       setDoc(doc(invitedDb, 'users/invited-61'), {
         organizationId: ORG,
         role: 'member',
         inviteId: 'inv-member-61',
+        seatCountApplied: false,
       }),
     ),
   );
@@ -1052,6 +1080,73 @@ async function main() {
       email: 'founder@example.com',
     });
     await assertSucceeds(batch.commit());
+  });
+
+  // #160: create-time meters. Update rules already freeze vendorCount, so a founder
+  // batch is the remaining way to start the cap check below zero or omit the seat.
+  async function denyFounderCounters(label, orgFields, omit = []) {
+    const uid = `founder-160-${label}`;
+    const orgId = `founder-org-160-${label}`;
+    const data = {
+      name: "Founder's Organization",
+      autoCreated: true,
+      seatCount: 1,
+      vendorCount: 0,
+      vendorCap: 25,
+      ...orgFields,
+    };
+    for (const key of omit) delete data[key];
+    await check(`founder create DENIES ${label} (#160)`, async () => {
+      const fs = testEnv.authenticatedContext(uid, { email: `${uid}@example.com` }).firestore();
+      const batch = writeBatch(fs);
+      batch.set(doc(fs, `organizations/${orgId}`), data);
+      batch.set(doc(fs, `users/${uid}`), {
+        organizationId: orgId,
+        role: 'admin',
+        email: `${uid}@example.com`,
+      });
+      await assertFails(batch.commit());
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        const org = await getDoc(doc(ctx.firestore(), `organizations/${orgId}`));
+        const user = await getDoc(doc(ctx.firestore(), `users/${uid}`));
+        if (org.exists() || user.exists()) {
+          throw new Error('denied founder batch persisted documents');
+        }
+      });
+    });
+  }
+  await denyFounderCounters('negative-vendorCount', { vendorCount: -1 });
+  await denyFounderCounters('fractional-vendorCount', { vendorCount: 1.5 });
+  await denyFounderCounters('string-vendorCount', { vendorCount: '0' });
+  await denyFounderCounters('null-vendorCount', { vendorCount: null });
+  await denyFounderCounters('omitted-vendorCount', {}, ['vendorCount']);
+  await denyFounderCounters('nonzero-vendorCount', { vendorCount: 25 });
+  await denyFounderCounters('negative-seatCount', { seatCount: -1 });
+  await denyFounderCounters('fractional-seatCount', { seatCount: 0.5 });
+  await denyFounderCounters('string-seatCount', { seatCount: '1' });
+  await denyFounderCounters('null-seatCount', { seatCount: null });
+  await denyFounderCounters('omitted-seatCount', {}, ['seatCount']);
+  await denyFounderCounters('wrong-seatCount', { seatCount: 0 });
+
+  await check('founder bootstrap CANNOT set seatCountApplied', () => {
+    const markedFounder = testEnv
+      .authenticatedContext('founder-marked', { email: 'founder-marked@example.com' })
+      .firestore();
+    const batch = writeBatch(markedFounder);
+    batch.set(doc(markedFounder, 'organizations/founder-org-marked'), {
+      name: "Marked Founder's Organization",
+      autoCreated: true,
+      seatCount: 1,
+      vendorCount: 0,
+      vendorCap: 25,
+    });
+    batch.set(doc(markedFounder, 'users/founder-marked'), {
+      organizationId: 'founder-org-marked',
+      role: 'admin',
+      email: 'founder-marked@example.com',
+      seatCountApplied: false,
+    });
+    return assertFails(batch.commit());
   });
 
   await check('existing member CANNOT reassign a tenant document to another org', () =>
