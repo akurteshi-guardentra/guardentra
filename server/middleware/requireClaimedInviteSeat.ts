@@ -13,11 +13,17 @@ export type InviteSeatCaller = {
 
 export type InviteSeatProfileLoader = (uid: string) => Promise<object | null | undefined>;
 
+function profileOrganizationId(profile: object): string {
+  const value = (profile as { organizationId?: unknown }).organizationId;
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 /**
  * Signed-in /api/ai calls spend the model and can read tenant analysis.
  * Firestore rules do not run on the Admin SDK, so an invite left at
  * `seatCountApplied: false` must be refused here. A profile that omits the
- * marker stays a member. A signed-in caller with no user profile is not a
+ * marker stays a member when it names an organization. A signed-in caller
+ * with no user profile, or a profile with no organization id, is not a
  * member and is refused outside local demos. A vendor portal token is scoped
  * to one assessment and is not an org seat.
  */
@@ -55,6 +61,14 @@ export function createRequireClaimedInviteSeat(
       }
       if (inviteSeatUnclaimed(profile)) {
         res.status(403).json({ error: INVITE_SEAT_UNCLAIMED_MESSAGE });
+        return;
+      }
+      if (profileOrganizationId(profile) === '') {
+        if (isProductionLike(env())) {
+          res.status(403).json({ error: AI_MEMBERSHIP_REQUIRED_MESSAGE });
+          return;
+        }
+        next();
         return;
       }
       next();

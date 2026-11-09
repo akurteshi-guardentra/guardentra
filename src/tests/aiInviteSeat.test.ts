@@ -49,7 +49,7 @@ describe('KI#12 signed-in AI invite seat', () => {
   });
 
   it('allows a claimed seat and a profile that omits the marker', async () => {
-    const claimed = vi.fn(async () => ({ seatCountApplied: true }));
+    const claimed = vi.fn(async () => ({ seatCountApplied: true, organizationId: 'org-1' }));
     const omitted = vi.fn(async () => ({ organizationId: 'org-1', role: 'admin' }));
     expect((await run(claimed, { uid: 'member' }, { APP_ENV: 'staging' })).continued).toBe(true);
     expect((await run(omitted, { uid: 'founder' }, { APP_ENV: 'staging' })).continued).toBe(true);
@@ -67,6 +67,31 @@ describe('KI#12 signed-in AI invite seat', () => {
     expect(staging.continued).toBe(false);
     expect(staging.statusCode).toBe(403);
     expect(local.continued).toBe(true);
+  });
+
+  it('refuses a profile with no organization id before the handler', async () => {
+    const blank = vi.fn(async () => ({ seatCountApplied: true, organizationId: '  ' }));
+    const missing = vi.fn(async () => ({ role: 'admin' }));
+    const numeric = vi.fn(async () => ({ organizationId: 12, role: 'member' }));
+    const production = await run(blank, { uid: 'member' }, { APP_ENV: 'production' });
+    const staging = await run(missing, { uid: 'member' }, { APP_ENV: 'staging' });
+    const typed = await run(numeric, { uid: 'member' }, { APP_ENV: 'production' });
+    const local = await run(missing, { uid: 'member' }, { APP_ENV: 'development' });
+    const unclaimed = await run(
+      async () => ({ seatCountApplied: false }),
+      { uid: 'invitee' },
+      { APP_ENV: 'production' },
+    );
+    expect(production.continued).toBe(false);
+    expect(production.statusCode).toBe(403);
+    expect(production.body).toEqual({ error: AI_MEMBERSHIP_REQUIRED_MESSAGE });
+    expect(staging.continued).toBe(false);
+    expect(staging.statusCode).toBe(403);
+    expect(typed.continued).toBe(false);
+    expect(typed.statusCode).toBe(403);
+    expect(local.continued).toBe(true);
+    expect(unclaimed.continued).toBe(false);
+    expect(unclaimed.body).toEqual({ error: INVITE_SEAT_UNCLAIMED_MESSAGE });
   });
 
   it('does not treat a vendor portal token as an org seat', async () => {
