@@ -1,8 +1,13 @@
 import { Router, type Request, type Response } from 'express';
 import { GoogleGenAI, Type } from '@google/genai';
+import { requireClaimedInviteSeat } from '../middleware/requireClaimedInviteSeat.ts';
 import { createRateLimiter } from '../middleware/rateLimit';
 
 const router = Router();
+
+// Before the rate limiter and every handler. requireFirebaseAuth has already
+// attached the verified token when this router is mounted from server.ts.
+router.use(requireClaimedInviteSeat);
 
 /**
  * Canned responses exist for local demos only. In staging/production a canned
