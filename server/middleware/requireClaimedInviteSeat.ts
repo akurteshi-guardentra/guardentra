@@ -4,6 +4,8 @@ import { getAdminDb } from '../lib/adminDb.ts';
 import { INVITE_SEAT_UNCLAIMED_MESSAGE, inviteSeatUnclaimed } from '../lib/inviteSeat.ts';
 import { ensureAdmin, isProductionLike } from './requireFirebaseAuth.ts';
 
+export const AI_MEMBERSHIP_REQUIRED_MESSAGE = 'Organization membership required.';
+
 export type InviteSeatCaller = {
   uid?: string;
   portalAssessmentId?: unknown;
@@ -14,9 +16,10 @@ export type InviteSeatProfileLoader = (uid: string) => Promise<object | null | u
 /**
  * Signed-in /api/ai calls spend the model and can read tenant analysis.
  * Firestore rules do not run on the Admin SDK, so an invite left at
- * `seatCountApplied: false` must be refused here. A missing marker stays a
- * member. A vendor portal token is scoped to one assessment and is not an
- * org seat.
+ * `seatCountApplied: false` must be refused here. A profile that omits the
+ * marker stays a member. A signed-in caller with no user profile is not a
+ * member and is refused outside local demos. A vendor portal token is scoped
+ * to one assessment and is not an org seat.
  */
 export function createRequireClaimedInviteSeat(
   loadProfile: InviteSeatProfileLoader,
@@ -42,6 +45,14 @@ export function createRequireClaimedInviteSeat(
 
     try {
       const profile = await loadProfile(uid);
+      if (profile == null) {
+        if (isProductionLike(env())) {
+          res.status(403).json({ error: AI_MEMBERSHIP_REQUIRED_MESSAGE });
+          return;
+        }
+        next();
+        return;
+      }
       if (inviteSeatUnclaimed(profile)) {
         res.status(403).json({ error: INVITE_SEAT_UNCLAIMED_MESSAGE });
         return;

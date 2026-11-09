@@ -1,7 +1,10 @@
 import type { NextFunction, Request, Response } from 'express';
 import { describe, expect, it, vi } from 'vitest';
 import { INVITE_SEAT_UNCLAIMED_MESSAGE } from '../../server/lib/inviteSeat';
-import { createRequireClaimedInviteSeat } from '../../server/middleware/requireClaimedInviteSeat';
+import {
+  AI_MEMBERSHIP_REQUIRED_MESSAGE,
+  createRequireClaimedInviteSeat,
+} from '../../server/middleware/requireClaimedInviteSeat';
 import aiRoutes from '../../server/routes/ai';
 
 function run(
@@ -48,10 +51,22 @@ describe('KI#12 signed-in AI invite seat', () => {
   it('allows a claimed seat and a profile that omits the marker', async () => {
     const claimed = vi.fn(async () => ({ seatCountApplied: true }));
     const omitted = vi.fn(async () => ({ organizationId: 'org-1', role: 'admin' }));
-    const missing = vi.fn(async () => null);
     expect((await run(claimed, { uid: 'member' }, { APP_ENV: 'staging' })).continued).toBe(true);
     expect((await run(omitted, { uid: 'founder' }, { APP_ENV: 'staging' })).continued).toBe(true);
-    expect((await run(missing, { uid: 'historical' }, { APP_ENV: 'staging' })).continued).toBe(true);
+  });
+
+  it('refuses a signed-in caller with no user profile before the handler', async () => {
+    const loadProfile = vi.fn(async () => null);
+    const production = await run(loadProfile, { uid: 'stranger' }, { APP_ENV: 'production' });
+    const staging = await run(loadProfile, { uid: 'stranger' }, { APP_ENV: 'staging' });
+    const local = await run(loadProfile, { uid: 'stranger' }, { APP_ENV: 'development' });
+    expect(loadProfile).toHaveBeenCalledWith('stranger');
+    expect(production.continued).toBe(false);
+    expect(production.statusCode).toBe(403);
+    expect(production.body).toEqual({ error: AI_MEMBERSHIP_REQUIRED_MESSAGE });
+    expect(staging.continued).toBe(false);
+    expect(staging.statusCode).toBe(403);
+    expect(local.continued).toBe(true);
   });
 
   it('does not treat a vendor portal token as an org seat', async () => {
