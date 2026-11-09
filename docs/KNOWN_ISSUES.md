@@ -2,7 +2,7 @@
 
 Standalone running list of everything found-but-not-fixed while working through `docs/PRODUCT_ROADMAP_2026.md`'s sprints. Each item was discovered as a side effect of other work, deliberately not fixed at the time (out of scope, needs its own testing pass, or would have been scope creep), and should not be lost. Update this file whenever a new one is found or an existing one gets fixed — move fixed items to the "Resolved" section with the commit that fixed them rather than deleting the row.
 
-*Last updated: 2026-11-09 (KI#12: checkout refuses a Stripe session when the membership profile cannot be read. An explicit `seatCountApplied: false` stays denied. A missing marker stays a member.)*
+*Last updated: 2026-11-09 (KI#12: signed-in AI refuses a caller with no user profile before the model runs. An explicit `seatCountApplied: false` stays denied. A profile that omits the marker stays a member.)*
 
 ---
 
@@ -10,7 +10,7 @@ Standalone running list of everything found-but-not-fixed while working through 
 
 | # | Issue | Where | Why it matters | Why not fixed yet |
 |---|---|---|---|---|
-| 12 | A custom client that never writes `seatCountApplied: false` can still join without counting a seat. | `src/lib/orgBootstrap.ts`, `firestore.rules`, `server/routes/stripe.ts`, `server/routes/ai.ts` | The app writes the marker false, then one transaction raises `seatCount` and sets it true. A lone `seatCount` change is denied for members and admins. Historical profiles omit the marker and are not counted again. Admin SDK assessment, vendor, triage, evidence, audit, notification, checkout, and signed-in AI routes reject that explicit false before they write or call the model, and still treat a missing marker as a member. Checkout returns 503 and does not open a Stripe session when that profile read fails. A vendor portal token is not an org seat. | The marker can move false to true only in the same request that raises `seatCount` by one. A join that omits the marker never becomes claimable from the browser. Repair of that undercount is an Admin SDK write, not a client increment. Checkout still skips the membership read when Firebase Admin is not initialized. |
+| 12 | A custom client that never writes `seatCountApplied: false` can still join without counting a seat. | `src/lib/orgBootstrap.ts`, `firestore.rules`, `server/routes/stripe.ts`, `server/routes/ai.ts` | The app writes the marker false, then one transaction raises `seatCount` and sets it true. A lone `seatCount` change is denied for members and admins. Historical profiles omit the marker and are not counted again. Admin SDK assessment, vendor, triage, evidence, audit, notification, checkout, and signed-in AI routes reject that explicit false before they write or call the model, and still treat a missing marker as a member. Signed-in AI returns 403 and does not call the model when the user profile is missing outside a local demo. Checkout returns 503 and does not open a Stripe session when that profile read fails. A vendor portal token is not an org seat. | The marker can move false to true only in the same request that raises `seatCount` by one. A join that omits the marker never becomes claimable from the browser. Repair of that undercount is an Admin SDK write, not a client increment. Checkout still skips the membership read when Firebase Admin is not initialized. |
 
 ## Resolved
 
