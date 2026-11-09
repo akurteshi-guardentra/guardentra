@@ -646,6 +646,25 @@ describe('evidence download', () => {
     expect(res.statusCode).toBe(401);
   });
 
+  it('rejects an unclaimed invite seat before signing a download', async () => {
+    const d = deps({
+      getUser: vi.fn(async () => ({ organizationId: 'org1', role: 'admin', seatCountApplied: false })),
+    });
+    const res = mockRes();
+    await handleEvidenceDownload(
+      req({
+        token: 'org',
+        query: { assessmentId: 'asmA', storagePath: 'portal/asmA/a.pdf' },
+      }),
+      res as any,
+      d,
+      'org'
+    );
+    expect(res.statusCode).toBe(403);
+    expect((res.body as { error?: string }).error).toBe('Invite seat is not claimed.');
+    expect(d.signReadUrl).not.toHaveBeenCalled();
+  });
+
   it('rejects cross-tenant org downloads', async () => {
     const res = mockRes();
     await handleEvidenceDownload(
@@ -941,6 +960,24 @@ describe('organization attachments', () => {
       deps()
     );
     expect(res.statusCode).toBe(401);
+  });
+
+  it('rejects an unclaimed invite seat on attachment downloads', async () => {
+    const d = deps({
+      getUser: vi.fn(async () => ({ organizationId: 'org1', role: 'admin', seatCountApplied: false })),
+    });
+    const res = mockRes();
+    await handleOrgAttachmentDownload(
+      req({
+        token: 'org',
+        query: { orgId: 'org1', vendorId: 'v1', storagePath: attach },
+      }),
+      res as any,
+      d
+    );
+    expect(res.statusCode).toBe(403);
+    expect((res.body as { error?: string }).error).toBe('Invite seat is not claimed.');
+    expect(d.signReadUrl).not.toHaveBeenCalled();
   });
 
   it('rejects cross-tenant attachment downloads', async () => {

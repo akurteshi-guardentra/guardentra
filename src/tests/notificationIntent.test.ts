@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   NotificationIntentError,
   parseNotificationIntentRequest,
@@ -108,6 +108,27 @@ describe('#86 tenant-authorized notification intents', () => {
       404,
       'assessment_missing'
     );
+  });
+
+  it('refuses an unclaimed invite seat before reading the vendor', async () => {
+    const getVendor = vi.fn(async () => ({
+      organizationId: 'org-a',
+      name: 'Vendor One',
+      primaryContactEmail: 'vendor@example.com',
+    }));
+    await expectIntentError(
+      resolveNotificationIntent({
+        uid: 'user-1',
+        intent: { intentType: 'vendor_welcome', objectId: 'vendor-1' },
+        store: store({
+          getUser: async () => ({ organizationId: 'org-a', role: 'admin', seatCountApplied: false }),
+          getVendor,
+        }),
+      }),
+      403,
+      'seat_unclaimed'
+    );
+    expect(getVendor).not.toHaveBeenCalled();
   });
 
   it('refuses missing/unknown role even when uid and object exist', async () => {
