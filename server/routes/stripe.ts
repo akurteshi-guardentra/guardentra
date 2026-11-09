@@ -20,6 +20,7 @@ import {
   resolvePlanIdFromPriceId,
   type PlanId,
 } from '../lib/plans';
+import { resolveCheckoutMembership } from '../lib/checkoutMembership';
 import { InviteSeatUnclaimedError, inviteSeatUnclaimed } from '../lib/inviteSeat';
 
 const router = Router();
@@ -140,14 +141,13 @@ router.post('/create-checkout-session', requireFirebaseAuth, async (req, res) =>
     const planId = resolvePlanIdFromPriceId(priceId, buildServerStripePriceMap()) || 'starter';
     let organizationId: string | null = null;
     if (getApps().length > 0) {
-      try {
-        organizationId = await resolveOrgIdForUser(getAdminDb(), userId);
-      } catch (err) {
-        if (err instanceof InviteSeatUnclaimedError) {
-          return res.status(403).json({ error: err.message });
-        }
-        console.warn('[stripe] could not resolve organizationId for checkout metadata', err);
+      const membership = await resolveCheckoutMembership(() =>
+        resolveOrgIdForUser(getAdminDb(), userId),
+      );
+      if (!membership.ok) {
+        return res.status(membership.status).json({ error: membership.error });
       }
+      organizationId = membership.organizationId;
     }
 
     const session = await stripe.checkout.sessions.create({
