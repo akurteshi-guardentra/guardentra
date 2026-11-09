@@ -20,6 +20,7 @@ import {
   resolvePlanIdFromPriceId,
   type PlanId,
 } from '../lib/plans';
+import { InviteSeatUnclaimedError, inviteSeatUnclaimed } from '../lib/inviteSeat';
 
 const router = Router();
 
@@ -96,7 +97,9 @@ export function appBaseUrl(env: NodeJS.ProcessEnv = process.env): string | null 
 async function resolveOrgIdForUser(db: Firestore, userId: string): Promise<string | null> {
   const userSnap = await db.collection('users').doc(userId).get();
   if (!userSnap.exists) return null;
-  const orgId = userSnap.data()?.organizationId;
+  const data = userSnap.data() || {};
+  if (inviteSeatUnclaimed(data)) throw new InviteSeatUnclaimedError();
+  const orgId = data.organizationId;
   return typeof orgId === 'string' && orgId ? orgId : null;
 }
 
@@ -140,6 +143,9 @@ router.post('/create-checkout-session', requireFirebaseAuth, async (req, res) =>
       try {
         organizationId = await resolveOrgIdForUser(getAdminDb(), userId);
       } catch (err) {
+        if (err instanceof InviteSeatUnclaimedError) {
+          return res.status(403).json({ error: err.message });
+        }
         console.warn('[stripe] could not resolve organizationId for checkout metadata', err);
       }
     }

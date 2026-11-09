@@ -216,4 +216,29 @@ describe('#162 hosted assessment create authority', () => {
       [...rows.keys()].some((k) => k.startsWith('audit_material_intents/')),
     ).toBe(false);
   });
+
+  it('rejects an unclaimed invite seat before any assessment or audit write', async () => {
+    const { db, rows } = fakeDb({
+      'users/user-1': { organizationId: 'org-1', role: 'member', seatCountApplied: false },
+      'vendors/vendor-1': {
+        organizationId: 'org-1',
+        name: 'Vendor One',
+        primaryContactEmail: 'vendor@example.com',
+      },
+      'organizations/org-1': { name: 'Customer Co' },
+    });
+    const res = mockRes();
+
+    await handleAssessmentCreate(request(createBody), res, {
+      db,
+      verifyIdToken: vi.fn(async () => ({ uid: 'user-1' } as any)),
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.body.error).toBe('Invite seat is not claimed.');
+    expect([...rows.keys()].some((k) => k.startsWith('assessments/'))).toBe(false);
+    expect(
+      [...rows.keys()].some((k) => k.startsWith('audit_material_intents/')),
+    ).toBe(false);
+  });
 });

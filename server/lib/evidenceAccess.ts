@@ -10,6 +10,7 @@ import {
 import { ensureAdmin } from '../middleware/requireFirebaseAuth.ts';
 import { getConfiguredStorageBucket } from './adminConfig.ts';
 import { getAdminDb } from './adminDb.ts';
+import { INVITE_SEAT_UNCLAIMED_MESSAGE, inviteSeatUnclaimed } from './inviteSeat.ts';
 import {
   classifyStorageMetadata,
   encodeTrustMapKey,
@@ -262,6 +263,9 @@ export async function requireOrgAssessmentAccess(
   const assessOrg = String(assessment.organizationId || '');
   if (!userOrg || !assessOrg || userOrg !== assessOrg) {
     throw new HttpError(403, 'Cross-tenant access denied');
+  }
+  if (inviteSeatUnclaimed(user)) {
+    throw new HttpError(403, INVITE_SEAT_UNCLAIMED_MESSAGE);
   }
   const role = String(user.role || 'member');
   if (role !== 'admin' && role !== 'member' && role !== 'owner') {
@@ -800,6 +804,9 @@ export async function handleOrgAttachmentDownload(req: Request, res: Response, d
     const userOrg = String(user.organizationId || '');
     if (!userOrg || userOrg !== orgId) {
       throw new HttpError(403, 'Cross-tenant access denied');
+    }
+    if (inviteSeatUnclaimed(user)) {
+      throw new HttpError(403, INVITE_SEAT_UNCLAIMED_MESSAGE);
     }
     const meta = await deps.getStorageMetadata(storagePath);
     if (!meta) {

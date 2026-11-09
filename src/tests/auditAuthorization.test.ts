@@ -120,6 +120,20 @@ describe('#74 audit tenant/principal authorization', () => {
     ).rejects.toBeInstanceOf(AuditAuthorizationError);
   });
 
+  it('rejects an unclaimed invite seat and still allows a profile that omits the marker', async () => {
+    put('users/u1', { organizationId: 'org-1', role: 'member', seatCountApplied: false });
+    await expect(authorizeAuditTenantRead({ uid: 'u1' }, 'org-1')).rejects.toMatchObject({
+      status: 403,
+      code: 'seat_unclaimed',
+    });
+
+    put('users/u1', { organizationId: 'org-1', role: 'member', seatCountApplied: true });
+    await expect(authorizeAuditTenantRead({ uid: 'u1' }, 'org-1')).resolves.toMatchObject({
+      actorId: 'u1',
+      tenantId: 'org-1',
+    });
+  });
+
   it('portal session cannot verify or export an organization audit trail', async () => {
     await expect(
       authorizeAuditTenantRead({ uid: 'portal_a1', portalAssessmentId: 'a1' }, 'org-1'),

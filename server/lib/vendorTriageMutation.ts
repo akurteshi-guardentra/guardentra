@@ -3,6 +3,7 @@ import type { Firestore } from 'firebase-admin/firestore';
 import type { Request, Response } from 'express';
 import { ensureAdmin } from '../middleware/requireFirebaseAuth.ts';
 import { getAdminDb } from './adminDb.ts';
+import { INVITE_SEAT_UNCLAIMED_MESSAGE, inviteSeatUnclaimed } from './inviteSeat.ts';
 import {
   commitPreparedMaterialAuditIntent,
   materialAuditEventId,
@@ -158,15 +159,19 @@ export async function saveVendorTriageWithDurableAudit(input: {
       tx.get(triageRef),
     ]);
 
+    const currentUser = userSnap.data();
     if (
       !userSnap.exists ||
-      String(userSnap.data()?.organizationId || '') !== organizationId
+      String(currentUser?.organizationId || '') !== organizationId
     ) {
       throw new VendorTriageMutationError(
         403,
         'membership_changed',
         'Organization membership changed; retry.',
       );
+    }
+    if (inviteSeatUnclaimed(currentUser)) {
+      throw new VendorTriageMutationError(403, 'seat_unclaimed', INVITE_SEAT_UNCLAIMED_MESSAGE);
     }
     if (!vendorSnap.exists) {
       throw new VendorTriageMutationError(404, 'vendor_missing', 'Vendor not found.');
@@ -301,6 +306,9 @@ export async function handleOrgVendorTriage(
     const role = String(user.role || 'member');
     if (!organizationId || !['admin', 'owner', 'member'].includes(role)) {
       throw new VendorTriageMutationError(403, 'membership_required', 'Organization membership required.');
+    }
+    if (inviteSeatUnclaimed(user)) {
+      throw new VendorTriageMutationError(403, 'seat_unclaimed', INVITE_SEAT_UNCLAIMED_MESSAGE);
     }
 
     const result = await saveVendorTriageWithDurableAudit({

@@ -1,3 +1,5 @@
+import { INVITE_SEAT_UNCLAIMED_MESSAGE, inviteSeatUnclaimed } from './inviteSeat.ts';
+
 export type NotificationIntentType =
   | 'vendor_welcome'
   | 'assessment_invite'
@@ -11,6 +13,7 @@ export type NotificationIntentRequest = {
 export type NotificationAuthorityUser = {
   organizationId?: unknown;
   role?: unknown;
+  seatCountApplied?: unknown;
 };
 
 export type NotificationAuthorityVendor = {
@@ -192,6 +195,9 @@ export async function resolveNotificationIntent(input: {
   const role = typeof actor.role === 'string' ? actor.role : '';
   if (!organizationId || !ALLOWED_ROLES.has(role)) {
     throw new NotificationIntentError(403, 'role_not_authorized', 'Authenticated profile is not authorized');
+  }
+  if (inviteSeatUnclaimed(actor)) {
+    throw new NotificationIntentError(403, 'seat_unclaimed', INVITE_SEAT_UNCLAIMED_MESSAGE);
   }
 
   const organization = await store.getOrganization(organizationId);

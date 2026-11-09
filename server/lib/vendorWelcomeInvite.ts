@@ -9,6 +9,7 @@ import {
   NotificationIntentError,
   type ResolvedNotificationIntent,
 } from './notificationIntent.ts';
+import { INVITE_SEAT_UNCLAIMED_MESSAGE, inviteSeatUnclaimed } from './inviteSeat.ts';
 
 export const VENDOR_INVITES_COLLECTION = 'vendor_invites';
 
@@ -55,15 +56,19 @@ export async function queueVendorWelcomeWithDurableAudit(input: {
     const userSnap = await tx.get(userRef);
     const inviteSnap = await tx.get(inviteRef);
 
+    const currentUser = userSnap.data();
     if (
       !userSnap.exists ||
-      String(userSnap.data()?.organizationId || '') !== organizationId
+      String(currentUser?.organizationId || '') !== organizationId
     ) {
       throw new NotificationIntentError(
         403,
         'membership_changed',
         'Organization membership changed; retry notification resolution',
       );
+    }
+    if (inviteSeatUnclaimed(currentUser)) {
+      throw new NotificationIntentError(403, 'seat_unclaimed', INVITE_SEAT_UNCLAIMED_MESSAGE);
     }
     if (!vendorSnap.exists) {
       throw new NotificationIntentError(404, 'vendor_missing', 'Authoritative vendor no longer exists');
