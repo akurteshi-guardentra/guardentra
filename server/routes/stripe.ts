@@ -20,7 +20,10 @@ import {
   resolvePlanIdFromPriceId,
   type PlanId,
 } from '../lib/plans';
-import { resolveCheckoutMembership } from '../lib/checkoutMembership';
+import {
+  requireCheckoutOrganizationId,
+  resolveCheckoutMembership,
+} from '../lib/checkoutMembership';
 import { InviteSeatUnclaimedError, inviteSeatUnclaimed } from '../lib/inviteSeat';
 
 const router = Router();
@@ -100,8 +103,7 @@ async function resolveOrgIdForUser(db: Firestore, userId: string): Promise<strin
   if (!userSnap.exists) return null;
   const data = userSnap.data() || {};
   if (inviteSeatUnclaimed(data)) throw new InviteSeatUnclaimedError();
-  const orgId = data.organizationId;
-  return typeof orgId === 'string' && orgId ? orgId : null;
+  return requireCheckoutOrganizationId(data);
 }
 
 function firstSubscriptionPriceId(subscription: Stripe.Subscription): string | null {
