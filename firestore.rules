@@ -306,12 +306,19 @@ service cloud.firestore {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny(billingKeys());
     }
     // Founder bootstrap may only create a Starter org with Starter caps (src/lib/plans.ts).
+    // Initial meters are required (#160). Update rules cannot see this create, and a
+    // missing or forged vendorCount would let the server cap check start below zero.
+    // seatCount must be 1 because this create already counts the founder.
     function isStarterOrgCreate() {
       let d = request.resource.data;
       return d.get('planId', 'starter') == 'starter'
         && d.get('vendorCap', 25) == 25
         && d.get('seatCap', 3) == 3
         && d.get('subscriptionStatus', 'none') == 'none'
+        && d.vendorCount is int
+        && d.vendorCount == 0
+        && d.seatCount is int
+        && d.seatCount == 1
         && !d.keys().hasAny(['stripeCustomerId', 'stripeSubscriptionId'])
         && !d.keys().hasAny(stripeCursorKeys());
     }
