@@ -218,13 +218,15 @@ service cloud.firestore {
     // ===============================================================
 
     // Invite joins store seatCountApplied:false on the new profile, then a second
-    // transaction raises seatCount by one and flips the marker to true. Historical
-    // profiles omit the field and must not grow one: absence is not "uncounted".
+    // transaction raises seatCount by one and flips the marker to true. A join
+    // that carries inviteId and omits the marker would become a member without
+    // ever being claimable. Founder creates omit the field: the org document
+    // already counts that first seat. Historical profiles also omit it and must
+    // not grow one: absence on an existing profile is not "uncounted".
     function seatCountAppliedCreateOk() {
-      return !('seatCountApplied' in request.resource.data)
-        || (request.resource.data.seatCountApplied == false
-            && request.resource.data.get('inviteId', '') is string
-            && request.resource.data.get('inviteId', '').size() > 0);
+      return ('inviteId' in request.resource.data)
+        ? request.resource.data.get('seatCountApplied', null) == false
+        : !('seatCountApplied' in request.resource.data);
     }
     function orgSeatClaimedInThisRequest() {
       let orgId = resource.data.organizationId;

@@ -1027,12 +1027,62 @@ async function main() {
     ),
   );
 
-  await check('valid invited bootstrap (member + inviteId) SUCCEEDS', () =>
+  await check('invited bootstrap without seatCountApplied is REJECTED', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'org_invites/inv-nomarker-61'), {
+        email: 'nomarker61@example.com',
+        status: 'pending',
+        organizationId: ORG,
+        role: 'member',
+      });
+    });
+    const nomarkerDb = testEnv
+      .authenticatedContext('invited-nomarker-61', {
+        email: 'nomarker61@example.com',
+        email_verified: true,
+      })
+      .firestore();
+    await assertFails(
+      setDoc(doc(nomarkerDb, 'users/invited-nomarker-61'), {
+        organizationId: ORG,
+        role: 'member',
+        inviteId: 'inv-nomarker-61',
+      }),
+    );
+  });
+
+  await check('invited bootstrap CANNOT write seatCountApplied true at create', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'org_invites/inv-preclaimed-61'), {
+        email: 'preclaimed61@example.com',
+        status: 'pending',
+        organizationId: ORG,
+        role: 'member',
+      });
+    });
+    const preclaimedDb = testEnv
+      .authenticatedContext('invited-preclaimed-61', {
+        email: 'preclaimed61@example.com',
+        email_verified: true,
+      })
+      .firestore();
+    await assertFails(
+      setDoc(doc(preclaimedDb, 'users/invited-preclaimed-61'), {
+        organizationId: ORG,
+        role: 'member',
+        inviteId: 'inv-preclaimed-61',
+        seatCountApplied: true,
+      }),
+    );
+  });
+
+  await check('valid invited bootstrap (member + inviteId + unclaimed marker) SUCCEEDS', () =>
     assertSucceeds(
       setDoc(doc(invitedDb, 'users/invited-61'), {
         organizationId: ORG,
         role: 'member',
         inviteId: 'inv-member-61',
+        seatCountApplied: false,
       }),
     ),
   );
@@ -1052,6 +1102,27 @@ async function main() {
       email: 'founder@example.com',
     });
     await assertSucceeds(batch.commit());
+  });
+
+  await check('founder bootstrap CANNOT store an unclaimed seat marker', async () => {
+    const markedFounderDb = testEnv
+      .authenticatedContext('founder-marker-61', { email: 'founder-marker@example.com' })
+      .firestore();
+    const batch = writeBatch(markedFounderDb);
+    batch.set(doc(markedFounderDb, 'organizations/founder-marker-org-61'), {
+      name: "Founder's Organization",
+      autoCreated: true,
+      seatCount: 1,
+      vendorCount: 0,
+      vendorCap: 25,
+    });
+    batch.set(doc(markedFounderDb, 'users/founder-marker-61'), {
+      organizationId: 'founder-marker-org-61',
+      role: 'admin',
+      email: 'founder-marker@example.com',
+      seatCountApplied: false,
+    });
+    await assertFails(batch.commit());
   });
 
   await check('existing member CANNOT reassign a tenant document to another org', () =>
