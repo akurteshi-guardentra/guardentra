@@ -21,6 +21,9 @@ import {
   type PlanId,
 } from '../lib/plans';
 import {
+  CHECKOUT_MEMBERSHIP_UNAVAILABLE,
+  CheckoutOrganizationRequiredError,
+  checkoutAdminGate,
   requireCheckoutOrganizationId,
   resolveCheckoutMembership,
 } from '../lib/checkoutMembership';
@@ -98,9 +101,9 @@ export function appBaseUrl(env: NodeJS.ProcessEnv = process.env): string | null 
   return isProductionLike(env) ? null : 'http://localhost:8080';
 }
 
-async function resolveOrgIdForUser(db: Firestore, userId: string): Promise<string | null> {
+async function resolveOrgIdForUser(db: Firestore, userId: string): Promise<string> {
   const userSnap = await db.collection('users').doc(userId).get();
-  if (!userSnap.exists) return null;
+  if (!userSnap.exists) throw new CheckoutOrganizationRequiredError();
   const data = userSnap.data() || {};
   if (inviteSeatUnclaimed(data)) throw new InviteSeatUnclaimedError();
   return requireCheckoutOrganizationId(data);
@@ -141,8 +144,23 @@ router.post('/create-checkout-session', requireFirebaseAuth, async (req, res) =>
     }
 
     const planId = resolvePlanIdFromPriceId(priceId, buildServerStripePriceMap()) || 'starter';
+    let adminReady = getApps().length > 0;
+    if (!adminReady && isProductionLike()) {
+      try {
+        ensureAdmin();
+      } catch (err) {
+        console.warn('[stripe] could not verify organization membership', err);
+        return res.status(503).json({ error: CHECKOUT_MEMBERSHIP_UNAVAILABLE });
+      }
+      adminReady = getApps().length > 0;
+    }
+    const adminGate = checkoutAdminGate(adminReady);
+    if (adminGate === 'unavailable') {
+      console.warn('[stripe] could not verify organization membership');
+      return res.status(503).json({ error: CHECKOUT_MEMBERSHIP_UNAVAILABLE });
+    }
     let organizationId: string | null = null;
-    if (getApps().length > 0) {
+    if (adminGate === 'read') {
       const membership = await resolveCheckoutMembership(() =>
         resolveOrgIdForUser(getAdminDb(), userId),
       );

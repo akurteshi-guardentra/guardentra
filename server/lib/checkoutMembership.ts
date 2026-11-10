@@ -18,6 +18,9 @@ export type CheckoutMembership =
   | { ok: true; organizationId: string | null }
   | { ok: false; status: 403 | 503; error: string };
 
+/** What checkout may do once Firebase Admin is or is not initialized. */
+export type CheckoutAdminGate = 'read' | 'continue' | 'unavailable';
+
 /** Blank, missing, or non-string organization ids are not a tenant membership. */
 export function requireCheckoutOrganizationId(profile: object): string {
   const orgId = (profile as { organizationId?: unknown }).organizationId;
@@ -27,17 +30,35 @@ export function requireCheckoutOrganizationId(profile: object): string {
 }
 
 /**
+ * Staging and production must read membership before Stripe opens a session.
+ * A local demo may continue while Admin is down. If Admin is still down after
+ * the production init attempt, the session is refused.
+ */
+export function checkoutAdminGate(
+  adminReady: boolean,
+  env: NodeJS.ProcessEnv = process.env,
+): CheckoutAdminGate {
+  if (adminReady) return 'read';
+  if (!isProductionLike(env)) return 'continue';
+  return 'unavailable';
+}
+
+/**
  * KI#12. Checkout must not open a Stripe session when the profile read fails,
- * when the invite seat is unclaimed, or when a profile has no organization id
- * outside a local demo. A missing profile still continues. A profile that
- * names an organization and omits the seat marker stays a member.
+ * when the invite seat is unclaimed, when the user profile is missing, or when
+ * a profile has no organization id outside a local demo. A missing profile and
+ * a blank organization id still continue on a local demo. A profile that names
+ * an organization and omits the seat marker stays a member.
  */
 export async function resolveCheckoutMembership(
   readOrganizationId: () => Promise<string | null>,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<CheckoutMembership> {
   try {
-    return { ok: true, organizationId: await readOrganizationId() };
+    const organizationId = await readOrganizationId();
+    const trimmed = typeof organizationId === 'string' ? organizationId.trim() : '';
+    if (!trimmed) throw new CheckoutOrganizationRequiredError();
+    return { ok: true, organizationId: trimmed };
   } catch (err) {
     if (err instanceof InviteSeatUnclaimedError) {
       return { ok: false, status: 403, error: err.message };
