@@ -1137,6 +1137,8 @@ describe('org decisions', () => {
       organizationId: 'org1',
       questions: [],
       answers: {},
+      // Existing decision tests assume an assessment the UI would already allow.
+      status: 'Under Review',
       ...initial,
     };
     const d = deps({
@@ -1161,6 +1163,7 @@ describe('org decisions', () => {
           organizationId: 'org1',
           questions: [],
           answers: {},
+          status: 'Under Review',
           submittedSnapshot: { submittedAt: '2026-10-07T12:00:00.000Z' },
         };
         const patch = await updater(current);
@@ -1396,6 +1399,7 @@ describe('org decisions', () => {
       organizationId: 'org1',
       questions: [],
       answers: {},
+      status: 'Under Review',
     };
     let committed: Record<string, unknown> | null = null;
     const d = deps({
@@ -1440,7 +1444,12 @@ describe('org decisions', () => {
     let patch: Record<string, unknown> | undefined;
     const d = deps({
       runAssessmentTransaction: vi.fn(async (_id, updater) => {
-        patch = await updater({ organizationId: 'org1', questions: [], answers: {} });
+        patch = await updater({
+          organizationId: 'org1',
+          questions: [],
+          answers: {},
+          status: 'Under Review',
+        });
         return patch!;
       }),
     });
@@ -1492,7 +1501,12 @@ describe('org decisions', () => {
     let patch: Record<string, unknown> | undefined;
     const d = deps({
       runAssessmentTransaction: vi.fn(async (_id, updater) => {
-        patch = await updater({ organizationId: 'org1', questions: [], answers: {} });
+        patch = await updater({
+          organizationId: 'org1',
+          questions: [],
+          answers: {},
+          status: 'Under Review',
+        });
         return patch!;
       }),
     });
@@ -1505,6 +1519,90 @@ describe('org decisions', () => {
     expect(res.statusCode).toBe(200);
     expect(patch!.decisionNotes).toBeNull();
     assertNoUndefinedValues(patch!);
+  });
+});
+
+describe('org decision readiness parity (#124)', () => {
+  function readinessDeps(current: Record<string, unknown>) {
+    let capturedPatch: Record<string, unknown> | null = null;
+    const d = deps({
+      runAssessmentTransaction: vi.fn(async (_id, updater) => {
+        const patch = await updater({
+          organizationId: 'org1',
+          questions: [],
+          answers: {},
+          ...current,
+        });
+        capturedPatch = patch;
+        return patch;
+      }),
+    });
+    return { d, getPatch: () => capturedPatch };
+  }
+
+  async function decide(
+    current: Record<string, unknown>,
+    outcome: string,
+    extra: Record<string, unknown> = {},
+  ) {
+    const { d, getPatch } = readinessDeps(current);
+    const res = mockRes();
+    await handleOrgDecision(
+      req({ token: 'org', body: { assessmentId: 'asmA', outcome, ...extra } }),
+      res as any,
+      d,
+    );
+    return { res, getPatch };
+  }
+
+  it('rejects a Not Started zero-progress assessment before any write', async () => {
+    const { res, getPatch } = await decide({ status: 'Not Started', progressPct: 0, progress: 0 }, 'approved');
+    expect(res.statusCode).toBe(409);
+    expect((res.body as { error?: string }).error).toMatch(/not been started/);
+    expect(getPatch()).toBeNull();
+  });
+
+  it('rejects a zero-progress assessment with no status', async () => {
+    const { res, getPatch } = await decide({ progress: 0 }, 'rejected');
+    expect(res.statusCode).toBe(409);
+    expect(getPatch()).toBeNull();
+  });
+
+  it('rejects In Progress when progress is still zero', async () => {
+    const { res, getPatch } = await decide({ status: 'In Progress', progressPct: 0, progress: 0 }, 'approved');
+    expect(res.statusCode).toBe(409);
+    expect(getPatch()).toBeNull();
+  });
+
+  it('allows a started in-progress assessment to be decided', async () => {
+    const { res, getPatch } = await decide({ status: 'In Progress', progressPct: 40, progress: 40 }, 'approved');
+    expect(res.statusCode).toBe(200);
+    expect(getPatch()?.decisionOutcome).toBe('approved');
+  });
+
+  it('allows an Under Review assessment even at zero progress', async () => {
+    const { res, getPatch } = await decide({ status: 'Under Review', progressPct: 0, progress: 0 }, 'approved');
+    expect(res.statusCode).toBe(200);
+    expect(getPatch()?.decisionOutcome).toBe('approved');
+  });
+
+  it('allows a Completed assessment to be decided', async () => {
+    const { res, getPatch } = await decide(
+      { status: 'Completed', progressPct: 100, progress: 100 },
+      'rejected',
+    );
+    expect(res.statusCode).toBe(200);
+    expect(getPatch()?.decisionOutcome).toBe('rejected');
+  });
+
+  it('keeps the terminal-decision rejection ahead of the readiness check', async () => {
+    const { res, getPatch } = await decide(
+      { status: 'Not Started', progressPct: 0, decisionOutcome: 'approved' },
+      'rejected',
+    );
+    expect(res.statusCode).toBe(409);
+    expect((res.body as { error?: string }).error).toMatch(/terminal decision already exists/);
+    expect(getPatch()).toBeNull();
   });
 });
 
@@ -1551,6 +1649,7 @@ describe('decision vendor projection (#124 findings 7–8)', () => {
           vendorId: 'vendor-1',
           questions: [],
           answers: {},
+          status: 'Under Review',
           submittedSnapshot: { submittedAt: '2026-10-30T12:00:00.000Z' },
         };
         const patch = await updater(current);
