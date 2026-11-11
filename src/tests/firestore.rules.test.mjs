@@ -276,6 +276,42 @@ async function main() {
     await assertFails(updateDoc(doc(claimDb, 'users/joiner-claim'), { seatCountApplied: false }));
   });
 
+  await check('unclaimed invite CAN read the org and CANNOT use tenant data', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users/joiner-locked'), {
+        organizationId: ORG,
+        role: 'admin',
+        inviteId: 'inv-locked',
+        seatCountApplied: false,
+      });
+      await setDoc(doc(ctx.firestore(), 'risks/locked-risk'), {
+        organizationId: ORG,
+        title: 'Visible only to settled members',
+      });
+    });
+    const lockedDb = testEnv.authenticatedContext('joiner-locked', {
+      email: 'locked@example.com',
+      email_verified: true,
+    }).firestore();
+    await assertSucceeds(getDoc(doc(lockedDb, 'organizations', ORG)));
+    await assertFails(getDoc(doc(lockedDb, 'risks/locked-risk')));
+    await assertFails(setDoc(doc(lockedDb, 'risks/locked-new'), {
+      organizationId: ORG,
+      title: 'Should not land',
+    }));
+    await assertFails(setDoc(doc(lockedDb, 'org_invites/inv-from-locked'), {
+      email: 'other@example.com',
+      status: 'pending',
+      organizationId: ORG,
+      role: 'member',
+    }));
+    await assertFails(updateDoc(doc(lockedDb, 'organizations', ORG), { name: 'Renamed' }));
+  });
+
+  await check('historical profile without the seat marker CAN still read tenant data', () =>
+    assertSucceeds(getDoc(doc(db, 'risks/locked-risk'))),
+  );
+
   console.log('\nUser profile role/orgId immutability (KI#6 audit):');
 
   await check('admin CAN update onboarded without touching role/orgId', () =>

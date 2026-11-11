@@ -21,20 +21,38 @@ service cloud.firestore {
     }
 
 
+    // Absence and true both count. False is an invite join that has not claimed
+    // its seat yet, and that profile must not read or write tenant data.
+    function callerSeatSettled() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('seatCountApplied', null) != false;
+    }
+
     function isOrgMember(orgId) {
       return isAuthenticated() &&
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId == orgId;
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId == orgId &&
+        callerSeatSettled();
     }
 
     function isDocOrgMember() {
       return isAuthenticated() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId == resource.data.organizationId;
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId == resource.data.organizationId &&
+        callerSeatSettled();
     }
 
     function isCreatingForOwnOrg() {
       return isAuthenticated() &&
-        request.resource.data.organizationId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId;
+        request.resource.data.organizationId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId &&
+        callerSeatSettled();
+    }
+
+    // The claim transaction has to read the org and raise seatCount before the
+    // marker flips. That is the only tenant access an unclaimed profile gets.
+    function isPendingSeatClaimant(orgId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId == orgId &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('seatCountApplied', null) == false;
     }
 
     function orgIdUnchanged() {
@@ -121,7 +139,8 @@ service cloud.firestore {
     function isAdmin() {
       return isAuthenticated() &&
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' &&
+        callerSeatSettled();
     }
 
     // Type guards used to add basic field-shape validation without a strict hasOnly()
@@ -325,7 +344,7 @@ service cloud.firestore {
 
     // Organizations Collection
     match /organizations/{orgId} {
-      allow read: if isAuthenticated() && isOrgMember(orgId);
+      allow read: if isOrgMember(orgId) || isPendingSeatClaimant(orgId);
       // Only a new user's atomic founder bootstrap may create its one org.
       allow create: if isAuthenticated()
         && !exists(/databases/$(database)/documents/users/$(request.auth.uid))
@@ -338,9 +357,14 @@ service cloud.firestore {
       // than vendorCount. A client write of that meter would reset the cap check in
       // the server vendor transaction. seatCount rises only inside the invite claim.
       // dataRegion is always immutable once set (admins included).
-      allow update: if isAuthenticated() && isOrgMember(orgId) && orgDataRegionPreserved() &&
+      allow update: if isAuthenticated() && orgDataRegionPreserved() &&
         billingFieldsUnchanged() && vendorCountUnchanged() && seatCountChangeIsOneStep() &&
-        (isAdmin() || onlyMemberWritableOrgFieldsChanged());
+        (
+          (isOrgMember(orgId) && (isAdmin() || onlyMemberWritableOrgFieldsChanged()))
+          || (isPendingSeatClaimant(orgId)
+              && onlyMemberWritableOrgFieldsChanged()
+              && request.resource.data.diff(resource.data).affectedKeys().hasAny(['seatCount']))
+        );
     }
 
     // Org invites: a brand-new signup (no org yet) must be able to look up
@@ -361,9 +385,10 @@ service cloud.firestore {
       // signup, when there is no admin in the request to reject.
       //
       // seatCount is maintained by src/lib/orgBootstrap.ts: set to 1 when an org is
-      // created, then incremented after the joining member's profile commits. A failed
-      // increment undercounts seats (KNOWN_ISSUES.md #12). That gap is the seat counter,
-      // not vendor create: client vendor creates are denied (#160).
+      // created, then incremented after the joining member's profile commits. Until
+      // that claim, seatCountApplied false is not a member: tenant reads and writes
+      // are denied. Historical profiles that omit the marker stay members.
+      // Client vendor creates are denied (#160).
       // Issue #61: invite role is allowlisted — forged privileged values cannot
       // be stored for later self-elevation at join time.
       allow create: if isCreatingForOwnOrg() && isAdmin()
