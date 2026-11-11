@@ -218,6 +218,27 @@ describe('bootstrapUserProfile tenant authority', () => {
     expect(updateDocMock).not.toHaveBeenCalled();
   });
 
+  it('a failed seat claim rejects and a later call can try again', async () => {
+    runTransactionMock.mockRejectedValue(new Error('unavailable'));
+    await expect(claimInviteSeat('uid-fail', 'org-invited')).rejects.toThrow('unavailable');
+    expect(runTransactionMock).toHaveBeenCalledTimes(3);
+    runTransactionMock.mockReset();
+    runTransactionMock.mockImplementation(async (_db: unknown, fn: (tx: {
+      get: (ref: { path?: string }) => Promise<ReturnType<typeof snap>>;
+      update: (ref: unknown, data: unknown) => void;
+    }) => Promise<void>) => {
+      await fn({
+        get: async (ref) => snap(String(ref.path).startsWith('users/') ? txUser : { seatCount: txSeat }),
+        update: (ref, data) => {
+          updateDocMock(ref, data);
+        },
+      });
+    });
+    await claimInviteSeat('uid-fail', 'org-invited');
+    expect(runTransactionMock).toHaveBeenCalledTimes(1);
+    expect(updateDocMock).toHaveBeenCalled();
+  });
+
   it('a second claim for the same uid does not run again', async () => {
     await claimInviteSeat('uid-once', 'org-invited');
     runTransactionMock.mockClear();
