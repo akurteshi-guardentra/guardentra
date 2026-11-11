@@ -139,6 +139,12 @@ describe('KI#12 checkout membership read', () => {
     expect(handler).toContain('CHECKOUT_MEMBERSHIP_UNAVAILABLE');
     expect(handler).toContain('if (!membership.ok)');
     expect(handler).toContain('return res.status(membership.status).json({ error: membership.error })');
+    expect(handler).toContain('catalogPlanIdForCheckoutPrice');
+    expect(handler).toContain('This price is not available.');
+    expect(handler.indexOf('catalogPlanIdForCheckoutPrice')).toBeLessThan(
+      handler.indexOf('resolveCheckoutMembership'),
+    );
+    expect(handler).not.toContain("|| 'starter'");
     expect(handler).not.toContain('if (getApps().length > 0)');
     expect(handler).not.toContain('could not resolve organizationId for checkout metadata');
 

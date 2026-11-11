@@ -14,9 +14,10 @@ import {
 } from '../lib/stripeWebhookIntegrity';
 import {
   buildServerStripePriceMap,
+  catalogPlanIdForCheckoutPrice,
   DEFAULT_PLAN_ID,
-  isPlanId,
   planCaps,
+  planIdForCompletedCheckout,
   resolvePlanIdFromPriceId,
   type PlanId,
 } from '../lib/plans';
@@ -128,6 +129,10 @@ router.post('/create-checkout-session', requireFirebaseAuth, async (req, res) =>
     if (!priceId || typeof priceId !== 'string') {
       return res.status(400).json({ error: 'priceId is required' });
     }
+    const planId = catalogPlanIdForCheckoutPrice(priceId, buildServerStripePriceMap());
+    if (!planId) {
+      return res.status(400).json({ error: 'This price is not available.' });
+    }
     if (!userId) {
       return res.status(401).json({ error: 'Could not determine the user for this checkout' });
     }
@@ -143,7 +148,6 @@ router.post('/create-checkout-session', requireFirebaseAuth, async (req, res) =>
       return res.status(503).json({ error: 'Billing is not configured yet. Contact support.' });
     }
 
-    const planId = resolvePlanIdFromPriceId(priceId, buildServerStripePriceMap()) || 'starter';
     let adminReady = getApps().length > 0;
     if (!adminReady && isProductionLike()) {
       try {
@@ -256,13 +260,14 @@ router.post('/webhook', async (req, res) => {
         'subscription',
       );
 
-      let planId: PlanId =
-        (isPlanId(session.metadata?.planId) && session.metadata.planId) || DEFAULT_PLAN_ID;
-
       const subscription = await stripe.subscriptions.retrieve(subscriptionId);
       const priceId = firstSubscriptionPriceId(subscription);
-      const fromPrice = resolvePlanIdFromPriceId(priceId, priceMap);
-      if (fromPrice) planId = fromPrice;
+      const planId = planIdForCompletedCheckout(priceId, priceMap);
+      if (!planId) {
+        throw new Error(
+          `Stripe webhook has no mapped plan for checkout subscription ${subscriptionId}`,
+        );
+      }
 
       const result = await db.runTransaction(async (tx) => {
         const processed = await tx.get(eventRef);

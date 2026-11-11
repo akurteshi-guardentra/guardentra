@@ -57,3 +57,27 @@ export function resolvePlanIdFromPriceId(
   if (!priceId) return null;
   return priceMap[priceId] || null;
 }
+
+/**
+ * Checkout may open a session only for an exact server-catalog price.
+ * An unknown price must not fall back to Starter: that fallback used to stamp
+ * Starter into session metadata, and the webhook then activated it.
+ */
+export function catalogPlanIdForCheckoutPrice(
+  priceId: unknown,
+  priceMap: Partial<Record<string, PlanId>>,
+): PlanId | null {
+  if (typeof priceId !== 'string' || priceId.length === 0) return null;
+  return resolvePlanIdFromPriceId(priceId, priceMap);
+}
+
+/**
+ * A completed checkout activates the subscription price's plan only.
+ * Session metadata is not a plan source.
+ */
+export function planIdForCompletedCheckout(
+  subscriptionPriceId: string | null | undefined,
+  priceMap: Partial<Record<string, PlanId>>,
+): PlanId | null {
+  return resolvePlanIdFromPriceId(subscriptionPriceId, priceMap);
+}
