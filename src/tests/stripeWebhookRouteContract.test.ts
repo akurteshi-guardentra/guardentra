@@ -41,7 +41,9 @@ describe('#144 Stripe webhook route contract', () => {
     expect(completion).toContain('planIdForCompletedCheckout');
     expect(completion).toContain('Stripe webhook has no mapped plan for checkout subscription');
     expect(completion).not.toContain('session.metadata?.planId');
-    expect(completion).not.toContain('DEFAULT_PLAN_ID');
+    // Unknown prices must still be refused. An inactive *mapped* subscription
+    // can legitimately reconcile to Starter, as subscription.updated does.
+    expect(completion).not.toMatch(/planIdForCompletedCheckout\([^;]+\)\s*\|\|/);
   });
 
   it('reconciles subscription events against Stripe current state before applying them', () => {

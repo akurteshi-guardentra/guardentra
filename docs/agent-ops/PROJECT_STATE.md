@@ -1,5 +1,18 @@
 # GuardEntra Project State
 
+## 2026-11-17 — #144 bounded checkout reconciliation checkpoint
+
+The independent finding in #144 comment 6898820689 was reproduced on published
+candidate fdc7e449b521babbcc05be2919dfe1e76f9d53e2: checkout completion granted
+active paid limits even when the retrieved subscription was inactive. Task branch
+`fix/144-checkout-current-status` now reuses the existing subscription.updated
+status/limit policy, retaining the catalog gate and atomic ledger/cursor guards.
+Actual-handler synthetic regressions plus existing focused billing suites pass
+43/43; TypeScript passes. Exact implementation SHA and remote CI belong to the
+task PR; no merge, deployment, provider or runtime acceptance is claimed here.
+See TASK_144_CHECKOUT_CURRENT_STATUS.md and the appended transition. This narrow
+checkpoint does not refresh the historical inventory below. Production NO-GO.
+
 > ## ⚠ STALE DISPATCH QUARANTINE — Issue #140
 >
 > This file is a **historical snapshot**, not current scheduling or release authority.

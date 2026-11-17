@@ -851,3 +851,24 @@ No Cloud SQL execution occurred. Fresh real fixture CI required after publicatio
 - Base: `release/rc-2026-10-08` at `caf27094`.
 - Deployment: **NOT DEPLOYED**. No code, rules, configuration, IAM, secret, or cloud change.
 - Rollback: revert the docs PR.
+
+
+## 2026-11-17 — #144 delayed checkout current-state correction (source only)
+
+- Source: owner instruction to fix blockers; #144 comment 6898820689.
+- Base: published candidate fdc7e449b521babbcc05be2919dfe1e76f9d53e2.
+- Writer: ChatGPT/Codex on fix/144-checkout-current-status, scoped takeover
+  announced in the existing execution thread; other agents' branches untouched.
+- Transition: reproduced inactive-subscription activation -> bounded source
+  correction and executable route regressions. The original 15-case diagnostic
+  had five expected failures; corrected focused suite has 43/43 PASS including
+  16 actual-handler cases. npm run lint and git diff --check PASS.
+- Behavior: inactive subscriptions reconcile to canceled/Starter; other current
+  statuses preserve existing subscription.updated policy. Unknown prices still
+  fail; atomic event ledger, duplicate/stale guards and mapping checks retained.
+- Exact implementation SHA/PR and remote CI: recorded in task PR, not inferred here.
+- Deployment: NOT DEPLOYED; no provider/database/payment/configuration mutation.
+- Limits: mocked external boundaries, not hosted Stripe/Firestore acceptance;
+  independent review and exact-head CI remain required. Production NO-GO.
+- Rollback: revert the correction commit before any release. No live rollback.
+- Packet: docs/agent-ops/TASK_144_CHECKOUT_CURRENT_STATUS.md.
