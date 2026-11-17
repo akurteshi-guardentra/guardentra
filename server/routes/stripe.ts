@@ -268,6 +268,14 @@ router.post('/webhook', async (req, res) => {
           `Stripe webhook has no mapped plan for checkout subscription ${subscriptionId}`,
         );
       }
+      // A delayed checkout event must reconcile the current subscription just
+      // like subscription.updated. Its completion is not proof it is still active.
+      const inactive =
+        subscription.status === 'canceled' ||
+        subscription.status === 'unpaid' ||
+        subscription.status === 'incomplete_expired';
+      const reconciledPlanId = inactive ? DEFAULT_PLAN_ID : planId;
+      const subscriptionStatus = inactive ? 'canceled' : subscription.status;
 
       const result = await db.runTransaction(async (tx) => {
         const processed = await tx.get(eventRef);
@@ -308,7 +316,7 @@ router.post('/webhook', async (req, res) => {
             {
               stripeCustomerId: customerId,
               stripeSubscriptionId: subscriptionId,
-              subscriptionStatus: 'active',
+              subscriptionStatus,
               ...cursorFields,
               updatedAt: FieldValue.serverTimestamp(),
             },
@@ -317,8 +325,8 @@ router.post('/webhook', async (req, res) => {
           tx.set(
             orgRef,
             {
-              ...buildOrgPlanPatch(planId, {
-                subscriptionStatus: 'active',
+              ...buildOrgPlanPatch(reconciledPlanId, {
+                subscriptionStatus,
                 stripeCustomerId: customerId,
                 stripeSubscriptionId: subscriptionId,
               }),
@@ -348,7 +356,7 @@ router.post('/webhook', async (req, res) => {
       } else if (result.stale) {
         console.log(`Stripe webhook stale event ignored: ${event.id}`);
       } else {
-        console.log(`Applied plan ${planId} for Stripe checkout event ${event.id}`);
+        console.log(`Applied plan ${reconciledPlanId} for Stripe checkout event ${event.id}`);
       }
       return res.send();
     }
