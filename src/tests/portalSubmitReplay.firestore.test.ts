@@ -218,8 +218,8 @@ describe.skipIf(!host)('portal submit vendor projection on the local Firestore e
     const assessment = (await db.collection('assessments').doc(assessmentId).get()).data();
     const vendor = (await db.collection('vendors').doc(vendorId).get()).data();
 
-    expect(res.statusCode).toBe(200);
-    expect((res.body as { deduplicated?: boolean }).deduplicated).toBe(true);
+    expect(res.statusCode).toBe(409);
+    expect((res.body as { error?: string }).error).toBe('A terminal decision already exists');
     expect(assessment?.status).toBe('Completed');
     expect(assessment?.decisionOutcome).toBe('conditional');
     expect(vendor?.assessmentStatus).toBe('Completed');
@@ -308,8 +308,8 @@ describe.skipIf(!host)('portal submit vendor projection on the local Firestore e
     const assessment = (await db.collection('assessments').doc(assessmentId).get()).data();
     const vendor = (await db.collection('vendors').doc(vendorId).get()).data();
     expect(attempts).toBeGreaterThan(1);
-    expect(res.statusCode).toBe(200);
-    expect((res.body as { deduplicated?: boolean }).deduplicated).toBe(true);
+    expect(res.statusCode).toBe(409);
+    expect((res.body as { error?: string }).error).toBe('A terminal decision already exists');
     expect(assessment?.status).toBe('Completed');
     expect(assessment?.decisionOutcome).toBe('conditional');
     expect(
