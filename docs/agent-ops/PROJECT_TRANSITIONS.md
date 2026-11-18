@@ -872,3 +872,27 @@ No Cloud SQL execution occurred. Fresh real fixture CI required after publicatio
   independent review and exact-head CI remain required. Production NO-GO.
 - Rollback: revert the correction commit before any release. No live rollback.
 - Packet: docs/agent-ops/TASK_144_CHECKOUT_CURRENT_STATUS.md.
+
+
+## 2026-11-18 — #74 browser audit material-boundary correction (source only)
+
+- Requirement: #74 follow-up 6944970308; Cursor source report thread
+  1794903633.948199; owner instruction to fix/continue blockers November 18.
+- Base: published #287 018ced4c8c602fb815897a5fa3b99d1061d96c98.
+- Writer/branch: ChatGPT/Codex, fix/74-client-audit-boundary; scoped takeover
+  announced before edits; no published audit correction or active writer receipt
+  found. Existing agent branches unchanged.
+- Transition: synthetic actual-handler reproduction (32 negative failures, four
+  positive passes) -> shared public emit parser refuses caller-supplied eventId
+  and journal-backed lifecycle types for BOTH single and batch requests.
+- Tests: 36 new boundary cases; focused seven-file audit suite 79/79 PASS;
+  TypeScript and diff check PASS. Actual parser/auth/emitIntent/identity code,
+  synthetic principals and mocked Firestore/SQL transports; not real PostgreSQL
+  concurrency, hosted audit integrity or live exploit evidence.
+- Server journal direct emit and deterministic mapping unchanged; later trusted
+  material emit queues normally and duplicate retry remains covered.
+- Exact SHA/PR/remote CI: task PR evidence. Not merged or deployed; no schema,
+  rules, IAM/secret, configuration, audit enablement or paid-resource changes.
+- Rollback: revert source commit. Independent review and hosted #74/#124 gates
+  remain open; production NO-GO, no readiness points inferred.
+- Packet: docs/agent-ops/TASK_74_CLIENT_AUDIT_BOUNDARY.md.

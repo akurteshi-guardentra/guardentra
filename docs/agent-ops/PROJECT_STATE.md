@@ -1,5 +1,17 @@
 # GuardEntra Project State
 
+## 2026-11-18 — #74 client audit trust-boundary checkpoint (source only)
+
+On published base 018ced4c8c602fb815897a5fa3b99d1061d96c98, synthetic actual-handler
+regressions reproduced browser control of canonical material event identities.
+Task branch `fix/74-client-audit-boundary` rejects client event IDs and server-journal
+lifecycle types in the shared single/batch HTTP parser. Trusted journal relay and
+SQL identity mapping are unchanged. The 36 new boundary cases pass; focused audit
+suites pass 79/79 and TypeScript passes. Exact commit/PR/CI are in the task handoff.
+No merge, deploy, live exploit, migration, rules/IAM/secret/config change or current
+hosted audit acceptance is claimed. Independent review and #74/#124 hosted proof
+remain required. See TASK_74_CLIENT_AUDIT_BOUNDARY.md and appended transition.
+
 ## 2026-11-17 — #144 bounded checkout reconciliation checkpoint
 
 The independent finding in #144 comment 6898820689 was reproduced on published
