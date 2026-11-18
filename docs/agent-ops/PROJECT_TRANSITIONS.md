@@ -872,3 +872,19 @@ No Cloud SQL execution occurred. Fresh real fixture CI required after publicatio
   independent review and exact-head CI remain required. Production NO-GO.
 - Rollback: revert the correction commit before any release. No live rollback.
 - Packet: docs/agent-ops/TASK_144_CHECKOUT_CURRENT_STATUS.md.
+
+## 2026-11-18 — #124 terminal assessment immutability (source only)
+
+- Source: owner fix/continue instruction; #124 comment 6973876255.
+- Base: published candidate 018ced4c8c602fb815897a5fa3b99d1061d96c98.
+- Writer: Cursor on cursor/terminal-assessment-immutable-c439. Audit parser
+  branch fix/74-client-audit-boundary was not edited. evidenceAccess.ts had no
+  newer open Claude writer.
+- Transition: terminal portal resubmit and client answer/comment/evidence
+  rewrite or correction reopen were possible after approved, conditional, or
+  rejected. Source rules and the submit transaction now refuse those outcomes
+  using the existing terminal-decision helper. remediate and decidedAt-only
+  records stay editable. No decision-clear policy.
+- Deployment: NOT DEPLOYED. No rules release, migration, or data rewrite.
+- Rollback: revert this commit before release. No live rollback.
+- Packet: docs/agent-ops/TASK_124_TERMINAL_ASSESSMENT.md.

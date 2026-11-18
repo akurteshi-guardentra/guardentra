@@ -1,5 +1,14 @@
 # GuardEntra Project State
 
+## 2026-11-18 — #124 terminal assessment source checkpoint
+
+Portal resubmit now refuses a stored approved, conditional, or rejected
+decision, including when the lifecycle looks reopened. Rules pin the same
+terminal outcomes against answer, comment, and evidence rewrites and against
+a client correction reopen. remediate and a bare decidedAt stay nonterminal.
+No rules deployment or hosted acceptance is claimed. See
+TASK_124_TERMINAL_ASSESSMENT.md. Production NO-GO.
+
 ## 2026-11-17 — #144 bounded checkout reconciliation checkpoint
 
 The independent finding in #144 comment 6898820689 was reproduced on published

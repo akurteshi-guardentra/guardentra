@@ -31,6 +31,7 @@ import {
   canSignOffAssessment,
   decisionRequiresNotes,
   decisionRequiresRemediationPlan,
+  hasTerminalOrgDecision,
   normalizeRemediationDueAt,
 } from '../../src/lib/vendor/assessmentLifecycle.ts';
 import type { DecisionOutcome } from '../../src/lib/vendor/assessmentExceptions.ts';
@@ -553,6 +554,9 @@ export async function handlePortalSubmit(req: Request, res: Response, deps: Evid
     const patch = await deps.runAssessmentTransaction(
       assessmentId,
       async (current) => {
+        if (hasTerminalOrgDecision(current)) {
+          throw new HttpError(409, 'A terminal decision already exists');
+        }
         if (portalSubmissionAlreadyRecorded(current)) return {};
         if (current.portalOpen !== true) {
           throw new HttpError(403, 'Portal is closed');

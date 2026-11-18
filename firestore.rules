@@ -578,14 +578,23 @@ service cloud.firestore {
         || resource.data.status == 'Sent';
     }
 
+    // Terminal outcomes match isTerminalDecisionOutcome: approved, conditional,
+    // rejected. remediate stays correctable. decidedAt alone is not terminal.
+    function orgDecisionIsTerminal() {
+      return resource.data.get('decisionOutcome', '') == 'approved'
+        || resource.data.get('decisionOutcome', '') == 'conditional'
+        || resource.data.get('decisionOutcome', '') == 'rejected';
+    }
+
     // Org browser clients may keep lifecycle state unchanged, or explicitly reopen
-    // a closed submission for correction. Under Review / Completed / Sent are all
-    // server-authoritative transitions.
+    // a nonterminal submission for correction. A terminal outcome cannot be reopened
+    // from the client. Under Review / Completed / Sent stay server-authoritative.
     function orgLifecycleTransitionAllowed() {
       let lifecycleChanged = request.resource.data.status != resource.data.status
         || request.resource.data.portalOpen != resource.data.portalOpen;
       return !lifecycleChanged || (
-        request.resource.data.status == 'In Progress'
+        !orgDecisionIsTerminal()
+        && request.resource.data.status == 'In Progress'
         && request.resource.data.portalOpen == true
         && request.resource.data.keys().hasAll([
           'correctionReopenedAt',
@@ -609,18 +618,36 @@ service cloud.firestore {
         );
     }
 
-    // Finalized decisions stay locked.
+    // Finalized decisions stay locked. This does not clear a decision and does not
+    // treat decidedAt by itself as a terminal outcome.
     function orgPreservesFinalDecision() {
       return !('decidedAt' in resource.data)
         || !request.resource.data.diff(resource.data).affectedKeys()
           .hasAny(['decisionOutcome', 'decisionNotes', 'decidedAt', 'decidedBy', 'decidedByName']);
     }
 
+    // After a terminal outcome, the live answer, comment, and evidence maps stay
+    // frozen, and a client cannot stamp a correction reopen onto that decision.
+    function orgPreservesTerminalSubmission() {
+      return !orgDecisionIsTerminal()
+        || !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny([
+            'answers',
+            'comments',
+            'evidenceByQuestion',
+            'correctionReopenedAt',
+            'correctionReopenedBy',
+            'correctionReason'
+          ]);
+    }
+
     // Portal writes require portalOpen=true (P0-1 closes portal on submit). Under Review
-    // stays read-only until org remediate or correction reopen — never self-service edit.
+    // stays read-only until org remediate or a nonterminal correction reopen.
+    // A terminal outcome is not writable even if the lifecycle fields were reopened.
     function portalMayWriteAssessment(assessmentId) {
       return isPortalSessionFor(assessmentId)
         && resource.data.portalOpen == true
+        && !orgDecisionIsTerminal()
         && resource.data.status != 'Completed'
         && (
           resource.data.status != 'Under Review'
@@ -640,6 +667,7 @@ service cloud.firestore {
           && childVendorBoundIfPresent()
           && orgPreservesSentSnapshot()
           && orgPreservesFinalDecision()
+          && orgPreservesTerminalSubmission()
           && orgPreservesEvidenceTrust()
           && orgDeniesClientDecisionWrites()
           && orgDeniesClientMaterialTransitionWrites()

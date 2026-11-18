@@ -575,7 +575,6 @@ describe('#158 durable portal submit', () => {
             ...open,
             portalOpen: false,
             status: 'Completed',
-            decisionOutcome: 'conditional',
             submittedSnapshot: {
               submittedAt: '2026-10-07T12:00:00.000Z',
               answers: { q1: 'Yes' },
@@ -631,6 +630,95 @@ describe('#158 durable portal submit', () => {
     expect(res.statusCode).toBe(200);
     expect((res.body as { deduplicated?: boolean }).deduplicated).toBe(true);
     expect(vendorWrites).toEqual([]);
+  });
+
+  const answeredQuestion = {
+    id: 'q1',
+    controlKey: 'q1',
+    category: 'Access Control',
+    question: 'MFA?',
+    type: 'yesno',
+    options: ['Yes', 'No'],
+    required: true,
+  };
+  const submitBody = {
+    assessmentId: 'asmA',
+    answers: { q1: 'Yes' },
+    comments: {},
+    evidenceByQuestion: {},
+    attestations: { accuracy: true, authority: true, attestedByName: 'Vendor User' },
+  };
+
+  it.each(['approved', 'conditional', 'rejected'] as const)(
+    'refuses a portal resubmit when the recorded decision is %s',
+    async (outcome) => {
+      let wrote = false;
+      const d = deps({
+        runAssessmentTransaction: vi.fn(async (_id, updater) => {
+          const patch = await updater({
+            organizationId: 'org1',
+            vendorId: 'vendor-1',
+            portalOpen: true,
+            status: 'In Progress',
+            decisionOutcome: outcome,
+            decidedAt: '2026-08-20T12:00:00.000Z',
+            questions: [answeredQuestion],
+            sentAt: '2026-10-07T10:00:00.000Z',
+            answers: { q1: 'Frozen' },
+            comments: { q1: 'Frozen' },
+            evidenceByQuestion: { q1: [{ name: 'frozen.pdf' }] },
+          });
+          wrote = true;
+          return patch;
+        }),
+      });
+      const res = mockRes();
+      await handlePortalSubmit(req({ token: 'portal-a', body: submitBody }), res as any, d);
+      expect(res.statusCode).toBe(409);
+      expect((res.body as { error?: string }).error).toBe('A terminal decision already exists');
+      expect(wrote).toBe(false);
+    },
+  );
+
+  it('still accepts a portal submit after a nonterminal remediate decision', async () => {
+    const d = deps({
+      runAssessmentTransaction: vi.fn(async (_id, updater) =>
+        updater({
+          organizationId: 'org1',
+          vendorId: 'vendor-1',
+          portalOpen: true,
+          status: 'In Progress',
+          decisionOutcome: 'remediate',
+          decidedAt: '2026-08-20T12:00:00.000Z',
+          questions: [answeredQuestion],
+          sentAt: '2026-10-07T10:00:00.000Z',
+        }),
+      ),
+    });
+    const res = mockRes();
+    await handlePortalSubmit(req({ token: 'portal-a', body: submitBody }), res as any, d);
+    expect(res.statusCode).toBe(200);
+    expect((res.body as { deduplicated?: boolean }).deduplicated).toBe(false);
+  });
+
+  it('does not treat decidedAt alone as a terminal resubmit lock', async () => {
+    const d = deps({
+      runAssessmentTransaction: vi.fn(async (_id, updater) =>
+        updater({
+          organizationId: 'org1',
+          vendorId: 'vendor-1',
+          portalOpen: true,
+          status: 'In Progress',
+          decidedAt: '2026-08-20T12:00:00.000Z',
+          questions: [answeredQuestion],
+          sentAt: '2026-10-07T10:00:00.000Z',
+        }),
+      ),
+    });
+    const res = mockRes();
+    await handlePortalSubmit(req({ token: 'portal-a', body: submitBody }), res as any, d);
+    expect(res.statusCode).toBe(200);
+    expect((res.body as { deduplicated?: boolean }).deduplicated).toBe(false);
   });
 });
 

@@ -793,6 +793,119 @@ async function main() {
     ),
   );
 
+  console.log('\n#124 terminal assessment immutability:');
+
+  const terminalShape = {
+    organizationId: ORG,
+    vendorId: 'v1',
+    vendorName: 'Terminal Co',
+    status: 'Completed',
+    portalOpen: false,
+    progressPct: 100,
+    progress: 100,
+    answers: { q1: 'Yes' },
+    comments: { q1: 'original' },
+    evidenceByQuestion: { q1: [{ name: 'frozen.pdf' }] },
+    versionLocked: true,
+    sentAt: '2026-08-01T00:00:00.000Z',
+    decidedAt: '2026-08-20T12:00:00.000Z',
+    decidedBy: 'member-1',
+  };
+
+  for (const outcome of ['approved', 'conditional', 'rejected']) {
+    const id = `asm-terminal-${outcome}`;
+    const reopenedId = `asm-terminal-open-${outcome}`;
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `assessments/${id}`), {
+        ...terminalShape,
+        decisionOutcome: outcome,
+      });
+      await setDoc(doc(ctx.firestore(), `assessments/${reopenedId}`), {
+        ...terminalShape,
+        decisionOutcome: outcome,
+        status: 'In Progress',
+        portalOpen: true,
+      });
+    });
+    const portal = testEnv
+      .authenticatedContext(`portal-terminal-${outcome}`, { portalAssessmentId: reopenedId })
+      .firestore();
+
+    await check(`org member CANNOT rewrite answers after ${outcome}`, () =>
+      assertFails(updateDoc(doc(db, 'assessments', id), { answers: { q1: 'Tampered' } })),
+    );
+    await check(`org member CANNOT rewrite comments after ${outcome}`, () =>
+      assertFails(updateDoc(doc(db, 'assessments', id), { comments: { q1: 'changed' } })),
+    );
+    await check(`org member CANNOT rewrite evidence after ${outcome}`, () =>
+      assertFails(
+        updateDoc(doc(db, 'assessments', id), {
+          evidenceByQuestion: { q1: [{ name: 'replaced.pdf' }] },
+        }),
+      ),
+    );
+    await check(`org member CANNOT correction-reopen a ${outcome} assessment`, () =>
+      assertFails(
+        updateDoc(doc(db, 'assessments', id), {
+          portalOpen: true,
+          status: 'In Progress',
+          correctionReopenedAt: '2026-08-21T09:00:00.000Z',
+          correctionReopenedBy: 'admin@example.com',
+          correctionReason: 'too late',
+        }),
+      ),
+    );
+    await check(`portal CANNOT rewrite answers after ${outcome} even if the portal looks open`, () =>
+      assertFails(
+        updateDoc(doc(portal, 'assessments', reopenedId), {
+          answers: { q1: 'Replaced' },
+          status: 'In Progress',
+          updatedAt: '2026-08-21T10:00:00.000Z',
+        }),
+      ),
+    );
+  }
+
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'assessments/asm-remediate-open'), {
+      ...terminalShape,
+      decisionOutcome: 'remediate',
+      status: 'Under Review',
+      portalOpen: true,
+    });
+    await setDoc(doc(ctx.firestore(), 'assessments/asm-dated-nonterminal'), {
+      ...terminalShape,
+      status: 'In Progress',
+      portalOpen: true,
+    });
+  });
+
+  await check('org member CAN correct answers after a nonterminal remediate decision', () =>
+    assertSucceeds(
+      updateDoc(doc(db, 'assessments', 'asm-remediate-open'), {
+        answers: { q1: 'Yes', q2: 'Updated' },
+      }),
+    ),
+  );
+  await check('org member CAN correction-reopen a nonterminal remediate decision', () =>
+    assertSucceeds(
+      updateDoc(doc(db, 'assessments', 'asm-remediate-open'), {
+        portalOpen: true,
+        status: 'In Progress',
+        correctionReopenedAt: '2026-08-21T09:00:00.000Z',
+        correctionReopenedBy: 'admin@example.com',
+        correctionReason: 'Follow-up evidence',
+      }),
+    ),
+  );
+  await check('decidedAt alone does not freeze answers', () =>
+    assertSucceeds(
+      updateDoc(doc(db, 'assessments', 'asm-dated-nonterminal'), {
+        answers: { q1: 'Still editable' },
+      }),
+    ),
+  );
+
   await check('encoded trust-map keys with periods stay distinct map entries', async () => {
     const pathV2 = `portal/${ASSESS_T}/policy.v2.pdf`;
     const pathPdf = `portal/${ASSESS_T}/policy.pdf`;
