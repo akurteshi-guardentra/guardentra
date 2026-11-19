@@ -873,6 +873,29 @@ No Cloud SQL execution occurred. Fresh real fixture CI required after publicatio
 - Rollback: revert the correction commit before any release. No live rollback.
 - Packet: docs/agent-ops/TASK_144_CHECKOUT_CURRENT_STATUS.md.
 
+## 2026-11-18 — #74 browser audit material-boundary correction (source only)
+
+- Requirement: #74 follow-up 6944970308; Cursor source report thread
+  1794903633.948199; owner instruction to fix/continue blockers November 18.
+- Base: published #287 018ced4c8c602fb815897a5fa3b99d1061d96c98.
+- Writer/branch: ChatGPT/Codex, fix/74-client-audit-boundary; scoped takeover
+  announced before edits; no published audit correction or active writer receipt
+  found. Existing agent branches unchanged.
+- Transition: synthetic actual-handler reproduction (32 negative failures, four
+  positive passes) -> shared public emit parser refuses caller-supplied eventId
+  and journal-backed lifecycle types for BOTH single and batch requests.
+- Tests: 36 new boundary cases; focused seven-file audit suite 79/79 PASS;
+  TypeScript and diff check PASS. Actual parser/auth/emitIntent/identity code,
+  synthetic principals and mocked Firestore/SQL transports; not real PostgreSQL
+  concurrency, hosted audit integrity or live exploit evidence.
+- Server journal direct emit and deterministic mapping unchanged; later trusted
+  material emit queues normally and duplicate retry remains covered.
+- Exact SHA/PR/remote CI: task PR evidence. Not merged or deployed; no schema,
+  rules, IAM/secret, configuration, audit enablement or paid-resource changes.
+- Rollback: revert source commit. Independent review and hosted #74/#124 gates
+  remain open; production NO-GO, no readiness points inferred.
+- Packet: docs/agent-ops/TASK_74_CLIENT_AUDIT_BOUNDARY.md.
+
 ## 2026-11-18 — #124 terminal assessment immutability (source only)
 
 - Source: owner fix/continue instruction; #124 comment 6973876255.
@@ -888,3 +911,12 @@ No Cloud SQL execution occurred. Fresh real fixture CI required after publicatio
 - Deployment: NOT DEPLOYED. No rules release, migration, or data rewrite.
 - Rollback: revert this commit before release. No live rollback.
 - Packet: docs/agent-ops/TASK_124_TERMINAL_ASSESSMENT.md.
+
+## 2026-11-19 — combine #288 into the #289 task branch (source only)
+
+- Operation: normal merge of published `f01d446f372add5deb9422a05ec8efd6eff141b6`
+  into `cursor/terminal-assessment-immutable-c439`. No force-push or history rewrite.
+- Conflicts: `PROJECT_STATE.md` and `PROJECT_TRANSITIONS.md` only. Both 2026-11-18
+  entries above are preserved. No application-code content was rewritten.
+- Deployment: NOT DEPLOYED. Not an RC or main merge. No rules, config, IAM, or secret change.
+- Rollback: revert the merge commit before release. The published #288 commit stays on its own branch.

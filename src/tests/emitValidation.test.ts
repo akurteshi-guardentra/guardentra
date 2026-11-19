@@ -5,13 +5,13 @@ describe('parseAuditEmitBody', () => {
   it('accepts a minimal valid emit', () => {
     const parsed = parseAuditEmitBody({
       tenantId: 'org_1',
-      eventType: 'vendor.created',
+      eventType: 'answer.saved',
       payload: { name: 'Acme' },
     });
     expect(parsed.ok).toBe(true);
     if (parsed.ok) {
       expect(parsed.value.tenantId).toBe('org_1');
-      expect(parsed.value.eventType).toBe('vendor.created');
+      expect(parsed.value.eventType).toBe('answer.saved');
     }
   });
 

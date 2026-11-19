@@ -1,5 +1,13 @@
 # GuardEntra Project State
 
+## 2026-11-19 — combined source tree, not a release
+
+The #124 terminal-assessment commits and published #288 audit-boundary commit
+`f01d446f372add5deb9422a05ec8efd6eff141b6` are together on
+`cursor/terminal-assessment-immutable-c439`. The two 2026-11-18 checkpoints
+below stay as written. This is not an RC merge, rules deployment, or hosted
+acceptance. Production NO-GO.
+
 ## 2026-11-18 — #124 terminal assessment source checkpoint
 
 Portal resubmit now refuses a stored approved, conditional, or rejected
@@ -8,6 +16,18 @@ terminal outcomes against answer, comment, and evidence rewrites and against
 a client correction reopen. remediate and a bare decidedAt stay nonterminal.
 No rules deployment or hosted acceptance is claimed. See
 TASK_124_TERMINAL_ASSESSMENT.md. Production NO-GO.
+
+## 2026-11-18 — #74 client audit trust-boundary checkpoint (source only)
+
+On published base 018ced4c8c602fb815897a5fa3b99d1061d96c98, synthetic actual-handler
+regressions reproduced browser control of canonical material event identities.
+Task branch `fix/74-client-audit-boundary` rejects client event IDs and server-journal
+lifecycle types in the shared single/batch HTTP parser. Trusted journal relay and
+SQL identity mapping are unchanged. The 36 new boundary cases pass; focused audit
+suites pass 79/79 and TypeScript passes. Exact commit/PR/CI are in the task handoff.
+No merge, deploy, live exploit, migration, rules/IAM/secret/config change or current
+hosted audit acceptance is claimed. Independent review and #74/#124 hosted proof
+remain required. See TASK_74_CLIENT_AUDIT_BOUNDARY.md and appended transition.
 
 ## 2026-11-17 — #144 bounded checkout reconciliation checkpoint
 
