@@ -353,7 +353,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 if (pendingWrite) return;
                 try {
                   await claimInviteSeat(currentUser.uid, cloudProfile.organizationId);
+                  if (disposed || activeUser?.uid !== currentUser.uid) return;
                   const fresh = await getDoc(userRef);
+                  if (disposed || activeUser?.uid !== currentUser.uid) return;
                   if (!fresh.exists()) return;
                   const settled = fresh.data() as UserProfile;
                   if (settled.seatCountApplied === false) {
