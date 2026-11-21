@@ -74,11 +74,11 @@ function unclaimedSnap() {
 }
 
 function installMocks() {
-  vi.mocked(onAuthStateChanged).mockImplementation(((_auth, cb) => {
-    harness.authCb = cb as (user: UserStub | null) => void;
+  vi.mocked(onAuthStateChanged).mockImplementation(((_auth: unknown, cb: (user: UserStub | null) => void) => {
+    harness.authCb = cb;
     return vi.fn();
   }) as typeof onAuthStateChanged);
-  vi.mocked(onSnapshot).mockImplementation(((_ref, ...args: unknown[]) => {
+  vi.mocked(onSnapshot).mockImplementation(((_ref: unknown, ...args: unknown[]) => {
     if (args[0] && typeof args[0] === 'object') args.shift();
     harness.snapshot = args[0] as (snap: unknown) => void | Promise<void>;
     return vi.fn();
