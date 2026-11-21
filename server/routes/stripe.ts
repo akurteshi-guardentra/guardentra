@@ -14,12 +14,21 @@ import {
 } from '../lib/stripeWebhookIntegrity';
 import {
   buildServerStripePriceMap,
+  catalogPlanIdForCheckoutPrice,
   DEFAULT_PLAN_ID,
-  isPlanId,
   planCaps,
+  planIdForCompletedCheckout,
   resolvePlanIdFromPriceId,
   type PlanId,
 } from '../lib/plans';
+import {
+  CHECKOUT_MEMBERSHIP_UNAVAILABLE,
+  CheckoutOrganizationRequiredError,
+  checkoutAdminGate,
+  requireCheckoutOrganizationId,
+  resolveCheckoutMembership,
+} from '../lib/checkoutMembership';
+import { InviteSeatUnclaimedError, inviteSeatUnclaimed } from '../lib/inviteSeat';
 
 const router = Router();
 
@@ -93,11 +102,12 @@ export function appBaseUrl(env: NodeJS.ProcessEnv = process.env): string | null 
   return isProductionLike(env) ? null : 'http://localhost:8080';
 }
 
-async function resolveOrgIdForUser(db: Firestore, userId: string): Promise<string | null> {
+async function resolveOrgIdForUser(db: Firestore, userId: string): Promise<string> {
   const userSnap = await db.collection('users').doc(userId).get();
-  if (!userSnap.exists) return null;
-  const orgId = userSnap.data()?.organizationId;
-  return typeof orgId === 'string' && orgId ? orgId : null;
+  if (!userSnap.exists) throw new CheckoutOrganizationRequiredError();
+  const data = userSnap.data() || {};
+  if (inviteSeatUnclaimed(data)) throw new InviteSeatUnclaimedError();
+  return requireCheckoutOrganizationId(data);
 }
 
 function firstSubscriptionPriceId(subscription: Stripe.Subscription): string | null {
@@ -119,6 +129,10 @@ router.post('/create-checkout-session', requireFirebaseAuth, async (req, res) =>
     if (!priceId || typeof priceId !== 'string') {
       return res.status(400).json({ error: 'priceId is required' });
     }
+    const planId = catalogPlanIdForCheckoutPrice(priceId, buildServerStripePriceMap());
+    if (!planId) {
+      return res.status(400).json({ error: 'This price is not available.' });
+    }
     if (!userId) {
       return res.status(401).json({ error: 'Could not determine the user for this checkout' });
     }
@@ -134,14 +148,30 @@ router.post('/create-checkout-session', requireFirebaseAuth, async (req, res) =>
       return res.status(503).json({ error: 'Billing is not configured yet. Contact support.' });
     }
 
-    const planId = resolvePlanIdFromPriceId(priceId, buildServerStripePriceMap()) || 'starter';
-    let organizationId: string | null = null;
-    if (getApps().length > 0) {
+    let adminReady = getApps().length > 0;
+    if (!adminReady && isProductionLike()) {
       try {
-        organizationId = await resolveOrgIdForUser(getAdminDb(), userId);
+        ensureAdmin();
       } catch (err) {
-        console.warn('[stripe] could not resolve organizationId for checkout metadata', err);
+        console.warn('[stripe] could not verify organization membership', err);
+        return res.status(503).json({ error: CHECKOUT_MEMBERSHIP_UNAVAILABLE });
       }
+      adminReady = getApps().length > 0;
+    }
+    const adminGate = checkoutAdminGate(adminReady);
+    if (adminGate === 'unavailable') {
+      console.warn('[stripe] could not verify organization membership');
+      return res.status(503).json({ error: CHECKOUT_MEMBERSHIP_UNAVAILABLE });
+    }
+    let organizationId: string | null = null;
+    if (adminGate === 'read') {
+      const membership = await resolveCheckoutMembership(() =>
+        resolveOrgIdForUser(getAdminDb(), userId),
+      );
+      if (!membership.ok) {
+        return res.status(membership.status).json({ error: membership.error });
+      }
+      organizationId = membership.organizationId;
     }
 
     const session = await stripe.checkout.sessions.create({
@@ -230,13 +260,22 @@ router.post('/webhook', async (req, res) => {
         'subscription',
       );
 
-      let planId: PlanId =
-        (isPlanId(session.metadata?.planId) && session.metadata.planId) || DEFAULT_PLAN_ID;
-
       const subscription = await stripe.subscriptions.retrieve(subscriptionId);
       const priceId = firstSubscriptionPriceId(subscription);
-      const fromPrice = resolvePlanIdFromPriceId(priceId, priceMap);
-      if (fromPrice) planId = fromPrice;
+      const planId = planIdForCompletedCheckout(priceId, priceMap);
+      if (!planId) {
+        throw new Error(
+          `Stripe webhook has no mapped plan for checkout subscription ${subscriptionId}`,
+        );
+      }
+      // A delayed checkout event must reconcile the current subscription just
+      // like subscription.updated. Its completion is not proof it is still active.
+      const inactive =
+        subscription.status === 'canceled' ||
+        subscription.status === 'unpaid' ||
+        subscription.status === 'incomplete_expired';
+      const reconciledPlanId = inactive ? DEFAULT_PLAN_ID : planId;
+      const subscriptionStatus = inactive ? 'canceled' : subscription.status;
 
       const result = await db.runTransaction(async (tx) => {
         const processed = await tx.get(eventRef);
@@ -277,7 +316,7 @@ router.post('/webhook', async (req, res) => {
             {
               stripeCustomerId: customerId,
               stripeSubscriptionId: subscriptionId,
-              subscriptionStatus: 'active',
+              subscriptionStatus,
               ...cursorFields,
               updatedAt: FieldValue.serverTimestamp(),
             },
@@ -286,8 +325,8 @@ router.post('/webhook', async (req, res) => {
           tx.set(
             orgRef,
             {
-              ...buildOrgPlanPatch(planId, {
-                subscriptionStatus: 'active',
+              ...buildOrgPlanPatch(reconciledPlanId, {
+                subscriptionStatus,
                 stripeCustomerId: customerId,
                 stripeSubscriptionId: subscriptionId,
               }),
@@ -317,7 +356,7 @@ router.post('/webhook', async (req, res) => {
       } else if (result.stale) {
         console.log(`Stripe webhook stale event ignored: ${event.id}`);
       } else {
-        console.log(`Applied plan ${planId} for Stripe checkout event ${event.id}`);
+        console.log(`Applied plan ${reconciledPlanId} for Stripe checkout event ${event.id}`);
       }
       return res.send();
     }

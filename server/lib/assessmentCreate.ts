@@ -4,6 +4,7 @@ import type { Firestore } from 'firebase-admin/firestore';
 import type { Request, Response } from 'express';
 import { ensureAdmin } from '../middleware/requireFirebaseAuth.ts';
 import { getAdminDb } from './adminDb.ts';
+import { INVITE_SEAT_UNCLAIMED_MESSAGE, inviteSeatUnclaimed } from './inviteSeat.ts';
 import {
   commitPreparedMaterialAuditIntent,
   materialAuditEventId,
@@ -155,6 +156,9 @@ export async function handleAssessmentCreate(
     if (!organizationId || !['admin', 'owner', 'member'].includes(role)) {
       throw new AssessmentCreateError(403, 'Organization membership required.');
     }
+    if (inviteSeatUnclaimed(userData)) {
+      throw new AssessmentCreateError(403, INVITE_SEAT_UNCLAIMED_MESSAGE);
+    }
 
     const assessmentId = requestAssessmentId(organizationId, vendorId, requestId);
     const assessmentRef = db.collection('assessments').doc(assessmentId);
@@ -170,11 +174,15 @@ export async function handleAssessmentCreate(
         tx.get(orgRef),
       ]);
 
+      const currentUser = currentUserSnap.data();
       if (
         !currentUserSnap.exists ||
-        String(currentUserSnap.data()?.organizationId || '') !== organizationId
+        String(currentUser?.organizationId || '') !== organizationId
       ) {
         throw new AssessmentCreateError(403, 'Organization membership changed; retry.');
+      }
+      if (inviteSeatUnclaimed(currentUser)) {
+        throw new AssessmentCreateError(403, INVITE_SEAT_UNCLAIMED_MESSAGE);
       }
 
       if (assessmentSnap.exists) {

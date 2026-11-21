@@ -276,6 +276,42 @@ async function main() {
     await assertFails(updateDoc(doc(claimDb, 'users/joiner-claim'), { seatCountApplied: false }));
   });
 
+  await check('unclaimed invite CAN read the org and CANNOT use tenant data', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users/joiner-locked'), {
+        organizationId: ORG,
+        role: 'admin',
+        inviteId: 'inv-locked',
+        seatCountApplied: false,
+      });
+      await setDoc(doc(ctx.firestore(), 'risks/locked-risk'), {
+        organizationId: ORG,
+        title: 'Visible only to settled members',
+      });
+    });
+    const lockedDb = testEnv.authenticatedContext('joiner-locked', {
+      email: 'locked@example.com',
+      email_verified: true,
+    }).firestore();
+    await assertSucceeds(getDoc(doc(lockedDb, 'organizations', ORG)));
+    await assertFails(getDoc(doc(lockedDb, 'risks/locked-risk')));
+    await assertFails(setDoc(doc(lockedDb, 'risks/locked-new'), {
+      organizationId: ORG,
+      title: 'Should not land',
+    }));
+    await assertFails(setDoc(doc(lockedDb, 'org_invites/inv-from-locked'), {
+      email: 'other@example.com',
+      status: 'pending',
+      organizationId: ORG,
+      role: 'member',
+    }));
+    await assertFails(updateDoc(doc(lockedDb, 'organizations', ORG), { name: 'Renamed' }));
+  });
+
+  await check('historical profile without the seat marker CAN still read tenant data', () =>
+    assertSucceeds(getDoc(doc(db, 'risks/locked-risk'))),
+  );
+
   console.log('\nUser profile role/orgId immutability (KI#6 audit):');
 
   await check('admin CAN update onboarded without touching role/orgId', () =>
@@ -757,6 +793,119 @@ async function main() {
     ),
   );
 
+  console.log('\n#124 terminal assessment immutability:');
+
+  const terminalShape = {
+    organizationId: ORG,
+    vendorId: 'v1',
+    vendorName: 'Terminal Co',
+    status: 'Completed',
+    portalOpen: false,
+    progressPct: 100,
+    progress: 100,
+    answers: { q1: 'Yes' },
+    comments: { q1: 'original' },
+    evidenceByQuestion: { q1: [{ name: 'frozen.pdf' }] },
+    versionLocked: true,
+    sentAt: '2026-08-01T00:00:00.000Z',
+    decidedAt: '2026-08-20T12:00:00.000Z',
+    decidedBy: 'member-1',
+  };
+
+  for (const outcome of ['approved', 'conditional', 'rejected']) {
+    const id = `asm-terminal-${outcome}`;
+    const reopenedId = `asm-terminal-open-${outcome}`;
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `assessments/${id}`), {
+        ...terminalShape,
+        decisionOutcome: outcome,
+      });
+      await setDoc(doc(ctx.firestore(), `assessments/${reopenedId}`), {
+        ...terminalShape,
+        decisionOutcome: outcome,
+        status: 'In Progress',
+        portalOpen: true,
+      });
+    });
+    const portal = testEnv
+      .authenticatedContext(`portal-terminal-${outcome}`, { portalAssessmentId: reopenedId })
+      .firestore();
+
+    await check(`org member CANNOT rewrite answers after ${outcome}`, () =>
+      assertFails(updateDoc(doc(db, 'assessments', id), { answers: { q1: 'Tampered' } })),
+    );
+    await check(`org member CANNOT rewrite comments after ${outcome}`, () =>
+      assertFails(updateDoc(doc(db, 'assessments', id), { comments: { q1: 'changed' } })),
+    );
+    await check(`org member CANNOT rewrite evidence after ${outcome}`, () =>
+      assertFails(
+        updateDoc(doc(db, 'assessments', id), {
+          evidenceByQuestion: { q1: [{ name: 'replaced.pdf' }] },
+        }),
+      ),
+    );
+    await check(`org member CANNOT correction-reopen a ${outcome} assessment`, () =>
+      assertFails(
+        updateDoc(doc(db, 'assessments', id), {
+          portalOpen: true,
+          status: 'In Progress',
+          correctionReopenedAt: '2026-08-21T09:00:00.000Z',
+          correctionReopenedBy: 'admin@example.com',
+          correctionReason: 'too late',
+        }),
+      ),
+    );
+    await check(`portal CANNOT rewrite answers after ${outcome} even if the portal looks open`, () =>
+      assertFails(
+        updateDoc(doc(portal, 'assessments', reopenedId), {
+          answers: { q1: 'Replaced' },
+          status: 'In Progress',
+          updatedAt: '2026-08-21T10:00:00.000Z',
+        }),
+      ),
+    );
+  }
+
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'assessments/asm-remediate-open'), {
+      ...terminalShape,
+      decisionOutcome: 'remediate',
+      status: 'Under Review',
+      portalOpen: true,
+    });
+    await setDoc(doc(ctx.firestore(), 'assessments/asm-dated-nonterminal'), {
+      ...terminalShape,
+      status: 'In Progress',
+      portalOpen: true,
+    });
+  });
+
+  await check('org member CAN correct answers after a nonterminal remediate decision', () =>
+    assertSucceeds(
+      updateDoc(doc(db, 'assessments', 'asm-remediate-open'), {
+        answers: { q1: 'Yes', q2: 'Updated' },
+      }),
+    ),
+  );
+  await check('org member CAN correction-reopen a nonterminal remediate decision', () =>
+    assertSucceeds(
+      updateDoc(doc(db, 'assessments', 'asm-remediate-open'), {
+        portalOpen: true,
+        status: 'In Progress',
+        correctionReopenedAt: '2026-08-21T09:00:00.000Z',
+        correctionReopenedBy: 'admin@example.com',
+        correctionReason: 'Follow-up evidence',
+      }),
+    ),
+  );
+  await check('decidedAt alone does not freeze answers', () =>
+    assertSucceeds(
+      updateDoc(doc(db, 'assessments', 'asm-dated-nonterminal'), {
+        answers: { q1: 'Still editable' },
+      }),
+    ),
+  );
+
   await check('encoded trust-map keys with periods stay distinct map entries', async () => {
     const pathV2 = `portal/${ASSESS_T}/policy.v2.pdf`;
     const pathPdf = `portal/${ASSESS_T}/policy.pdf`;
@@ -1027,12 +1176,62 @@ async function main() {
     ),
   );
 
-  await check('valid invited bootstrap (member + inviteId) SUCCEEDS', () =>
+  await check('invited bootstrap without seatCountApplied is REJECTED', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'org_invites/inv-nomarker-61'), {
+        email: 'nomarker61@example.com',
+        status: 'pending',
+        organizationId: ORG,
+        role: 'member',
+      });
+    });
+    const nomarkerDb = testEnv
+      .authenticatedContext('invited-nomarker-61', {
+        email: 'nomarker61@example.com',
+        email_verified: true,
+      })
+      .firestore();
+    await assertFails(
+      setDoc(doc(nomarkerDb, 'users/invited-nomarker-61'), {
+        organizationId: ORG,
+        role: 'member',
+        inviteId: 'inv-nomarker-61',
+      }),
+    );
+  });
+
+  await check('invited bootstrap CANNOT write seatCountApplied true at create', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'org_invites/inv-preclaimed-61'), {
+        email: 'preclaimed61@example.com',
+        status: 'pending',
+        organizationId: ORG,
+        role: 'member',
+      });
+    });
+    const preclaimedDb = testEnv
+      .authenticatedContext('invited-preclaimed-61', {
+        email: 'preclaimed61@example.com',
+        email_verified: true,
+      })
+      .firestore();
+    await assertFails(
+      setDoc(doc(preclaimedDb, 'users/invited-preclaimed-61'), {
+        organizationId: ORG,
+        role: 'member',
+        inviteId: 'inv-preclaimed-61',
+        seatCountApplied: true,
+      }),
+    );
+  });
+
+  await check('valid invited bootstrap (member + inviteId + unclaimed marker) SUCCEEDS', () =>
     assertSucceeds(
       setDoc(doc(invitedDb, 'users/invited-61'), {
         organizationId: ORG,
         role: 'member',
         inviteId: 'inv-member-61',
+        seatCountApplied: false,
       }),
     ),
   );
@@ -1053,6 +1252,74 @@ async function main() {
     });
     await assertSucceeds(batch.commit());
   });
+
+  await check('founder bootstrap CANNOT store an unclaimed seat marker', async () => {
+    const markedFounderDb = testEnv
+      .authenticatedContext('founder-marker-61', { email: 'founder-marker@example.com' })
+      .firestore();
+    const batch = writeBatch(markedFounderDb);
+    batch.set(doc(markedFounderDb, 'organizations/founder-marker-org-61'), {
+      name: "Founder's Organization",
+      autoCreated: true,
+      seatCount: 1,
+      vendorCount: 0,
+      vendorCap: 25,
+    });
+    batch.set(doc(markedFounderDb, 'users/founder-marker-61'), {
+      organizationId: 'founder-marker-org-61',
+      role: 'admin',
+      email: 'founder-marker@example.com',
+      seatCountApplied: false,
+    });
+    await assertFails(batch.commit());
+  });
+
+  // #160: create-time meters. Update rules already freeze vendorCount, so a founder
+  // batch is the remaining way to start the cap check below zero or omit the seat.
+  async function denyFounderCounters(label, orgFields, omit = []) {
+    const uid = `founder-160-${label}`;
+    const orgId = `founder-org-160-${label}`;
+    const data = {
+      name: "Founder's Organization",
+      autoCreated: true,
+      seatCount: 1,
+      vendorCount: 0,
+      vendorCap: 25,
+      ...orgFields,
+    };
+    for (const key of omit) delete data[key];
+    await check(`founder create DENIES ${label} (#160)`, async () => {
+      const fs = testEnv.authenticatedContext(uid, { email: `${uid}@example.com` }).firestore();
+      const batch = writeBatch(fs);
+      batch.set(doc(fs, `organizations/${orgId}`), data);
+      batch.set(doc(fs, `users/${uid}`), {
+        organizationId: orgId,
+        role: 'admin',
+        email: `${uid}@example.com`,
+      });
+      await assertFails(batch.commit());
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        const org = await getDoc(doc(ctx.firestore(), `organizations/${orgId}`));
+        const user = await getDoc(doc(ctx.firestore(), `users/${uid}`));
+        if (org.exists() || user.exists()) {
+          throw new Error('denied founder batch persisted documents');
+        }
+      });
+    });
+  }
+  await denyFounderCounters('negative-vendorCount', { vendorCount: -1 });
+  await denyFounderCounters('fractional-vendorCount', { vendorCount: 1.5 });
+  await denyFounderCounters('string-vendorCount', { vendorCount: '0' });
+  await denyFounderCounters('null-vendorCount', { vendorCount: null });
+  await denyFounderCounters('omitted-vendorCount', {}, ['vendorCount']);
+  await denyFounderCounters('nonzero-vendorCount', { vendorCount: 25 });
+  await denyFounderCounters('negative-seatCount', { seatCount: -1 });
+  await denyFounderCounters('fractional-seatCount', { seatCount: 0.5 });
+  await denyFounderCounters('string-seatCount', { seatCount: '1' });
+  await denyFounderCounters('null-seatCount', { seatCount: null });
+  await denyFounderCounters('omitted-seatCount', {}, ['seatCount']);
+  await denyFounderCounters('zero-seatCount', { seatCount: 0 });
+  await denyFounderCounters('extra-seatCount', { seatCount: 2 });
 
   await check('existing member CANNOT reassign a tenant document to another org', () =>
     assertFails(

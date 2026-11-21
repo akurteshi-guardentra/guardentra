@@ -4,6 +4,7 @@ import {
   VendorMutationError,
   createVendorWithDurableAudit,
   deterministicVendorId,
+  handleOrgVendorArchive,
   handleOrgVendorCreate,
   type VendorCreateInput,
   type VendorMutationDeps,
@@ -232,5 +233,40 @@ describe('#160 vendor create durable audit coupling', () => {
     );
     expect(capturedCreateArgs?.organizationId).toBe('org-authoritative');
     expect(capturedCreateArgs?.organizationId).not.toBe('org-attacker');
+  });
+
+  it('rejects vendor create and archive while the invite seat is unclaimed', async () => {
+    const createVendor = vi.fn();
+    const archiveVendor = vi.fn();
+    const deps: VendorMutationDeps = {
+      verifyIdToken: vi.fn(async () => ({ uid: 'user1' }) as any),
+      getUser: vi.fn(async () => ({
+        organizationId: 'org-1',
+        role: 'admin',
+        seatCountApplied: false,
+      })),
+      createVendor,
+      archiveVendor,
+    };
+
+    const createRes = mockRes();
+    await handleOrgVendorCreate(
+      { headers: { authorization: 'Bearer token' }, body: vendor } as any,
+      createRes,
+      deps,
+    );
+    expect(createRes.statusCode).toBe(403);
+    expect(createRes.body.error).toBe('Invite seat is not claimed.');
+    expect(createVendor).not.toHaveBeenCalled();
+
+    const archiveRes = mockRes();
+    await handleOrgVendorArchive(
+      { headers: { authorization: 'Bearer token' }, body: { vendorId: 'vendor_1' } } as any,
+      archiveRes,
+      deps,
+    );
+    expect(archiveRes.statusCode).toBe(403);
+    expect(archiveRes.body.error).toBe('Invite seat is not claimed.');
+    expect(archiveVendor).not.toHaveBeenCalled();
   });
 });

@@ -203,6 +203,25 @@ describe('#167 vendor welcome queue coupled to durable invite audit', () => {
     expect((audits[0][1] as any).envelope.createdAt).toBe('2026-10-01T00:00:00.000Z');
   });
 
+  it('refuses an unclaimed invite seat and writes nothing', async () => {
+    const { db, rows } = fakeDb(
+      seed({
+        'users/user-1': {
+          organizationId: 'org-1',
+          role: 'admin',
+          email: 'admin@customer.example',
+          seatCountApplied: false,
+        },
+      }),
+    );
+    const before = new Map(rows);
+
+    await expect(
+      queueVendorWelcomeWithDurableAudit({ db, actorId: 'user-1', resolved, queueDoc, now }),
+    ).rejects.toMatchObject({ status: 403, code: 'seat_unclaimed' });
+    expect(rows).toEqual(before);
+  });
+
   it('refuses a stale recipient and writes nothing', async () => {
     const { db, rows } = fakeDb(
       seed({

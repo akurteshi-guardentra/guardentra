@@ -229,4 +229,29 @@ describe('#168 server-authoritative FastTrack triage', () => {
     expect(res.body.recommendation.tier).toBe('Standard');
     expect(res.body.recommendation.frameworks).not.toEqual(['hipaa']);
   });
+
+  it('rejects an unclaimed invite seat before triage or audit writes', async () => {
+    const { db, rows } = fakeDb({
+      'users/user-1': { organizationId: 'org-1', role: 'member', seatCountApplied: false },
+      'vendors/vendor-1': { organizationId: 'org-1', name: 'Vendor One' },
+    });
+    const res = mockRes();
+
+    await handleOrgVendorTriage(
+      {
+        headers: { authorization: 'Bearer good' },
+        body: { vendorId: 'vendor-1', answers },
+      } as any,
+      res,
+      {
+        db,
+        verifyIdToken: vi.fn(async () => ({ uid: 'user-1' } as any)),
+      },
+    );
+
+    expect(res.statusCode).toBe(403);
+    expect(res.body.code).toBe('seat_unclaimed');
+    expect(rows.has('vendor_triage/vendor-1')).toBe(false);
+    expect([...rows.keys()].some((key) => key.startsWith('audit_material_intents/'))).toBe(false);
+  });
 });
