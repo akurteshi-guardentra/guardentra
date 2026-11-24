@@ -97,7 +97,7 @@ export function Assessments() {
   const createdId = params.get('created') || '';
   const monitorFocus = params.get('focus') === 'monitor';
 
-  const { assessments, mode, loading, refreshLocal } = useOrgAssessments(orgId);
+  const { assessments, mode, loading, reviewOverlay, refreshLocal } = useOrgAssessments(orgId);
   const { vendors } = useOrgVendors(orgId);
 
   const [search, setSearch] = useState('');
@@ -726,12 +726,23 @@ export function Assessments() {
             onRecoverEmpty={() => void handleRecoverEmptyAssessment()}
             onArchiveEmpty={() => void handleArchiveEmptyAssessment()}
             onDecide={(outcome) => void handleDecideAssessment(outcome)}
+            reviewerFields={mode === 'local' ? 'ready' : reviewOverlay}
             onDownloadDecisionPacket={() => {
               if (!reviewAssessment) return;
               try {
                 // Only a recorded decision may appear as an outcome. Before one exists the
                 // export is a DRAFT summary; the unsaved form selection is never printed.
                 const recorded = recordedDecisionOutcome(reviewAssessment);
+                if (recorded && mode === 'firestore' && reviewOverlay !== 'ready') {
+                  setToast({
+                    tone: 'err',
+                    text:
+                      reviewOverlay === 'error'
+                        ? 'Reviewer record unavailable. The complete decision packet was not exported.'
+                        : 'Reviewer record is still loading. The complete decision packet was not exported.',
+                  });
+                  return;
+                }
                 openDecisionPacketForPrint({
                   vendorName: reviewAssessment.vendorName || 'Vendor',
                   assessmentId: reviewAssessment.id,

@@ -18,6 +18,9 @@ import type { FrameworkId } from './types';
 
 export type AssessmentDataMode = 'firestore' | 'local' | 'unavailable';
 
+/** Private reviewer fields are a second listen. Public rows stay visible in every state. */
+export type ReviewOverlayState = 'loading' | 'ready' | 'error';
+
 export const ASSESSMENT_RETRY_INTERVAL_MS = 30000;
 
 /** Write any local-only assessments (created while Firestore was unreachable) for real,
@@ -137,6 +140,7 @@ export function useOrgAssessments(orgId?: string | null) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [retryTick, setRetryTick] = useState(0);
+  const [reviewOverlay, setReviewOverlay] = useState<ReviewOverlayState>('loading');
   const modeRef = useRef<AssessmentDataMode>('firestore');
 
   const refreshLocal = useCallback(() => {
@@ -152,6 +156,7 @@ export function useOrgAssessments(orgId?: string | null) {
     setAssessments(listLocalAssessments(orgId));
     modeRef.current = 'local';
     setMode('local');
+    setReviewOverlay('ready');
     setError('');
     setLoading(false);
   }, [orgId]);
@@ -168,6 +173,7 @@ export function useOrgAssessments(orgId?: string | null) {
     }
 
     setLoading(true);
+    setReviewOverlay('loading');
     setError('');
     let settled = false;
     let unsub: (() => void) | null = null;
@@ -229,7 +235,10 @@ export function useOrgAssessments(orgId?: string | null) {
         return { ...row, ...overlay };
       });
       merged.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-      return merged;
+      if (!allowLocal) return merged;
+      const local = listLocalAssessments(orgId);
+      const cloudIds = new Set(merged.map((row) => row.id));
+      return [...merged, ...local.filter((row) => !cloudIds.has(row.id))];
     };
 
     try {
@@ -246,21 +255,9 @@ export function useOrgAssessments(orgId?: string | null) {
           }
           const rows = snap.docs.map((d) => normalizeCloudDoc(d.id, d.data() as Record<string, unknown>));
           rowsRef.current = rows;
-          const overlaid = publish(rows);
-          if (!allowLocal) {
-            setAssessments(overlaid);
-            modeRef.current = 'firestore';
-            setMode('firestore');
-            setError('');
-            setLoading(false);
-            return;
-          }
-          // Demo/dev only: merge remaining local-only rows so local creates still show
-          // when cloud is empty-but-listening after a partial promote.
-          const local = listLocalAssessments(orgId);
-          const cloudIds = new Set(overlaid.map((r) => r.id));
-          const merged = [...overlaid, ...local.filter((l) => !cloudIds.has(l.id))];
-          setAssessments(merged);
+          // Public rows are visible immediately. reviewOverlay stays loading until
+          // the private listen settles, so a report cannot treat missing notes as none.
+          setAssessments(publish(rows));
           modeRef.current = 'firestore';
           setMode('firestore');
           setError('');
@@ -286,13 +283,12 @@ export function useOrgAssessments(orgId?: string | null) {
           const next = new Map<string, Record<string, unknown>>();
           snap.docs.forEach((d) => next.set(d.id, d.data() as Record<string, unknown>));
           reviewsRef.current = next;
-          if (rowsRef.current) {
-            const rows = publish(rowsRef.current);
-            setAssessments(rows);
-          }
+          setReviewOverlay('ready');
+          if (rowsRef.current) setAssessments(publish(rowsRef.current));
         },
-        () => {
-          /* reviewer overlay is additive; a reviews listen failure must not hide assessments */
+        (err) => {
+          console.error('useOrgAssessments reviewer listen failed', err);
+          setReviewOverlay('error');
         },
       );
     } catch (err) {
@@ -315,5 +311,5 @@ export function useOrgAssessments(orgId?: string | null) {
     return () => window.clearInterval(interval);
   }, [mode, retryFirestore]);
 
-  return { assessments, mode, loading, error, refreshLocal, retryFirestore, modeRef };
+  return { assessments, mode, loading, error, reviewOverlay, refreshLocal, retryFirestore, modeRef };
 }

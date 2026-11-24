@@ -739,7 +739,7 @@ async function main() {
     .firestore();
 
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
-    await setDoc(doc(ctx.firestore(), 'assessment_reviews/asm-review-private'), {
+    await setDoc(doc(ctx.firestore(), `assessment_reviews/${ASSESS_T}`), {
       organizationId: ORG,
       decisionNotes: 'internal reviewer note',
       decidedBy: 'member-1',
@@ -749,14 +749,14 @@ async function main() {
     });
   });
 
-  await check('portal session CANNOT read reviewer notes, identity, or residual risk', () =>
-    assertFails(getDoc(doc(portalT, 'assessment_reviews/asm-review-private'))),
+  await check('portal session CANNOT read reviewer notes for its own assessment', () =>
+    assertFails(getDoc(doc(portalT, 'assessment_reviews', ASSESS_T))),
   );
   await check('org member CAN read the reviewer-only assessment record', () =>
-    assertSucceeds(getDoc(doc(db, 'assessment_reviews/asm-review-private'))),
+    assertSucceeds(getDoc(doc(db, 'assessment_reviews', ASSESS_T))),
   );
   await check('cross-tenant user CANNOT read another org reviewer record', () =>
-    assertFails(getDoc(doc(outsiderDb, 'assessment_reviews/asm-review-private'))),
+    assertFails(getDoc(doc(outsiderDb, 'assessment_reviews', ASSESS_T))),
   );
   await check('portal session CAN still read its own assessment for receipt and editing', () =>
     assertSucceeds(getDoc(doc(portalT, 'assessments', ASSESS_T))),
