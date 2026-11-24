@@ -679,6 +679,15 @@ service cloud.firestore {
       allow delete: if isDocOrgMember() && isAdmin();
     }
 
+    // Reviewer notes, identity, residual risk, and remediation owner are not
+    // fields a portal session may read. Firestore cannot redact a document, so
+    // they live here. Admin SDK writes only. Portal edit/receipt stays on
+    // assessments/{id}.
+    match /assessment_reviews/{assessmentId} {
+      allow read: if isDocOrgMember();
+      allow create, update, delete: if false;
+    }
+
     // assessment_responses has no current writer in the app, but keep the same
     // allowlist discipline for whenever it's used, so anonymous access stays answer-scoped.
     function onlyPortalResponseFieldsChanged() {

@@ -34,7 +34,11 @@ vi.mock('firebase/firestore', () => ({
     addedDocs.push(data);
     return { id: `cloud_${addedDocs.length}` };
   }),
-  onSnapshot: vi.fn((_q: unknown, next: (s: unknown) => void, err?: (e: unknown) => void) => {
+  onSnapshot: vi.fn((q: { name?: string }, next: (s: unknown) => void, err?: (e: unknown) => void) => {
+    if (q?.name === 'assessment_reviews') {
+      next({ docs: [] });
+      return () => {};
+    }
     listenCount += 1;
     onNext = next;
     onError = err ?? null;

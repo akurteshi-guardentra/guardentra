@@ -12,6 +12,7 @@ import {
   removeLocalAssessment,
   type StoredAssessment,
 } from './localAssessmentStore';
+import { VENDOR_PRIVATE_ASSESSMENT_FIELDS } from './vendorAssessmentPrivacy';
 import { promoteLocalVendors } from './useOrgVendors';
 import type { FrameworkId } from './types';
 
@@ -170,6 +171,7 @@ export function useOrgAssessments(orgId?: string | null) {
     setError('');
     let settled = false;
     let unsub: (() => void) | null = null;
+    let unsubReviews: (() => void) | null = null;
     const allowLocal = shouldUseLocalPersistenceFallback();
 
     const failClosed = () => {
@@ -178,6 +180,10 @@ export function useOrgAssessments(orgId?: string | null) {
       if (unsub) {
         unsub();
         unsub = null;
+      }
+      if (unsubReviews) {
+        unsubReviews();
+        unsubReviews = null;
       }
       setAssessments([]);
       modeRef.current = 'unavailable';
@@ -197,12 +203,55 @@ export function useOrgAssessments(orgId?: string | null) {
         unsub();
         unsub = null;
       }
+      if (unsubReviews) {
+        unsubReviews();
+        unsubReviews = null;
+      }
       refreshLocal();
     };
 
     const failSafe = window.setTimeout(allowLocal ? fallBackLocal : failClosed, 3500);
 
+    const rowsRef: { current: StoredAssessment[] | null } = { current: null };
+    const reviewsRef: { current: Map<string, Record<string, unknown>> } = {
+      current: new Map(),
+    };
+    const publish = (rows: StoredAssessment[]) => {
+      const merged = rows.map((row) => {
+        const review = reviewsRef.current.get(row.id);
+        if (!review) return row;
+        const overlay: Partial<StoredAssessment> = {};
+        for (const key of VENDOR_PRIVATE_ASSESSMENT_FIELDS) {
+          if (review[key] !== undefined && review[key] !== null) {
+            (overlay as Record<string, unknown>)[key] = review[key];
+          }
+        }
+        return { ...row, ...overlay };
+      });
+      merged.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      return merged;
+    };
+
     try {
+      const reviewsQuery = query(
+        collection(db, 'assessment_reviews'),
+        where('organizationId', '==', orgId),
+      );
+      unsubReviews = onSnapshot(
+        reviewsQuery,
+        (snap) => {
+          const next = new Map<string, Record<string, unknown>>();
+          snap.docs.forEach((d) => next.set(d.id, d.data() as Record<string, unknown>));
+          reviewsRef.current = next;
+          if (rowsRef.current) {
+            const rows = publish(rowsRef.current);
+            setAssessments(rows);
+          }
+        },
+        () => {
+          /* reviewer overlay is additive; a reviews listen failure must not hide assessments */
+        },
+      );
       const q = query(collection(db, 'assessments'), where('organizationId', '==', orgId));
       unsub = onSnapshot(
         q,
@@ -215,9 +264,10 @@ export function useOrgAssessments(orgId?: string | null) {
             await promoteLocalAssessments(orgId);
           }
           const rows = snap.docs.map((d) => normalizeCloudDoc(d.id, d.data() as Record<string, unknown>));
-          rows.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+          rowsRef.current = rows;
+          const overlaid = publish(rows);
           if (!allowLocal) {
-            setAssessments(rows);
+            setAssessments(overlaid);
             modeRef.current = 'firestore';
             setMode('firestore');
             setError('');
@@ -227,8 +277,8 @@ export function useOrgAssessments(orgId?: string | null) {
           // Demo/dev only: merge remaining local-only rows so local creates still show
           // when cloud is empty-but-listening after a partial promote.
           const local = listLocalAssessments(orgId);
-          const cloudIds = new Set(rows.map((r) => r.id));
-          const merged = [...rows, ...local.filter((l) => !cloudIds.has(l.id))];
+          const cloudIds = new Set(overlaid.map((r) => r.id));
+          const merged = [...overlaid, ...local.filter((l) => !cloudIds.has(l.id))];
           setAssessments(merged);
           modeRef.current = 'firestore';
           setMode('firestore');
@@ -255,6 +305,7 @@ export function useOrgAssessments(orgId?: string | null) {
     return () => {
       window.clearTimeout(failSafe);
       if (unsub) unsub();
+      if (unsubReviews) unsubReviews();
     };
   }, [orgId, refreshLocal, retryTick]);
 

@@ -37,6 +37,7 @@ import {
 import type { DecisionOutcome } from '../../src/lib/vendor/assessmentExceptions.ts';
 import type { RiskLevel } from '../../src/lib/vendor/types.ts';
 import { isAnswered, type PortalQuestion } from '../../src/lib/vendor/questionBank.ts';
+import { partitionVendorAssessmentPatch } from '../../src/lib/vendor/vendorAssessmentPrivacy.ts';
 import {
   attestationsComplete,
   effectiveAnswersForProgress,
@@ -217,7 +218,12 @@ export function toFirestoreAssessmentUpdate(
     }
     if (
       value === null &&
-      (key === 'decisionNotes' || key === 'remediationOwner' || key === 'remediationDueAt')
+      (key === 'decisionNotes' ||
+        key === 'decidedBy' ||
+        key === 'decidedByName' ||
+        key === 'residualRiskLevel' ||
+        key === 'remediationOwner' ||
+        key === 'remediationDueAt')
     ) {
       update[key] = FieldValue.delete();
     } else {
@@ -314,8 +320,23 @@ export async function executeAssessmentTransaction(
       : undefined;
     const skipProductWrite = Boolean(skipProductWriteWhen?.(current, patch));
 
+    const partitioned = partitionVendorAssessmentPatch(patch);
     if (!skipProductWrite) {
-      tx.update(ref, toFirestoreAssessmentUpdate(patch));
+      tx.update(ref, toFirestoreAssessmentUpdate(partitioned.publicPatch));
+    }
+    if (partitioned.hasPrivate) {
+      const organizationId = String(current.organizationId || '').trim();
+      if (!organizationId) {
+        throw new HttpError(500, 'Assessment organization is required for the reviewer record');
+      }
+      tx.set(
+        db.collection('assessment_reviews').doc(assessmentId),
+        {
+          ...toFirestoreAssessmentUpdate(partitioned.privatePatch),
+          organizationId,
+        },
+        { merge: true },
+      );
     }
     commitRelatedWrites?.();
     if (preparedAudit) {
