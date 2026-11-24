@@ -233,25 +233,6 @@ export function useOrgAssessments(orgId?: string | null) {
     };
 
     try {
-      const reviewsQuery = query(
-        collection(db, 'assessment_reviews'),
-        where('organizationId', '==', orgId),
-      );
-      unsubReviews = onSnapshot(
-        reviewsQuery,
-        (snap) => {
-          const next = new Map<string, Record<string, unknown>>();
-          snap.docs.forEach((d) => next.set(d.id, d.data() as Record<string, unknown>));
-          reviewsRef.current = next;
-          if (rowsRef.current) {
-            const rows = publish(rowsRef.current);
-            setAssessments(rows);
-          }
-        },
-        () => {
-          /* reviewer overlay is additive; a reviews listen failure must not hide assessments */
-        },
-      );
       const q = query(collection(db, 'assessments'), where('organizationId', '==', orgId));
       unsub = onSnapshot(
         q,
@@ -294,6 +275,25 @@ export function useOrgAssessments(orgId?: string | null) {
             failClosed();
           }
         }
+      );
+      const reviewsQuery = query(
+        collection(db, 'assessment_reviews'),
+        where('organizationId', '==', orgId),
+      );
+      unsubReviews = onSnapshot(
+        reviewsQuery,
+        (snap) => {
+          const next = new Map<string, Record<string, unknown>>();
+          snap.docs.forEach((d) => next.set(d.id, d.data() as Record<string, unknown>));
+          reviewsRef.current = next;
+          if (rowsRef.current) {
+            const rows = publish(rowsRef.current);
+            setAssessments(rows);
+          }
+        },
+        () => {
+          /* reviewer overlay is additive; a reviews listen failure must not hide assessments */
+        },
       );
     } catch (err) {
       console.error('useOrgAssessments setup failed', err);
