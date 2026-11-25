@@ -920,3 +920,18 @@ No Cloud SQL execution occurred. Fresh real fixture CI required after publicatio
   entries above are preserved. No application-code content was rewritten.
 - Deployment: NOT DEPLOYED. Not an RC or main merge. No rules, config, IAM, or secret change.
 - Rollback: revert the merge commit before release. The published #288 commit stays on its own branch.
+
+
+## 2026-11-25 — #210 portal AI authority source correction
+
+ChatGPT/Codex took the bounded AI scope in existing #210 after the owner moved
+coordination to this chat. Branch fix/210-portal-ai-authority starts at published
+candidate 93a89482aa35b03c14233ebdb6e07d283efdd662; Cursor's branch is untouched.
+The AI gate now refuses portal identities outside POST /propose-answers, whose
+existing claim/evidence checks remain. A synthetic actual-router test reproduced
+/analyze returning 200 before correction; 99 focused cases passed afterward.
+Exact task PR SHA/checks and working-tree evidence are recorded on publication.
+No real model request, tenant mutation, rules/configuration change, merge or
+deployment. Hosted #210 and other release gates remain open; no readiness score
+change claimed. Source revert is the rollback; source publication/independent
+review is the next permitted action.
