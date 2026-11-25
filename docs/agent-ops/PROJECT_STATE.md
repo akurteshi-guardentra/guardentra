@@ -1,5 +1,20 @@
 # GuardEntra Project State
 
+## 2026-11-25 — #210 portal AI authority source checkpoint
+
+On `fix/210-portal-ai-authority` from published candidate
+`93a89482aa35b03c14233ebdb6e07d283efdd662`, the existing AI middleware refuses
+portal claims on all routes except POST /propose-answers. That handler keeps
+its independent assessment-claim and trusted-evidence authorization. An
+organization profile attached to a portal uid does not grant general AI access.
+The actual-router synthetic regression failed on /analyze before the guard;
+99 focused middleware/router/evidence cases passed after correction. Exact
+publication/typecheck/build/CI evidence belongs to the task PR. No real model
+call, merge, deployment, data/rules/configuration change or new spend. Cursor's
+integration branch is untouched. This is not full #210 or production acceptance.
+See TASK_210_PORTAL_AI_AUTHORITY.md. Coordination is in ChatGPT/GitHub while
+Slack is unavailable; no replacement controller or agent was created.
+
 ## 2026-11-19 — combined source tree, not a release
 
 The #124 terminal-assessment commits and published #288 audit-boundary commit
