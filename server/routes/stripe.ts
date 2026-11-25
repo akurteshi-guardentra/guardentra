@@ -26,6 +26,9 @@ import {
   CheckoutOrganizationRequiredError,
   checkoutAdminGate,
   requireCheckoutOrganizationId,
+  requireCheckoutAdministrator,
+  requireUnboundCheckoutBilling,
+  requireCompatibleCheckoutMapping,
   resolveCheckoutMembership,
 } from '../lib/checkoutMembership';
 import { InviteSeatUnclaimedError, inviteSeatUnclaimed } from '../lib/inviteSeat';
@@ -107,7 +110,13 @@ async function resolveOrgIdForUser(db: Firestore, userId: string): Promise<strin
   if (!userSnap.exists) throw new CheckoutOrganizationRequiredError();
   const data = userSnap.data() || {};
   if (inviteSeatUnclaimed(data)) throw new InviteSeatUnclaimedError();
-  return requireCheckoutOrganizationId(data);
+  const organizationId = requireCheckoutOrganizationId(data);
+  requireCheckoutAdministrator(data);
+  requireUnboundCheckoutBilling(data);
+  const orgSnap = await db.collection('organizations').doc(organizationId).get();
+  if (!orgSnap.exists) throw new Error('Checkout organization not found');
+  requireUnboundCheckoutBilling(orgSnap.data() || {});
+  return organizationId;
 }
 
 function firstSubscriptionPriceId(subscription: Stripe.Subscription): string | null {
@@ -122,7 +131,10 @@ function firstSubscriptionPriceId(subscription: Stripe.Subscription): string | n
 router.post('/create-checkout-session', requireFirebaseAuth, async (req, res) => {
   try {
     const { priceId } = req.body;
-    const verifiedUser = (req as { user?: { uid?: string; email?: string } }).user;
+    const verifiedUser = (req as { user?: { uid?: string; email?: string; portalAssessmentId?: unknown } }).user;
+    if (verifiedUser?.portalAssessmentId !== undefined) {
+      return res.status(403).json({ error: 'Portal sessions cannot manage organization billing.' });
+    }
     const userId = verifiedUser?.uid || req.body.userId;
     const email = verifiedUser?.email || req.body.email;
 
@@ -261,6 +273,9 @@ router.post('/webhook', async (req, res) => {
       );
 
       const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+      if (stripeObjectId(subscription.customer) !== customerId) {
+        throw new Error('Stripe checkout subscription customer mismatch');
+      }
       const priceId = firstSubscriptionPriceId(subscription);
       const planId = planIdForCompletedCheckout(priceId, priceMap);
       if (!planId) {
@@ -290,12 +305,10 @@ router.post('/webhook', async (req, res) => {
         }
 
         const userData = userSnap.data() || {};
-        const orgId = requireStripeMapping(
-          (typeof session.metadata?.organizationId === 'string' &&
-            session.metadata.organizationId) ||
-            userData.organizationId,
-          'organization',
-        );
+        const orgId = requireStripeMapping(userData.organizationId, 'organization');
+        if (session.metadata?.organizationId && session.metadata.organizationId !== orgId) {
+          throw new Error('Stripe checkout user/organization mapping mismatch');
+        }
         const orgRef = db.collection('organizations').doc(orgId);
         const orgSnap = await tx.get(orgRef);
         if (!orgSnap.exists) {
@@ -310,6 +323,10 @@ router.post('/webhook', async (req, res) => {
         const apply = shouldApplyStripeBillingEvent(cursor, currentCursor);
 
         if (apply) {
+          requireCheckoutAdministrator(userData);
+          if (inviteSeatUnclaimed(userData)) throw new InviteSeatUnclaimedError();
+          requireCompatibleCheckoutMapping(userData, customerId, subscriptionId);
+          requireCompatibleCheckoutMapping(orgSnap.data() || {}, customerId, subscriptionId);
           const cursorFields = stripeBillingCursorFields(cursor);
           tx.set(
             userRef,

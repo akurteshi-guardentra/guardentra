@@ -1,5 +1,17 @@
 # GuardEntra Project State
 
+## 2026-11-25 — #144 billing authority source checkpoint
+
+The existing source correction PR #290 also contains a bounded #144 follow-up
+from published `d7b6532dd38c495c9239ed884443d90b13459dad`. Checkout requires
+explicit admin/owner authority and unbound billing; completion rechecks current
+tenant/role and refuses conflicting customer/subscription mappings atomically.
+Provider customer identity must match the signed checkout. Stale/duplicate and
+current-subscription status semantics remain. Synthetic actual-handler tests
+reproduced 17 failures before correction. Exact updated head/CI evidence is on
+#290; no payment, provider configuration, tenant data or deployment was changed.
+See TASK_144_CHECKOUT_AUTHORITY.md. Hosted billing acceptance remains open.
+
 ## 2026-11-25 — #210 portal AI authority source checkpoint
 
 On `fix/210-portal-ai-authority` from published candidate

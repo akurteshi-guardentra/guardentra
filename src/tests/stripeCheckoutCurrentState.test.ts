@@ -48,7 +48,7 @@ beforeEach(() => {
   vi.stubEnv('STRIPE_WEBHOOK_SECRET', 'whsec_synthetic');
   vi.stubEnv('STRIPE_PRICE_GROWTH_MONTHLY', 'price_synthetic_growth');
   records = new Map([
-    [userPath, { organizationId: 'synthetic-org' }],
+    [userPath, { organizationId: 'synthetic-org', role: 'admin' }],
     [orgPath, { planId: 'starter', subscriptionStatus: 'none' }],
   ]);
   committed = [];
@@ -83,6 +83,65 @@ beforeEach(() => {
 });
 
 describe('#144 completed checkout reconciles current subscription state', () => {
+  it('refuses a checkout completed by a non-administrator without any writes', async () => {
+    records.set(userPath, { organizationId: 'synthetic-org', role: 'member' });
+    expect((await deliver()).statusCode).toBe(500);
+    expect(committed).toEqual([]);
+  });
+  it.each([userPath, orgPath])('refuses a different customer mapping on %s atomically', async path => {
+    records.set(path, { ...records.get(path), stripeCustomerId: 'cus_existing' });
+    expect((await deliver()).statusCode).toBe(500);
+    expect(committed).toEqual([]);
+    expect(records.get(path)?.stripeCustomerId).toBe('cus_existing');
+  });
+  it.each([userPath, orgPath])('refuses a different subscription mapping on %s atomically', async path => {
+    records.set(path, { ...records.get(path), stripeSubscriptionId: 'sub_existing' });
+    expect((await deliver()).statusCode).toBe(500);
+    expect(committed).toEqual([]);
+    expect(records.get(path)?.stripeSubscriptionId).toBe('sub_existing');
+  });
+  it('refuses a foreign organization in checkout metadata without writes', async () => {
+    records.set(userPath, { organizationId: 'other-org', role: 'admin' });
+    expect((await deliver()).statusCode).toBe(500);
+    expect(committed).toEqual([]);
+  });
+  it('refuses a subscription belonging to a different provider customer', async () => {
+    boundary.retrieve.mockResolvedValue({ ...subscription('active'), customer: 'cus_other' });
+    expect((await deliver()).statusCode).toBe(500);
+    expect(committed).toEqual([]);
+  });
+  it('preserves reconciliation for an already-matching customer/subscription pair', async () => {
+    for (const path of [userPath, orgPath]) {
+      records.set(path, { ...records.get(path), stripeCustomerId: 'cus_synthetic', stripeSubscriptionId: 'sub_synthetic' });
+    }
+    expect((await deliver()).statusCode).toBe(200);
+    expect(records.get(orgPath)?.planId).toBe('growth');
+  });
+  it('durably skips stale checkout without replacing a newer subscription mapping', async () => {
+    records.set(userPath, { organizationId: 'synthetic-org', role: 'member' });
+    records.set(orgPath, { stripeCustomerId: 'cus_newer', stripeSubscriptionId: 'sub_newer',
+      stripeLastEventCreated: 200, stripeLastEventId: 'evt_newer',
+      stripeLastEventType: 'customer.subscription.updated' });
+    expect((await deliver()).statusCode).toBe(200);
+    expect(committed).toEqual([eventPath]);
+    expect(records.get(orgPath)?.stripeSubscriptionId).toBe('sub_newer');
+    expect(records.get(eventPath)?.staleSkipped).toBe(true);
+  });
+  it('does not acknowledge a competing checkout or overwrite the first completed mapping', async () => {
+    await deliver();
+    const first = structuredClone(records.get(orgPath));
+    committed = [];
+    boundary.constructEvent.mockReturnValue({ id: 'evt_competing', created: 101,
+      type: 'checkout.session.completed', data: { object: {
+        client_reference_id: 'synthetic-user', customer: 'cus_competing', subscription: 'sub_competing',
+        metadata: { organizationId: 'synthetic-org' },
+      } } });
+    boundary.retrieve.mockResolvedValue({ ...subscription('active'), id: 'sub_competing', customer: 'cus_competing' });
+    expect((await deliver()).statusCode).toBe(500);
+    expect(committed).toEqual([]);
+    expect(records.get(orgPath)).toEqual(first);
+    expect(records.has('stripeWebhookEvents/evt_competing')).toBe(false);
+  });
   it.each(['canceled', 'unpaid', 'incomplete_expired'])(
     'does not activate paid limits when the current subscription is %s', async status => {
       boundary.retrieve.mockResolvedValue(subscription(status));

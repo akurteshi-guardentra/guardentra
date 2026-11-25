@@ -935,3 +935,18 @@ No real model request, tenant mutation, rules/configuration change, merge or
 deployment. Hosted #210 and other release gates remain open; no readiness score
 change claimed. Source revert is the rollback; source publication/independent
 review is the next permitted action.
+
+
+## 2026-11-25 — #144 checkout authority/mapping source correction
+
+Owner requested fixing remaining deployment blockers; Codex recorded bounded
+source ownership in #144/7163114561. Existing draft #290 is extended from
+d7b6532dd38c495c9239ed884443d90b13459dad; Cursor's integration branch is not
+edited. Checkout is admin/owner-only and refuses existing billing links. The
+completion transaction rechecks authority, tenant agreement and provider mappings
+before writes; the retrieved subscription customer must match the signed event.
+Synthetic actual handlers reproduced 17 failing negative cases before correction.
+Exact checks, final SHA and seven-field evidence are recorded on #290. No live
+Stripe call, payment/config change, tenant write, rules rollout, merge or deploy.
+Status: source checkpoint, independent review/current CI required. Existing
+subscription-management/relink operations and full hosted acceptance stay open.
