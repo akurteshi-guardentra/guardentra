@@ -5,6 +5,7 @@ import { INVITE_SEAT_UNCLAIMED_MESSAGE, inviteSeatUnclaimed } from '../lib/invit
 import { ensureAdmin, isProductionLike } from './requireFirebaseAuth.ts';
 
 export const AI_MEMBERSHIP_REQUIRED_MESSAGE = 'Organization membership required.';
+export const AI_PORTAL_FORBIDDEN_MESSAGE = 'Portal sessions cannot use organization AI routes.';
 
 export type InviteSeatCaller = {
   uid?: string;
@@ -25,7 +26,10 @@ function profileOrganizationId(profile: object): string {
  * marker stays a member when it names an organization. A signed-in caller
  * with no user profile, or a profile with no organization id, is not a
  * member and is refused outside local demos. A vendor portal token is scoped
- * to one assessment and is not an org seat.
+ * to one assessment and is not an org seat. Its only permitted AI route is
+ * POST /propose-answers, which independently verifies the assessment claim and
+ * authoritative evidence before any model work. Keep this boundary before all
+ * handlers, including general routes added later.
  */
 export function createRequireClaimedInviteSeat(
   loadProfile: InviteSeatProfileLoader,
@@ -34,8 +38,15 @@ export function createRequireClaimedInviteSeat(
   return async function requireClaimedInviteSeat(req: Request, res: Response, next: NextFunction) {
     const user = (req as Request & { user?: InviteSeatCaller }).user;
     const portalAssessmentId = user?.portalAssessmentId;
-    if (typeof portalAssessmentId === 'string' && portalAssessmentId.trim() !== '') {
-      next();
+    if (portalAssessmentId !== undefined) {
+      if (
+        typeof portalAssessmentId === 'string' && portalAssessmentId.trim() !== '' &&
+        req.method === 'POST' && req.path === '/propose-answers'
+      ) {
+        next();
+      } else {
+        res.status(403).json({ error: AI_PORTAL_FORBIDDEN_MESSAGE });
+      }
       return;
     }
 
