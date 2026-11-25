@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { INVITE_SEAT_UNCLAIMED_MESSAGE } from '../../server/lib/inviteSeat';
 import {
   AI_MEMBERSHIP_REQUIRED_MESSAGE,
+  AI_PORTAL_FORBIDDEN_MESSAGE,
   createRequireClaimedInviteSeat,
 } from '../../server/middleware/requireClaimedInviteSeat';
 import aiRoutes from '../../server/routes/ai';
@@ -11,9 +12,11 @@ function run(
   loadProfile: (uid: string) => Promise<object | null | undefined>,
   user: object | undefined,
   env: NodeJS.ProcessEnv,
+  path = '/generate',
+  method = 'POST',
 ) {
   const gate = createRequireClaimedInviteSeat(loadProfile, () => env);
-  const req = { user } as unknown as Request;
+  const req = { user, path, method } as unknown as Request;
   let statusCode = 0;
   let body: unknown;
   const res = {
@@ -94,15 +97,44 @@ describe('KI#12 signed-in AI invite seat', () => {
     expect(unclaimed.body).toEqual({ error: INVITE_SEAT_UNCLAIMED_MESSAGE });
   });
 
-  it('does not treat a vendor portal token as an org seat', async () => {
+  it('preserves the scoped portal proposal flow without treating it as an org seat', async () => {
     const loadProfile = vi.fn(async () => ({ seatCountApplied: false }));
     const result = await run(
       loadProfile,
       { uid: 'portal_assessment-1', portalAssessmentId: 'assessment-1' },
       { APP_ENV: 'production' },
+      '/propose-answers',
     );
     expect(loadProfile).not.toHaveBeenCalled();
     expect(result.continued).toBe(true);
+  });
+
+  it('rejects a portal token on general AI even if a matching admin profile exists', async () => {
+    const loadProfile = vi.fn(async () => ({ role: 'admin', organizationId: 'org-1' }));
+    const result = await run(loadProfile,
+      { uid: 'portal_assessment-1', portalAssessmentId: 'assessment-1' },
+      { APP_ENV: 'production' });
+    expect(result.statusCode).toBe(403);
+    expect(result.body).toEqual({ error: AI_PORTAL_FORBIDDEN_MESSAGE });
+    expect(result.continued).toBe(false);
+    expect(loadProfile).not.toHaveBeenCalled();
+  });
+
+  it.each(['', ' ', null, false, 12])('refuses a malformed portal claim %s', async (claim) => {
+    const loadProfile = vi.fn(async () => ({ role: 'admin', organizationId: 'org-1' }));
+    const result = await run(loadProfile, { uid: 'portal', portalAssessmentId: claim },
+      { APP_ENV: 'production' }, '/propose-answers');
+    expect(result.statusCode).toBe(403);
+    expect(result.continued).toBe(false);
+    expect(loadProfile).not.toHaveBeenCalled();
+  });
+
+  it('does not exempt other methods on the proposal path', async () => {
+    const result = await run(vi.fn(),
+      { uid: 'portal', portalAssessmentId: 'assessment-1' },
+      { APP_ENV: 'production' }, '/propose-answers', 'GET');
+    expect(result.statusCode).toBe(403);
+    expect(result.continued).toBe(false);
   });
 
   it('requires a signed-in caller in production and allows a local demo', async () => {
