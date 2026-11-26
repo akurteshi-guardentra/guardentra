@@ -1,5 +1,19 @@
 # #124 legacy reviewer fields — open, not executed
 
+## 2026-11-26 — source read-boundary alternative, not deployed
+
+The existing correction PR #290 now prepares a finite vendor projection from
+the portal session's existing read and a scoped refresh endpoint. Direct portal
+reads of any document containing the five reviewer-only keys are denied by the
+candidate rules, while org reviewers retain access. Receipt and editable-legacy
+flows use projected fields without rewriting old records. This source boundary
+does not depend on the migration below. Independent review, app-first/rules-second
+rollout and hosted verification remain required; no live protection is claimed.
+See TASK_124_LEGACY_PORTAL_READ.md and the implementation decision in
+docs/adr/portal-legacy-review-read-boundary.md. No inventory/migration was executed.
+
+## Historical 2026-11-24 migration proposal
+
 Date: 2026-11-24. Status: OPEN. No inventory run, no migration, no rules rollout.
 
 New decisions write reviewer notes, reviewer identity, residual risk, and the

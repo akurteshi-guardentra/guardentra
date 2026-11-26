@@ -1,5 +1,17 @@
 # GuardEntra Project State
 
+## 2026-11-26 — #124 historical privacy source boundary checkpoint
+
+Existing source correction PR #290 prepares a vendor projection instead of a
+full assessment fetch. Candidate rules deny direct portal reads whenever the
+five historical private reviewer keys exist. Org historical reads and vendor
+answer saves remain allowed; no records are rewritten. Safe scan listeners stay;
+legacy scans use bounded scoped refresh. Before: five privacy negatives failed.
+After: 104 focused API/UI/evidence cases,189 Firestore,23 Storage,TypeScript and
+client/server build PASS. Published head/current CI belongs to #290; source-only,
+not deployed protection. Decision/rollout/rollback limits are in
+TASK_124_LEGACY_PORTAL_READ.md. Full hosted acceptance and release gates remain.
+
 ## 2026-11-26 — #210 portal organization isolation source checkpoint
 
 Existing correction PR #290 extends published c957ad1 with explicit portal-token

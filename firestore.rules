@@ -525,7 +525,12 @@ service cloud.firestore {
     // Vendors may re-open the link after submit to see a receipt (read-only).
     // Writes still require portalOpen via isOpenPortalAssessment().
     function isPortalReadableAssessment() {
-      return isAuthenticated() && (
+      // Whole-document reads cannot redact historical reviewer-only fields.
+      // The existing portal session/API serves an allowlisted projection instead.
+      return isAuthenticated()
+        && !resource.data.keys().hasAny([
+          'decisionNotes', 'decidedBy', 'decidedByName', 'residualRiskLevel', 'remediationOwner'
+        ]) && (
         resource.data.portalOpen == true ||
         resource.data.status == 'Under Review' ||
         resource.data.status == 'Completed' ||

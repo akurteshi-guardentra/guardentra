@@ -1820,6 +1820,38 @@ async function main() {
     assertFails(updateDoc(doc(legacyPortal, 'organizations', ORG), { name: 'Forbidden' })),
   );
 
+  // #124: a legacy reviewer field must never be disclosed by a whole-document
+  // portal read. Server projection preserves the vendor flow without migration.
+  for (const field of ['decisionNotes', 'decidedBy', 'decidedByName', 'residualRiskLevel', 'remediationOwner']) {
+    const legacyId = `legacy-review-${field}`;
+    await testEnv.withSecurityRulesDisabled(async ctx => {
+      await setDoc(doc(ctx.firestore(), 'assessments', legacyId), {
+        organizationId: ORG, status: 'Completed', portalOpen: false,
+        [field]: 'internal reviewer value',
+      });
+    });
+    const legacy = testEnv.authenticatedContext(`portal_${legacyId}`, { portalAssessmentId: legacyId }).firestore();
+    await check(`portal CANNOT directly read a legacy document carrying ${field}`, () =>
+      assertFails(getDoc(doc(legacy, 'assessments', legacyId))),
+    );
+  }
+  await check('org reviewer CAN still read the original historical record', () =>
+    assertSucceeds(getDoc(doc(db, 'assessments/legacy-review-decisionNotes'))),
+  );
+  await testEnv.withSecurityRulesDisabled(async ctx => {
+    await setDoc(doc(ctx.firestore(), 'assessments/legacy-editable'), {
+      organizationId: ORG, status: 'In Progress', portalOpen: true,
+      decisionNotes: 'internal', questions: [{ id: 'q1', required: true }],
+      answers: {}, progressPct: 0,
+    });
+  });
+  const legacyEditable = testEnv.authenticatedContext('portal_legacy-editable', {
+    portalAssessmentId: 'legacy-editable',
+  }).firestore();
+  await check('legacy projected portal CAN still save its allowed answer fields', () =>
+    assertSucceeds(updateDoc(doc(legacyEditable, 'assessments/legacy-editable'), { answers: { q1: 'Yes' } })),
+  );
+
   await testEnv.cleanup();
   console.log(`\nResult: ${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);

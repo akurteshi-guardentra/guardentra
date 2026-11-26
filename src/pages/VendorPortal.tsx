@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { doc, getDoc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { signInWithCustomToken } from 'firebase/auth';
 import { 
   Shield, 
@@ -52,6 +52,7 @@ import {
   type PortalAttestations,
 } from '../lib/vendor/portalProposals';
 import { createAuditBatcher } from '../lib/auditClient';
+import { startProjectedTrustRefresh } from '../lib/vendor/projectedTrustRefresh';
 
 type AnswersMap = Record<string, AnswerValue | string | string[] | undefined>;
 type CommentsMap = Record<string, string>;
@@ -87,6 +88,7 @@ function PortalBrandMark({ branding, subtitle }: { branding: PortalBranding; sub
 export function VendorPortal() {
   const { assessmentId } = useParams();
   const [assessment, setAssessment] = useState<any>(null);
+  const [assessmentReadMode, setAssessmentReadMode] = useState<'direct' | 'projected'>('projected');
   const [questions, setQuestions] = useState<PortalQuestion[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [portalAccess, setPortalAccess] = useState<PortalSessionFailure | 'ready'>('ready');
@@ -140,6 +142,22 @@ export function VendorPortal() {
   const savedClearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    let disposed = false;
+    setIsLoading(true);
+    setAssessment(null);
+    setIsSuccess(false);
+    setQuestions([]);
+    setAnswers({});
+    setComments({});
+    setEvidence({});
+    setTrustMap({});
+    setTrustHints({});
+    setProposals({});
+    setStarted(false);
+    setAttestations({ accuracy: false, authority: false });
+    setAttestedByName('');
+    setQuestionIndex(0);
+    setUploadError('');
     /**
      * Establish a session scoped to THIS assessment before reading anything.
      *
@@ -150,10 +168,10 @@ export function VendorPortal() {
      * server now mints a token carrying a portalAssessmentId claim, and the rules
      * compare it against the id in the path.
      *
-     * The sequencing is load-bearing: the rules check that claim, so a read issued
-     * before sign-in resolves is denied rather than merely unauthenticated.
+     * The session returns a finite vendor projection from its existing server
+     * read. Sign-in must resolve before any scoped Storage/write/scan operation.
      */
-    const startPortalSession = async (): Promise<boolean> => {
+    const startPortalSession = async (): Promise<Record<string, unknown> | null> => {
       let res: Response;
       try {
         res = await fetch('/api/portal/session', {
@@ -163,24 +181,28 @@ export function VendorPortal() {
         });
       } catch (err) {
         console.error('Portal session request did not reach the server', err);
-        setPortalAccess('unreachable');
-        return false;
+        if (!disposed) setPortalAccess('unreachable');
+        return null;
       }
+      if (disposed) return null;
       if (!res.ok) {
         setPortalAccess(classifyPortalSessionFailure(res.status));
-        return false;
+        return null;
       }
       const body = (await res.json().catch(() => null)) as {
         token?: string;
+        assessment?: Record<string, unknown>;
+        assessmentReadMode?: 'direct' | 'projected';
         branding?: {
           requesterOrgName?: string;
           requesterLogoUrl?: string | null;
           submitted?: boolean;
         };
       } | null;
-      if (!body?.token) {
-        setPortalAccess('unreachable');
-        return false;
+      if (disposed) return null;
+      if (!body?.token || !body.assessment || typeof body.assessment !== 'object' || Array.isArray(body.assessment)) {
+        if (!disposed) setPortalAccess('unreachable');
+        return null;
       }
       if (body.branding?.requesterOrgName) {
         setBranding({
@@ -192,11 +214,13 @@ export function VendorPortal() {
         await signInWithCustomToken(getPortalAuth(), body.token);
       } catch (err) {
         console.error('Portal sign-in failed', err);
-        setPortalAccess('unreachable');
-        return false;
+        if (!disposed) setPortalAccess('unreachable');
+        return null;
       }
+      if (disposed) return null;
+      setAssessmentReadMode(body.assessmentReadMode === 'direct' ? 'direct' : 'projected');
       setPortalAccess('ready');
-      return true;
+      return body.assessment;
     };
 
     const fetchAssessment = async () => {
@@ -205,19 +229,13 @@ export function VendorPortal() {
         setIsLoading(false);
         return;
       }
-      const startedSession = await startPortalSession();
-      if (!startedSession) {
-        setIsLoading(false);
+      const projectedAssessment = await startPortalSession();
+      if (!projectedAssessment || disposed) {
+        if (!disposed) setIsLoading(false);
         return;
       }
       try {
-        const snap = await getDoc(doc(getPortalDb(), 'assessments', assessmentId));
-        if (!snap.exists()) {
-          setPortalAccess('unavailable');
-          setIsLoading(false);
-          return;
-        }
-        const data = { id: snap.id, ...snap.data() } as any;
+        const data = { ...projectedAssessment, id: assessmentId } as any;
         setAssessment(data);
         if (typeof data.requesterOrgName === 'string' && data.requesterOrgName) {
           setBranding((b) => ({
@@ -268,28 +286,44 @@ export function VendorPortal() {
       } catch (err) {
         console.error('Failed to load assessment', err);
       } finally {
-      setIsLoading(false);
+        if (!disposed) setIsLoading(false);
       }
     };
     fetchAssessment();
     return () => {
+      disposed = true;
       if (saveTimer.current) clearTimeout(saveTimer.current);
       if (savingLabelTimer.current) clearTimeout(savingLabelTimer.current);
       if (savedClearTimer.current) clearTimeout(savedClearTimer.current);
     };
   }, [assessmentId]);
 
-  // Live scan verdicts (#124 follow-up): while any file is still awaiting the
-  // backend scanner, listen to the assessment doc and take ONLY the
-  // backend-written trust map from it. Answers/comments are never overwritten
-  // from the listener, so in-progress edits are not clobbered.
+  // Safe documents keep the existing scan listener. Historical private-field
+  // documents use the bounded scoped projection refresh instead. Only the
+  // authoritative trust map changes; pending vendor edits are never replaced.
   const awaitingScan = useMemo(
     () => hasPendingEvidenceScan(evidence, trustMap, trustHints),
     [evidence, trustMap, trustHints]
   );
-  const assessmentLoaded = Boolean(assessment?.id);
+  const assessmentLoaded = assessment?.id === assessmentId;
   useEffect(() => {
-    if (!assessmentId || !assessmentLoaded || !awaitingScan || portalAccess !== 'ready') return;
+    if (!assessmentId || !assessmentLoaded || !awaitingScan || portalAccess !== 'ready' || isSuccess) return;
+    if (assessmentReadMode === 'projected') {
+      let disposed = false;
+      const stop = startProjectedTrustRefresh(async () => {
+          const headers = await getPortalAuthHeaders({ 'Content-Type': 'application/json' });
+          if (disposed) throw new Error('Disposed');
+          const res = await fetch('/api/portal/assessment-view', {
+            method: 'POST', headers, body: JSON.stringify({ assessmentId }),
+          });
+          if (!res.ok) throw new Error('Scan refresh failed');
+          const body = await res.json();
+          const map = body.assessment?.evidenceTrustByStoragePath;
+          if (!map || typeof map !== 'object' || Array.isArray(map)) throw new Error('Invalid trust response');
+          return map as EvidenceTrustMap;
+      }, setTrustMap, setUploadError);
+      return () => { disposed = true; stop(); };
+    }
     const unsubscribe = onSnapshot(
       doc(getPortalDb(), 'assessments', assessmentId),
       (snap) => {
@@ -299,7 +333,7 @@ export function VendorPortal() {
       (err) => console.error('Scan status listener failed', err)
     );
     return unsubscribe;
-  }, [assessmentId, assessmentLoaded, awaitingScan, portalAccess]);
+  }, [assessmentId, assessmentLoaded, awaitingScan, portalAccess, assessmentReadMode, isSuccess]);
 
   const categoryQs = useMemo(
     () => questions.filter((q) => q.category === activeCategory),
@@ -608,7 +642,13 @@ export function VendorPortal() {
         const body = (await response.json().catch(() => ({}))) as { error?: string };
         throw new Error(body.error || 'Submission failed.');
       }
-
+      const submitted = await response.json().catch(() => null);
+      if (submitted?.ok !== true) throw new Error('Submission acknowledgement unavailable.');
+      const completedAt = typeof submitted.patch?.completedAt === 'string' ? submitted.patch.completedAt : null;
+      setAssessment((current: Record<string, unknown> | null) => current ? {
+        ...current, status: 'Under Review', portalOpen: false,
+        ...(completedAt ? { completedAt } : {}),
+      } : current);
       setIsSuccess(true);
     } catch (err) {
       console.error(err);
@@ -646,7 +686,7 @@ export function VendorPortal() {
   if (!assessment || isSuccess) {
     const downloadReceipt = () => {
       const submittedAt =
-        (assessment?.completedAt && String(assessment.completedAt)) || new Date().toISOString();
+        (assessment?.completedAt && String(assessment.completedAt)) || 'Unknown';
       const body = [
         'Guardentra vendor assessment — submission receipt',
         '',

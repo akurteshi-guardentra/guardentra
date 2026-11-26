@@ -965,3 +965,19 @@ and client/server build PASS. Full exact-head CI/publication evidence is in #290
 Source rules hashes/rollback limits are recorded in the task packet. No live rules
 release, payment/provider/email/tenant action, merge or deployment. Historical
 reviewer-field privacy and all hosted acceptance/recovery gates remain open.
+
+
+## 2026-11-26 — #124 historical reviewer privacy source boundary
+
+Codex continues the owner-requested source fixes in existing #290 from
+07717b4df895dc4fe73b04272cb1e73865fb0a04; Cursor's branch is untouched.
+Existing portal sessions now return finite vendor projections. Candidate rules
+deny direct portal reads of records with known reviewer keys. Authenticated,
+bounded refresh handles historical scan status; ordinary scoped listeners stay.
+No historical data is copied/deleted. Before: five Firestore privacy probes
+failed. After:104 focused API/UI/evidence,189 Firestore,23 Storage,TypeScript and
+client/server build PASS. Exact publication/current CI evidence is on #290.
+Implementation decision and app-first/rules-second/rollback limits recorded in
+the task packet. No live rules/configuration/provider/tenant operation, merge
+or deployment. Source checkpoint only; security review and hosted acceptance
+remain open, and migration is not implicitly authorized.
