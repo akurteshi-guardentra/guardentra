@@ -950,3 +950,18 @@ Exact checks, final SHA and seven-field evidence are recorded on #290. No live
 Stripe call, payment/config change, tenant write, rules rollout, merge or deploy.
 Status: source checkpoint, independent review/current CI required. Existing
 subscription-management/relink operations and full hosted acceptance stay open.
+
+
+## 2026-11-26 — #210 scoped portal identity cannot become an org principal
+
+Codex continues the owner-requested source corrections in existing #290, from
+c957ad1758f9484ff1a9c264e61c69c4fe4e5db9; Cursor's branch is untouched.
+Firestore/Storage org membership and bootstrap now exclude portal claims even
+with a historical admin profile. Vendor create/archive and notification intents
+reject before profile/product/queue work. No live records are deleted/migrated.
+Before: five synthetic API, four Firestore and three Storage negative probes
+failed. After: 121 focused API/evidence cases,182 Firestore,23 Storage,TypeScript
+and client/server build PASS. Full exact-head CI/publication evidence is in #290.
+Source rules hashes/rollback limits are recorded in the task packet. No live rules
+release, payment/provider/email/tenant action, merge or deployment. Historical
+reviewer-field privacy and all hosted acceptance/recovery gates remain open.

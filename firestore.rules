@@ -11,6 +11,12 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // A scoped portal token is not an organization principal, even if an old
+    // or forged user profile happens to give its uid an organization/admin role.
+    function isOrganizationPrincipal() {
+      return isAuthenticated() && !('portalAssessmentId' in request.auth.token);
+    }
+
     // Invite authority is "the token's email matches the invite". That only proves
     // mailbox ownership when Firebase has verified it — an email/password signup can
     // claim any unregistered address unverified. Without this, anyone who knows a
@@ -28,20 +34,20 @@ service cloud.firestore {
     }
 
     function isOrgMember(orgId) {
-      return isAuthenticated() &&
+      return isOrganizationPrincipal() &&
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId == orgId &&
         callerSeatSettled();
     }
 
     function isDocOrgMember() {
-      return isAuthenticated() &&
+      return isOrganizationPrincipal() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId == resource.data.organizationId &&
         callerSeatSettled();
     }
 
     function isCreatingForOwnOrg() {
-      return isAuthenticated() &&
+      return isOrganizationPrincipal() &&
         request.resource.data.organizationId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId &&
         callerSeatSettled();
     }
@@ -49,7 +55,7 @@ service cloud.firestore {
     // The claim transaction has to read the org and raise seatCount before the
     // marker flips. That is the only tenant access an unclaimed profile gets.
     function isPendingSeatClaimant(orgId) {
-      return isAuthenticated() &&
+      return isOrganizationPrincipal() &&
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId == orgId &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('seatCountApplied', null) == false;
@@ -106,7 +112,7 @@ service cloud.firestore {
     }
 
     function isValidUserCreate(userId) {
-      return isAuthenticated()
+      return isOrganizationPrincipal()
         && request.auth.uid == userId
         && request.resource.data.organizationId is string
         && request.resource.data.role is string
@@ -137,7 +143,7 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isAuthenticated() &&
+      return isOrganizationPrincipal() &&
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' &&
         callerSeatSettled();
@@ -261,7 +267,7 @@ service cloud.firestore {
 
     // Users Collection
     match /users/{userId} {
-      allow read: if isAuthenticated() && (request.auth.uid == userId || isOrgMember(resource.data.organizationId));
+      allow read: if isOrganizationPrincipal() && (request.auth.uid == userId || isOrgMember(resource.data.organizationId));
       // Issue #61: create is invite-bound or new-tenant founder only. Role and
       // organizationId stay immutable after create (KI#6).
       // Billing and Stripe-cursor fields on the profile are webhook-only (Admin SDK).
@@ -270,7 +276,7 @@ service cloud.firestore {
       allow create: if isValidUserCreate(userId)
         && !request.resource.data.keys().hasAny(userBillingKeys())
         && seatCountAppliedCreateOk();
-      allow update: if isAuthenticated() && request.auth.uid == userId
+      allow update: if isOrganizationPrincipal() && request.auth.uid == userId
         && request.resource.data.role == resource.data.role
         && request.resource.data.organizationId == resource.data.organizationId
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(userBillingKeys())
@@ -346,7 +352,7 @@ service cloud.firestore {
     match /organizations/{orgId} {
       allow read: if isOrgMember(orgId) || isPendingSeatClaimant(orgId);
       // Only a new user's atomic founder bootstrap may create its one org.
-      allow create: if isAuthenticated()
+      allow create: if isOrganizationPrincipal()
         && !exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId == orgId
         && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
@@ -357,7 +363,7 @@ service cloud.firestore {
       // than vendorCount. A client write of that meter would reset the cap check in
       // the server vendor transaction. seatCount rises only inside the invite claim.
       // dataRegion is always immutable once set (admins included).
-      allow update: if isAuthenticated() && orgDataRegionPreserved() &&
+      allow update: if isOrganizationPrincipal() && orgDataRegionPreserved() &&
         billingFieldsUnchanged() && vendorCountUnchanged() && seatCountChangeIsOneStep() &&
         (
           (isOrgMember(orgId) && (isAdmin() || onlyMemberWritableOrgFieldsChanged()))
@@ -377,7 +383,7 @@ service cloud.firestore {
       // Read stays on plain email match: orgBootstrap.ts runs this lookup right after
       // signup, before the user can verify, and a denied query would block every
       // email/password signup. Verification is enforced where it matters: join + accept.
-      allow read: if isAuthenticated() &&
+      allow read: if isOrganizationPrincipal() &&
         (resource.data.email == request.auth.token.email || isDocOrgMember());
       // Seat cap (docs/ARCHITECTURE_FOUNDATION.md §4: Starter 3, Growth 10). Enforced at
       // invite time because that is the only chokepoint an admin controls — the profile
@@ -397,7 +403,7 @@ service cloud.firestore {
         && isAllowedBootstrapRole(request.resource.data.role)
         && orgField(request.resource.data.organizationId, 'seatCount', 1) <
         orgField(request.resource.data.organizationId, 'seatCap', 3);
-      allow update: if isAuthenticated() && (
+      allow update: if isOrganizationPrincipal() && (
         (hasVerifiedEmail(resource.data.email) &&
          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptedByUid', 'acceptedAt']) &&
          request.resource.data.organizationId == resource.data.organizationId &&

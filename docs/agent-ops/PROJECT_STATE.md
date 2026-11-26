@@ -1,5 +1,18 @@
 # GuardEntra Project State
 
+## 2026-11-26 — #210 portal organization isolation source checkpoint
+
+Existing correction PR #290 extends published c957ad1 with explicit portal-token
+exclusion from organization authority in Firestore, Storage, vendor mutations
+and notification intents. Historical admin-shaped portal profiles do not grant
+organization access. Scoped portal reads/uploads remain supported. Regression
+tests reproduced five API, four Firestore and three Storage failures before the
+respective corrections. After correction: 121 focused API/evidence cases,
+182 Firestore and 23 Storage checks PASS; TypeScript and client/server build PASS.
+Exact published head/current CI is recorded on #290. No live rules, data, IAM,
+secrets, provider call, merge or deployment. Existing reviewer-field copies are
+not migrated; hosted acceptance remains open. See TASK_210_PORTAL_ORG_ISOLATION.md.
+
 ## 2026-11-25 — #144 billing authority source checkpoint
 
 The existing source correction PR #290 also contains a bounded #144 follow-up

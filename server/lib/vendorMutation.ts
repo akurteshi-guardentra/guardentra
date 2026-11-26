@@ -374,6 +374,10 @@ export async function handleOrgVendorCreate(
       return;
     }
 
+    if (decoded.portalAssessmentId !== undefined) {
+      res.status(403).json({ error: 'Portal sessions cannot use organization vendor routes' });
+      return;
+    }
     const user = await deps.getUser(decoded.uid);
     if (!user) {
       res.status(403).json({ error: 'Organization membership required' });
@@ -435,6 +439,10 @@ export async function handleOrgVendorArchive(
       return;
     }
 
+    if (decoded.portalAssessmentId !== undefined) {
+      res.status(403).json({ error: 'Portal sessions cannot use organization vendor routes' });
+      return;
+    }
     const user = await deps.getUser(decoded.uid);
     if (!user) {
       res.status(403).json({ error: 'Organization membership required' });

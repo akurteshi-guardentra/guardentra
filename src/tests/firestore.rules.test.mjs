@@ -1751,6 +1751,75 @@ async function main() {
     assertFails(updateDoc(doc(db, 'assessments', ASSESS_T), { decidedByName: 'Forged Reviewer' })),
   );
 
+  // #210: a custom client must not convert its scoped portal token into an
+  // organization identity; AuthContext's portal skip is not an authority check.
+  const portalFounderUid = 'portal_bootstrap-negative';
+  const portalFounderOrg = 'portal-bootstrap-negative-org';
+  const portalFounder = testEnv.authenticatedContext(portalFounderUid, {
+    portalAssessmentId: ASSESS_T,
+  }).firestore();
+  await check('portal token CANNOT atomically founder-bootstrap an admin organization', async () => {
+    const batch = writeBatch(portalFounder);
+    batch.set(doc(portalFounder, 'organizations', portalFounderOrg), {
+      planId: 'starter', vendorCap: 25, seatCap: 3, subscriptionStatus: 'none',
+      vendorCount: 0, seatCount: 1,
+    });
+    batch.set(doc(portalFounder, 'users', portalFounderUid), {
+      organizationId: portalFounderOrg, role: 'admin',
+    });
+    await assertFails(batch.commit());
+    await testEnv.withSecurityRulesDisabled(async ctx => {
+      for (const path of [`organizations/${portalFounderOrg}`, `users/${portalFounderUid}`]) {
+        if ((await getDoc(doc(ctx.firestore(), path))).exists()) {
+          throw new Error('Rejected portal bootstrap left persisted documents');
+        }
+      }
+    });
+  });
+  const legacyPortal = testEnv.authenticatedContext('portal_legacy-admin', {
+    portalAssessmentId: ASSESS_T,
+  }).firestore();
+  await testEnv.withSecurityRulesDisabled(async ctx => {
+    await setDoc(doc(ctx.firestore(), 'users/portal_legacy-admin'), {
+      organizationId: ORG, role: 'admin', seatCountApplied: true,
+    });
+    await setDoc(doc(ctx.firestore(), 'policies/portal-isolation-sensitive'), {
+      organizationId: ORG, title: 'Internal tenant policy',
+    });
+    await setDoc(doc(ctx.firestore(), 'org_invites/portal-claim-invite'), {
+      organizationId: ORG, role: 'member', status: 'pending', email: 'portal-invite@synthetic.example',
+    });
+  });
+  await check('portal token with legacy admin profile CANNOT read organization metadata', () =>
+    assertFails(getDoc(doc(legacyPortal, 'organizations', ORG))),
+  );
+  await check('portal token with legacy admin profile CANNOT read a reviewer record', () =>
+    assertFails(getDoc(doc(legacyPortal, 'assessment_reviews', ASSESS_T))),
+  );
+  await check('portal token with legacy admin profile CANNOT read unrelated tenant policies', () =>
+    assertFails(getDoc(doc(legacyPortal, 'policies/portal-isolation-sensitive'))),
+  );
+  await check('ordinary organization principal CAN still read the same tenant policy', () =>
+    assertSucceeds(getDoc(doc(db, 'policies/portal-isolation-sensitive'))),
+  );
+  const invitedPortal = testEnv.authenticatedContext('portal_invited', {
+    portalAssessmentId: ASSESS_T, email: 'portal-invite@synthetic.example', email_verified: true,
+  }).firestore();
+  await check('portal token CANNOT join an organization even with a matching verified invite', () =>
+    assertFails(setDoc(doc(invitedPortal, 'users/portal_invited'), {
+      organizationId: ORG, role: 'member', inviteId: 'portal-claim-invite', seatCountApplied: false,
+    })),
+  );
+  await check('portal token CANNOT update its legacy organization profile', () =>
+    assertFails(updateDoc(doc(legacyPortal, 'users/portal_legacy-admin'), { displayName: 'Forbidden' })),
+  );
+  await check('portal token with legacy admin profile CAN still read its scoped assessment', () =>
+    assertSucceeds(getDoc(doc(legacyPortal, 'assessments', ASSESS_T))),
+  );
+  await check('portal token with legacy admin profile CANNOT mutate organization fields', () =>
+    assertFails(updateDoc(doc(legacyPortal, 'organizations', ORG), { name: 'Forbidden' })),
+  );
+
   await testEnv.cleanup();
   console.log(`\nResult: ${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);
