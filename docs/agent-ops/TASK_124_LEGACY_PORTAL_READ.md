@@ -98,3 +98,33 @@ required before governed integration. Full 16-step hosted acceptance, scanner,
 inbox, audit/billing, RC controls and recovery/preservation stay open. Historical
 data cleanup is optional and separately authorized, not silently executed.
 No numeric readiness gain or guaranteed deployment date.
+
+## 2026-11-28 bounded correction — refresh request isolation
+
+Owner handoff: Slack #all-guardentra thread1795731196.443939, November26
+23:13 CET and November28 follow-ups. Codex remains the sole writer on
+fix/210-portal-ai-authority / #290 from2bc2213bfa27785af99236c6ef463429ae543faf.
+L2 Engineering / L3 Backend+QA, T2 bounded workflow correction.
+
+Acceptance: give assessment-view its own30/minute allowance, keep existing
+session20/minute and shared submit/validate/download30/minute policy unchanged.
+Mounted Express router tests must exhaust refresh and still successfully submit
+valid answers through the real handler with synthetic persistence; verify the
+existing shared evidence policy still enforces429 and refresh remains available.
+Also preserve scoped authorization/finite projection through existing regressions.
+
+Allowed incremental files: server/routes/portal.ts;
+src/tests/portalRateLimit.test.ts; this packet; PROJECT_STATE.md and
+PROJECT_TRANSITIONS.md. No new dependency, live reads/writes, rules, credentials,
+provider calls, paid workloads, merges or deployments. Publish in existing PR,
+then independent review under the explicit handoff. Cursor branch stays unchanged.
+Rollback: revert this incremental source commit on the owned feature branch;
+never silently revert prior privacy guards. No live rollback performed.
+Readiness scores: not recalculated; no runtime gate or numeric gain claimed.
+
+Observed bounded verification: mounted-router suite before source correction
+failed two tests (submission and refresh returned429 due to shared allowance),
+one existing-session-limit control passed. After source correction, all three
+mounted tests and100 existing focused portal/evidence regressions passed. Real
+handlers/middleware execute over localhost HTTP; only Firebase/persistence
+boundaries are synthetic. No real audit commit or hosted acceptance claimed.

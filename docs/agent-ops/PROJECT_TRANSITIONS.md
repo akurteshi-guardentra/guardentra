@@ -981,3 +981,14 @@ Implementation decision and app-first/rules-second/rollback limits recorded in
 the task packet. No live rules/configuration/provider/tenant operation, merge
 or deployment. Source checkpoint only; security review and hosted acceptance
 remain open, and migration is not implicitly authorized.
+
+
+## 2026-11-28 — #124 refresh request isolation source checkpoint
+
+From published #290 head2bc2213, Codex reused the isolated-patch approach in the
+existing Slack handoff. Added a distinct refresh limiter and three mounted-router
+regressions. Before: two isolation failures / one session-policy pass. After:
+103 focused tests PASS; current type/build/CI evidence belongs to #290. Submit,
+validate, download and session policies remain unchanged. Synthetic persistence
+is not hosted audit or journey acceptance. No merge/deployment/rules/config or
+spend. Cursor retains #289, Claude retains #72/#73/#74; owner #126 gate retained.

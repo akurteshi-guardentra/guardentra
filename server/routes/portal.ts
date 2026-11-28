@@ -122,10 +122,12 @@ router.post('/session', portalSessionLimiter, async (req, res) => {
 });
 
 const evidenceLimiter = createRateLimiter({ windowMs: 60_000, max: 30 });
+// Scan refresh must not consume the allowance needed to submit or access evidence.
+const assessmentViewLimiter = createRateLimiter({ windowMs: 60_000, max: 30 });
 
 // Historical records can still carry reviewer-only fields. Never send the raw
 // Admin document: the same scoped identity and allowlist apply on every refresh.
-router.post('/assessment-view', evidenceLimiter, async (req, res) => {
+router.post('/assessment-view', assessmentViewLimiter, async (req, res) => {
   const header = req.headers.authorization;
   const token = header?.startsWith('Bearer ') ? header.slice(7).trim() : '';
   if (!token) return res.status(401).json({ error: 'Authentication required' });

@@ -1,5 +1,17 @@
 # GuardEntra Project State
 
+## 2026-11-28 — #124 refresh allowance source correction
+
+The existing #290 writer separated assessment-view refresh from the unchanged
+shared submit/validate/download30/minute allowance. Session remains20/minute.
+Mounted-router tests on localhost reproduced two isolation failures before the
+correction and pass after it, including successful real-handler submission with
+synthetic persistence after exhausting refresh. Focused portal/evidence tests:
+103 PASS. Exact head/build/CI evidence is recorded on #290. No hosted acceptance,
+merge, deployment, rules or configuration change. Slack coordination resumed in
+existing thread1795731196.443939; no new controller/agent. Remaining release
+gates remain open; no numeric readiness change claimed.
+
 ## 2026-11-26 — #124 historical privacy source boundary checkpoint
 
 Existing source correction PR #290 prepares a vendor projection instead of a
