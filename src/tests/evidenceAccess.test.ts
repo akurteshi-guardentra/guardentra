@@ -575,7 +575,6 @@ describe('#158 durable portal submit', () => {
             ...open,
             portalOpen: false,
             status: 'Completed',
-            decisionOutcome: 'conditional',
             submittedSnapshot: {
               submittedAt: '2026-10-07T12:00:00.000Z',
               answers: { q1: 'Yes' },
@@ -632,6 +631,95 @@ describe('#158 durable portal submit', () => {
     expect((res.body as { deduplicated?: boolean }).deduplicated).toBe(true);
     expect(vendorWrites).toEqual([]);
   });
+
+  const answeredQuestion = {
+    id: 'q1',
+    controlKey: 'q1',
+    category: 'Access Control',
+    question: 'MFA?',
+    type: 'yesno',
+    options: ['Yes', 'No'],
+    required: true,
+  };
+  const submitBody = {
+    assessmentId: 'asmA',
+    answers: { q1: 'Yes' },
+    comments: {},
+    evidenceByQuestion: {},
+    attestations: { accuracy: true, authority: true, attestedByName: 'Vendor User' },
+  };
+
+  it.each(['approved', 'conditional', 'rejected'] as const)(
+    'refuses a portal resubmit when the recorded decision is %s',
+    async (outcome) => {
+      let wrote = false;
+      const d = deps({
+        runAssessmentTransaction: vi.fn(async (_id, updater) => {
+          const patch = await updater({
+            organizationId: 'org1',
+            vendorId: 'vendor-1',
+            portalOpen: true,
+            status: 'In Progress',
+            decisionOutcome: outcome,
+            decidedAt: '2026-08-20T12:00:00.000Z',
+            questions: [answeredQuestion],
+            sentAt: '2026-10-07T10:00:00.000Z',
+            answers: { q1: 'Frozen' },
+            comments: { q1: 'Frozen' },
+            evidenceByQuestion: { q1: [{ name: 'frozen.pdf' }] },
+          });
+          wrote = true;
+          return patch;
+        }),
+      });
+      const res = mockRes();
+      await handlePortalSubmit(req({ token: 'portal-a', body: submitBody }), res as any, d);
+      expect(res.statusCode).toBe(409);
+      expect((res.body as { error?: string }).error).toBe('A terminal decision already exists');
+      expect(wrote).toBe(false);
+    },
+  );
+
+  it('still accepts a portal submit after a nonterminal remediate decision', async () => {
+    const d = deps({
+      runAssessmentTransaction: vi.fn(async (_id, updater) =>
+        updater({
+          organizationId: 'org1',
+          vendorId: 'vendor-1',
+          portalOpen: true,
+          status: 'In Progress',
+          decisionOutcome: 'remediate',
+          decidedAt: '2026-08-20T12:00:00.000Z',
+          questions: [answeredQuestion],
+          sentAt: '2026-10-07T10:00:00.000Z',
+        }),
+      ),
+    });
+    const res = mockRes();
+    await handlePortalSubmit(req({ token: 'portal-a', body: submitBody }), res as any, d);
+    expect(res.statusCode).toBe(200);
+    expect((res.body as { deduplicated?: boolean }).deduplicated).toBe(false);
+  });
+
+  it('does not treat decidedAt alone as a terminal resubmit lock', async () => {
+    const d = deps({
+      runAssessmentTransaction: vi.fn(async (_id, updater) =>
+        updater({
+          organizationId: 'org1',
+          vendorId: 'vendor-1',
+          portalOpen: true,
+          status: 'In Progress',
+          decidedAt: '2026-08-20T12:00:00.000Z',
+          questions: [answeredQuestion],
+          sentAt: '2026-10-07T10:00:00.000Z',
+        }),
+      ),
+    });
+    const res = mockRes();
+    await handlePortalSubmit(req({ token: 'portal-a', body: submitBody }), res as any, d);
+    expect(res.statusCode).toBe(200);
+    expect((res.body as { deduplicated?: boolean }).deduplicated).toBe(false);
+  });
 });
 
 describe('evidence download', () => {
@@ -644,6 +732,25 @@ describe('evidence download', () => {
       'org'
     );
     expect(res.statusCode).toBe(401);
+  });
+
+  it('rejects an unclaimed invite seat before signing a download', async () => {
+    const d = deps({
+      getUser: vi.fn(async () => ({ organizationId: 'org1', role: 'admin', seatCountApplied: false })),
+    });
+    const res = mockRes();
+    await handleEvidenceDownload(
+      req({
+        token: 'org',
+        query: { assessmentId: 'asmA', storagePath: 'portal/asmA/a.pdf' },
+      }),
+      res as any,
+      d,
+      'org'
+    );
+    expect(res.statusCode).toBe(403);
+    expect((res.body as { error?: string }).error).toBe('Invite seat is not claimed.');
+    expect(d.signReadUrl).not.toHaveBeenCalled();
   });
 
   it('rejects cross-tenant org downloads', async () => {
@@ -943,6 +1050,24 @@ describe('organization attachments', () => {
     expect(res.statusCode).toBe(401);
   });
 
+  it('rejects an unclaimed invite seat on attachment downloads', async () => {
+    const d = deps({
+      getUser: vi.fn(async () => ({ organizationId: 'org1', role: 'admin', seatCountApplied: false })),
+    });
+    const res = mockRes();
+    await handleOrgAttachmentDownload(
+      req({
+        token: 'org',
+        query: { orgId: 'org1', vendorId: 'v1', storagePath: attach },
+      }),
+      res as any,
+      d
+    );
+    expect(res.statusCode).toBe(403);
+    expect((res.body as { error?: string }).error).toBe('Invite seat is not claimed.');
+    expect(d.signReadUrl).not.toHaveBeenCalled();
+  });
+
   it('rejects cross-tenant attachment downloads', async () => {
     const res = mockRes();
     await handleOrgAttachmentDownload(
@@ -1100,6 +1225,8 @@ describe('org decisions', () => {
       organizationId: 'org1',
       questions: [],
       answers: {},
+      // Existing decision tests assume an assessment the UI would already allow.
+      status: 'Under Review',
       ...initial,
     };
     const d = deps({
@@ -1124,6 +1251,7 @@ describe('org decisions', () => {
           organizationId: 'org1',
           questions: [],
           answers: {},
+          status: 'Under Review',
           submittedSnapshot: { submittedAt: '2026-10-07T12:00:00.000Z' },
         };
         const patch = await updater(current);
@@ -1359,6 +1487,7 @@ describe('org decisions', () => {
       organizationId: 'org1',
       questions: [],
       answers: {},
+      status: 'Under Review',
     };
     let committed: Record<string, unknown> | null = null;
     const d = deps({
@@ -1403,7 +1532,12 @@ describe('org decisions', () => {
     let patch: Record<string, unknown> | undefined;
     const d = deps({
       runAssessmentTransaction: vi.fn(async (_id, updater) => {
-        patch = await updater({ organizationId: 'org1', questions: [], answers: {} });
+        patch = await updater({
+          organizationId: 'org1',
+          questions: [],
+          answers: {},
+          status: 'Under Review',
+        });
         return patch!;
       }),
     });
@@ -1455,7 +1589,12 @@ describe('org decisions', () => {
     let patch: Record<string, unknown> | undefined;
     const d = deps({
       runAssessmentTransaction: vi.fn(async (_id, updater) => {
-        patch = await updater({ organizationId: 'org1', questions: [], answers: {} });
+        patch = await updater({
+          organizationId: 'org1',
+          questions: [],
+          answers: {},
+          status: 'Under Review',
+        });
         return patch!;
       }),
     });
@@ -1468,6 +1607,90 @@ describe('org decisions', () => {
     expect(res.statusCode).toBe(200);
     expect(patch!.decisionNotes).toBeNull();
     assertNoUndefinedValues(patch!);
+  });
+});
+
+describe('org decision readiness parity (#124)', () => {
+  function readinessDeps(current: Record<string, unknown>) {
+    let capturedPatch: Record<string, unknown> | null = null;
+    const d = deps({
+      runAssessmentTransaction: vi.fn(async (_id, updater) => {
+        const patch = await updater({
+          organizationId: 'org1',
+          questions: [],
+          answers: {},
+          ...current,
+        });
+        capturedPatch = patch;
+        return patch;
+      }),
+    });
+    return { d, getPatch: () => capturedPatch };
+  }
+
+  async function decide(
+    current: Record<string, unknown>,
+    outcome: string,
+    extra: Record<string, unknown> = {},
+  ) {
+    const { d, getPatch } = readinessDeps(current);
+    const res = mockRes();
+    await handleOrgDecision(
+      req({ token: 'org', body: { assessmentId: 'asmA', outcome, ...extra } }),
+      res as any,
+      d,
+    );
+    return { res, getPatch };
+  }
+
+  it('rejects a Not Started zero-progress assessment before any write', async () => {
+    const { res, getPatch } = await decide({ status: 'Not Started', progressPct: 0, progress: 0 }, 'approved');
+    expect(res.statusCode).toBe(409);
+    expect((res.body as { error?: string }).error).toMatch(/not been started/);
+    expect(getPatch()).toBeNull();
+  });
+
+  it('rejects a zero-progress assessment with no status', async () => {
+    const { res, getPatch } = await decide({ progress: 0 }, 'rejected');
+    expect(res.statusCode).toBe(409);
+    expect(getPatch()).toBeNull();
+  });
+
+  it('rejects In Progress when progress is still zero', async () => {
+    const { res, getPatch } = await decide({ status: 'In Progress', progressPct: 0, progress: 0 }, 'approved');
+    expect(res.statusCode).toBe(409);
+    expect(getPatch()).toBeNull();
+  });
+
+  it('allows a started in-progress assessment to be decided', async () => {
+    const { res, getPatch } = await decide({ status: 'In Progress', progressPct: 40, progress: 40 }, 'approved');
+    expect(res.statusCode).toBe(200);
+    expect(getPatch()?.decisionOutcome).toBe('approved');
+  });
+
+  it('allows an Under Review assessment even at zero progress', async () => {
+    const { res, getPatch } = await decide({ status: 'Under Review', progressPct: 0, progress: 0 }, 'approved');
+    expect(res.statusCode).toBe(200);
+    expect(getPatch()?.decisionOutcome).toBe('approved');
+  });
+
+  it('allows a Completed assessment to be decided', async () => {
+    const { res, getPatch } = await decide(
+      { status: 'Completed', progressPct: 100, progress: 100 },
+      'rejected',
+    );
+    expect(res.statusCode).toBe(200);
+    expect(getPatch()?.decisionOutcome).toBe('rejected');
+  });
+
+  it('keeps the terminal-decision rejection ahead of the readiness check', async () => {
+    const { res, getPatch } = await decide(
+      { status: 'Not Started', progressPct: 0, decisionOutcome: 'approved' },
+      'rejected',
+    );
+    expect(res.statusCode).toBe(409);
+    expect((res.body as { error?: string }).error).toMatch(/terminal decision already exists/);
+    expect(getPatch()).toBeNull();
   });
 });
 
@@ -1514,6 +1737,7 @@ describe('decision vendor projection (#124 findings 7–8)', () => {
           vendorId: 'vendor-1',
           questions: [],
           answers: {},
+          status: 'Under Review',
           submittedSnapshot: { submittedAt: '2026-10-30T12:00:00.000Z' },
         };
         const patch = await updater(current);

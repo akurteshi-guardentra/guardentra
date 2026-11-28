@@ -20,6 +20,8 @@ const flush = async () => {
 
 let onNext: ((snap: unknown) => void) | null = null;
 let onError: ((err: unknown) => void) | null = null;
+let reviewNext: ((snap: unknown) => void) | null = null;
+let reviewError: ((err: unknown) => void) | null = null;
 let listenCount = 0;
 let addDocShouldFail = false;
 const addedDocs: Record<string, unknown>[] = [];
@@ -34,7 +36,12 @@ vi.mock('firebase/firestore', () => ({
     addedDocs.push(data);
     return { id: `cloud_${addedDocs.length}` };
   }),
-  onSnapshot: vi.fn((_q: unknown, next: (s: unknown) => void, err?: (e: unknown) => void) => {
+  onSnapshot: vi.fn((q: { name?: string }, next: (s: unknown) => void, err?: (e: unknown) => void) => {
+    if (q?.name === 'assessment_reviews') {
+      reviewNext = next;
+      reviewError = err ?? null;
+      return () => {};
+    }
     listenCount += 1;
     onNext = next;
     onError = err ?? null;
@@ -69,6 +76,8 @@ beforeEach(() => {
   localStorage.clear();
   onNext = null;
   onError = null;
+  reviewNext = null;
+  reviewError = null;
   listenCount = 0;
   addDocShouldFail = false;
   addedDocs.length = 0;
@@ -281,5 +290,104 @@ describe('useOrgAssessments — hosted fail-closed', () => {
     expect(result.current.assessments).toEqual([]);
     expect(addedDocs).toHaveLength(0);
     expect(listLocalAssessments(ORG).some((a) => a.vendorName === 'Unsaved After Timeout')).toBe(true);
+  });
+});
+
+describe('useOrgAssessments reviewer overlay', () => {
+  const cloud = {
+    id: 'asm-1',
+    data: {
+      vendorName: 'Visible Vendor',
+      organizationId: ORG,
+      status: 'Completed',
+      decisionOutcome: 'approved',
+      portalOpen: false,
+      createdAt: '2026-11-01T00:00:00.000Z',
+    },
+  };
+
+  async function showPublic() {
+    const view = renderHook(() => useOrgAssessments(ORG));
+    await act(async () => {
+      onNext?.(snapshot([cloud]));
+      await flush();
+    });
+    return view.result;
+  }
+
+  it('keeps public rows visible while the reviewer listen is deferred', async () => {
+    const result = await showPublic();
+    expect(result.current.mode).toBe('firestore');
+    expect(result.current.reviewOverlay).toBe('loading');
+    expect(result.current.assessments[0].vendorName).toBe('Visible Vendor');
+    expect(result.current.assessments[0].decisionOutcome).toBe('approved');
+    expect(result.current.assessments[0].decisionNotes).toBeUndefined();
+  });
+
+  it('overlays reviewer fields when the private listen succeeds', async () => {
+    const result = await showPublic();
+    await act(async () => {
+      reviewNext?.(
+        snapshot([
+          {
+            id: 'asm-1',
+            data: { organizationId: ORG, decisionNotes: 'internal', residualRiskLevel: 'High' },
+          },
+        ]),
+      );
+      await flush();
+    });
+    expect(result.current.reviewOverlay).toBe('ready');
+    expect(result.current.assessments[0].decisionNotes).toBe('internal');
+    expect(result.current.assessments[0].vendorName).toBe('Visible Vendor');
+  });
+
+  it('keeps public rows when the reviewer listen fails', async () => {
+    const result = await showPublic();
+    await act(async () => {
+      reviewError?.(new Error('permission-denied'));
+      await flush();
+    });
+    expect(result.current.reviewOverlay).toBe('error');
+    expect(result.current.mode).toBe('firestore');
+    expect(result.current.assessments[0].decisionOutcome).toBe('approved');
+    expect(result.current.assessments[0].decisionNotes).toBeUndefined();
+  });
+
+  it('recovers reviewer fields after a failed listen is retried', async () => {
+    const result = await showPublic();
+    await act(async () => {
+      reviewError?.(new Error('unavailable'));
+      await flush();
+    });
+    expect(result.current.reviewOverlay).toBe('error');
+    await act(async () => {
+      result.current.retryFirestore();
+      await flush();
+    });
+    await act(async () => {
+      onNext?.(snapshot([cloud]));
+      await flush();
+    });
+    expect(result.current.reviewOverlay).toBe('loading');
+    await act(async () => {
+      reviewNext?.(snapshot([{ id: 'asm-1', data: { decisionNotes: 'recovered' } }]));
+      await flush();
+    });
+    expect(result.current.reviewOverlay).toBe('ready');
+    expect(result.current.assessments[0].decisionNotes).toBe('recovered');
+    expect(result.current.assessments[0].decisionOutcome).toBe('approved');
+  });
+
+  it('keeps local-only rows when the reviewer listen arrives', async () => {
+    const local = makeLocal('Local Only');
+    const result = await showPublic();
+    expect(result.current.assessments.some((row) => row.id === local.id)).toBe(true);
+    await act(async () => {
+      reviewNext?.(snapshot([{ id: 'asm-1', data: { decisionNotes: 'internal' } }]));
+      await flush();
+    });
+    expect(result.current.assessments.some((row) => row.id === local.id)).toBe(true);
+    expect(result.current.assessments.find((row) => row.id === 'asm-1')?.decisionNotes).toBe('internal');
   });
 });

@@ -88,6 +88,28 @@ function formatAssessmentAnswer(value: string | string[] | undefined): string {
   return value || 'No Answer';
 }
 
+export function sameOrgReviewRecord(
+  assessments: StoredAssessment[],
+  reviewId: string | null,
+  orgId: string | null | undefined,
+): StoredAssessment | null {
+  if (!reviewId || !orgId) return null;
+  return assessments.find((row) => row.id === reviewId && row.organizationId === orgId) ?? null;
+}
+
+function withRecoveredQuestions(
+  listed: StoredAssessment,
+  recovered: StoredAssessment | null,
+): StoredAssessment {
+  if (!recovered || recovered.id !== listed.id) return listed;
+  return {
+    ...listed,
+    questions: recovered.questions ?? listed.questions,
+    questionCount: recovered.questionCount ?? listed.questionCount,
+    sourceQuestionCount: recovered.sourceQuestionCount ?? listed.sourceQuestionCount,
+  };
+}
+
 export function Assessments() {
   const { user, profile, loading: authLoading } = useAuth();
   const orgId = profile?.organizationId;
@@ -97,12 +119,13 @@ export function Assessments() {
   const createdId = params.get('created') || '';
   const monitorFocus = params.get('focus') === 'monitor';
 
-  const { assessments, mode, loading, refreshLocal } = useOrgAssessments(orgId);
+  const { assessments, mode, loading, reviewOverlay, refreshLocal } = useOrgAssessments(orgId);
   const { vendors } = useOrgVendors(orgId);
 
   const [search, setSearch] = useState('');
   const [vendorFilter, setVendorFilter] = useState(presetVendorId || 'all');
-  const [reviewAssessment, setReviewAssessment] = useState<StoredAssessment | null>(null);
+  const [reviewId, setReviewId] = useState<string | null>(null);
+  const [recoveredAssessment, setRecoveredAssessment] = useState<StoredAssessment | null>(null);
   const [isReviewing, setIsReviewing] = useState(false);
   const [reminderState, setReminderState] = useState<Record<string, 'sending' | 'sent' | 'error'>>({});
   const [packNotices, setPackNotices] = useState<
@@ -143,6 +166,11 @@ export function Assessments() {
       setPackNotices(packsNeedingUpgradeNotice(defaults));
     });
   }, [orgId]);
+
+  const listedReview = sameOrgReviewRecord(assessments, reviewId, orgId);
+  const reviewAssessment = listedReview
+    ? withRecoveredQuestions(listedReview, recoveredAssessment)
+    : null;
 
   const isLocalAssessment = (a: StoredAssessment) =>
     a.id.startsWith('local_asm_') || mode === 'local';
@@ -253,7 +281,8 @@ export function Assessments() {
   };
 
   const handleReviewAssessment = async (assessment: StoredAssessment) => {
-    setReviewAssessment(assessment);
+    setReviewId(assessment.id);
+    setRecoveredAssessment(null);
     setReviewAnalysis(null);
     setReviewAiError('');
     setReviewManual(false);
@@ -458,7 +487,8 @@ export function Assessments() {
       };
       setToast({ tone: 'ok', text: messages[outcome] });
       setIsReviewing(false);
-      setReviewAssessment(null);
+      setReviewId(null);
+      setRecoveredAssessment(null);
     } catch (e) {
       console.error('Decision failed:', e);
       const reason = e instanceof Error && e.message ? e.message : '';
@@ -492,7 +522,7 @@ export function Assessments() {
       const patch = buildRecoverEmptyAssessmentPatch(reviewAssessment, orgPackDefaults);
       await persistAssessmentPatch(reviewAssessment, patch);
       const next = { ...reviewAssessment, ...patch } as StoredAssessment;
-      setReviewAssessment(next);
+      setRecoveredAssessment(next);
       setArchiveReason('');
       setToast({
         tone: 'ok',
@@ -541,7 +571,8 @@ export function Assessments() {
         text: 'Empty assessment archived. Create a new assessment when you are ready to send a questionnaire.',
       });
       setIsReviewing(false);
-      setReviewAssessment(null);
+      setReviewId(null);
+      setRecoveredAssessment(null);
       setArchiveReason('');
     } catch (e) {
       console.error('Empty assessment archive failed:', e);
@@ -726,32 +757,50 @@ export function Assessments() {
             onRecoverEmpty={() => void handleRecoverEmptyAssessment()}
             onArchiveEmpty={() => void handleArchiveEmptyAssessment()}
             onDecide={(outcome) => void handleDecideAssessment(outcome)}
+            reviewerFields={mode === 'local' ? 'ready' : reviewOverlay}
             onDownloadDecisionPacket={() => {
-              if (!reviewAssessment) return;
+              const current = sameOrgReviewRecord(assessments, reviewId, orgId);
+              if (!current) {
+                setToast({
+                  tone: 'err',
+                  text: 'This assessment is no longer in the current organization. The prior record was not exported.',
+                });
+                return;
+              }
               try {
                 // Only a recorded decision may appear as an outcome. Before one exists the
                 // export is a DRAFT summary; the unsaved form selection is never printed.
-                const recorded = recordedDecisionOutcome(reviewAssessment);
+                const recorded = recordedDecisionOutcome(current);
+                if (recorded && mode === 'firestore' && reviewOverlay !== 'ready') {
+                  setToast({
+                    tone: 'err',
+                    text:
+                      reviewOverlay === 'error'
+                        ? 'Reviewer record unavailable. The complete decision packet was not exported.'
+                        : 'Reviewer record is still loading. The complete decision packet was not exported.',
+                  });
+                  return;
+                }
                 openDecisionPacketForPrint({
-                  vendorName: reviewAssessment.vendorName || 'Vendor',
-                  assessmentId: reviewAssessment.id,
-                  frameworksLabel: frameworkLabel(reviewAssessment),
+                  vendorName: current.vendorName || 'Vendor',
+                  assessmentId: current.id,
+                  frameworksLabel: frameworkLabel(current),
                   ...(recorded
                     ? {
                         outcome: recorded,
-                        decisionNotes: reviewAssessment.decisionNotes || undefined,
-                        decidedBy: decidedByDisplay(reviewAssessment, {
+                        decisionNotes: current.decisionNotes || undefined,
+                        decidedBy: decidedByDisplay(current, {
                           uid: user?.uid,
                           label: profile?.displayName || profile?.email,
                         }),
-                        decidedAt: reviewAssessment.decidedAt || undefined,
-                        remediationOwner: reviewAssessment.remediationOwner || undefined,
-                        remediationDueAt: reviewAssessment.remediationDueAt || undefined,
-                        residualRiskLevel: reviewAssessment.residualRiskLevel || undefined,
+                        decidedAt: current.decidedAt || undefined,
+                        remediationOwner: current.remediationOwner || undefined,
+                        remediationDueAt: current.remediationDueAt || undefined,
+                        residualRiskLevel: current.residualRiskLevel || undefined,
                         nextReviewAt: decisionNextReviewAt({
                           outcome: recorded,
-                          decidedAt: reviewAssessment.decidedAt,
-                          remediationDueAt: reviewAssessment.remediationDueAt,
+                          decidedAt: current.decidedAt,
+                          remediationDueAt: current.remediationDueAt,
                         }),
                       }
                     : { outcome: null }),
@@ -760,8 +809,8 @@ export function Assessments() {
                     reason: exceptionReasonsLabel(e.reasons, e.evidenceStatus),
                     answer: Array.isArray(e.answer) ? e.answer.join(', ') : e.answer,
                   })),
-                  triageTier: (reviewAssessment as { triageTier?: string }).triageTier,
-                  reviewCadence: (reviewAssessment as { reviewCadence?: string }).reviewCadence,
+                  triageTier: (current as { triageTier?: string }).triageTier,
+                  reviewCadence: (current as { reviewCadence?: string }).reviewCadence,
                 });
                 if (orgId) {
                   void emitAuditBestEffort({

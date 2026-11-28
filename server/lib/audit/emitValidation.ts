@@ -4,20 +4,15 @@
  */
 import type { AuditEmitEnvelope } from './types.ts';
 
+// This parser is the shared HTTP boundary for /emit and /emit-batch, not
+// the trusted material journal. Lifecycle events backed by product mutations
+// must originate in that journal; a browser must not attest those mutations.
 const EVENT_TYPES = new Set([
-  'vendor.created',
-  'vendor.imported',
-  'vendor.invite_queued',
-  'triage.completed',
-  'assessment.created',
-  'assessment.sent',
   'answer.saved',
   'evidence.uploaded',
   'answer.proposed',
   'answer.confirmed',
-  'assessment.submitted',
   'exception.reviewed',
-  'decision.finalized',
   'report.exported',
   'audit.chain_verified',
   'audit.chain_verification_failed',
@@ -29,7 +24,6 @@ export function parseAuditEmitBody(raw: unknown): { ok: true; value: AuditEmitEn
   const allowed = new Set([
     'tenantId',
     'eventType',
-    'eventId',
     'actorId',
     'actorType',
     'objectType',
@@ -56,7 +50,6 @@ export function parseAuditEmitBody(raw: unknown): { ok: true; value: AuditEmitEn
     value: {
       tenantId,
       eventType,
-      eventId: typeof body.eventId === 'string' ? body.eventId : undefined,
       actorId: typeof body.actorId === 'string' ? body.actorId : null,
       actorType: (body.actorType as AuditEmitEnvelope['actorType']) || 'user',
       objectType: typeof body.objectType === 'string' ? body.objectType : undefined,

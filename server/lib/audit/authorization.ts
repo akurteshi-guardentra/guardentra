@@ -1,4 +1,5 @@
 import { getAdminDb } from '../adminDb.ts';
+import { INVITE_SEAT_UNCLAIMED_MESSAGE, inviteSeatUnclaimed } from '../inviteSeat.ts';
 import type { AuditActorType, AuditEmitEnvelope } from './types.ts';
 
 export type AuditFirebasePrincipal = {
@@ -110,6 +111,9 @@ export async function authorizeAuditTenantRead(
       'audit_tenant_forbidden',
       'Audit tenant is not authorized for this user',
     );
+  }
+  if (inviteSeatUnclaimed(profile)) {
+    throw new AuditAuthorizationError(403, 'seat_unclaimed', INVITE_SEAT_UNCLAIMED_MESSAGE);
   }
 
   return {

@@ -277,6 +277,26 @@ async function main() {
     await assertFails(getBytes(ref(member.storage(), 'orgs/org1/vendors/v1/attachments/pack.pdf')));
   });
 
+  // #210: an existing admin-shaped profile must not convert a portal token
+  // into an organization Storage principal either.
+  await testEnv.withSecurityRulesDisabled(async ctx => {
+    await setDoc(doc(ctx.firestore(), 'users/portal_assessmentA'), {
+      organizationId: 'org1', role: 'admin', seatCountApplied: true,
+    });
+  });
+  await check('portal token with legacy admin profile CANNOT read organization evidence', () =>
+    assertFails(getBytes(ref(portal('assessmentA').storage(), 'orgs/org1/vendors/v1/evidence/member.pdf'))),
+  );
+  await check('portal token with legacy admin profile CANNOT write organization evidence', () =>
+    assertFails(uploadBytes(ref(portal('assessmentA').storage(), 'orgs/org1/vendors/v1/evidence/portal.pdf'), pdfBytes, pdfMeta)),
+  );
+  await check('portal token with legacy admin profile CANNOT write organization attachments', () =>
+    assertFails(uploadBytes(ref(portal('assessmentA').storage(), 'orgs/org1/vendors/v1/attachments/portal.pdf'), pdfBytes, pdfMeta)),
+  );
+  await check('portal token with legacy profile CAN still upload to its scoped open assessment', () =>
+    assertSucceeds(uploadBytes(ref(portal('assessmentA').storage(), 'portal/assessmentA/legacy-profile.pdf'), pdfBytes, pdfMeta)),
+  );
+
   await check('unauthenticated CANNOT write portal path', async () => {
     await assertFails(
       uploadBytes(ref(unauth.storage(), 'portal/assessmentA/noauth.pdf'), pdfBytes, pdfMeta),

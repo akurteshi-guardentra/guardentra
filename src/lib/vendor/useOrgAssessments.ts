@@ -12,10 +12,14 @@ import {
   removeLocalAssessment,
   type StoredAssessment,
 } from './localAssessmentStore';
+import { VENDOR_PRIVATE_ASSESSMENT_FIELDS } from './vendorAssessmentPrivacy';
 import { promoteLocalVendors } from './useOrgVendors';
 import type { FrameworkId } from './types';
 
 export type AssessmentDataMode = 'firestore' | 'local' | 'unavailable';
+
+/** Private reviewer fields are a second listen. Public rows stay visible in every state. */
+export type ReviewOverlayState = 'loading' | 'ready' | 'error';
 
 export const ASSESSMENT_RETRY_INTERVAL_MS = 30000;
 
@@ -136,6 +140,7 @@ export function useOrgAssessments(orgId?: string | null) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [retryTick, setRetryTick] = useState(0);
+  const [reviewOverlay, setReviewOverlay] = useState<ReviewOverlayState>('loading');
   const modeRef = useRef<AssessmentDataMode>('firestore');
 
   const refreshLocal = useCallback(() => {
@@ -151,6 +156,7 @@ export function useOrgAssessments(orgId?: string | null) {
     setAssessments(listLocalAssessments(orgId));
     modeRef.current = 'local';
     setMode('local');
+    setReviewOverlay('ready');
     setError('');
     setLoading(false);
   }, [orgId]);
@@ -167,9 +173,11 @@ export function useOrgAssessments(orgId?: string | null) {
     }
 
     setLoading(true);
+    setReviewOverlay('loading');
     setError('');
     let settled = false;
     let unsub: (() => void) | null = null;
+    let unsubReviews: (() => void) | null = null;
     const allowLocal = shouldUseLocalPersistenceFallback();
 
     const failClosed = () => {
@@ -178,6 +186,10 @@ export function useOrgAssessments(orgId?: string | null) {
       if (unsub) {
         unsub();
         unsub = null;
+      }
+      if (unsubReviews) {
+        unsubReviews();
+        unsubReviews = null;
       }
       setAssessments([]);
       modeRef.current = 'unavailable';
@@ -197,10 +209,37 @@ export function useOrgAssessments(orgId?: string | null) {
         unsub();
         unsub = null;
       }
+      if (unsubReviews) {
+        unsubReviews();
+        unsubReviews = null;
+      }
       refreshLocal();
     };
 
     const failSafe = window.setTimeout(allowLocal ? fallBackLocal : failClosed, 3500);
+
+    const rowsRef: { current: StoredAssessment[] | null } = { current: null };
+    const reviewsRef: { current: Map<string, Record<string, unknown>> } = {
+      current: new Map(),
+    };
+    const publish = (rows: StoredAssessment[]) => {
+      const merged = rows.map((row) => {
+        const review = reviewsRef.current.get(row.id);
+        if (!review) return row;
+        const overlay: Partial<StoredAssessment> = {};
+        for (const key of VENDOR_PRIVATE_ASSESSMENT_FIELDS) {
+          if (review[key] !== undefined && review[key] !== null) {
+            (overlay as Record<string, unknown>)[key] = review[key];
+          }
+        }
+        return { ...row, ...overlay };
+      });
+      merged.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      if (!allowLocal) return merged;
+      const local = listLocalAssessments(orgId);
+      const cloudIds = new Set(merged.map((row) => row.id));
+      return [...merged, ...local.filter((row) => !cloudIds.has(row.id))];
+    };
 
     try {
       const q = query(collection(db, 'assessments'), where('organizationId', '==', orgId));
@@ -215,21 +254,10 @@ export function useOrgAssessments(orgId?: string | null) {
             await promoteLocalAssessments(orgId);
           }
           const rows = snap.docs.map((d) => normalizeCloudDoc(d.id, d.data() as Record<string, unknown>));
-          rows.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-          if (!allowLocal) {
-            setAssessments(rows);
-            modeRef.current = 'firestore';
-            setMode('firestore');
-            setError('');
-            setLoading(false);
-            return;
-          }
-          // Demo/dev only: merge remaining local-only rows so local creates still show
-          // when cloud is empty-but-listening after a partial promote.
-          const local = listLocalAssessments(orgId);
-          const cloudIds = new Set(rows.map((r) => r.id));
-          const merged = [...rows, ...local.filter((l) => !cloudIds.has(l.id))];
-          setAssessments(merged);
+          rowsRef.current = rows;
+          // Public rows are visible immediately. reviewOverlay stays loading until
+          // the private listen settles, so a report cannot treat missing notes as none.
+          setAssessments(publish(rows));
           modeRef.current = 'firestore';
           setMode('firestore');
           setError('');
@@ -245,6 +273,24 @@ export function useOrgAssessments(orgId?: string | null) {
           }
         }
       );
+      const reviewsQuery = query(
+        collection(db, 'assessment_reviews'),
+        where('organizationId', '==', orgId),
+      );
+      unsubReviews = onSnapshot(
+        reviewsQuery,
+        (snap) => {
+          const next = new Map<string, Record<string, unknown>>();
+          snap.docs.forEach((d) => next.set(d.id, d.data() as Record<string, unknown>));
+          reviewsRef.current = next;
+          setReviewOverlay('ready');
+          if (rowsRef.current) setAssessments(publish(rowsRef.current));
+        },
+        (err) => {
+          console.error('useOrgAssessments reviewer listen failed', err);
+          setReviewOverlay('error');
+        },
+      );
     } catch (err) {
       console.error('useOrgAssessments setup failed', err);
       window.clearTimeout(failSafe);
@@ -255,6 +301,7 @@ export function useOrgAssessments(orgId?: string | null) {
     return () => {
       window.clearTimeout(failSafe);
       if (unsub) unsub();
+      if (unsubReviews) unsubReviews();
     };
   }, [orgId, refreshLocal, retryTick]);
 
@@ -264,5 +311,5 @@ export function useOrgAssessments(orgId?: string | null) {
     return () => window.clearInterval(interval);
   }, [mode, retryFirestore]);
 
-  return { assessments, mode, loading, error, refreshLocal, retryFirestore, modeRef };
+  return { assessments, mode, loading, error, reviewOverlay, refreshLocal, retryFirestore, modeRef };
 }

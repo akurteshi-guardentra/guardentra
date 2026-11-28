@@ -1,5 +1,111 @@
 # GuardEntra Project State
 
+## 2026-11-28 — #124 refresh allowance source correction
+
+The existing #290 writer separated assessment-view refresh from the unchanged
+shared submit/validate/download30/minute allowance. Session remains20/minute.
+Mounted-router tests on localhost reproduced two isolation failures before the
+correction and pass after it, including successful real-handler submission with
+synthetic persistence after exhausting refresh. Focused portal/evidence tests:
+103 PASS. Exact head/build/CI evidence is recorded on #290. No hosted acceptance,
+merge, deployment, rules or configuration change. Slack coordination resumed in
+existing thread1795731196.443939; no new controller/agent. Remaining release
+gates remain open; no numeric readiness change claimed.
+
+## 2026-11-26 — #124 historical privacy source boundary checkpoint
+
+Existing source correction PR #290 prepares a vendor projection instead of a
+full assessment fetch. Candidate rules deny direct portal reads whenever the
+five historical private reviewer keys exist. Org historical reads and vendor
+answer saves remain allowed; no records are rewritten. Safe scan listeners stay;
+legacy scans use bounded scoped refresh. Before: five privacy negatives failed.
+After: 104 focused API/UI/evidence cases,189 Firestore,23 Storage,TypeScript and
+client/server build PASS. Published head/current CI belongs to #290; source-only,
+not deployed protection. Decision/rollout/rollback limits are in
+TASK_124_LEGACY_PORTAL_READ.md. Full hosted acceptance and release gates remain.
+
+## 2026-11-26 — #210 portal organization isolation source checkpoint
+
+Existing correction PR #290 extends published c957ad1 with explicit portal-token
+exclusion from organization authority in Firestore, Storage, vendor mutations
+and notification intents. Historical admin-shaped portal profiles do not grant
+organization access. Scoped portal reads/uploads remain supported. Regression
+tests reproduced five API, four Firestore and three Storage failures before the
+respective corrections. After correction: 121 focused API/evidence cases,
+182 Firestore and 23 Storage checks PASS; TypeScript and client/server build PASS.
+Exact published head/current CI is recorded on #290. No live rules, data, IAM,
+secrets, provider call, merge or deployment. Existing reviewer-field copies are
+not migrated; hosted acceptance remains open. See TASK_210_PORTAL_ORG_ISOLATION.md.
+
+## 2026-11-25 — #144 billing authority source checkpoint
+
+The existing source correction PR #290 also contains a bounded #144 follow-up
+from published `d7b6532dd38c495c9239ed884443d90b13459dad`. Checkout requires
+explicit admin/owner authority and unbound billing; completion rechecks current
+tenant/role and refuses conflicting customer/subscription mappings atomically.
+Provider customer identity must match the signed checkout. Stale/duplicate and
+current-subscription status semantics remain. Synthetic actual-handler tests
+reproduced 17 failures before correction. Exact updated head/CI evidence is on
+#290; no payment, provider configuration, tenant data or deployment was changed.
+See TASK_144_CHECKOUT_AUTHORITY.md. Hosted billing acceptance remains open.
+
+## 2026-11-25 — #210 portal AI authority source checkpoint
+
+On `fix/210-portal-ai-authority` from published candidate
+`93a89482aa35b03c14233ebdb6e07d283efdd662`, the existing AI middleware refuses
+portal claims on all routes except POST /propose-answers. That handler keeps
+its independent assessment-claim and trusted-evidence authorization. An
+organization profile attached to a portal uid does not grant general AI access.
+The actual-router synthetic regression failed on /analyze before the guard;
+99 focused middleware/router/evidence cases passed after correction. Exact
+publication/typecheck/build/CI evidence belongs to the task PR. No real model
+call, merge, deployment, data/rules/configuration change or new spend. Cursor's
+integration branch is untouched. This is not full #210 or production acceptance.
+See TASK_210_PORTAL_AI_AUTHORITY.md. Coordination is in ChatGPT/GitHub while
+Slack is unavailable; no replacement controller or agent was created.
+
+## 2026-11-19 — combined source tree, not a release
+
+The #124 terminal-assessment commits and published #288 audit-boundary commit
+`f01d446f372add5deb9422a05ec8efd6eff141b6` are together on
+`cursor/terminal-assessment-immutable-c439`. The two 2026-11-18 checkpoints
+below stay as written. This is not an RC merge, rules deployment, or hosted
+acceptance. Production NO-GO.
+
+## 2026-11-18 — #124 terminal assessment source checkpoint
+
+Portal resubmit now refuses a stored approved, conditional, or rejected
+decision, including when the lifecycle looks reopened. Rules pin the same
+terminal outcomes against answer, comment, and evidence rewrites and against
+a client correction reopen. remediate and a bare decidedAt stay nonterminal.
+No rules deployment or hosted acceptance is claimed. See
+TASK_124_TERMINAL_ASSESSMENT.md. Production NO-GO.
+
+## 2026-11-18 — #74 client audit trust-boundary checkpoint (source only)
+
+On published base 018ced4c8c602fb815897a5fa3b99d1061d96c98, synthetic actual-handler
+regressions reproduced browser control of canonical material event identities.
+Task branch `fix/74-client-audit-boundary` rejects client event IDs and server-journal
+lifecycle types in the shared single/batch HTTP parser. Trusted journal relay and
+SQL identity mapping are unchanged. The 36 new boundary cases pass; focused audit
+suites pass 79/79 and TypeScript passes. Exact commit/PR/CI are in the task handoff.
+No merge, deploy, live exploit, migration, rules/IAM/secret/config change or current
+hosted audit acceptance is claimed. Independent review and #74/#124 hosted proof
+remain required. See TASK_74_CLIENT_AUDIT_BOUNDARY.md and appended transition.
+
+## 2026-11-17 — #144 bounded checkout reconciliation checkpoint
+
+The independent finding in #144 comment 6898820689 was reproduced on published
+candidate fdc7e449b521babbcc05be2919dfe1e76f9d53e2: checkout completion granted
+active paid limits even when the retrieved subscription was inactive. Task branch
+`fix/144-checkout-current-status` now reuses the existing subscription.updated
+status/limit policy, retaining the catalog gate and atomic ledger/cursor guards.
+Actual-handler synthetic regressions plus existing focused billing suites pass
+43/43; TypeScript passes. Exact implementation SHA and remote CI belong to the
+task PR; no merge, deployment, provider or runtime acceptance is claimed here.
+See TASK_144_CHECKOUT_CURRENT_STATUS.md and the appended transition. This narrow
+checkpoint does not refresh the historical inventory below. Production NO-GO.
+
 > ## ⚠ STALE DISPATCH QUARANTINE — Issue #140
 >
 > This file is a **historical snapshot**, not current scheduling or release authority.

@@ -851,3 +851,144 @@ No Cloud SQL execution occurred. Fresh real fixture CI required after publicatio
 - Base: `release/rc-2026-10-08` at `caf27094`.
 - Deployment: **NOT DEPLOYED**. No code, rules, configuration, IAM, secret, or cloud change.
 - Rollback: revert the docs PR.
+
+
+## 2026-11-17 — #144 delayed checkout current-state correction (source only)
+
+- Source: owner instruction to fix blockers; #144 comment 6898820689.
+- Base: published candidate fdc7e449b521babbcc05be2919dfe1e76f9d53e2.
+- Writer: ChatGPT/Codex on fix/144-checkout-current-status, scoped takeover
+  announced in the existing execution thread; other agents' branches untouched.
+- Transition: reproduced inactive-subscription activation -> bounded source
+  correction and executable route regressions. The original 15-case diagnostic
+  had five expected failures; corrected focused suite has 43/43 PASS including
+  16 actual-handler cases. npm run lint and git diff --check PASS.
+- Behavior: inactive subscriptions reconcile to canceled/Starter; other current
+  statuses preserve existing subscription.updated policy. Unknown prices still
+  fail; atomic event ledger, duplicate/stale guards and mapping checks retained.
+- Exact implementation SHA/PR and remote CI: recorded in task PR, not inferred here.
+- Deployment: NOT DEPLOYED; no provider/database/payment/configuration mutation.
+- Limits: mocked external boundaries, not hosted Stripe/Firestore acceptance;
+  independent review and exact-head CI remain required. Production NO-GO.
+- Rollback: revert the correction commit before any release. No live rollback.
+- Packet: docs/agent-ops/TASK_144_CHECKOUT_CURRENT_STATUS.md.
+
+## 2026-11-18 — #74 browser audit material-boundary correction (source only)
+
+- Requirement: #74 follow-up 6944970308; Cursor source report thread
+  1794903633.948199; owner instruction to fix/continue blockers November 18.
+- Base: published #287 018ced4c8c602fb815897a5fa3b99d1061d96c98.
+- Writer/branch: ChatGPT/Codex, fix/74-client-audit-boundary; scoped takeover
+  announced before edits; no published audit correction or active writer receipt
+  found. Existing agent branches unchanged.
+- Transition: synthetic actual-handler reproduction (32 negative failures, four
+  positive passes) -> shared public emit parser refuses caller-supplied eventId
+  and journal-backed lifecycle types for BOTH single and batch requests.
+- Tests: 36 new boundary cases; focused seven-file audit suite 79/79 PASS;
+  TypeScript and diff check PASS. Actual parser/auth/emitIntent/identity code,
+  synthetic principals and mocked Firestore/SQL transports; not real PostgreSQL
+  concurrency, hosted audit integrity or live exploit evidence.
+- Server journal direct emit and deterministic mapping unchanged; later trusted
+  material emit queues normally and duplicate retry remains covered.
+- Exact SHA/PR/remote CI: task PR evidence. Not merged or deployed; no schema,
+  rules, IAM/secret, configuration, audit enablement or paid-resource changes.
+- Rollback: revert source commit. Independent review and hosted #74/#124 gates
+  remain open; production NO-GO, no readiness points inferred.
+- Packet: docs/agent-ops/TASK_74_CLIENT_AUDIT_BOUNDARY.md.
+
+## 2026-11-18 — #124 terminal assessment immutability (source only)
+
+- Source: owner fix/continue instruction; #124 comment 6973876255.
+- Base: published candidate 018ced4c8c602fb815897a5fa3b99d1061d96c98.
+- Writer: Cursor on cursor/terminal-assessment-immutable-c439. Audit parser
+  branch fix/74-client-audit-boundary was not edited. evidenceAccess.ts had no
+  newer open Claude writer.
+- Transition: terminal portal resubmit and client answer/comment/evidence
+  rewrite or correction reopen were possible after approved, conditional, or
+  rejected. Source rules and the submit transaction now refuse those outcomes
+  using the existing terminal-decision helper. remediate and decidedAt-only
+  records stay editable. No decision-clear policy.
+- Deployment: NOT DEPLOYED. No rules release, migration, or data rewrite.
+- Rollback: revert this commit before release. No live rollback.
+- Packet: docs/agent-ops/TASK_124_TERMINAL_ASSESSMENT.md.
+
+## 2026-11-19 — combine #288 into the #289 task branch (source only)
+
+- Operation: normal merge of published `f01d446f372add5deb9422a05ec8efd6eff141b6`
+  into `cursor/terminal-assessment-immutable-c439`. No force-push or history rewrite.
+- Conflicts: `PROJECT_STATE.md` and `PROJECT_TRANSITIONS.md` only. Both 2026-11-18
+  entries above are preserved. No application-code content was rewritten.
+- Deployment: NOT DEPLOYED. Not an RC or main merge. No rules, config, IAM, or secret change.
+- Rollback: revert the merge commit before release. The published #288 commit stays on its own branch.
+
+
+## 2026-11-25 — #210 portal AI authority source correction
+
+ChatGPT/Codex took the bounded AI scope in existing #210 after the owner moved
+coordination to this chat. Branch fix/210-portal-ai-authority starts at published
+candidate 93a89482aa35b03c14233ebdb6e07d283efdd662; Cursor's branch is untouched.
+The AI gate now refuses portal identities outside POST /propose-answers, whose
+existing claim/evidence checks remain. A synthetic actual-router test reproduced
+/analyze returning 200 before correction; 99 focused cases passed afterward.
+Exact task PR SHA/checks and working-tree evidence are recorded on publication.
+No real model request, tenant mutation, rules/configuration change, merge or
+deployment. Hosted #210 and other release gates remain open; no readiness score
+change claimed. Source revert is the rollback; source publication/independent
+review is the next permitted action.
+
+
+## 2026-11-25 — #144 checkout authority/mapping source correction
+
+Owner requested fixing remaining deployment blockers; Codex recorded bounded
+source ownership in #144/7163114561. Existing draft #290 is extended from
+d7b6532dd38c495c9239ed884443d90b13459dad; Cursor's integration branch is not
+edited. Checkout is admin/owner-only and refuses existing billing links. The
+completion transaction rechecks authority, tenant agreement and provider mappings
+before writes; the retrieved subscription customer must match the signed event.
+Synthetic actual handlers reproduced 17 failing negative cases before correction.
+Exact checks, final SHA and seven-field evidence are recorded on #290. No live
+Stripe call, payment/config change, tenant write, rules rollout, merge or deploy.
+Status: source checkpoint, independent review/current CI required. Existing
+subscription-management/relink operations and full hosted acceptance stay open.
+
+
+## 2026-11-26 — #210 scoped portal identity cannot become an org principal
+
+Codex continues the owner-requested source corrections in existing #290, from
+c957ad1758f9484ff1a9c264e61c69c4fe4e5db9; Cursor's branch is untouched.
+Firestore/Storage org membership and bootstrap now exclude portal claims even
+with a historical admin profile. Vendor create/archive and notification intents
+reject before profile/product/queue work. No live records are deleted/migrated.
+Before: five synthetic API, four Firestore and three Storage negative probes
+failed. After: 121 focused API/evidence cases,182 Firestore,23 Storage,TypeScript
+and client/server build PASS. Full exact-head CI/publication evidence is in #290.
+Source rules hashes/rollback limits are recorded in the task packet. No live rules
+release, payment/provider/email/tenant action, merge or deployment. Historical
+reviewer-field privacy and all hosted acceptance/recovery gates remain open.
+
+
+## 2026-11-26 — #124 historical reviewer privacy source boundary
+
+Codex continues the owner-requested source fixes in existing #290 from
+07717b4df895dc4fe73b04272cb1e73865fb0a04; Cursor's branch is untouched.
+Existing portal sessions now return finite vendor projections. Candidate rules
+deny direct portal reads of records with known reviewer keys. Authenticated,
+bounded refresh handles historical scan status; ordinary scoped listeners stay.
+No historical data is copied/deleted. Before: five Firestore privacy probes
+failed. After:104 focused API/UI/evidence,189 Firestore,23 Storage,TypeScript and
+client/server build PASS. Exact publication/current CI evidence is on #290.
+Implementation decision and app-first/rules-second/rollback limits recorded in
+the task packet. No live rules/configuration/provider/tenant operation, merge
+or deployment. Source checkpoint only; security review and hosted acceptance
+remain open, and migration is not implicitly authorized.
+
+
+## 2026-11-28 — #124 refresh request isolation source checkpoint
+
+From published #290 head2bc2213, Codex reused the isolated-patch approach in the
+existing Slack handoff. Added a distinct refresh limiter and three mounted-router
+regressions. Before: two isolation failures / one session-policy pass. After:
+103 focused tests PASS; current type/build/CI evidence belongs to #290. Submit,
+validate, download and session policies remain unchanged. Synthetic persistence
+is not hosted audit or journey acceptance. No merge/deployment/rules/config or
+spend. Cursor retains #289, Claude retains #72/#73/#74; owner #126 gate retained.

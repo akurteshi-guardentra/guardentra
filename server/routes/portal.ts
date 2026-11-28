@@ -8,7 +8,10 @@ import {
   handlePortalSubmit,
   handlePortalValidate,
   liveEvidenceDeps,
+  authorizePortalAi,
+  HttpError,
 } from '../lib/evidenceAccess.ts';
+import { buildPortalAssessmentView, hasPrivateReviewerFields, portalAssessmentReadable } from '../lib/portalAssessmentView';
 
 const router = Router();
 const evidenceDeps = liveEvidenceDeps();
@@ -93,8 +96,11 @@ router.post('/session', portalSessionLimiter, async (req, res) => {
       }
     }
 
+    const assessment = buildPortalAssessmentView(data);
     res.json({
       token,
+      assessment,
+      assessmentReadMode: hasPrivateReviewerFields(data) ? 'projected' : 'direct',
       branding: {
         requesterOrgName: requesterOrgName || 'Requesting organization',
         requesterLogoUrl: requesterLogoUrl || null,
@@ -102,8 +108,8 @@ router.post('/session', portalSessionLimiter, async (req, res) => {
         status,
         portalOpen: open,
         submitted,
-        completedAt: data.completedAt || null,
-        decisionOutcome: data.decisionOutcome || null,
+        completedAt: assessment.completedAt || null,
+        decisionOutcome: assessment.decisionOutcome || null,
       },
     });
   } catch (err) {
@@ -116,6 +122,43 @@ router.post('/session', portalSessionLimiter, async (req, res) => {
 });
 
 const evidenceLimiter = createRateLimiter({ windowMs: 60_000, max: 30 });
+// Scan refresh must not consume the allowance needed to submit or access evidence.
+const assessmentViewLimiter = createRateLimiter({ windowMs: 60_000, max: 30 });
+
+// Historical records can still carry reviewer-only fields. Never send the raw
+// Admin document: the same scoped identity and allowlist apply on every refresh.
+router.post('/assessment-view', assessmentViewLimiter, async (req, res) => {
+  const header = req.headers.authorization;
+  const token = header?.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  if (!token) return res.status(401).json({ error: 'Authentication required' });
+  let decoded;
+  try {
+    ensureAdmin();
+    decoded = await getAuth().verifyIdToken(token);
+  } catch {
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+  const assessmentId = String(req.body?.assessmentId || '').trim();
+  if (!assessmentId || assessmentId.length > 128 || /[/.\s]/.test(assessmentId)) {
+    return res.status(400).json({ error: 'A valid assessmentId is required.' });
+  }
+  try {
+    await authorizePortalAi(decoded, assessmentId);
+  } catch (err) {
+    return res.status(err instanceof HttpError ? err.status : 403).json({ error: 'Portal assessment access denied.' });
+  }
+  try {
+    const snap = await getAdminDb().collection('assessments').doc(assessmentId).get();
+    if (!snap.exists) return res.status(404).json({ error: 'This assessment link is not available.' });
+    const data = snap.data() || {};
+    if (!portalAssessmentReadable(data)) {
+      return res.status(403).json({ error: 'This assessment link is not available.' });
+    }
+    return res.json({ assessment: buildPortalAssessmentView(data) });
+  } catch {
+    return res.status(503).json({ error: 'Assessment temporarily unavailable.' });
+  }
+});
 
 router.post('/submit', evidenceLimiter, (req, res) =>
   handlePortalSubmit(req, res, evidenceDeps)

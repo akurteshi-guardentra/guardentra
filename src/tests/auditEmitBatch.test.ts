@@ -209,7 +209,7 @@ describe('POST /api/audit/emit-batch', () => {
   it('writes nothing when one event fails authorization', async () => {
     const res = await post(
       '/api/audit/emit-batch',
-      { events: [answerSaved('q1'), { ...answerSaved('q2'), eventType: 'decision.finalized' }] },
+      { events: [answerSaved('q1'), { ...answerSaved('q2'), eventType: 'report.exported' }] },
       freshPortalHeaders(),
     );
     expect(res.status).toBe(403);

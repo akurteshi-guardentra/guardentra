@@ -105,6 +105,8 @@ export type AssessmentReviewPanelProps = {
   onDownloadDecisionPacket?: () => void;
   /** Display name for who recorded the decision; falls back to the stored value. */
   decidedByLabel?: string;
+  /** Private reviewer fields are incomplete until the overlay listen is ready. */
+  reviewerFields?: 'loading' | 'ready' | 'error';
 };
 
 export function AssessmentReviewPanel({
@@ -140,6 +142,7 @@ export function AssessmentReviewPanel({
   onDecide,
   onDownloadDecisionPacket,
   decidedByLabel,
+  reviewerFields = 'ready',
 }: AssessmentReviewPanelProps) {
   const groupedExceptions = groupExceptionsByQuestion(reviewExceptions);
   return (
@@ -470,6 +473,7 @@ export function AssessmentReviewPanel({
                   onDecide={onDecide}
                   onDownloadDecisionPacket={onDownloadDecisionPacket}
                   decidedByLabel={decidedByLabel}
+                  reviewerFields={reviewerFields}
                 />
               )}
             </div>
@@ -497,21 +501,31 @@ function RecordedDecision({
   assessment,
   onDownloadDecisionPacket,
   decidedByLabel,
+  reviewerFields = 'ready',
 }: {
   assessment: StoredAssessment;
   onDownloadDecisionPacket?: () => void;
   decidedByLabel?: string;
+  reviewerFields?: 'loading' | 'ready' | 'error';
 }) {
   const outcome = OUTCOME_LABELS[String(assessment.decisionOutcome)] ?? {
     label: String(assessment.decisionOutcome),
     className: 'text-slate-200',
   };
+  const privateReady = reviewerFields === 'ready';
   const rows: [string, string][] = [
-    ['Decided by', decidedByLabel || assessment.decidedByName || assessment.decidedBy || '—'],
     ['Decided at', formatDecisionDate(assessment.decidedAt)],
-    ['Residual risk', assessment.residualRiskLevel || '—'],
   ];
-  if (assessment.remediationOwner) rows.push(['Remediation owner', assessment.remediationOwner]);
+  if (privateReady) {
+    rows.unshift(['Decided by', decidedByLabel || assessment.decidedByName || assessment.decidedBy || '—']);
+    rows.push(['Residual risk', assessment.residualRiskLevel || '—']);
+    if (assessment.remediationOwner) rows.push(['Remediation owner', assessment.remediationOwner]);
+  } else {
+    rows.push([
+      'Reviewer record',
+      reviewerFields === 'error' ? 'Unavailable — not a complete decision record' : 'Loading — not a complete decision record',
+    ]);
+  }
   if (assessment.remediationDueAt) rows.push(['Remediation due', assessment.remediationDueAt.slice(0, 10)]);
 
   return (
@@ -526,7 +540,7 @@ function RecordedDecision({
           </div>
         ))}
       </dl>
-      {assessment.decisionNotes && (
+      {privateReady && assessment.decisionNotes && (
         <p className="mb-3 whitespace-pre-wrap rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-xs text-slate-300">
           {assessment.decisionNotes}
         </p>
@@ -564,6 +578,7 @@ function AssessmentDecisionBar({
   onDecide,
   onDownloadDecisionPacket,
   decidedByLabel,
+  reviewerFields,
 }: {
   decisionOutcome: DecisionOutcome;
   onDecisionOutcomeChange: (outcome: DecisionOutcome) => void;
@@ -580,6 +595,7 @@ function AssessmentDecisionBar({
   onDecide: (outcome: DecisionOutcome) => void;
   onDownloadDecisionPacket?: () => void;
   decidedByLabel?: string;
+  reviewerFields?: 'loading' | 'ready' | 'error';
 }) {
   if (hasTerminalOrgDecision(assessment)) {
     return (
@@ -587,6 +603,7 @@ function AssessmentDecisionBar({
         assessment={assessment}
         onDownloadDecisionPacket={onDownloadDecisionPacket}
         decidedByLabel={decidedByLabel}
+        reviewerFields={reviewerFields}
       />
     );
   }

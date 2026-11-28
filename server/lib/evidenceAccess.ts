@@ -10,6 +10,7 @@ import {
 import { ensureAdmin } from '../middleware/requireFirebaseAuth.ts';
 import { getConfiguredStorageBucket } from './adminConfig.ts';
 import { getAdminDb } from './adminDb.ts';
+import { INVITE_SEAT_UNCLAIMED_MESSAGE, inviteSeatUnclaimed } from './inviteSeat.ts';
 import {
   classifyStorageMetadata,
   encodeTrustMapKey,
@@ -26,10 +27,17 @@ import {
   type EvidenceTrustMap,
   type EvidenceTrustRecord,
 } from '../../src/lib/vendor/evidenceTrust.ts';
-import { decisionRequiresNotes, decisionRequiresRemediationPlan, normalizeRemediationDueAt } from '../../src/lib/vendor/assessmentLifecycle.ts';
+import {
+  canSignOffAssessment,
+  decisionRequiresNotes,
+  decisionRequiresRemediationPlan,
+  hasTerminalOrgDecision,
+  normalizeRemediationDueAt,
+} from '../../src/lib/vendor/assessmentLifecycle.ts';
 import type { DecisionOutcome } from '../../src/lib/vendor/assessmentExceptions.ts';
 import type { RiskLevel } from '../../src/lib/vendor/types.ts';
 import { isAnswered, type PortalQuestion } from '../../src/lib/vendor/questionBank.ts';
+import { partitionVendorAssessmentPatch } from '../../src/lib/vendor/vendorAssessmentPrivacy.ts';
 import {
   attestationsComplete,
   effectiveAnswersForProgress,
@@ -210,7 +218,12 @@ export function toFirestoreAssessmentUpdate(
     }
     if (
       value === null &&
-      (key === 'decisionNotes' || key === 'remediationOwner' || key === 'remediationDueAt')
+      (key === 'decisionNotes' ||
+        key === 'decidedBy' ||
+        key === 'decidedByName' ||
+        key === 'residualRiskLevel' ||
+        key === 'remediationOwner' ||
+        key === 'remediationDueAt')
     ) {
       update[key] = FieldValue.delete();
     } else {
@@ -263,6 +276,9 @@ export async function requireOrgAssessmentAccess(
   if (!userOrg || !assessOrg || userOrg !== assessOrg) {
     throw new HttpError(403, 'Cross-tenant access denied');
   }
+  if (inviteSeatUnclaimed(user)) {
+    throw new HttpError(403, INVITE_SEAT_UNCLAIMED_MESSAGE);
+  }
   const role = String(user.role || 'member');
   if (role !== 'admin' && role !== 'member' && role !== 'owner') {
     throw new HttpError(403, 'Reviewer permission required');
@@ -304,8 +320,23 @@ export async function executeAssessmentTransaction(
       : undefined;
     const skipProductWrite = Boolean(skipProductWriteWhen?.(current, patch));
 
+    const partitioned = partitionVendorAssessmentPatch(patch);
     if (!skipProductWrite) {
-      tx.update(ref, toFirestoreAssessmentUpdate(patch));
+      tx.update(ref, toFirestoreAssessmentUpdate(partitioned.publicPatch));
+    }
+    if (partitioned.hasPrivate) {
+      const organizationId = String(current.organizationId || '').trim();
+      if (!organizationId) {
+        throw new HttpError(500, 'Assessment organization is required for the reviewer record');
+      }
+      tx.set(
+        db.collection('assessment_reviews').doc(assessmentId),
+        {
+          ...toFirestoreAssessmentUpdate(partitioned.privatePatch),
+          organizationId,
+        },
+        { merge: true },
+      );
     }
     commitRelatedWrites?.();
     if (preparedAudit) {
@@ -544,6 +575,9 @@ export async function handlePortalSubmit(req: Request, res: Response, deps: Evid
     const patch = await deps.runAssessmentTransaction(
       assessmentId,
       async (current) => {
+        if (hasTerminalOrgDecision(current)) {
+          throw new HttpError(409, 'A terminal decision already exists');
+        }
         if (portalSubmissionAlreadyRecorded(current)) return {};
         if (current.portalOpen !== true) {
           throw new HttpError(403, 'Portal is closed');
@@ -801,6 +835,9 @@ export async function handleOrgAttachmentDownload(req: Request, res: Response, d
     if (!userOrg || userOrg !== orgId) {
       throw new HttpError(403, 'Cross-tenant access denied');
     }
+    if (inviteSeatUnclaimed(user)) {
+      throw new HttpError(403, INVITE_SEAT_UNCLAIMED_MESSAGE);
+    }
     const meta = await deps.getStorageMetadata(storagePath);
     if (!meta) {
       res.status(404).json({ error: 'Storage object not found.' });
@@ -859,6 +896,18 @@ export async function handleOrgDecision(req: Request, res: Response, deps: Evide
       await requireOrgAssessmentAccess(decoded, current, deps.getUser);
       if (hasTerminalOrgDecision(current)) {
         throw new HttpError(409, 'A terminal decision already exists');
+      }
+      // #124: the review UI already refuses this through canSignOffAssessment.
+      // Reuse that rule here so an untouched assessment cannot be decided by
+      // calling the API directly. Do not tighten this to submitted-only.
+      if (
+        !canSignOffAssessment({
+          status: typeof current.status === 'string' ? current.status : undefined,
+          progressPct: typeof current.progressPct === 'number' ? current.progressPct : undefined,
+          progress: typeof current.progress === 'number' ? current.progress : undefined,
+        })
+      ) {
+        throw new HttpError(409, 'Assessment has not been started and cannot be decided yet.');
       }
       const questions = Array.isArray(current.questions) ? current.questions : [];
       const exceptions = listAssessmentExceptions({

@@ -42,13 +42,15 @@ function productionLike(): boolean {
  */
 router.post('/mail', async (req, res) => {
   try {
-    ensureAdmin();
-
-    const decoded = (req as Request & { user?: { uid?: string } }).user;
+    const decoded = (req as Request & { user?: { uid?: string; portalAssessmentId?: unknown } }).user;
     const uid = decoded?.uid || '';
     if (!uid) {
       return res.status(401).json({ error: 'Authentication required' });
     }
+    if (decoded?.portalAssessmentId !== undefined) {
+      return res.status(403).json({ error: 'Portal sessions cannot use organization notification routes.' });
+    }
+    ensureAdmin();
 
     const intent = parseNotificationIntentRequest(req.body);
     const db = getAdminDb();

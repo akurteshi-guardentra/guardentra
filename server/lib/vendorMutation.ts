@@ -2,6 +2,7 @@ import { getAuth, type DecodedIdToken } from 'firebase-admin/auth';
 import type { Firestore } from 'firebase-admin/firestore';
 import type { Request, Response } from 'express';
 import { ensureAdmin } from '../middleware/requireFirebaseAuth.ts';
+import { INVITE_SEAT_UNCLAIMED_MESSAGE, inviteSeatUnclaimed } from './inviteSeat.ts';
 import { getAdminDb } from './adminDb.ts';
 import {
   commitPreparedMaterialAuditIntent,
@@ -373,6 +374,10 @@ export async function handleOrgVendorCreate(
       return;
     }
 
+    if (decoded.portalAssessmentId !== undefined) {
+      res.status(403).json({ error: 'Portal sessions cannot use organization vendor routes' });
+      return;
+    }
     const user = await deps.getUser(decoded.uid);
     if (!user) {
       res.status(403).json({ error: 'Organization membership required' });
@@ -386,6 +391,10 @@ export async function handleOrgVendorCreate(
     }
     if (!['admin', 'owner', 'member'].includes(role)) {
       res.status(403).json({ error: 'Vendor create permission required' });
+      return;
+    }
+    if (inviteSeatUnclaimed(user)) {
+      res.status(403).json({ error: INVITE_SEAT_UNCLAIMED_MESSAGE });
       return;
     }
 
@@ -430,6 +439,10 @@ export async function handleOrgVendorArchive(
       return;
     }
 
+    if (decoded.portalAssessmentId !== undefined) {
+      res.status(403).json({ error: 'Portal sessions cannot use organization vendor routes' });
+      return;
+    }
     const user = await deps.getUser(decoded.uid);
     if (!user) {
       res.status(403).json({ error: 'Organization membership required' });
@@ -444,6 +457,10 @@ export async function handleOrgVendorArchive(
     // Archive changes plan capacity — admin/owner only (#226).
     if (!['admin', 'owner'].includes(role)) {
       res.status(403).json({ error: 'Vendor archive permission required' });
+      return;
+    }
+    if (inviteSeatUnclaimed(user)) {
+      res.status(403).json({ error: INVITE_SEAT_UNCLAIMED_MESSAGE });
       return;
     }
 
