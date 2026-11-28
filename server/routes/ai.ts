@@ -1,6 +1,18 @@
 import { Router, type Request, type Response } from 'express';
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI, Type, type GenerateContentConfig } from '@google/genai';
+import { getApps } from 'firebase-admin/app';
+import { getAdminDb } from '../lib/adminDb';
+import {
+  createAiGenerateOrgLimiter,
+  createResolveGenerateOrganization,
+} from '../lib/aiGenerateGuard';
+import {
+  GEMINI_TIMEOUT_MS,
+  geminiGenerateRequest,
+  isGeminiTimeoutError,
+} from '../lib/geminiDeadline';
 import { createRateLimiter } from '../middleware/rateLimit';
+import { ensureAdmin } from '../middleware/requireFirebaseAuth';
 
 const router = Router();
 
@@ -26,11 +38,11 @@ export function sendMock(res: Response, payload: Record<string, unknown>) {
   return res.json({ ...payload, isMock: true });
 }
 
-// Cap AI spend per verified identity. The key used to come from the client-supplied
-// X-Org-Id header / body.organizationId, so a caller could rotate that value and get
-// a fresh bucket on every request (unbounded Gemini spend). Only the verified Firebase
-// uid (set by requireFirebaseAuth) is trusted here; IP is the unauthenticated fallback.
-// A true per-org cap needs the org resolved server-side from users/{uid}.
+// Cap AI spend per verified identity on every /api/ai route. The key used to come
+// from the client-supplied X-Org-Id header / body.organizationId, so a caller could
+// rotate that value and get a fresh bucket on every request. Only the verified
+// Firebase uid is trusted here. POST /generate adds a shared per-organization cap
+// keyed from users/{uid}, not from that header.
 export function aiRateLimitKey(req: Request): string {
   const uid = (req as Request & { user?: { uid?: string } }).user?.uid;
   return uid ? `uid:${uid}` : '';
@@ -94,9 +106,34 @@ function isApiKeyError(error: any): boolean {
   );
 }
 
-// Initialize Gemini API (will use process.env.GEMINI_API_KEY automatically if set)
-const ai = process.env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }) : null;
+// Initialize Gemini API (will use process.env.GEMINI_API_KEY automatically if set).
+// httpOptions.timeout is the SDK deadline for every call this client makes.
+const ai = process.env.GEMINI_API_KEY
+  ? new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+      httpOptions: { timeout: GEMINI_TIMEOUT_MS },
+    })
+  : null;
 const hasAIApi = ai && !isPlaceholderKey(process.env.GEMINI_API_KEY);
+
+async function generateGemini(params: {
+  model: string;
+  contents: string;
+  config?: GenerateContentConfig;
+}) {
+  if (!ai) throw new Error('AI not configured');
+  return ai.models.generateContent(geminiGenerateRequest(params));
+}
+
+async function loadGenerateOrganizationProfile(uid: string): Promise<object | null> {
+  if (getApps().length === 0) ensureAdmin();
+  const snap = await getAdminDb().collection('users').doc(uid).get();
+  if (!snap.exists) return null;
+  return (snap.data() as object | undefined) || {};
+}
+
+const resolveGenerateOrganization = createResolveGenerateOrganization(loadGenerateOrganizationProfile);
+const aiGenerateOrgLimit = createAiGenerateOrgLimiter();
 
 router.post('/analyze', async (req, res) => {
   const { context, type } = req.body;
@@ -134,7 +171,7 @@ router.post('/analyze', async (req, res) => {
     if (type === 'risk_detection') {
       const prompt = `As a CISO AI Assistant, analyze the following context and identify 3-5 specific potential risks: ${context}. Return ONLY a JSON object with a "risks" array. Each risk should have "title", "category" (e.g., Security, Compliance, Operational), and "severity" (Critical, High, Medium, Low).`;
       
-      const response = await ai.models.generateContent({
+      const response = await generateGemini({
           model: 'gemini-3.5-flash',
           contents: prompt,
           config: {
@@ -154,7 +191,7 @@ router.post('/analyze', async (req, res) => {
     if (type === 'risk_mitigation') {
       const prompt = `As a CISO AI Assistant, provide a concise, step-by-step mitigation plan for the following risk: ${context}. Return ONLY a JSON object with a "mitigation" string field containing the plan.`;
       
-      const response = await ai.models.generateContent({
+      const response = await generateGemini({
           model: 'gemini-3.5-flash',
           contents: prompt,
           config: {
@@ -173,7 +210,7 @@ router.post('/analyze', async (req, res) => {
 
     const prompt = `As a CISO AI Assistant, analyze the following ${type} context and provide actionable insights: ${context}`;
     
-    const response = await ai.models.generateContent({
+    const response = await generateGemini({
         model: 'gemini-3.5-flash',
         contents: prompt,
     });
@@ -253,9 +290,15 @@ function isModelUnavailableError(err: unknown): boolean {
   return msg.includes('not found') || msg.includes('is not found') || msg.includes('unsupported model');
 }
 
+/** A deadline must stop the chain. Walking the fallback list would wait 30s per model. */
+export function shouldTryNextGeminiModel(err: unknown): boolean {
+  if (isGeminiTimeoutError(err)) return false;
+  return isModelUnavailableError(err);
+}
+
 async function generateWithModelFallback(args: {
   prompt: string;
-  config?: Record<string, unknown>;
+  config?: GenerateContentConfig;
   preferred?: string;
 }) {
   const primary = resolveModel(args.preferred);
@@ -263,21 +306,21 @@ async function generateWithModelFallback(args: {
   let lastErr: unknown;
   for (const model of chain) {
     try {
-      return await ai!.models.generateContent({
+      return await generateGemini({
         model,
         contents: args.prompt,
         config: args.config && Object.keys(args.config).length ? args.config : undefined,
       });
     } catch (err) {
       lastErr = err;
-      if (!isModelUnavailableError(err)) throw err;
+      if (!shouldTryNextGeminiModel(err)) throw err;
       console.warn(`[ai] Model ${model} unavailable, trying next fallback`);
     }
   }
   throw lastErr;
 }
 
-router.post('/generate', async (req, res) => {
+router.post('/generate', resolveGenerateOrganization, aiGenerateOrgLimit, async (req, res) => {
   const { prompt, responseMimeType, responseSchema, model } = req.body || {};
   if (typeof prompt !== 'string' || !prompt.trim()) {
     return res.status(400).json({ error: 'prompt is required' });
@@ -289,7 +332,7 @@ router.post('/generate', async (req, res) => {
     if (!hasAIApi) {
       return res.status(503).json({ error: 'AI not configured', code: 'manual_review' });
     }
-    const config: Record<string, unknown> = {};
+    const config: GenerateContentConfig = {};
     if (responseMimeType) config.responseMimeType = responseMimeType;
     if (responseSchema) config.responseSchema = responseSchema;
     const result = await generateWithModelFallback({
@@ -374,7 +417,7 @@ Return JSON with key "mappings": array of {
 Only map when the control intent clearly matches. Prefer null + needsReview=true over a weak guess.
 Never invent controlKey values that are not in the added list.`;
 
-    const result = await ai!.models.generateContent({
+    const result = await generateGemini({
       model: resolveModel(undefined),
       contents: prompt,
       config: {
@@ -429,22 +472,31 @@ Never invent controlKey values that are not in the added list.`;
  * which is why the Audit Lab's scan failure took a server-log read to explain. The
  * message stays generic enough not to leak upstream internals, but names the category.
  */
-function sendAIError(res: Response, err: unknown) {
+export function aiErrorResponse(err: unknown): { status: number; error: string } {
+  if (isGeminiTimeoutError(err)) {
+    return { status: 504, error: 'AI request timed out. Please retry.' };
+  }
   const status = (err as { status?: number })?.status;
 
   if (status === 429) {
-    return res.status(429).json({
+    return {
+      status: 429,
       error: 'AI quota exhausted. Check billing for the Gemini API key, then retry.',
-    });
+    };
   }
   if (status === 401 || status === 403) {
-    return res.status(502).json({ error: 'AI credentials were rejected. Check GEMINI_API_KEY.' });
+    return { status: 502, error: 'AI credentials were rejected. Check GEMINI_API_KEY.' };
   }
   if (status === 404) {
     // resolveModel() should prevent this, so a 404 means the default itself is stale.
-    return res.status(502).json({ error: 'The configured AI model is unavailable.' });
+    return { status: 502, error: 'The configured AI model is unavailable.' };
   }
-  return res.status(502).json({ error: 'AI generation failed' });
+  return { status: 502, error: 'AI generation failed' };
+}
+
+function sendAIError(res: Response, err: unknown) {
+  const mapped = aiErrorResponse(err);
+  return res.status(mapped.status).json({ error: mapped.error });
 }
 
 // New AI Vendor Assessment Generator API
@@ -501,7 +553,7 @@ router.post('/gov-assessment', async (req, res) => {
     - monitoringFrequency: Text suggesting standard or custom audit frequency.
     - executiveSummary: A clear board-ready strategic summary paragraph.`;
 
-    const response = await ai.models.generateContent({
+    const response = await generateGemini({
       model: 'gemini-3.5-flash',
       contents: prompt,
       config: {
@@ -609,7 +661,7 @@ router.post('/grant-report', async (req, res) => {
     - privacySecurity: Security architecture detail, data minimization, disclaimer about non-training on AI.
     - nextSteps: Key strategic milestones to initiate with the agency.`;
 
-    const response = await ai.models.generateContent({
+    const response = await generateGemini({
       model: 'gemini-3.5-flash',
       contents: prompt,
       config: {
@@ -703,7 +755,7 @@ router.post('/trust-explain', async (req, res) => {
       "nextSteps": string[] (Exactly 3 highly actionable, clear things they can do in Guardentra to immediately raise their score, mentioning the specific point improvements.)
     }`;
 
-    const response = await ai.models.generateContent({
+    const response = await generateGemini({
       model: 'gemini-3.5-flash',
       contents: prompt,
       config: {
@@ -869,7 +921,7 @@ router.post('/evidence-review', async (req, res) => {
 
     Ensure all fields are detailed and realistic. The findings must directly reference security controls suitable for the document type.`;
 
-    const response = await ai.models.generateContent({
+    const response = await generateGemini({
       model: 'gemini-3.5-flash',
       contents: prompt,
       config: {
@@ -1007,7 +1059,7 @@ router.post('/remediation-plan', async (req, res) => {
 
     Ensure all fields are fully populated with realistic enterprise GRC data and are TypeScript-safe.`;
 
-    const response = await ai.models.generateContent({
+    const response = await generateGemini({
       model: 'gemini-3.5-flash',
       contents: prompt,
       config: {
@@ -1153,7 +1205,7 @@ router.post('/analyze-emails', async (req, res) => {
     
     Adhere strictly to the requested JSON response format.`;
 
-    const response = await ai.models.generateContent({
+    const response = await generateGemini({
       model: 'gemini-3.5-flash',
       contents: prompt,
       config: {
@@ -1281,7 +1333,7 @@ Propose answers ONLY when evidence filenames make a Yes/compliant answer plausib
 Return JSON { "proposals": [ { "questionId", "proposedAnswer", "citation", "confidence" (0-1), "sourceFileName" } ] }.
 proposedAnswer must be one of each question's options. citation must mention a file name and brief reason.`;
 
-    const response = await ai!.models.generateContent({
+    const response = await generateGemini({
       model: 'gemini-2.0-flash',
       contents: prompt,
       config: { responseMimeType: 'application/json' },
